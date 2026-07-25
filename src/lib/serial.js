@@ -39,7 +39,7 @@ import {
   REVIEWED_CFW_BASE_VERSION,
   RetryablePogoFlashError,
   PogoFlashSafetyError,
-  assertReviewedCfwFlashCandidate,
+  assertPinnedTempleFlashCandidate,
   decodeTempleVersion,
   getVerifiedPogoFlashBridgePayload,
   makeOtaDataRequest,
@@ -926,18 +926,23 @@ export class G2CaseSession {
     }
   }
 
-  async backup() {
+  async backup({ progressBase = 0, progressSpan = 1 } = {}) {
+    const reportProgress = (fraction, detail) =>
+      this.progress(progressBase + fraction * progressSpan, detail);
     const loader = new Stm32Bootloader(this.port, this.log);
     try {
       this.log("Starting a read-only 512 KiB case backup.");
       await loader.connect();
       const flash = await loader.readRange(FLASH_BASE, FLASH_SIZE, (fraction) =>
-        this.progress(fraction * 0.96, `Backing up case · ${Math.round(fraction * 100)}%`),
+        reportProgress(
+          fraction * 0.96,
+          `Backing up case · ${Math.round(fraction * 100)}%`,
+        ),
       );
       const optionBytes = await loader.readRange(OPTION_BASE, OPTION_SIZE);
       const flashSha256 = await sha256Hex(flash);
       const optionSha256 = await sha256Hex(optionBytes);
-      this.progress(1, "Backup verified");
+      reportProgress(1, "Case backup verified");
       this.log(`Case backup verified · ${flashSha256.slice(0, 16)}…`);
       return { flash, optionBytes, flashSha256, optionSha256 };
     } finally {
@@ -961,7 +966,13 @@ export class G2CaseSession {
     }
   }
 
-  async probeRunningTemple(operation, route) {
+  async probeRunningTemple(
+    operation,
+    route,
+    { progressBase = 0, progressSpan = 1 } = {},
+  ) {
+    const reportProgress = (fraction, detail) =>
+      this.progress(progressBase + fraction * progressSpan, detail);
     if (!["status", "version"].includes(operation)) {
       throw new Error("The reviewed pogo bridge permits only status or version.");
     }
@@ -1052,7 +1063,7 @@ export class G2CaseSession {
             `The volatile bridge readback differs at 0x${address.toString(16)}.`,
           );
         }
-        this.progress(
+        reportProgress(
           0.1 + ((offset + chunk.length) / payload.length) * 0.42,
           "Verifying volatile read-only bridge",
         );
@@ -1094,7 +1105,7 @@ export class G2CaseSession {
       const response = parsePogoBridgeResponse(header, tail, request);
       await bridge.close();
       bridge = null;
-      this.progress(0.66, "Temple response captured");
+      reportProgress(0.66, "Temple response captured");
 
       await delay(300);
       loader = new Stm32Bootloader(this.port, this.log);
@@ -1116,7 +1127,7 @@ export class G2CaseSession {
         operation,
         route,
       );
-      this.progress(0.84, "Router restoration proof verified");
+      reportProgress(0.84, "Router restoration proof verified");
 
       await loader.writeMemory(POGO_BRIDGE_PROOF_ADDRESS, zeroProof);
       await loader.writeMemory(POGO_BRIDGE_RESULT_ADDRESS, zeroResult);
@@ -1143,7 +1154,7 @@ export class G2CaseSession {
         `Verified ${route} ${operation} response and byte-for-byte YHM restoration.`,
         "success",
       );
-      this.progress(0.94, "Read-only pogo diagnostics verified");
+      reportProgress(0.94, "Read-only pogo diagnostics verified");
       return {
         operation,
         route,
@@ -1165,7 +1176,7 @@ export class G2CaseSession {
         }
       }
       await this.restoreNormal();
-      if (residueCleared) this.progress(1, "Case application restored");
+      if (residueCleared) reportProgress(1, "Case application restored");
     }
   }
 
@@ -1371,7 +1382,8 @@ export class G2CaseSession {
   }
 
   async flashReviewedCfwMain(firmware, routeSelection = "both") {
-    const component = await assertReviewedCfwFlashCandidate(firmware);
+    const { mainComponent: component, target } =
+      await assertPinnedTempleFlashCandidate(firmware);
     const routes =
       routeSelection === "both"
         ? ["right", "left"]
@@ -1383,8 +1395,10 @@ export class G2CaseSession {
     const audit = {
       schemaVersion: 1,
       startedAt: new Date().toISOString(),
-      operation: "g2_case_usb_reviewed_cfw_main_only",
+      operation: "g2_case_usb_pinned_main_only",
       imageSha256: firmware.fileSha256,
+      imageLabel: target.label,
+      imageHardwareValidated: target.hardwareValidated,
       mainPayloadSha256: component.payloadSha256,
       bridgeSha256:
         "08a08f45ac125a1dba6469234e56cacd32147d9e79203327987276d2fb182b02",

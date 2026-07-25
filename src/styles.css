@@ -1647,6 +1647,15 @@ code {
   margin-top: 16px;
 }
 
+.backup-graphic .glasses-block {
+  min-height: 84px;
+  grid-column: 1 / -1;
+}
+
+.backup-graphic .glasses-block b {
+  margin-top: 24px;
+}
+
 .backup-checklist {
   display: grid;
   min-width: 0;
@@ -1695,9 +1704,14 @@ code {
 }
 
 .backup-digest span {
+  margin-top: 14px;
   font-family: var(--mono);
   font-size: 8px;
   letter-spacing: 0.08em;
+}
+
+.backup-digest span:first-child {
+  margin-top: 0;
 }
 
 .backup-digest code {
@@ -3605,5 +3619,674 @@ code {
 
   .section-heading h2 {
     font-size: clamp(30px, 10vw, 42px);
+  }
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.analysis-scope-tabs {
+  display: grid;
+  margin: 28px 0 22px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #0b0d0c;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.analysis-scope-tabs button {
+  display: flex;
+  min-width: 0;
+  padding: 17px 18px;
+  color: #777c79;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  align-items: center;
+  gap: 12px;
+}
+
+.analysis-scope-tabs button:last-child {
+  border-right: 0;
+}
+
+.analysis-scope-tabs button:hover {
+  color: #dfe3e0;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.analysis-scope-tabs button.is-active {
+  color: #06130d;
+  background: var(--accent);
+}
+
+.analysis-scope-tabs .icon {
+  flex: 0 0 auto;
+}
+
+.analysis-scope-tabs button > span,
+.analysis-scope-tabs strong,
+.analysis-scope-tabs small {
+  display: block;
+  min-width: 0;
+}
+
+.analysis-scope-tabs strong {
+  color: inherit;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.analysis-scope-tabs small {
+  margin-top: 3px;
+  color: inherit;
+  font-family: var(--mono);
+  font-size: 7px;
+  opacity: 0.72;
+}
+
+.glasses-analysis {
+  display: grid;
+  gap: 14px;
+}
+
+.analysis-action-panel,
+.shell-analysis,
+.smart-glasses-recovery {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(0, 255, 136, 0.055), transparent 42%),
+    #111312;
+}
+
+.analysis-action-panel {
+  display: grid;
+  padding: 22px;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 0.52fr) auto;
+  align-items: center;
+  gap: 18px;
+}
+
+.analysis-action-panel h3,
+.shell-analysis-heading h3,
+.recovery-target-heading h3,
+.smart-glasses-recovery-heading h3 {
+  margin: 5px 0 0;
+  color: #f3f5f4;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+.analysis-action-panel p,
+.shell-analysis-heading p,
+.recovery-target-heading p,
+.smart-glasses-recovery-heading p {
+  margin: 8px 0 0;
+  max-width: 760px;
+  color: #858a87;
+  font-size: 9px;
+  line-height: 1.65;
+}
+
+.analysis-action-panel .confirm-check {
+  margin: 0;
+}
+
+.analysis-action-panel > small {
+  grid-column: 2 / -1;
+  color: #ffd18d;
+  font-family: var(--mono);
+  font-size: 7px;
+}
+
+.glasses-analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.glasses-analytics-card {
+  min-width: 0;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #141414;
+}
+
+.glasses-analytics-card.is-responsive {
+  border-color: rgba(0, 255, 136, 0.34);
+  background:
+    linear-gradient(145deg, rgba(0, 255, 136, 0.065), transparent 52%),
+    #121412;
+}
+
+.glasses-analytics-heading,
+.shell-analysis-heading,
+.smart-glasses-recovery-heading,
+.recovery-target-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+}
+
+.glasses-analytics-heading > div > span,
+.scope-label {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 7px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.glasses-analytics-heading h3 {
+  margin: 6px 0 0;
+  color: #f2f4f3;
+  font-size: 18px;
+}
+
+.glasses-analytics-facts {
+  display: grid;
+  margin-top: 20px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.glasses-analytics-facts .field {
+  padding: 14px 12px 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.glasses-analytics-facts .field:nth-child(even) {
+  padding-right: 0;
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+}
+
+.glasses-analytics-facts .field:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.glasses-route-proof {
+  display: grid;
+  padding: 16px 0;
+  gap: 7px;
+}
+
+.glasses-route-proof span,
+.shell-recovery-proof span,
+.smart-glasses-recovery-proof span {
+  color: #737875;
+  font-family: var(--mono);
+  font-size: 7px;
+  letter-spacing: 0.08em;
+}
+
+.glasses-route-proof code {
+  overflow: hidden;
+  color: #c9cecb;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.glasses-route-proof small {
+  color: #777c79;
+  font-family: var(--mono);
+  font-size: 7px;
+}
+
+.writer-compatibility,
+.glasses-recovery-readiness {
+  display: flex;
+  padding: 12px 14px;
+  color: #ffabb3;
+  border: 1px solid rgba(255, 91, 106, 0.25);
+  border-radius: 9px;
+  background: rgba(255, 91, 106, 0.055);
+  align-items: center;
+  gap: 10px;
+}
+
+.writer-compatibility.is-compatible,
+.glasses-recovery-readiness.is-ready {
+  color: var(--accent);
+  border-color: rgba(0, 255, 136, 0.3);
+  background: rgba(0, 255, 136, 0.055);
+}
+
+.writer-compatibility span {
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.glasses-recovery-readiness {
+  padding: 17px 18px;
+}
+
+.glasses-recovery-readiness > div {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+}
+
+.glasses-recovery-readiness strong {
+  color: #e9ecea;
+  font-size: 10px;
+}
+
+.glasses-recovery-readiness span {
+  color: #858a87;
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.glasses-recovery-readiness a {
+  color: inherit;
+  font-family: var(--mono);
+  font-size: 8px;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+
+.shell-analysis {
+  padding: 22px;
+}
+
+.shell-analysis-heading {
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.shell-analysis-grid {
+  display: grid;
+  margin-top: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.shell-panel {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid #2d322f;
+  border-radius: 10px;
+  background: #0b0e0c;
+}
+
+.shell-command-list {
+  display: grid;
+  margin-top: 13px;
+  border: 1px solid #292e2b;
+  border-radius: 8px;
+}
+
+.shell-command-list > div {
+  display: grid;
+  padding: 10px 11px;
+  border-bottom: 1px solid #292e2b;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.shell-command-list > div:last-child {
+  border-bottom: 0;
+}
+
+.shell-command-list code {
+  color: var(--accent);
+  font-size: 8px;
+}
+
+.shell-command-list span {
+  color: #b0b5b2;
+  font-size: 8px;
+}
+
+.shell-command-list small {
+  color: #6f7471;
+  font-family: var(--mono);
+  font-size: 6px;
+  text-transform: uppercase;
+}
+
+.shell-panel details {
+  margin-top: 14px;
+}
+
+.shell-panel summary {
+  color: #8e9390;
+  font-family: var(--mono);
+  font-size: 7px;
+  cursor: pointer;
+}
+
+.shell-panel pre {
+  max-height: 250px;
+  margin: 10px 0 0;
+  padding: 14px;
+  overflow: auto;
+  color: #a9eacb;
+  border: 1px solid #272c29;
+  border-radius: 8px;
+  background: #070907;
+  font-family: var(--mono);
+  font-size: 7px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.shell-temple {
+  display: grid;
+  margin-top: 13px;
+  padding: 14px;
+  border: 1px solid #292e2b;
+  border-radius: 8px;
+  gap: 7px;
+}
+
+.shell-temple strong {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 7px;
+}
+
+.shell-temple span {
+  color: #c7ccc9;
+  font-size: 9px;
+}
+
+.shell-temple code {
+  overflow: hidden;
+  color: #777d79;
+  font-size: 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-recovery-proof {
+  display: grid;
+  margin-top: 13px;
+  padding: 14px;
+  border: 1px solid rgba(0, 255, 136, 0.25);
+  border-radius: 8px;
+  background: rgba(0, 255, 136, 0.045);
+  gap: 6px;
+}
+
+.shell-recovery-proof strong {
+  color: #e6eae7;
+  font-size: 9px;
+}
+
+.shell-recovery-proof small {
+  color: #858a87;
+  font-family: var(--mono);
+  font-size: 7px;
+  line-height: 1.55;
+}
+
+.transfer-recovery-link {
+  width: fit-content;
+  text-decoration: none;
+}
+
+.recovery-target-heading {
+  margin: 26px 0 14px;
+  padding: 20px 22px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #111312;
+}
+
+.recovery-target-heading p {
+  margin-bottom: 0;
+}
+
+.smart-glasses-recovery {
+  margin-top: 24px;
+  padding: 26px;
+  border-color: rgba(0, 255, 136, 0.25);
+  scroll-margin-top: 84px;
+}
+
+.smart-glasses-recovery-gate {
+  display: grid;
+  margin-top: 22px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.smart-glasses-recovery-gate > div {
+  display: flex;
+  min-width: 0;
+  padding: 13px;
+  color: #696e6b;
+  border-right: 1px solid var(--line);
+  align-items: center;
+  gap: 8px;
+}
+
+.smart-glasses-recovery-gate > div:last-child {
+  border-right: 0;
+}
+
+.smart-glasses-recovery-gate .icon {
+  color: #555b57;
+}
+
+.smart-glasses-recovery-gate .done {
+  color: #d9deda;
+  background: rgba(0, 255, 136, 0.04);
+}
+
+.smart-glasses-recovery-gate .done .icon {
+  color: var(--accent);
+}
+
+.smart-glasses-recovery-gate span {
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.smart-glasses-recovery-grid {
+  display: grid;
+  margin-top: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.7fr);
+  gap: 18px;
+}
+
+.smart-glasses-recovery-controls {
+  display: grid;
+  align-content: start;
+  gap: 13px;
+}
+
+.smart-glasses-recovery-controls > label:first-child {
+  display: grid;
+  color: #888d8a;
+  font-family: var(--mono);
+  font-size: 7px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  gap: 7px;
+}
+
+.smart-glasses-recovery-controls select {
+  width: 100%;
+  height: 42px;
+  padding: 0 34px 0 11px;
+  color: #e9ecea;
+  border: 1px solid #343936;
+  border-radius: 8px;
+  background: #0e100f;
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.smart-glasses-recovery-controls .pogo-confirm {
+  grid-column: auto;
+}
+
+.smart-glasses-recovery-controls .pogo-presence-warning {
+  grid-column: auto;
+}
+
+.smart-glasses-recovery-proof {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  align-content: start;
+}
+
+.smart-glasses-recovery-proof > div {
+  display: grid;
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--line);
+  gap: 5px;
+}
+
+.smart-glasses-recovery-proof > div:last-child {
+  border-bottom: 0;
+}
+
+.smart-glasses-recovery-proof strong {
+  color: #d9ddda;
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 500;
+}
+
+.smart-glasses-recovery-proof .smart-glasses-recovery-boundary {
+  display: flex;
+  color: #ff9aa4;
+  background: rgba(255, 91, 106, 0.055);
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.smart-glasses-recovery-boundary span {
+  color: inherit;
+  font-family: var(--sans);
+  font-size: 8px;
+  line-height: 1.55;
+  letter-spacing: normal;
+}
+
+.smart-glasses-recovery > .temple-flash-audit {
+  margin-top: 18px;
+}
+
+@media (max-width: 1050px) {
+  .analysis-action-panel {
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 0.6fr);
+  }
+
+  .analysis-action-panel .button {
+    grid-column: 2;
+  }
+
+  .smart-glasses-recovery-gate {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .smart-glasses-recovery-gate > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .smart-glasses-recovery-gate > div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--line);
+  }
+}
+
+@media (max-width: 850px) {
+  .analysis-action-panel,
+  .smart-glasses-recovery-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .analysis-action-panel .button,
+  .analysis-action-panel > small {
+    grid-column: 1;
+    justify-self: start;
+  }
+
+  .shell-analysis-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .analysis-scope-tabs,
+  .glasses-analysis-grid,
+  .smart-glasses-recovery-gate {
+    grid-template-columns: 1fr;
+  }
+
+  .analysis-scope-tabs button {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .analysis-scope-tabs button:last-child {
+    border-bottom: 0;
+  }
+
+  .glasses-analytics-heading,
+  .shell-analysis-heading,
+  .smart-glasses-recovery-heading,
+  .recovery-target-heading,
+  .glasses-recovery-readiness {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .glasses-analytics-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .glasses-analytics-facts .field,
+  .glasses-analytics-facts .field:nth-child(even),
+  .glasses-analytics-facts .field:nth-last-child(-n + 2) {
+    padding: 12px 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .glasses-analytics-facts .field:last-child {
+    border-bottom: 0;
+  }
+
+  .shell-command-list > div {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+
+  .shell-command-list small {
+    display: none;
+  }
+
+  .smart-glasses-recovery {
+    padding: 20px;
+  }
+
+  .smart-glasses-recovery-gate > div,
+  .smart-glasses-recovery-gate > div:nth-child(2) {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .smart-glasses-recovery-gate > div:last-child {
+    border-bottom: 0;
   }
 }

@@ -1,4 +1,7 @@
 import { equalBytes, readU32LE, sha256Hex } from "./firmware.js";
+import { findTempleFlashTarget } from "./templeFlashTargets.js";
+
+export { TEMPLE_FLASH_TARGETS, findTempleFlashTarget } from "./templeFlashTargets.js";
 
 export const POGO_FLASH_BRIDGE_ADDRESS = 0x20010000;
 export const POGO_FLASH_BRIDGE_BYTES = 2872;
@@ -350,24 +353,44 @@ export function parsePogoFlashRetainedResult(
   return report;
 }
 
-export async function assertReviewedCfwFlashCandidate(firmware) {
+export async function assertPinnedTempleFlashCandidate(firmware) {
+  // The bundle digest only selects which pin to check against; every field
+  // below is still verified, and the payload is re-hashed here rather than
+  // trusting the digest the parser reported.
+  const target =
+    firmware?.kind === "bundle" ? findTempleFlashTarget(firmware.fileSha256) : null;
   const observedMainSha256 = firmware?.mainComponent?.payload
     ? await sha256Hex(firmware.mainComponent.payload)
     : null;
   if (
-    firmware?.kind !== "bundle" ||
-    firmware.fileSha256 !== REVIEWED_CFW_IMAGE_SHA256 ||
+    !target ||
     firmware.mainComponent?.name !== "ota/s200_firmware_ota.bin" ||
     firmware.mainComponent?.typeId !== 0 ||
     firmware.mainComponent?.header?.length !== 128 ||
-    firmware.mainComponent?.payload?.length !== REVIEWED_CFW_MAIN_BYTES ||
-    firmware.mainComponent?.payloadSha256 !== REVIEWED_CFW_MAIN_SHA256 ||
-    observedMainSha256 !== REVIEWED_CFW_MAIN_SHA256 ||
+    firmware.mainComponent?.payload?.length !== target.mainBytes ||
+    firmware.mainComponent?.payloadSha256 !== target.mainSha256 ||
+    observedMainSha256 !== target.mainSha256 ||
+    firmware.g2Version !== target.version
+  ) {
+    throw new PogoFlashSafetyError(
+      "Temple flashing accepts only a pinned Apollo-main component from the SybilSight verified library.",
+    );
+  }
+  return { mainComponent: firmware.mainComponent, target };
+}
+
+/** @deprecated Retained so the reviewed-CFW pin stays independently asserted. */
+export async function assertReviewedCfwFlashCandidate(firmware) {
+  const { mainComponent } = await assertPinnedTempleFlashCandidate(firmware);
+  if (
+    firmware.fileSha256 !== REVIEWED_CFW_IMAGE_SHA256 ||
+    mainComponent.payload.length !== REVIEWED_CFW_MAIN_BYTES ||
+    mainComponent.payloadSha256 !== REVIEWED_CFW_MAIN_SHA256 ||
     firmware.g2Version !== REVIEWED_CFW_BASE_VERSION
   ) {
     throw new PogoFlashSafetyError(
       "Temple flashing accepts only the exact reviewed 2.2.6.10 CFW Apollo-main component.",
     );
   }
-  return firmware.mainComponent;
+  return mainComponent;
 }

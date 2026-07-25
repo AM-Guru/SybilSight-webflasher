@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  FLASH_BASE,
-  OPTION_BASE,
   POGO_TRANSFER_RESEARCH,
-  bytesToBase64,
   formatBytes,
   hex,
   hexBytes,
@@ -14,6 +11,12 @@ import {
   requestG2CasePort,
   webSerialSupported,
 } from "./lib/serial.js";
+import {
+  buildG2SystemBackupArtifact,
+  findMatchingGlassesRecoveryRelease,
+  validateGlassesRecoveryBundle,
+} from "./lib/backup.js";
+import { buildG2DeviceAnalytics } from "./lib/analytics.js";
 import { decodeApollo510RecoveryConfig } from "./lib/recoveryConfig.js";
 
 const EMPTY_PROGRESS = { fraction: 0, detail: "Ready", visible: false };
@@ -80,9 +83,10 @@ function StepRail({ complete }) {
   const steps = [
     ["connect", "Connect", "USB Serial"],
     ["analyze", "Analyze", "Status + banks"],
-    ["backup", "Preserve", "Full case backup"],
+    ["backup", "Preserve", "Case + glasses backup"],
     ["firmware", "Choose image", "CDN or local file"],
     ["recover", "Recover", "Stage, verify, activate"],
+    ["recovery-console", "Recovery Console", "Temple tools"],
   ];
   return (
     <nav className="step-rail" aria-label="Recovery workflow">
@@ -231,6 +235,180 @@ function RecoveryConfigResult({ report }) {
   );
 }
 
+function SmartGlassesAnalyticsCard({ analytics, label }) {
+  const proof =
+    analytics.version?.transportProof ?? analytics.status?.transportProof;
+  return (
+    <article className={cx(
+      "glasses-analytics-card",
+      analytics.applicationResponsive && "is-responsive",
+    )}>
+      <div className="glasses-analytics-heading">
+        <div>
+          <span>{label} temple</span>
+          <h3>
+            {analytics.firmwareVersion
+              ? `G2 ${analytics.firmwareVersion}`
+              : analytics.present
+                ? "Seated · not yet queried"
+                : "Not detected"}
+          </h3>
+        </div>
+        <StatusPill
+          tone={
+            analytics.applicationResponsive
+              ? "success"
+              : analytics.present
+                ? "warm"
+                : "quiet"
+          }
+        >
+          {analytics.applicationResponsive
+            ? "Application responsive"
+            : analytics.present
+              ? "Presence only"
+              : "Absent"}
+        </StatusPill>
+      </div>
+      <div className="glasses-analytics-facts">
+        <Field
+          label="Firmware"
+          value={analytics.firmwareVersion}
+          detail="Checksum-validated 0x23 version reply"
+        />
+        <Field
+          label="Hardware"
+          value={analytics.hardwareRevision}
+          detail="Apollo hardware revision"
+        />
+        <Field
+          label="Battery"
+          value={
+            analytics.batteryPercent == null
+              ? null
+              : `${analytics.batteryPercent}%`
+          }
+          detail="0x2C running-app status reply"
+        />
+        <Field
+          label="Voltage"
+          value={
+            analytics.voltageMv == null
+              ? null
+              : `${analytics.voltageMv} mV`
+          }
+          detail="0x2C running-app status reply"
+        />
+      </div>
+      <div className="glasses-route-proof">
+        <span>CASE → POGO ROUTE PROOF</span>
+        <code>
+          {proof
+            ? `${proof.baselineMask} → ${proof.selectedMask} → ${proof.restoredMask}`
+            : "Run the full glasses analysis to capture transport proof"}
+        </code>
+        {proof ? (
+          <small>
+            {proof.transmittedBytes} bytes sent · {proof.capturedBytes} captured ·
+            UART errors {proof.uartErrorMask}
+          </small>
+        ) : null}
+      </div>
+      <div className={cx(
+        "writer-compatibility",
+        analytics.reviewedWriterCompatible && "is-compatible",
+      )}>
+        <Icon name={analytics.reviewedWriterCompatible ? "check" : "warning"} />
+        <span>
+          {analytics.reviewedWriterCompatible
+            ? "Matches the validated 2.2.6.10 / hardware 5 recovery path"
+            : "Recovery compatibility has not been proven for this temple"}
+        </span>
+      </div>
+    </article>
+  );
+}
+
+function ShellEvidenceView({ analytics, onDownload }) {
+  const caseShell = analytics.chargingCase.shell;
+  const glasses = analytics.smartGlasses;
+  const evidence = analytics.validatedRecoveryEvidence;
+  return (
+    <div className="shell-analysis">
+      <div className="shell-analysis-heading">
+        <div>
+          <div className="eyebrow">Local evidence export</div>
+          <h3>Case shell, glasses frames, and recovery provenance</h3>
+          <p>
+            Factory-console output belongs to the charging case. Temple frames and
+            YHM masks belong to the selected glasses route and were transported
+            through the case’s volatile SRAM bridge.
+          </p>
+        </div>
+        <Button tone="secondary" onClick={onDownload}>
+          <Icon name="backup" />
+          Download analytics JSON
+        </Button>
+      </div>
+      <div className="shell-analysis-grid">
+        <article className="shell-panel">
+          <div className="scope-label">CHARGING CASE · FACTORY SHELL</div>
+          <div className="shell-command-list">
+            {caseShell.allowlistedQueries.map((query) => (
+              <div key={query.command}>
+                <code>{query.command}</code>
+                <span>{query.data}</span>
+                <small>{query.scope}</small>
+              </div>
+            ))}
+          </div>
+          <details open>
+            <summary>Raw case console output</summary>
+            <pre>{caseShell.rawOutput || "No console output captured."}</pre>
+          </details>
+        </article>
+        <article className="shell-panel">
+          <div className="scope-label">SMART GLASSES · CASE-TO-POGO FRAMES</div>
+          {["left", "right"].map((side) => {
+            const temple = glasses[side];
+            return (
+              <div className="shell-temple" key={side}>
+                <strong>{side.toUpperCase()} TEMPLE</strong>
+                <span>
+                  {temple.applicationResponsive
+                    ? `${temple.firmwareVersion} · HW ${temple.hardwareRevision}`
+                    : temple.present
+                      ? "Seated; no application reply captured"
+                      : "Not detected by case telemetry"}
+                </span>
+                {["version", "status"].map((kind) => (
+                  <code key={kind}>
+                    {kind.toUpperCase()} ·
+                    {" "}{temple[kind]?.capturedFrameHex ?? "not captured"}
+                  </code>
+                ))}
+              </div>
+            );
+          })}
+          <div className="shell-recovery-proof">
+            <span>VALIDATED RECOVERY RECORD</span>
+            <strong>
+              {evidence.status} · {evidence.attempts} hardware attempts
+            </strong>
+            <small>
+              {Object.values(evidence.successfulTransfers)
+                .map((item) =>
+                  `${item.route}: ${item.payloadBytes.toLocaleString()} B / ${item.recordsSent.toLocaleString()} records`,
+                )
+                .join(" · ")}
+            </small>
+          </div>
+        </article>
+      </div>
+    </div>
+  );
+}
+
 function OperationError({ error, onDismiss }) {
   if (!error) return null;
   return (
@@ -319,6 +497,8 @@ function App() {
   const [confirmText, setConfirmText] = useState("");
   const [confirmBackup, setConfirmBackup] = useState(false);
   const [recheckReport, setRecheckReport] = useState(null);
+  const [analysisView, setAnalysisView] = useState("case");
+  const [glassesAnalyzeConfirm, setGlassesAnalyzeConfirm] = useState(false);
   const [pogoResults, setPogoResults] = useState({});
   const [pogoRoute, setPogoRoute] = useState("left");
   const [pogoOperation, setPogoOperation] = useState("version");
@@ -379,10 +559,10 @@ function App() {
             }))
           : [];
         setCatalog(releases);
-        const latestOfficial = releases.find(
-          (release) => release.channel === "official",
+        const latestCaseRelease = releases.find(
+          (release) => release.caseRecoveryEligible,
         );
-        setSelectedReleaseId((latestOfficial ?? releases[0])?.id ?? "");
+        setSelectedReleaseId((latestCaseRelease ?? releases[0])?.id ?? "");
         setCatalogState("ready");
       })
       .catch(() => {
@@ -423,6 +603,8 @@ function App() {
       setStaged(null);
       setPogoResults({});
       setPogoConfirm(false);
+      setGlassesAnalyzeConfirm(false);
+      setAnalysisView("case");
       setTempleFlashAudit(null);
       addLog("Analysis complete. No device memory was changed.", "success");
     });
@@ -436,6 +618,7 @@ function App() {
       setStaged(null);
       setPogoResults({});
       setPogoConfirm(false);
+      setGlassesAnalyzeConfirm(false);
       setTempleFlashAudit(null);
       addLog("Fresh analysis complete.", "success");
     });
@@ -443,33 +626,97 @@ function App() {
 
   const createBackup = async () => {
     await run("backup", async () => {
-      const result = await getSession().backup();
-      const artifact = {
-        schemaVersion: 1,
-        device: "Even Realities G2 charging case",
-        createdAt: new Date().toISOString(),
-        flashBase: hex(FLASH_BASE),
-        flashSize: result.flash.length,
-        flashSha256: result.flashSha256,
-        flashBase64: bytesToBase64(result.flash),
-        optionBase: hex(OPTION_BASE),
-        optionSize: result.optionBytes.length,
-        optionSha256: result.optionSha256,
-        optionBytesBase64: bytesToBase64(result.optionBytes),
-        caseVersion: report?.console?.caseVersion ?? report?.banks?.active?.version,
-        caseSerial: report?.console?.serialNumber,
-        factoryIdentifier: report?.console?.identifier,
-        activePhysicalBank: report?.options?.activePhysicalBank,
-      };
-      const nameVersion = artifact.caseVersion ?? "unknown";
+      if (
+        !report?.console?.telemetry?.leftPresent ||
+        !report?.console?.telemetry?.rightPresent
+      ) {
+        throw new Error(
+          "Seat both Smart Glasses temples in the case, refresh analysis, and try the combined backup again.",
+        );
+      }
+      if (catalogState !== "ready") {
+        throw new Error(
+          "The firmware archive must be available to include the matching Smart Glasses recovery image.",
+        );
+      }
+
+      const session = getSession();
+      const result = await session.backup({
+        progressBase: 0,
+        progressSpan: 0.62,
+      });
+      const templeProbes = {};
+      for (const [index, route] of ["left", "right"].entries()) {
+        templeProbes[route] = await session.probeRunningTemple(
+          "version",
+          route,
+          {
+            progressBase: 0.62 + index * 0.14,
+            progressSpan: 0.14,
+          },
+        );
+      }
+      const recoveryRelease = findMatchingGlassesRecoveryRelease(
+        catalog,
+        templeProbes,
+      );
+      setSessionProgress(0.91, "Loading matching Smart Glasses recovery firmware");
+      const response = await fetch(recoveryRelease.url, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(
+          `Smart Glasses recovery archive returned HTTP ${response.status}.`,
+        );
+      }
+      const recoveryBundleBytes = new Uint8Array(await response.arrayBuffer());
+      await validateGlassesRecoveryBundle(
+        recoveryBundleBytes,
+        recoveryRelease,
+      );
+      setSessionProgress(0.97, "Packaging combined recovery backup");
+
+      const artifact = buildG2SystemBackupArtifact({
+        caseBackup: result,
+        report,
+        templeProbes,
+        recoveryRelease,
+        recoveryBundleBytes,
+      });
+      const nameVersion =
+        artifact.chargingCase.firmwareVersion ?? "unknown";
       downloadBlob(
         new Blob([`${JSON.stringify(artifact, null, 2)}\n`], {
           type: "application/json",
         }),
-        `g2-case-${nameVersion}-${new Date().toISOString().slice(0, 10)}.g2case-backup.json`,
+        `g2-system-${nameVersion}-${new Date().toISOString().slice(0, 10)}.g2-backup.json`,
       );
-      setBackup({ ...result, artifact });
-      addLog("Full case backup downloaded and retained for this session.", "success");
+      setBackup({
+        ...result,
+        artifact,
+        templeProbes,
+        recoveryRelease,
+      });
+      setPogoResults((current) => ({
+        ...current,
+        left: {
+          ...current.left,
+          version: {
+            ...templeProbes.left,
+            observedAt: artifact.createdAt,
+          },
+        },
+        right: {
+          ...current.right,
+          version: {
+            ...templeProbes.right,
+            observedAt: artifact.createdAt,
+          },
+        },
+      }));
+      setSessionProgress(1, "Case + Smart Glasses backup verified");
+      addLog(
+        `Combined backup downloaded · full case + both G2 ${recoveryRelease.version} temple snapshots + validated official recovery bundle.`,
+        "success",
+      );
     });
   };
 
@@ -492,8 +739,8 @@ function App() {
             trust: expected.trust ?? parsed.provenance.trust,
             label:
               expected.channel === "custom"
-                ? `Reviewed CFW · stock ${expected.baseVersion} base`
-                : `Official G2 ${expected.version} · archived SHA-256`,
+                ? `Smart glasses CFW · stock ${expected.baseVersion} base`
+                : `Verified G2 ${expected.version} · archived SHA-256`,
             capabilities:
               expected.capabilities ?? parsed.provenance.capabilities ?? [],
           },
@@ -522,7 +769,7 @@ function App() {
     }
     await run("firmware", async () => {
       addLog(
-        `Loading archived ${release.channel === "custom" ? "reviewed CFW" : "official G2"} ${release.version}.`,
+        `Loading verified ${release.caseRecoveryEligible ? "charging case" : "smart glasses"} image ${release.version}.`,
       );
       const response = await fetch(release.url, { cache: "no-store" });
       if (!response.ok) throw new Error(`Firmware archive returned HTTP ${response.status}.`);
@@ -591,7 +838,53 @@ function App() {
       setSessionProgress(1, "Recovery check complete");
       setPogoResults({});
       setPogoConfirm(false);
+      setGlassesAnalyzeConfirm(false);
       addLog("Both seated temples were reset and stock presence checks resumed.", "success");
+    });
+  };
+
+  const analyzeSmartGlasses = async () => {
+    if (!glassesAnalyzeConfirm) return;
+    await run("glasses-analyze", async () => {
+      if (
+        !report?.console?.telemetry?.leftPresent ||
+        !report?.console?.telemetry?.rightPresent
+      ) {
+        throw new Error(
+          "Seat both Smart Glasses temples, refresh the case analysis, and try again.",
+        );
+      }
+      const session = getSession();
+      let nextResults = { ...pogoResults };
+      const requests = [
+        ["left", "version"],
+        ["left", "status"],
+        ["right", "version"],
+        ["right", "status"],
+      ];
+      for (const [index, [route, request]] of requests.entries()) {
+        const result = await session.probeRunningTemple(request, route, {
+          progressBase: index / requests.length,
+          progressSpan: 1 / requests.length,
+        });
+        nextResults = {
+          ...nextResults,
+          [route]: {
+            ...nextResults[route],
+            [request]: {
+              ...result,
+              observedAt: new Date().toISOString(),
+            },
+          },
+        };
+        setPogoResults(nextResults);
+      }
+      setGlassesAnalyzeConfirm(false);
+      setSessionProgress(1, "Both Smart Glasses temples analyzed");
+      addLog(
+        "Smart Glasses analysis complete · both version/status frames and route-restoration proofs captured.",
+        "success",
+      );
     });
   };
 
@@ -625,7 +918,7 @@ function App() {
       !firmware?.templeFlashEligible ||
       !templeFlashSeated ||
       !templeFlashRisk ||
-      templeFlashText.trim().toUpperCase() !== "FLASH REVIEWED CFW"
+      templeFlashText.trim().toUpperCase() !== "FLASH GLASSES FIRMWARE"
     ) {
       return;
     }
@@ -640,7 +933,7 @@ function App() {
         setTempleFlashSeated(false);
         setTempleFlashRisk(false);
         addLog(
-          `Reviewed CFW main transfer completed on ${audit.routes.join(" + ")} with route restoration verified.`,
+          `${audit.imageLabel} main transfer completed on ${audit.routes.join(" + ")} with route restoration verified.`,
           "success",
         );
       } catch (caught) {
@@ -697,7 +990,10 @@ function App() {
     firmware: Boolean(
       firmware?.caseRecoveryEligible || firmware?.templeFlashEligible,
     ),
-    recover: Boolean(staged),
+    recover: Boolean(staged || templeFlashAudit?.outcome === "success"),
+    "recovery-console": Boolean(
+      recheckReport || templeFlashAudit || Object.keys(pogoResults).length,
+    ),
   };
   const telemetry = report?.console?.telemetry;
   const selectedTemplePresent =
@@ -714,7 +1010,7 @@ function App() {
     flashRoutesPresent &&
     templeFlashSeated &&
     templeFlashRisk &&
-    templeFlashText.trim().toUpperCase() === "FLASH REVIEWED CFW" &&
+    templeFlashText.trim().toUpperCase() === "FLASH GLASSES FIRMWARE" &&
     !operation
   );
   const canStage = Boolean(
@@ -724,11 +1020,28 @@ function App() {
     Boolean(staged) &&
     confirmBackup &&
     confirmText.trim().toUpperCase() === "ACTIVATE CASE BANK";
-  const officialReleases = catalog.filter((item) => item.channel === "official");
-  const latestOfficial = officialReleases[0];
-  const customReleaseCount = catalog.filter((item) => item.channel === "custom").length;
+  const caseReleases = catalog.filter((item) => item.caseRecoveryEligible);
+  const latestCaseRelease = caseReleases[0];
   const selectedRelease = catalog.find((item) => item.id === selectedReleaseId);
   const serialSupported = webSerialSupported();
+  const deviceAnalytics = useMemo(
+    () =>
+      report
+        ? buildG2DeviceAnalytics({
+            report,
+            pogoResults,
+            recoveryConfig,
+            templeFlashAudit,
+          })
+        : null,
+    [report, pogoResults, recoveryConfig, templeFlashAudit],
+  );
+  const fullGlassesAnalysisComplete = Boolean(
+    pogoResults.left?.version &&
+    pogoResults.left?.status &&
+    pogoResults.right?.version &&
+    pogoResults.right?.status,
+  );
   const consoleText = useMemo(
     () => logs.map((entry) => `${entry.time}  ${entry.message}`).join("\n"),
     [logs],
@@ -755,7 +1068,8 @@ function App() {
           <span className="hardware-label">DEVICE SERVICE · USB SERIAL</span>
           <h1>Recover with precision.<br />Protect every byte.</h1>
           <p>
-            A guided, local-only console for the Even Realities G2 charging case.
+            A guided, local-only console for the Even Realities G2 charging case
+            and smart glasses.
           </p>
         </div>
         <StepRail complete={complete} />
@@ -785,7 +1099,9 @@ function App() {
 
         <section className="hero" id="connect">
           <div className="hero-copy">
-            <div className="eyebrow">Recovery console · Even Realities G2</div>
+            <div className="eyebrow">
+              Recovery console · G2 charging case &amp; smart glasses
+            </div>
             <h2>
               Restore with precision.
               <br />
@@ -793,8 +1109,8 @@ function App() {
             </h2>
             <p>
               Inspect the factory console and both STM32 banks, capture a complete
-              device-specific backup, then stage and verify a recovery image before
-              changing the active bank.
+              device-specific case backup, snapshot both Smart Glasses temples,
+              then stage and verify a recovery image before changing the active bank.
             </p>
             <div className="hero-actions">
               <Button
@@ -846,20 +1162,44 @@ function App() {
         <section className="content-section" id="analyze">
           <SectionHeading
             eyebrow="01 · Analyze"
-            title="Case state at a glance"
-            copy="Read-only A0/A2/A3/A4 factory queries plus ROM-level bank and option-byte inspection."
+            title="Analyze the Case and Smart Glasses"
+            copy="Separate the case factory shell, STM32 banks, and option bytes from left/right temple data captured through the case pogo routes."
             action={
               report ? (
                 <StatusPill tone="success">
-                  <Icon name="check" /> Read-only pass complete
+                  <Icon name="check" /> Case pass complete
                 </StatusPill>
               ) : (
                 <StatusPill>Waiting for case</StatusPill>
               )
             }
           />
+          <div className="analysis-scope-tabs" role="tablist" aria-label="Analyze device scope">
+            {[
+              ["case", "Charging Case", "Factory shell + STM32"],
+              ["glasses", "Smart Glasses", "Left + right temples"],
+              ["evidence", "Shell & evidence", "Frames + recovery record"],
+            ].map(([key, label, detail]) => (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={analysisView === key}
+                className={cx(analysisView === key && "is-active")}
+                onClick={() => setAnalysisView(key)}
+                key={key}
+              >
+                <Icon name={key === "case" ? "case" : key === "glasses" ? "glasses" : "terminal"} />
+                <span>
+                  <strong>{label}</strong>
+                  <small>{detail}</small>
+                </span>
+              </button>
+            ))}
+          </div>
           {report ? (
             <>
+              {analysisView === "case" ? (
+                <>
               <div className="status-grid">
                 <article className="status-card status-card-primary">
                   <div className="card-topline">
@@ -970,6 +1310,112 @@ function App() {
                   </div>
                 </article>
               </div>
+                </>
+              ) : null}
+              {analysisView === "glasses" ? (
+                <div className="glasses-analysis">
+                  <div className="analysis-action-panel">
+                    <div>
+                      <div className="eyebrow">Read-only paired analysis</div>
+                      <h3>Query both running temples</h3>
+                      <p>
+                        Captures version, hardware revision, battery, voltage, raw
+                        frames, and exact route-restoration proof for left and right.
+                        Presence alone comes from the case; every other value requires
+                        a checksum-valid reply from the glasses application.
+                      </p>
+                    </div>
+                    <label className="confirm-check">
+                      <input
+                        type="checkbox"
+                        checked={glassesAnalyzeConfirm}
+                        onChange={(event) =>
+                          setGlassesAnalyzeConfirm(event.target.checked)
+                        }
+                        disabled={
+                          !telemetry?.leftPresent ||
+                          !telemetry?.rightPresent ||
+                          Boolean(operation)
+                        }
+                      />
+                      <span>
+                        Both temples are seated; keep the case and USB cable still.
+                      </span>
+                    </label>
+                    <Button
+                      onClick={analyzeSmartGlasses}
+                      busy={operation === "glasses-analyze"}
+                      disabled={
+                        !telemetry?.leftPresent ||
+                        !telemetry?.rightPresent ||
+                        !glassesAnalyzeConfirm ||
+                        Boolean(operation)
+                      }
+                    >
+                      <Icon name="scan" />
+                      {fullGlassesAnalysisComplete
+                        ? "Refresh both glasses"
+                        : "Analyze both Smart Glasses"}
+                    </Button>
+                    {!telemetry?.leftPresent || !telemetry?.rightPresent ? (
+                      <small>
+                        Seat both temples, then refresh the Charging Case analysis.
+                      </small>
+                    ) : null}
+                  </div>
+                  <div className="glasses-analysis-grid">
+                    <SmartGlassesAnalyticsCard
+                      label="Left"
+                      analytics={deviceAnalytics.smartGlasses.left}
+                    />
+                    <SmartGlassesAnalyticsCard
+                      label="Right"
+                      analytics={deviceAnalytics.smartGlasses.right}
+                    />
+                  </div>
+                  <div className={cx(
+                    "glasses-recovery-readiness",
+                    deviceAnalytics.smartGlasses.recoveryAssessment.bothRoutesReady &&
+                      "is-ready",
+                  )}>
+                    <Icon
+                      name={
+                        deviceAnalytics.smartGlasses.recoveryAssessment.bothRoutesReady
+                          ? "check"
+                          : "warning"
+                      }
+                    />
+                    <div>
+                      <strong>
+                        {deviceAnalytics.smartGlasses.recoveryAssessment.bothRoutesReady
+                          ? "Both routes match the validated recovery envelope"
+                          : "Recovery readiness is not yet proven for both routes"}
+                      </strong>
+                      <span>
+                        Requires case 1.2.57, each running temple on 2.2.6.10 /
+                        hardware 5, and both applications responsive. The Apollo
+                        bootloader is never transferred.
+                      </span>
+                    </div>
+                    <a href="#smart-glasses-recovery">Open Smart Glasses recovery</a>
+                  </div>
+                </div>
+              ) : null}
+              {analysisView === "evidence" ? (
+                <ShellEvidenceView
+                  analytics={deviceAnalytics}
+                  onDownload={() =>
+                    downloadBlob(
+                      new Blob([`${JSON.stringify(deviceAnalytics, null, 2)}\n`], {
+                        type: "application/json",
+                      }),
+                      `g2-case-glasses-analytics-${new Date()
+                        .toISOString()
+                        .replaceAll(":", "-")}.json`,
+                    )
+                  }
+                />
+              ) : null}
             </>
           ) : (
             <div className="empty-panel">
@@ -980,7 +1426,567 @@ function App() {
           )}
         </section>
 
-        <section className="boundary-section">
+        <section className="content-section" id="backup">
+          <SectionHeading
+            eyebrow="02 · Preserve"
+            title="Back up the case and Smart Glasses"
+            copy="Captures the full case memory, verifies both seated temples, and embeds the matching digest-pinned official glasses recovery bundle into one local file."
+            action={
+              backup ? (
+                <StatusPill tone="success"><Icon name="check" /> Downloaded</StatusPill>
+              ) : null
+            }
+          />
+          <div className="preserve-layout">
+            <article className="backup-card">
+              <div className="backup-graphic" aria-hidden="true">
+                <div><span>ACTIVE</span><b>256 KiB</b></div>
+                <div><span>FALLBACK</span><b>256 KiB</b></div>
+                <div className="glasses-block">
+                  <span>SMART GLASSES</span>
+                  <b>LEFT + RIGHT · MATCHED RECOVERY BUNDLE</b>
+                </div>
+                <i>+</i>
+                <div className="option-block"><span>OPTIONS</span><b>128 B</b></div>
+              </div>
+              <div>
+                <h3>Complete G2 recovery set</h3>
+                <p>
+                  The case is preserved byte-for-byte. Each running temple contributes
+                  a checksum-validated version snapshot, and the matching official
+                  glasses firmware is embedded for recovery. Installed Apollo memory
+                  cannot be read through the case, so the glasses portion is not an
+                  MRAM, key, pairing, or calibration dump.
+                </p>
+                <Button
+                  onClick={createBackup}
+                  busy={operation === "backup"}
+                  disabled={
+                    !report ||
+                    catalogState !== "ready" ||
+                    Boolean(operation)
+                  }
+                >
+                  <Icon name="backup" />
+                  {backup
+                    ? "Download a fresh recovery set"
+                    : "Back up case + Smart Glasses"}
+                </Button>
+              </div>
+            </article>
+            <div className="backup-checklist">
+              <div><Icon name="check" /><span><strong>Exact case acquisition</strong>512 KiB flash + 128-byte options</span></div>
+              <div><Icon name="check" /><span><strong>Both temples captured</strong>Version, hardware, raw frame + route proof</span></div>
+              <div><Icon name="check" /><span><strong>Glasses recovery image</strong>Matching official bundle, size + SHA-256 validated</span></div>
+              <div><Icon name="check" /><span><strong>Application restored</strong>Normal case console after every read</span></div>
+              {backup ? (
+                <div className="backup-digest">
+                  <span>CASE FLASH SHA-256</span>
+                  <code>{backup.flashSha256}</code>
+                  <span>SMART GLASSES BUNDLE SHA-256</span>
+                  <code>{backup.recoveryRelease.sha256}</code>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </section>
+
+        <section className="content-section" id="firmware">
+          <SectionHeading
+            eyebrow="03 · Choose image"
+            title="The SybilSight verified library, or your own file"
+            copy="Every entry in the library is a hash-pinned image that is re-validated locally before any write is enabled: charging case recovery images, plus the reviewed SybilSight transformation of stock 2.2.6.10 for the smart glasses. You can also supply your own file."
+            action={
+              catalogState === "ready" ? (
+                <StatusPill tone="quiet">
+                  {catalog.length} verified {catalog.length === 1 ? "build" : "builds"}
+                </StatusPill>
+              ) : (
+                <StatusPill tone="warm">Library {catalogState}</StatusPill>
+              )
+            }
+          />
+          <div className="firmware-layout">
+            <article className="panel firmware-picker">
+              <div className="source-tabs">
+                <span className="is-active">SybilSight verified library</span>
+              </div>
+              <label className="select-label" htmlFor="firmware-version">
+                G2 firmware artifact
+              </label>
+              <div className="select-row">
+                <select
+                  id="firmware-version"
+                  value={selectedReleaseId}
+                  onChange={(event) => setSelectedReleaseId(event.target.value)}
+                  disabled={catalogState !== "ready" || Boolean(operation)}
+                >
+                  {catalog.map((release) => (
+                    <option value={release.id} key={release.id}>
+                      {release.caseRecoveryEligible
+                        ? `Charging case ${release.caseVersion} · G2 ${release.version}`
+                        : `Smart glasses ${release.baseVersion ?? release.version} · CFW`}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  onClick={loadMirroredFirmware}
+                  busy={operation === "firmware"}
+                  disabled={!selectedRelease || Boolean(operation)}
+                >
+                  Load & validate
+                </Button>
+              </div>
+              {selectedRelease ? (
+                <div className="release-meta">
+                  <span>
+                    {!selectedRelease.caseRecoveryEligible
+                      ? "Smart glasses CFW · analysis/download only"
+                      : selectedRelease === latestCaseRelease
+                        ? "Latest case image"
+                        : "Earlier case image"}
+                  </span>
+                  <span>{formatBytes(selectedRelease.size)}</span>
+                  <code>{selectedRelease.sha256.slice(0, 20)}…</code>
+                  <a href={selectedRelease.url} download>
+                    Source bundle
+                  </a>
+                  {selectedRelease.patchUrl ? (
+                    <a href={selectedRelease.patchUrl} download>
+                      Reviewed patch recipe
+                    </a>
+                  ) : null}
+                </div>
+              ) : null}
+              <div className="or-divider"><span>or</span></div>
+              <label className="upload-zone">
+                <input
+                  type="file"
+                  accept=".bin,.evenota,application/octet-stream"
+                  onChange={loadLocalFirmware}
+                  disabled={Boolean(operation)}
+                />
+                <Icon name="file" />
+                <span>
+                  <strong>Choose a local firmware file</strong>
+                  EVENOTA bundle, firmware_box.bin, or validated raw case image
+                </span>
+              </label>
+            </article>
+
+            <article className={cx("panel selected-firmware", firmware && "has-firmware")}>
+              {firmware ? (
+                <>
+                  <div className="selected-check"><Icon name="check" /></div>
+                  <div className="eyebrow">Validated locally</div>
+                  <h3>
+                    {firmware.provenance.channel === "custom"
+                      ? `Smart glasses ${firmware.provenance.baseVersion ?? firmware.g2Version} CFW`
+                      : `Charging case ${firmware.caseVersion}`}
+                  </h3>
+                  <p>
+                    {firmware.kind === "bundle"
+                      ? `${firmware.provenance.label}. The ${firmware.components.length}-component bundle passed outer CRC-32C, Apollo preamble/CRC/vector, case wrapper, and case vector checks.`
+                      : "Validated standalone charging-case image."}
+                  </p>
+                  <div className="firmware-facts">
+                    <Field
+                      label="Trust"
+                      value={firmware.provenance.label}
+                      status={
+                        firmware.provenance.trust === "unrecognized"
+                          ? null
+                          : "success"
+                      }
+                    />
+                    <Field label="Source" value={firmware.fileName} />
+                    <Field label="Bundle size" value={formatBytes(firmware.fileSize)} />
+                    <Field label="Case payload" value={formatBytes(firmware.caseImage.length)} />
+                    {firmware.mainFirmware ? (
+                      <>
+                        <Field
+                          label="Apollo target"
+                          value={hex(firmware.mainFirmware.runBase)}
+                          detail="Single in-place main application"
+                        />
+                        <Field
+                          label="Apollo image end"
+                          value={hex(firmware.mainFirmware.installedImageEnd)}
+                          detail={`Below update flag ${hex(0x007fe000)}`}
+                        />
+                      </>
+                    ) : null}
+                    <Field label="SHA-256" value={`${firmware.fileSha256.slice(0, 24)}…`} />
+                  </div>
+                  {firmware.provenance.channel === "custom" ? (
+                    <div className="firmware-boundary firmware-boundary-custom">
+                      <strong>Reviewed CFW targets the glasses; do not stage it as case firmware.</strong>
+                      <span>
+                        Its case component is byte-identical to the stock 1.2.57 component.
+                        The exact reviewed Apollo main payload has successful left- and
+                        right-temple transfers through SybilSight’s volatile case bridge.
+                        It is eligible only for the guarded running-temple writer in Recover,
+                        never for case-bank staging.
+                      </span>
+                      <ul>
+                        {firmware.provenance.capabilities.map((capability) => (
+                          <li key={capability}>{capability}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : firmware.provenance.trust === "unrecognized" &&
+                    firmware.kind === "bundle" ? (
+                    <div className="firmware-boundary">
+                      <strong>Integrity is valid; publisher provenance is unknown.</strong>
+                      <span>
+                        A self-consistent local bundle is not proof that Even or SybilSight
+                        published it. Only its extracted case image is eligible here.
+                      </span>
+                    </div>
+                  ) : null}
+                  {firmware.kind === "bundle" ? (
+                    <details>
+                      <summary>
+                        Show all {firmware.components.length} G2 components
+                      </summary>
+                      <div className="component-list">
+                        {firmware.components.map((component) => (
+                          <div
+                            className={
+                              component.pogoOta.disposition === "omit"
+                                ? "is-pogo-omit"
+                                : ""
+                            }
+                            key={component.name}
+                          >
+                            <span>
+                              {component.name} · type {component.typeId}
+                              <small>
+                                {component.pogoOta.dataRecordCount.toLocaleString()} ×
+                                {" "}0x54 · final seq {component.pogoOta.finalSequence}
+                              </small>
+                              <small className="component-disposition">
+                                {component.pogoOta.safetyLabel}
+                              </small>
+                            </span>
+                            <code>{formatBytes(component.payloadSize)}</code>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  ) : null}
+                </>
+              ) : (
+                <div className="selected-empty">
+                  <Icon name="firmware" />
+                  <strong>No recovery image selected</strong>
+                  <span>Files remain in this browser and are validated before a write is enabled.</span>
+                </div>
+              )}
+            </article>
+          </div>
+        </section>
+
+        <section className="content-section recovery-section" id="recover">
+          <SectionHeading
+            eyebrow="04 · Recover"
+            title="Recover the Case or Smart Glasses"
+            copy="Use dual-bank staging for the charging case, or the hardware-validated case-to-pogo path to reinstall the reviewed Apollo main on responsive Smart Glasses."
+          />
+          <div className="recovery-target-heading">
+            <div>
+              <div className="eyebrow">Charging Case</div>
+              <h3>Dual-bank case recovery</h3>
+              <p>
+                The active bank remains untouched while the selected case image is
+                written and byte-for-byte verified in the fallback bank.
+              </p>
+            </div>
+            <StatusPill tone={staged ? "success" : "quiet"}>
+              {staged ? "Inactive bank verified" : "Case path"}
+            </StatusPill>
+          </div>
+          <div className="recovery-flow">
+            <article
+              className={cx(
+                "recovery-step",
+                report && backup && firmware?.caseRecoveryEligible && "is-ready",
+              )}
+            >
+              <div className="recovery-number">1</div>
+              <div>
+                <h3>Preflight</h3>
+                <ul>
+                  <li className={report ? "done" : ""}>Fresh case analysis</li>
+                  <li className={backup ? "done" : ""}>
+                    Case + Smart Glasses recovery set downloaded
+                  </li>
+                  <li className={firmware?.caseRecoveryEligible ? "done" : ""}>
+                    Case-recovery image validated
+                  </li>
+                </ul>
+                {firmware && !firmware.caseRecoveryEligible ? (
+                  <p className="preflight-blocked">
+                    The reviewed CFW is authenticated, but it targets the G2 Apollo
+                    application and cannot be staged through the case USB loader.
+                  </p>
+                ) : null}
+              </div>
+            </article>
+            <article className={cx("recovery-step", staged && "is-complete")}>
+              <div className="recovery-number">{staged ? <Icon name="check" /> : "2"}</div>
+              <div>
+                <h3>Stage inactive bank</h3>
+                <p>
+                  Erases only the bounded image pages, leaving the active bank and
+                  end-of-bank device data untouched.
+                </p>
+                <Button
+                  onClick={stageFirmware}
+                  busy={operation === "stage"}
+                  disabled={!canStage}
+                >
+                  <Icon name="bank" />
+                  {staged ? "Stage again" : "Stage & verify inactive bank"}
+                </Button>
+                {staged ? (
+                  <div className="stage-proof">
+                    <span>READBACK SHA-256</span>
+                    <code>{staged.readbackSha256}</code>
+                  </div>
+                ) : null}
+              </div>
+            </article>
+            <article className={cx("recovery-step recovery-step-danger", staged && "is-ready")}>
+              <div className="recovery-number">3</div>
+              <div>
+                <h3>Activate staged bank</h3>
+                <p>
+                  This rewrites the full option block with only nSWAP_BANK changed,
+                  then resets the case. The write path is research-derived and has not
+                  yet been physically exercised on a sacrificial G2 case.
+                </p>
+                <label className="confirm-check">
+                  <input
+                    type="checkbox"
+                    checked={confirmBackup}
+                    onChange={(event) => setConfirmBackup(event.target.checked)}
+                    disabled={!staged || Boolean(operation)}
+                  />
+                  <span>I have stored the downloaded G2 recovery set privately.</span>
+                </label>
+                <label className="confirm-label" htmlFor="activate-confirmation">
+                  Type <strong>ACTIVATE CASE BANK</strong>
+                </label>
+                <input
+                  id="activate-confirmation"
+                  className="confirm-input"
+                  value={confirmText}
+                  onChange={(event) => setConfirmText(event.target.value)}
+                  placeholder="ACTIVATE CASE BANK"
+                  autoComplete="off"
+                  disabled={!staged || Boolean(operation)}
+                />
+                <Button
+                  tone="danger"
+                  onClick={activateFirmware}
+                  busy={operation === "activate"}
+                  disabled={!activationReady || Boolean(operation)}
+                >
+                  Activate staged bank & restart
+                </Button>
+              </div>
+            </article>
+          </div>
+          <div className="smart-glasses-recovery" id="smart-glasses-recovery">
+            <div className="smart-glasses-recovery-heading">
+              <div>
+                <div className="eyebrow">Smart Glasses</div>
+                <h3>Running-temple recovery through the case</h3>
+                <p>
+                  Reinstalls the Apollo main from any image in the SybilSight
+                  verified library — stock or reviewed CFW — using the successful
+                  right- and left-temple procedure. The writer pins the case SRAM
+                  bridge and re-hashes the main payload against its own compiled-in
+                  allowlist; requires finish and post-reboot replies; restores all
+                  ten YHM route registers; and confirms case firmware 1.2.57 returns.
+                </p>
+              </div>
+              <StatusPill tone={firmware?.templeFlashEligible ? "success" : "quiet"}>
+                {firmware?.templeFlashTarget
+                  ? firmware.templeFlashTarget.label
+                  : "Load a library image"}
+              </StatusPill>
+            </div>
+            <div className="smart-glasses-recovery-gate">
+              <div className={report?.console?.caseVersion === "1.2.57" ? "done" : ""}>
+                <Icon name="check" />
+                <span>Case 1.2.57 analyzed</span>
+              </div>
+              <div className={flashRoutesPresent ? "done" : ""}>
+                <Icon name="check" />
+                <span>Selected temple route seated</span>
+              </div>
+              <div className={firmware?.templeFlashEligible ? "done" : ""}>
+                <Icon name="check" />
+                <span>Pinned glasses image loaded</span>
+              </div>
+              <div className={fullGlassesAnalysisComplete ? "done" : ""}>
+                <Icon name="check" />
+                <span>Version + status evidence captured</span>
+              </div>
+            </div>
+            <div className="smart-glasses-recovery-grid">
+              <div className="smart-glasses-recovery-controls">
+                <label>
+                  Temple recovery target
+                  <select
+                    value={templeFlashRoute}
+                    onChange={(event) => {
+                      setTempleFlashRoute(event.target.value);
+                      setTempleFlashSeated(false);
+                      setTempleFlashText("");
+                    }}
+                    disabled={Boolean(operation)}
+                  >
+                    <option value="both">Both temples · right then left</option>
+                    <option value="right">Right temple only</option>
+                    <option value="left">Left temple only</option>
+                  </select>
+                </label>
+                <label className="pogo-confirm">
+                  <input
+                    type="checkbox"
+                    checked={templeFlashSeated}
+                    onChange={(event) => setTempleFlashSeated(event.target.checked)}
+                    disabled={!report || !flashRoutesPresent || Boolean(operation)}
+                  />
+                  <span>
+                    The selected route{templeFlashRoute === "both" ? "s are" : " is"}
+                    {" "}seated; I will not move the glasses, case, or USB cable.
+                  </span>
+                </label>
+                <label className="pogo-confirm">
+                  <input
+                    type="checkbox"
+                    checked={templeFlashRisk}
+                    onChange={(event) => setTempleFlashRisk(event.target.checked)}
+                    disabled={!firmware?.templeFlashEligible || Boolean(operation)}
+                  />
+                  <span>
+                    I understand this single-slot reinstall cannot recover a temple
+                    whose Apollo application or pogo UART task is already dead.
+                  </span>
+                </label>
+                <label
+                  className="confirm-label"
+                  htmlFor="recover-temple-flash-confirmation"
+                >
+                  Type <strong>FLASH GLASSES FIRMWARE</strong>
+                </label>
+                <input
+                  id="recover-temple-flash-confirmation"
+                  className="confirm-input"
+                  value={templeFlashText}
+                  onChange={(event) => setTempleFlashText(event.target.value)}
+                  placeholder="FLASH GLASSES FIRMWARE"
+                  autoComplete="off"
+                  disabled={!firmware?.templeFlashEligible || Boolean(operation)}
+                />
+                <Button
+                  tone="danger"
+                  onClick={flashReviewedCfw}
+                  busy={operation === "temple-flash"}
+                  disabled={!templeFlashReady}
+                >
+                  Recover selected Smart Glasses
+                </Button>
+                {!firmware?.templeFlashEligible ? (
+                  <small className="pogo-presence-warning">
+                    Load a stock or reviewed-CFW image from the SybilSight verified
+                    library in Choose image.
+                  </small>
+                ) : !firmware.templeFlashTarget?.hardwareValidated ? (
+                  <small className="pogo-presence-warning">
+                    {firmware.templeFlashTarget.label} is hash-pinned, but its
+                    temple transfer has not been exercised on hardware. Only the
+                    reviewed CFW main has confirmed left- and right-temple
+                    transfers.
+                  </small>
+                ) : report && !flashRoutesPresent ? (
+                  <small className="pogo-presence-warning">
+                    Refresh analysis after seating every selected route.
+                  </small>
+                ) : null}
+              </div>
+              <div className="smart-glasses-recovery-proof">
+                <div>
+                  <span>ALLOWLIST</span>
+                  <strong>{POGO_TRANSFER_RESEARCH.directTempleHost.component}</strong>
+                </div>
+                <div>
+                  <span>VERIFIED PER ROUTE</span>
+                  <strong>
+                    {POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulTransfers.right.payloadBytes.toLocaleString()}
+                    {" B · "}
+                    {POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulTransfers.right.recordsSent.toLocaleString()}
+                    {" records"}
+                  </strong>
+                </div>
+                <div>
+                  <span>RECOVERY ENVELOPE</span>
+                  <strong>Case 1.2.57 · G2 2.2.6.10 · HW 5</strong>
+                </div>
+                <div>
+                  <span>EXCLUDED</span>
+                  <strong>Apollo bootloader + all peripheral components</strong>
+                </div>
+                <div className="smart-glasses-recovery-boundary">
+                  <Icon name="warning" />
+                  <span>
+                    An application-dead temple remains outside this WebFlasher’s
+                    proven recovery boundary. INFOC/INFO0 analysis can identify an
+                    SBL candidate, but does not authorize or perform that write.
+                  </span>
+                </div>
+              </div>
+            </div>
+            {templeFlashAudit ? (
+              <div className={cx(
+                "temple-flash-audit",
+                templeFlashAudit.outcome === "success" && "is-success",
+              )}>
+                <div>
+                  <strong>
+                    {templeFlashAudit.outcome === "success"
+                      ? "Smart Glasses transfer and restoration verified"
+                      : "Stopped · state failed or uncertain"}
+                  </strong>
+                  <span>
+                    {templeFlashAudit.routeResults
+                      .map((item) => `${item.route}: ${item.outcome}`)
+                      .join(" · ")}
+                  </span>
+                </div>
+                <Button
+                  tone="ghost"
+                  onClick={() =>
+                    downloadBlob(
+                      new Blob([`${JSON.stringify(templeFlashAudit, null, 2)}\n`], {
+                        type: "application/json",
+                      }),
+                      `g2-cfw-flash-${new Date().toISOString().replaceAll(":", "-")}.json`,
+                    )
+                  }
+                >
+                  Download recovery audit
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="boundary-section" id="recovery-console">
           <div className="boundary-mark"><Icon name="glasses" /></div>
           <div>
             <div className="eyebrow">Recovery boundary</div>
@@ -989,10 +1995,12 @@ function App() {
               The traced B0 command can hardware-reset both seated temples, and the case
               reports when each application link returns. This console can also load the
               exact reviewed read-only SRAM bridge for checksum-valid status or version
-              replies from either pogo route. Its hash-gated writer can install only the
-              exact reviewed-CFW Apollo main on a running temple, with finish
-              acknowledgement, post-reboot version, byte-for-byte route restoration,
-              and normal case-app return required on every selected route.
+              replies from either pogo route. Its hash-gated writer can install only an
+              Apollo main from its own compiled-in allowlist — stock or reviewed CFW —
+              on a running temple, with finish acknowledgement, post-reboot version,
+              byte-for-byte route restoration, and normal case-app return required on
+              every selected route. Only the reviewed CFW main has confirmed
+              left- and right-temple transfers on hardware.
             </p>
           </div>
           <Button
@@ -1021,7 +2029,7 @@ function App() {
             </div>
             <div className="is-confirmed">
               <span>POGO OTA</span>
-              <strong>Reviewed CFW main writer enabled</strong>
+              <strong>Pinned main writer enabled</strong>
             </div>
             <div className="is-blocked">
               <span>APPLICATION-DEAD TEMPLE</span>
@@ -1117,18 +2125,18 @@ function App() {
           <div className="transfer-research">
             <div className="pogo-tool-heading">
               <div>
-                <div className="eyebrow">Guarded running-temple reinstall</div>
-                <h3>Flash the exact reviewed CFW through the case.</h3>
+                <div className="eyebrow">Validated recovery evidence</div>
+                <h3>Successful case-to-glasses transfer record</h3>
               </div>
               <StatusPill tone={firmware?.templeFlashEligible ? "success" : "quiet"}>
                 {firmware?.templeFlashEligible ? "Exact CFW validated" : "Load reviewed CFW"}
               </StatusPill>
             </div>
             <p>
-              The browser now uses the physically validated case-USB bridge on the
-              running application’s 0x52–0x55 path. It independently pins the 2,872-byte
-              SRAM payload, complete CFW bundle, and Apollo-main payload; the bridge and
-              host both reject the Apollo bootloader and every peripheral component.
+              The physically validated case-USB bridge uses the running
+              application’s 0x52–0x55 path. The recovery controls now live in Recover;
+              this evidence remains here so the writer’s allowlist, hardware results,
+              and known failure boundary are visible alongside the diagnostic tools.
             </p>
             <div className="transfer-facts">
               <div>
@@ -1167,7 +2175,13 @@ function App() {
                 </strong>
               </div>
             </div>
-            <div className="temple-flash-controls">
+            <a
+              className="button button-secondary transfer-recovery-link"
+              href="#smart-glasses-recovery"
+            >
+              Open Smart Glasses recovery
+            </a>
+            <div className="temple-flash-controls" hidden>
               <label>
                 Temple route
                 <select
@@ -1191,7 +2205,7 @@ function App() {
                 <code>38dea7dc05e832e6f5aea8fa726454b2ec44055af5d456b323448ee6989e53d1</code>
               </div>
             </div>
-            <div className="temple-flash-confirmations">
+            <div className="temple-flash-confirmations" hidden>
               <label className="pogo-confirm">
                 <input
                   type="checkbox"
@@ -1216,15 +2230,15 @@ function App() {
                   recover a temple whose Apollo application or pogo UART task is already dead.
                 </span>
               </label>
-              <label className="confirm-label" htmlFor="temple-flash-confirmation">
-                Type <strong>FLASH REVIEWED CFW</strong>
+              <label className="confirm-label" htmlFor="boundary-temple-flash-confirmation">
+                Type <strong>FLASH GLASSES FIRMWARE</strong>
               </label>
               <input
-                id="temple-flash-confirmation"
+                id="boundary-temple-flash-confirmation"
                 className="confirm-input"
                 value={templeFlashText}
                 onChange={(event) => setTempleFlashText(event.target.value)}
-                placeholder="FLASH REVIEWED CFW"
+                placeholder="FLASH GLASSES FIRMWARE"
                 autoComplete="off"
                 disabled={!firmware?.templeFlashEligible || Boolean(operation)}
               />
@@ -1248,7 +2262,7 @@ function App() {
               ) : null}
             </div>
             {templeFlashAudit ? (
-              <div className={cx(
+              <div hidden className={cx(
                 "temple-flash-audit",
                 templeFlashAudit.outcome === "success" && "is-success",
               )}>
@@ -1346,351 +2360,6 @@ function App() {
               it does not prove retail image authorization, provide a backup, or enable
               any write control in this webflasher.
             </small>
-          </div>
-        </section>
-
-        <section className="content-section" id="backup">
-          <SectionHeading
-            eyebrow="02 · Preserve"
-            title="Back up before touching flash"
-            copy="Captures all 512 KiB, both device-data regions, and the complete 128-byte option block into one local file."
-            action={
-              backup ? (
-                <StatusPill tone="success"><Icon name="check" /> Downloaded</StatusPill>
-              ) : null
-            }
-          />
-          <div className="preserve-layout">
-            <article className="backup-card">
-              <div className="backup-graphic" aria-hidden="true">
-                <div><span>ACTIVE</span><b>256 KiB</b></div>
-                <div><span>FALLBACK</span><b>256 KiB</b></div>
-                <i>+</i>
-                <div className="option-block"><span>OPTIONS</span><b>128 B</b></div>
-              </div>
-              <div>
-                <h3>Device-specific recovery backup</h3>
-                <p>
-                  Includes serial/provisioning regions that are not present in an
-                  official OTA bundle. The downloaded file can contain device identifiers;
-                  store it privately.
-                </p>
-                <Button
-                  onClick={createBackup}
-                  busy={operation === "backup"}
-                  disabled={!report || Boolean(operation)}
-                >
-                  <Icon name="backup" />
-                  {backup ? "Download a fresh backup" : "Back up full case"}
-                </Button>
-              </div>
-            </article>
-            <div className="backup-checklist">
-              <div><Icon name="check" /><span><strong>Read-only acquisition</strong>256-byte ROM-loader blocks</span></div>
-              <div><Icon name="check" /><span><strong>Integrity recorded</strong>SHA-256 for flash and options</span></div>
-              <div><Icon name="check" /><span><strong>Application restored</strong>Returns to the normal case console</span></div>
-              {backup ? (
-                <div className="backup-digest">
-                  <span>FLASH SHA-256</span>
-                  <code>{backup.flashSha256}</code>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </section>
-
-        <section className="content-section" id="firmware">
-          <SectionHeading
-            eyebrow="03 · Choose image"
-            title="Official archive, reviewed CFW, or your own file"
-            copy="Official bundles are pinned CDN copies. The CFW is the reviewed SybilSight transformation of stock 2.2.6.10; its exact Apollo-main payload now has verified case-USB transfers on both running temple routes."
-            action={
-              catalogState === "ready" ? (
-                <StatusPill tone="quiet">
-                  {officialReleases.length} official · {customReleaseCount} reviewed CFW
-                </StatusPill>
-              ) : (
-                <StatusPill tone="warm">Archive {catalogState}</StatusPill>
-              )
-            }
-          />
-          <div className="firmware-layout">
-            <article className="panel firmware-picker">
-              <div className="source-tabs" aria-label="Firmware source">
-                <span className="is-active">SybilSight verified library</span>
-                <span>Official</span>
-                <span>Reviewed CFW</span>
-              </div>
-              <label className="select-label" htmlFor="firmware-version">
-                G2 firmware artifact
-              </label>
-              <div className="select-row">
-                <select
-                  id="firmware-version"
-                  value={selectedReleaseId}
-                  onChange={(event) => setSelectedReleaseId(event.target.value)}
-                  disabled={catalogState !== "ready" || Boolean(operation)}
-                >
-                  {catalog.map((release) => (
-                    <option value={release.id} key={release.id}>
-                      {release.channel === "custom" ? "Reviewed CFW" : "Official G2"}{" "}
-                      {release.version} · case {release.caseVersion}
-                    </option>
-                  ))}
-                </select>
-                <Button
-                  onClick={loadMirroredFirmware}
-                  busy={operation === "firmware"}
-                  disabled={!selectedRelease || Boolean(operation)}
-                >
-                  Load & validate
-                </Button>
-              </div>
-              {selectedRelease ? (
-                <div className="release-meta">
-                  <span>
-                    {selectedRelease.channel === "custom"
-                      ? "Glasses CFW · analysis/download only"
-                      : selectedRelease === latestOfficial
-                        ? "Latest official"
-                        : "Historical official"}
-                  </span>
-                  <span>{formatBytes(selectedRelease.size)}</span>
-                  <code>{selectedRelease.sha256.slice(0, 20)}…</code>
-                  <a href={selectedRelease.url} download>
-                    Source bundle
-                  </a>
-                  {selectedRelease.patchUrl ? (
-                    <a href={selectedRelease.patchUrl} download>
-                      Reviewed patch recipe
-                    </a>
-                  ) : null}
-                </div>
-              ) : null}
-              <div className="or-divider"><span>or</span></div>
-              <label className="upload-zone">
-                <input
-                  type="file"
-                  accept=".bin,.evenota,application/octet-stream"
-                  onChange={loadLocalFirmware}
-                  disabled={Boolean(operation)}
-                />
-                <Icon name="file" />
-                <span>
-                  <strong>Choose a local firmware file</strong>
-                  Official/CFW EVENOTA, firmware_box.bin, or validated raw case image
-                </span>
-              </label>
-            </article>
-
-            <article className={cx("panel selected-firmware", firmware && "has-firmware")}>
-              {firmware ? (
-                <>
-                  <div className="selected-check"><Icon name="check" /></div>
-                  <div className="eyebrow">Validated locally</div>
-                  <h3>
-                    {firmware.provenance.channel === "custom"
-                      ? `G2 ${firmware.provenance.baseVersion ?? firmware.g2Version} CFW`
-                      : `Case ${firmware.caseVersion}`}
-                  </h3>
-                  <p>
-                    {firmware.kind === "bundle"
-                      ? `${firmware.provenance.label}. The ${firmware.components.length}-component bundle passed outer CRC-32C, Apollo preamble/CRC/vector, case wrapper, and case vector checks.`
-                      : "Validated standalone charging-case image."}
-                  </p>
-                  <div className="firmware-facts">
-                    <Field
-                      label="Trust"
-                      value={firmware.provenance.label}
-                      status={
-                        firmware.provenance.trust === "unrecognized"
-                          ? null
-                          : "success"
-                      }
-                    />
-                    <Field label="Source" value={firmware.fileName} />
-                    <Field label="Bundle size" value={formatBytes(firmware.fileSize)} />
-                    <Field label="Case payload" value={formatBytes(firmware.caseImage.length)} />
-                    {firmware.mainFirmware ? (
-                      <>
-                        <Field
-                          label="Apollo target"
-                          value={hex(firmware.mainFirmware.runBase)}
-                          detail="Single in-place main application"
-                        />
-                        <Field
-                          label="Apollo image end"
-                          value={hex(firmware.mainFirmware.installedImageEnd)}
-                          detail={`Below update flag ${hex(0x007fe000)}`}
-                        />
-                      </>
-                    ) : null}
-                    <Field label="SHA-256" value={`${firmware.fileSha256.slice(0, 24)}…`} />
-                  </div>
-                  {firmware.provenance.channel === "custom" ? (
-                    <div className="firmware-boundary firmware-boundary-custom">
-                      <strong>Reviewed CFW targets the glasses; do not stage it as case firmware.</strong>
-                      <span>
-                        Its case component is byte-identical to the stock 1.2.57 component.
-                        The exact reviewed Apollo main payload has successful left- and
-                        right-temple transfers through SybilSight’s volatile case bridge.
-                        It is eligible only for the guarded running-temple writer above,
-                        never for case-bank staging.
-                      </span>
-                      <ul>
-                        {firmware.provenance.capabilities.map((capability) => (
-                          <li key={capability}>{capability}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : firmware.provenance.trust === "unrecognized" &&
-                    firmware.kind === "bundle" ? (
-                    <div className="firmware-boundary">
-                      <strong>Integrity is valid; publisher provenance is unknown.</strong>
-                      <span>
-                        A self-consistent local bundle is not proof that Even or SybilSight
-                        published it. Only its extracted case image is eligible here.
-                      </span>
-                    </div>
-                  ) : null}
-                  {firmware.kind === "bundle" ? (
-                    <details>
-                      <summary>
-                        Show all {firmware.components.length} G2 components
-                      </summary>
-                      <div className="component-list">
-                        {firmware.components.map((component) => (
-                          <div
-                            className={
-                              component.pogoOta.disposition === "omit"
-                                ? "is-pogo-omit"
-                                : ""
-                            }
-                            key={component.name}
-                          >
-                            <span>
-                              {component.name} · type {component.typeId}
-                              <small>
-                                {component.pogoOta.dataRecordCount.toLocaleString()} ×
-                                {" "}0x54 · final seq {component.pogoOta.finalSequence}
-                              </small>
-                              <small className="component-disposition">
-                                {component.pogoOta.safetyLabel}
-                              </small>
-                            </span>
-                            <code>{formatBytes(component.payloadSize)}</code>
-                          </div>
-                        ))}
-                      </div>
-                    </details>
-                  ) : null}
-                </>
-              ) : (
-                <div className="selected-empty">
-                  <Icon name="firmware" />
-                  <strong>No recovery image selected</strong>
-                  <span>Files remain in this browser and are validated before a write is enabled.</span>
-                </div>
-              )}
-            </article>
-          </div>
-        </section>
-
-        <section className="content-section recovery-section" id="recover">
-          <SectionHeading
-            eyebrow="04 · Recover"
-            title="Stage first. Activate only after readback."
-            copy="The active bank remains untouched while the selected case image is written and byte-for-byte verified in the fallback bank."
-          />
-          <div className="recovery-flow">
-            <article
-              className={cx(
-                "recovery-step",
-                report && backup && firmware?.caseRecoveryEligible && "is-ready",
-              )}
-            >
-              <div className="recovery-number">1</div>
-              <div>
-                <h3>Preflight</h3>
-                <ul>
-                  <li className={report ? "done" : ""}>Fresh case analysis</li>
-                  <li className={backup ? "done" : ""}>Full private backup downloaded</li>
-                  <li className={firmware?.caseRecoveryEligible ? "done" : ""}>
-                    Case-recovery image validated
-                  </li>
-                </ul>
-                {firmware && !firmware.caseRecoveryEligible ? (
-                  <p className="preflight-blocked">
-                    The reviewed CFW is authenticated, but it targets the G2 Apollo
-                    application and cannot be staged through the case USB loader.
-                  </p>
-                ) : null}
-              </div>
-            </article>
-            <article className={cx("recovery-step", staged && "is-complete")}>
-              <div className="recovery-number">{staged ? <Icon name="check" /> : "2"}</div>
-              <div>
-                <h3>Stage inactive bank</h3>
-                <p>
-                  Erases only the bounded image pages, leaving the active bank and
-                  end-of-bank device data untouched.
-                </p>
-                <Button
-                  onClick={stageFirmware}
-                  busy={operation === "stage"}
-                  disabled={!canStage}
-                >
-                  <Icon name="bank" />
-                  {staged ? "Stage again" : "Stage & verify inactive bank"}
-                </Button>
-                {staged ? (
-                  <div className="stage-proof">
-                    <span>READBACK SHA-256</span>
-                    <code>{staged.readbackSha256}</code>
-                  </div>
-                ) : null}
-              </div>
-            </article>
-            <article className={cx("recovery-step recovery-step-danger", staged && "is-ready")}>
-              <div className="recovery-number">3</div>
-              <div>
-                <h3>Activate staged bank</h3>
-                <p>
-                  This rewrites the full option block with only nSWAP_BANK changed,
-                  then resets the case. The write path is research-derived and has not
-                  yet been physically exercised on a sacrificial G2 case.
-                </p>
-                <label className="confirm-check">
-                  <input
-                    type="checkbox"
-                    checked={confirmBackup}
-                    onChange={(event) => setConfirmBackup(event.target.checked)}
-                    disabled={!staged || Boolean(operation)}
-                  />
-                  <span>I have stored the downloaded device-specific backup privately.</span>
-                </label>
-                <label className="confirm-label" htmlFor="activate-confirmation">
-                  Type <strong>ACTIVATE CASE BANK</strong>
-                </label>
-                <input
-                  id="activate-confirmation"
-                  className="confirm-input"
-                  value={confirmText}
-                  onChange={(event) => setConfirmText(event.target.value)}
-                  placeholder="ACTIVATE CASE BANK"
-                  autoComplete="off"
-                  disabled={!staged || Boolean(operation)}
-                />
-                <Button
-                  tone="danger"
-                  onClick={activateFirmware}
-                  busy={operation === "activate"}
-                  disabled={!activationReady || Boolean(operation)}
-                >
-                  Activate staged bank & restart
-                </Button>
-              </div>
-            </article>
           </div>
         </section>
 

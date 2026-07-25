@@ -383,6 +383,70 @@ async function saveRelease(root, release, fallbackRoots) {
   };
 }
 
+// Emits the temple writer's compiled-in allowlist. It is deliberately a source
+// file rather than something read from index.json at runtime: the writer's final
+// trust gate must not be widenable by a tampered catalog.
+async function writeTempleFlashTargets(releases) {
+  const targets = [];
+  for (const release of releases) {
+    const main = (release.components ?? []).find(
+      (component) =>
+        component.name === "ota/s200_firmware_ota.bin" && component.typeId === 0,
+    );
+    if (!main?.sha256) continue;
+    const custom = release.channel === "custom";
+    targets.push({
+      imageSha256: release.sha256,
+      mainSha256: main.sha256,
+      mainBytes: main.size,
+      version: release.internalVersion ?? release.version,
+      label: custom
+        ? `Reviewed SybilSight CFW ${release.version}`
+        : `Stock Even Realities G2 ${release.version}`,
+      // Only images with a recorded successful hardware transfer may claim this.
+      hardwareValidated: custom,
+    });
+  }
+  const entries = targets
+    .map(
+      (target) =>
+        `  Object.freeze({\n` +
+        `    imageSha256: ${JSON.stringify(target.imageSha256)},\n` +
+        `    mainSha256: ${JSON.stringify(target.mainSha256)},\n` +
+        `    mainBytes: ${target.mainBytes},\n` +
+        `    version: ${JSON.stringify(target.version)},\n` +
+        `    label: ${JSON.stringify(target.label)},\n` +
+        `    hardwareValidated: ${target.hardwareValidated},\n` +
+        `  })`,
+    )
+    .join(",\n");
+  const source = `// GENERATED FILE — do not edit by hand.
+// Rebuild with: npm run archive:firmware
+//
+// Every Apollo-main payload that the temple writer is permitted to install.
+// This table is the writer's own trust root: it is compiled into the bundle and
+// is deliberately independent of the fetched firmware catalog, so a tampered
+// index.json cannot widen what may be written to a temple.
+//
+// hardwareValidated marks images whose case-USB temple transfer has actually
+// been exercised on hardware. Pinned-but-unvalidated images are still gated on
+// exact hashes; they simply have no transfer evidence behind them yet.
+
+export const TEMPLE_FLASH_TARGETS = Object.freeze([
+${entries},
+]);
+
+export function findTempleFlashTarget(imageSha256) {
+  if (typeof imageSha256 !== "string") return null;
+  const digest = imageSha256.toLowerCase();
+  return TEMPLE_FLASH_TARGETS.find((t) => t.imageSha256 === digest) ?? null;
+}
+`;
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  await writeFile(path.join(here, "..", "src", "lib", "templeFlashTargets.js"), source);
+  return targets.length;
+}
+
 async function main() {
   const defaultOutput = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
@@ -418,7 +482,11 @@ async function main() {
     path.join(output, "index.json"),
     `${JSON.stringify(index, null, 2)}\n`,
   );
+  const targets = await writeTempleFlashTargets(index.releases);
   process.stdout.write(`Archived ${catalog.length} verified G2 releases in ${output}\n`);
+  process.stdout.write(
+    `Pinned ${targets} temple-flash Apollo-main target(s) in src/lib/templeFlashTargets.js\n`,
+  );
 }
 
 await main();

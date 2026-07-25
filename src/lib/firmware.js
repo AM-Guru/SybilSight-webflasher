@@ -1,3 +1,5 @@
+import { findTempleFlashTarget } from "./templeFlashTargets.js";
+
 export const EVENOTA_MAGIC = new Uint8Array([
   0x45, 0x56, 0x45, 0x4e, 0x4f, 0x54, 0x41, 0x00,
 ]);
@@ -696,12 +698,19 @@ export async function parseFirmwareInput(input, fileName = "firmware.bin") {
           payloadSha256: mainPayloadSha256,
         }
       : null;
-    const templeFlashEligible = Boolean(
-      provenance.channel === "custom" &&
-      fileSha256 === REVIEWED_CFW.sha256 &&
+    // UI-level enablement only. The authoritative gate is
+    // assertPinnedTempleFlashCandidate(), which re-hashes the payload against
+    // the writer's own compiled-in pin table before any bytes are sent.
+    const templeFlashTarget =
       mainComponent?.name === "ota/s200_firmware_ota.bin" &&
-      mainComponent?.payload.length === REVIEWED_CFW.mainPayloadBytes &&
-      mainPayloadSha256 === REVIEWED_CFW.mainPayloadSha256
+      mainComponent?.typeId === 0
+        ? findTempleFlashTarget(fileSha256)
+        : null;
+    const templeFlashEligible = Boolean(
+      templeFlashTarget &&
+      mainComponent?.payload.length === templeFlashTarget.mainBytes &&
+      mainPayloadSha256 === templeFlashTarget.mainSha256 &&
+      bundle.version === templeFlashTarget.version
     );
     return {
       kind: "bundle",
@@ -716,6 +725,7 @@ export async function parseFirmwareInput(input, fileName = "firmware.bin") {
       provenance,
       caseRecoveryEligible: provenance.channel !== "custom",
       templeFlashEligible,
+      templeFlashTarget: templeFlashEligible ? templeFlashTarget : null,
       components: bundle.components.map(({ name, typeId, payloadSize, crc32c: crc }) => ({
         name,
         typeId,
@@ -746,6 +756,7 @@ export async function parseFirmwareInput(input, fileName = "firmware.bin") {
       },
       caseRecoveryEligible: true,
       templeFlashEligible: false,
+      templeFlashTarget: null,
       components: [],
     };
   }
@@ -769,6 +780,7 @@ export async function parseFirmwareInput(input, fileName = "firmware.bin") {
       },
       caseRecoveryEligible: true,
       templeFlashEligible: false,
+      templeFlashTarget: null,
       components: [],
     };
   }

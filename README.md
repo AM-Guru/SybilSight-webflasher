@@ -1,7 +1,8 @@
 # Even Realities G2 Webflasher
 
-A browser-based analyzer, backup utility, guarded charging-case recovery
-console, and application-alive CFW reinstall tool for the Even Realities G2.
+A browser-based analyzer, combined Case + Smart Glasses recovery-backup
+utility, guarded charging-case recovery console, and application-alive CFW
+reinstall tool for the Even Realities G2.
 
 The webflasher communicates directly with the case through Web Serial. All
 device communication and firmware validation happen locally in the browser;
@@ -16,9 +17,20 @@ Production deployment:
   (`1A86:7523`).
 - Reports case firmware, exposed identifiers, battery and charging telemetry,
   lid state, USB state, glasses presence, temperature, and scalar case state.
+- Separates Analyze into Charging Case, Smart Glasses, and Shell & Evidence
+  views. The glasses pass captures version, hardware revision, battery,
+  voltage, checksum-valid raw frames, and per-route transport/restoration
+  proof for both temples.
+- Downloads a structured local analytics report containing the case factory
+  shell transcript, allowlisted `DEA0`/`DEA2`/`DEA3`/`DEA4` query meanings,
+  left/right temple frames, recovery eligibility, and the hardware-validated
+  transfer record.
 - Identifies the STM32 ROM bootloader, option-byte configuration, active
   physical bank, fallback physical bank, and the firmware visible in each bank.
-- Downloads a complete 512 KiB flash backup plus the 128-byte option block.
+- Downloads one combined recovery set containing a complete 512 KiB case
+  flash backup, the 128-byte case option block, checksum-validated identity
+  snapshots from both seated temples, and the matching digest-pinned official
+  Smart Glasses firmware bundle.
 - Accepts official five- or six-component `EVENOTA` bundles, wrapped
   `firmware_box.bin` components, and validated raw case images.
 - Recognizes all 12 archived official G2 SHA-256 values and the exact reviewed
@@ -42,6 +54,9 @@ Production deployment:
   bridge trust pins, explicit risk confirmations, exact per-record replies,
   postflight liveness, retained route-restoration proof, volatile-data
   cleanup, and normal case 1.2.57 return.
+- Presents both recovery targets under Recover: three-step inactive-bank
+  staging/activation for the charging case and a separately gated left,
+  right, or both-temple reinstall for responsive Smart Glasses.
 - Decodes read-only Apollo510 INFOC and active INFO0 debugger dumps locally,
   then fails closed unless every known SBL UART field matches the pogo route.
 - Provides a session console with downloadable logs.
@@ -284,7 +299,12 @@ The export does not include the separately installed Even bootloader,
 pairing/calibration/key material, INFO0/INFOC, or current internal-memory
 state. Present file availability and the full authenticated request sequence
 have not been physically validated. The stock case and this USB webflasher
-cannot reach `0xC2/0xC3`; no temple-backup control is exposed.
+cannot reach `0xC2/0xC3`, so the combined backup does not claim an
+installed-memory dump. Instead, it records checksum-validated version and
+hardware snapshots from both running temples and embeds the matching official,
+digest-pinned `EVENOTA` recovery bundle. This preserves a complete glasses
+recovery image for the reported release while keeping the installed-MRAM
+boundary explicit in the artifact.
 
 ### Dead-application recovery candidates
 
@@ -327,6 +347,7 @@ installed-MRAM readback.
   Chromium browser with Web Serial enabled.
 - HTTPS when using a hosted copy, or `localhost` during development.
 - An Even Realities G2 charging case.
+- Both Smart Glasses temples seated and running for the combined backup.
 - A USB-C **data** cable, not a charge-only cable.
 - Stable USB power for the entire backup or recovery operation.
 
@@ -407,16 +428,27 @@ Any missing transaction or cleanup proof is reported as
 operation erases or writes case flash, case option bytes, the Apollo
 bootloader, or peripheral firmware.
 
-### 5. Preservation backup
+### 5. Combined Case + Smart Glasses preservation backup
 
-Before recovery, the tool reads:
+Before recovery, the tool:
 
-- all 524,288 bytes from `0x08000000` through `0x0807FFFF`; and
-- all 128 option bytes at `0x1FFF7800`.
+- reads all 524,288 bytes from `0x08000000` through `0x0807FFFF`;
+- reads all 128 option bytes at `0x1FFF7800`;
+- queries a checksum-valid firmware/hardware version frame from each seated
+  temple through the reviewed read-only SRAM bridge;
+- requires the left and right firmware versions to match; and
+- downloads, reparses, size-checks, and SHA-256-checks the matching official
+  `EVENOTA` archive before embedding it in the backup.
 
-The downloaded `.g2case-backup.json` contains base64-encoded device memory,
-SHA-256 hashes, firmware information, bank state, and any identifiers exposed
-by the case. Treat it as private device data.
+The downloaded `.g2-backup.json` contains base64-encoded case memory,
+SHA-256 hashes, case firmware and bank state, both raw temple-version frames
+and route-restoration proofs, and the complete official glasses recovery
+bundle. Treat it as private device data.
+
+The case portion is a byte-for-byte installed-state backup. The Smart Glasses
+portion is a live identity snapshot plus a validated recovery image for the
+reported release; it is not a readback of installed Apollo MRAM, the separate
+installed bootloader, keys, pairing state, calibration, or INFO0/INFOC.
 
 ### 6. Firmware validation
 
@@ -543,7 +575,8 @@ path, and a positive result is not authorization to send an SBL image.
 ### Recover the charging case
 
 1. Analyze the case.
-2. Click **Back up full case** and store the downloaded backup privately.
+2. Seat both temples, refresh analysis, click **Back up case + Smart Glasses**,
+   and store the downloaded recovery set privately.
 3. Select a version from the hosted official archive, or choose a local
    case-compatible firmware file. The reviewed CFW entry is not
    case-recovery-compatible.
@@ -715,6 +748,7 @@ files.
 
 ```text
 src/App.jsx                    Guided recovery interface
+src/lib/backup.js              Combined case/glasses recovery artifact builder
 src/lib/serial.js              Web Serial and STM32 ROM-loader transport
 src/lib/firmware.js            Bundle, checksum, image, and option-byte logic
 src/lib/pogoBridge.js          Pinned read-only SRAM bridge and proof validation
@@ -726,6 +760,7 @@ scripts/g2_case_pogo_flasher.py
                                Case-USB reviewed-CFW flasher
 scripts/g2_case_rom.py         Safety-scoped volatile-SRAM ROM primitives
 tests/firmware.test.mjs        Parser and safety tests
+tests/backup.test.mjs          Combined recovery artifact tests
 tests/pogo-flash.test.mjs      Write-bridge and OTA protocol vectors
 deploy/webflasher.caddy        Production Caddy site block
 public/even-g2-case-grey.png   G2 product image
@@ -733,13 +768,14 @@ public/even-g2-case-grey.png   G2 product image
 
 ## Safety and privacy
 
-- Back up the complete case before every staging attempt.
+- Back up the complete case and both seated Smart Glasses before every staging
+  attempt.
 - Keep the case powered and connected throughout a write operation.
 - Leave the case connected throughout a volatile pogo diagnostic so its
   retained restore proof can be checked and cleared.
 - Never use a backup from one case as another case's device-data image.
-- Do not publish `.g2case-backup.json` files; they can contain identifiers and
-  provisioning data.
+- Do not publish `.g2-backup.json` files; they can contain identifiers,
+  provisioning data, live temple snapshots, and embedded firmware.
 - A successful parser or build test is not a substitute for hardware
   validation.
 - This software is provided without warranty under the MIT License.

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   POGO_FLASH_BRIDGE_BYTES,
@@ -11,7 +12,9 @@ import {
   REVIEWED_CFW_MAIN_BYTES,
   REVIEWED_CFW_MAIN_SHA256,
   RetryablePogoFlashError,
+  TEMPLE_FLASH_TARGETS,
   TempleRejectedError,
+  assertPinnedTempleFlashCandidate,
   assertReviewedCfwFlashCandidate,
   crc16CcittFalse,
   decodeTempleVersion,
@@ -200,6 +203,92 @@ test("rehashes the main payload at the final reviewed-CFW trust gate", async () 
   };
   await assert.rejects(
     () => assertReviewedCfwFlashCandidate(candidate),
+    PogoFlashSafetyError,
+  );
+  await assert.rejects(
+    () => assertPinnedTempleFlashCandidate(candidate),
+    PogoFlashSafetyError,
+  );
+});
+
+test("pins every temple-flash target to a distinct image and main digest", () => {
+  assert.ok(TEMPLE_FLASH_TARGETS.length >= 2, "expected stock images beside the CFW");
+  const images = new Set(TEMPLE_FLASH_TARGETS.map((t) => t.imageSha256));
+  const mains = new Set(TEMPLE_FLASH_TARGETS.map((t) => t.mainSha256));
+  assert.equal(images.size, TEMPLE_FLASH_TARGETS.length);
+  assert.equal(mains.size, TEMPLE_FLASH_TARGETS.length);
+  for (const target of TEMPLE_FLASH_TARGETS) {
+    assert.match(target.imageSha256, /^[0-9a-f]{64}$/);
+    assert.match(target.mainSha256, /^[0-9a-f]{64}$/);
+    assert.ok(target.mainBytes > 0);
+    assert.equal(typeof target.hardwareValidated, "boolean");
+  }
+  const validated = TEMPLE_FLASH_TARGETS.filter((t) => t.hardwareValidated);
+  assert.deepEqual(
+    validated.map((t) => t.imageSha256),
+    [REVIEWED_CFW_IMAGE_SHA256],
+    "only the reviewed CFW has hardware-validated temple transfers",
+  );
+});
+
+test("keeps the generated pin table in sync with the firmware archive", async () => {
+  const index = JSON.parse(
+    await readFile(
+      new URL(
+        "../public/firmware-updates/source-files/index.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  const expected = index.releases
+    .map((release) => ({
+      release,
+      main: (release.components ?? []).find(
+        (c) => c.name === "ota/s200_firmware_ota.bin" && c.typeId === 0,
+      ),
+    }))
+    .filter(({ main }) => main?.sha256)
+    .map(({ release, main }) => ({
+      imageSha256: release.sha256,
+      mainSha256: main.sha256,
+      mainBytes: main.size,
+      version: release.internalVersion ?? release.version,
+      hardwareValidated: release.channel === "custom",
+    }));
+  assert.deepEqual(
+    TEMPLE_FLASH_TARGETS.map(({ label, ...rest }) => rest),
+    expected,
+    "run `npm run archive:firmware` to regenerate src/lib/templeFlashTargets.js",
+  );
+});
+
+test("accepts a pinned stock main but still rejects a mismatched payload", async () => {
+  const stock = TEMPLE_FLASH_TARGETS.find((t) => !t.hardwareValidated);
+  const make = (payload, payloadSha256) => ({
+    kind: "bundle",
+    fileSha256: stock.imageSha256,
+    g2Version: stock.version,
+    mainComponent: {
+      name: "ota/s200_firmware_ota.bin",
+      typeId: 0,
+      header: new Uint8Array(128),
+      payload,
+      payloadSha256,
+    },
+  });
+  // Right length, wrong bytes: the gate re-hashes, so this must fail closed.
+  await assert.rejects(
+    () => assertPinnedTempleFlashCandidate(
+      make(new Uint8Array(stock.mainBytes), stock.mainSha256),
+    ),
+    PogoFlashSafetyError,
+  );
+  // A stock image must never satisfy the reviewed-CFW-specific pin.
+  await assert.rejects(
+    () => assertReviewedCfwFlashCandidate(
+      make(new Uint8Array(stock.mainBytes), stock.mainSha256),
+    ),
     PogoFlashSafetyError,
   );
 });
