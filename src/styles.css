@@ -1051,7 +1051,6 @@ code {
 }
 
 .recheck-result {
-  grid-column: 2 / -1;
   color: #8ed5b8;
   font-family: var(--mono);
   font-size: 9px;
@@ -1059,7 +1058,6 @@ code {
 
 .boundary-evidence {
   display: grid;
-  grid-column: 2 / -1;
   border: 1px solid #343936;
   border-radius: 3px;
   grid-template-columns: repeat(4, 1fr);
@@ -1109,9 +1107,8 @@ code {
 .sbl-audit,
 .transfer-research {
   display: grid;
-  grid-column: 2 / -1;
   min-width: 0;
-  padding: 22px;
+  padding: 26px;
   border: 1px solid #343936;
   border-radius: 4px;
   background: rgba(17, 17, 15, 0.5);
@@ -4512,4 +4509,92 @@ body {
   .sidebar-intro {
     display: none;
   }
+}
+
+/* ==========================================================================
+   Recovery Console consolidation
+   The boundary tools now live inside the #recover content-section, so they
+   need the same card treatment and vertical rhythm as their siblings rather
+   than the spacing they used to inherit from the old .boundary-section grid.
+   ========================================================================== */
+
+#recover .recovery-target-heading,
+#recover .recovery-flow,
+#recover .smart-glasses-recovery,
+#recover .boundary-evidence,
+#recover .pogo-tool,
+#recover .sbl-audit,
+#recover .transfer-research,
+#recover .recheck-result {
+  margin-top: 16px;
+}
+
+/* The first block sits directly under the SectionHeading. */
+#recover .recovery-target-heading:first-of-type {
+  margin-top: 0;
+}
+
+/* A heading block introducing a group gets a little more air above it. */
+#recover .recovery-target-heading ~ .recovery-target-heading {
+  margin-top: 40px;
+}
+
+/* Match the sibling cards: same surface, border, and radius as .recovery-step. */
+#recover .pogo-tool,
+#recover .sbl-audit,
+#recover .transfer-research {
+  border-color: var(--line);
+  border-radius: var(--radius-card, 14px);
+  background: var(--surface, #141414);
+}
+
+#recover .boundary-evidence {
+  border-color: var(--line);
+  border-radius: var(--radius-card, 14px);
+}
+
+/* The stray grid-column values are meaningless outside the old grid. */
+#recover .recheck-result,
+#recover .boundary-evidence,
+#recover .pogo-tool,
+#recover .sbl-audit,
+#recover .transfer-research {
+  grid-column: auto;
+}
+
+/* Body copy in the moved tool cards was styled by `.boundary-section p`,
+   which no longer wraps them — restore the sibling card scale. */
+#recover .pogo-tool > p,
+#recover .sbl-audit > p,
+#recover .transfer-research > p {
+  margin: 0;
+  color: #858a87;
+  font-size: 10px;
+  line-height: 1.75;
+}
+
+#recover .pogo-tool h3,
+#recover .sbl-audit h3,
+#recover .transfer-research h3 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+/* Micro-copy in those cards was sized for the old dense band. */
+#recover .pogo-safety-note,
+#recover .transfer-warning,
+#recover .sbl-result > small,
+#recover .sbl-error {
+  font-size: 9px;
+  line-height: 1.7;
+}
+
+#recover .transfer-facts span,
+#recover .sbl-facts span {
+  font-size: 8px;
+}
+
+#recover .transfer-facts strong,
+#recover .sbl-facts strong {
+  font-size: 10px;
 }

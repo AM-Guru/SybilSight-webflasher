@@ -86,8 +86,7 @@ export const WORKFLOW_STEPS = [
   ["firmware", "Choose image", "CDN or local file"],
 ];
 export const RECOVERY_STEPS = [
-  ["recover", "Recover", "Stage, verify, activate"],
-  ["recovery-console", "Recovery Console", "Temple tools"],
+  ["recover", "Recovery Console", "Stage, flash, verify"],
 ];
 export const SECTION_KEYS = [...WORKFLOW_STEPS, ...RECOVERY_STEPS].map(
   ([key]) => key,
@@ -104,6 +103,15 @@ function StepRail({ complete, active }) {
           active === key && "is-current",
         )}
         aria-current={active === key ? "page" : undefined}
+        onClick={() => {
+          // Clicking the current entry leaves the hash unchanged, so no
+          // hashchange fires — return to the top of the pane here.
+          if (active === key) {
+            document
+              .querySelector(".pane-viewport")
+              ?.scrollTo({ top: 0, behavior: "instant" });
+          }
+        }}
         key={key}
       >
         <span className="step-number">
@@ -577,7 +585,15 @@ function App() {
       if (!id) return;
       if (SECTION_KEYS.includes(id)) {
         pendingAnchorRef.current = null;
-        setActiveSection(id);
+        setActiveSection((current) => {
+          // Re-selecting the open pane produces no re-render, so reset here.
+          if (current === id) {
+            document
+              .querySelector(".pane-viewport")
+              ?.scrollTo({ top: 0, behavior: "instant" });
+          }
+          return id;
+        });
         return;
       }
       // An anchor inside a pane (e.g. #smart-glasses-recovery): open its pane,
@@ -608,10 +624,14 @@ function App() {
     const anchor = pendingAnchorRef.current;
     pendingAnchorRef.current = null;
     if (anchor) {
-      document.getElementById(anchor)?.scrollIntoView({ block: "start" });
+      // The pane itself just swapped in, so land on the anchor directly rather
+      // than animating from a position the user never saw.
+      document
+        .getElementById(anchor)
+        ?.scrollIntoView({ block: "start", behavior: "instant" });
       return;
     }
-    viewport.scrollTo({ top: 0 });
+    viewport.scrollTo({ top: 0, behavior: "instant" });
   }, [activeSection]);
 
   useEffect(() => {
@@ -1063,9 +1083,11 @@ function App() {
     firmware: Boolean(
       firmware?.caseRecoveryEligible || firmware?.templeFlashEligible,
     ),
-    recover: Boolean(staged || templeFlashAudit?.outcome === "success"),
-    "recovery-console": Boolean(
-      recheckReport || templeFlashAudit || Object.keys(pogoResults).length,
+    recover: Boolean(
+      staged ||
+        templeFlashAudit?.outcome === "success" ||
+        recheckReport ||
+        Object.keys(pogoResults).length,
     ),
   };
   const telemetry = report?.console?.telemetry;
@@ -1783,9 +1805,9 @@ function App() {
           data-pane="recover"
         >
           <SectionHeading
-            eyebrow="04 · Recover"
+            eyebrow="04 · Recovery Console"
             title="Recover the Case or Smart Glasses"
-            copy="Use dual-bank staging for the Charging Case, or the hardware-validated Case-to-pogo path to reinstall the reviewed Apollo main on responsive Smart Glasses."
+            copy="Use dual-bank staging for the Charging Case, or the hardware-validated Case-to-pogo path to reinstall a pinned Apollo main on responsive Smart Glasses. Read-only temple probes, provisioning decode, and the recorded transfer evidence sit below."
           />
           <div className="recovery-target-heading">
             <div>
@@ -2078,37 +2100,35 @@ function App() {
               </div>
             ) : null}
           </div>
-        </section>
-
-        <section
-          className={cx("boundary-section pane", activeSection === "recovery-console" && "is-active")}
-          id="recovery-console"
-          data-pane="recovery-console"
-        >
-          <div className="boundary-mark"><Icon name="glasses" /></div>
-          <div>
-            <div className="eyebrow">Recovery boundary</div>
-            <h2>The Case can recover a running temple. Dead-temple recovery is not proven.</h2>
-            <p>
-              The traced B0 command can hardware-reset both seated temples, and the Case
-              reports when each application link returns. This console can also load the
-              exact reviewed read-only SRAM bridge for checksum-valid status or version
-              replies from either pogo route. Its hash-gated writer can install only an
-              Apollo main from its own compiled-in allowlist — stock or reviewed CFW —
-              on a running temple, with finish acknowledgement, post-reboot version,
-              byte-for-byte route restoration, and normal Case-app return required on
-              every selected route. Only the reviewed CFW main has confirmed
-              left- and right-temple transfers on hardware.
-            </p>
+          <div className="recovery-target-heading">
+            <div>
+              <div className="eyebrow">Recovery boundary</div>
+              <h3>
+                The Case can recover a running temple. Dead-temple recovery is
+                not proven.
+              </h3>
+              <p>
+                The traced B0 command can hardware-reset both seated temples, and
+                the Case reports when each application link returns. This console
+                can also load the exact reviewed read-only SRAM bridge for
+                checksum-valid status or version replies from either pogo route.
+                Its hash-gated writer can install only an Apollo main from its own
+                compiled-in allowlist — stock or reviewed CFW — on a running
+                temple, with finish acknowledgement, post-reboot version,
+                byte-for-byte route restoration, and normal Case-app return
+                required on every selected route. Only the reviewed CFW main has
+                confirmed left- and right-temple transfers on hardware.
+              </p>
+            </div>
+            <Button
+              tone="secondary"
+              onClick={restartAndRecheck}
+              busy={operation === "recheck"}
+              disabled={!report || Boolean(operation)}
+            >
+              Reset both temples & recheck
+            </Button>
           </div>
-          <Button
-            tone="secondary"
-            onClick={restartAndRecheck}
-            busy={operation === "recheck"}
-            disabled={!report || Boolean(operation)}
-          >
-            Reset both temples & recheck
-          </Button>
           {recheckReport ? (
             <div className="recheck-result">
               <Icon name="check" />
@@ -2232,9 +2252,9 @@ function App() {
             </div>
             <p>
               The physically validated Case-USB bridge uses the running
-              application’s 0x52–0x55 path. The recovery controls now live in Recover;
-              this evidence remains here so the writer’s allowlist, hardware results,
-              and known failure boundary are visible alongside the diagnostic tools.
+              application’s 0x52–0x55 path. This evidence sits below the recovery
+              controls so the writer’s allowlist, hardware results, and known
+              failure boundary stay visible alongside the diagnostic tools.
             </p>
             <div className="transfer-facts">
               <div>
@@ -2279,118 +2299,6 @@ function App() {
             >
               Open Smart Glasses recovery
             </a>
-            <div className="temple-flash-controls" hidden>
-              <label>
-                Temple route
-                <select
-                  value={templeFlashRoute}
-                  onChange={(event) => {
-                    setTempleFlashRoute(event.target.value);
-                    setTempleFlashSeated(false);
-                    setTempleFlashText("");
-                  }}
-                  disabled={Boolean(operation)}
-                >
-                  <option value="both">Both temples · right then left</option>
-                  <option value="right">Right temple only</option>
-                  <option value="left">Left temple only</option>
-                </select>
-              </label>
-              <div className="temple-flash-pins">
-                <span>CFW BUNDLE SHA-256</span>
-                <code>5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0</code>
-                <span>APOLLO MAIN SHA-256</span>
-                <code>38dea7dc05e832e6f5aea8fa726454b2ec44055af5d456b323448ee6989e53d1</code>
-              </div>
-            </div>
-            <div className="temple-flash-confirmations" hidden>
-              <label className="pogo-confirm">
-                <input
-                  type="checkbox"
-                  checked={templeFlashSeated}
-                  onChange={(event) => setTempleFlashSeated(event.target.checked)}
-                  disabled={!report || !flashRoutesPresent || Boolean(operation)}
-                />
-                <span>
-                  I confirm the selected temple route{templeFlashRoute === "both" ? "s are" : " is"} seated
-                  and I will not move the Glasses, Case, or USB cable.
-                </span>
-              </label>
-              <label className="pogo-confirm">
-                <input
-                  type="checkbox"
-                  checked={templeFlashRisk}
-                  onChange={(event) => setTempleFlashRisk(event.target.checked)}
-                  disabled={!firmware?.templeFlashEligible || Boolean(operation)}
-                />
-                <span>
-                  I understand this is a single-slot application reinstall. It cannot
-                  recover a temple whose Apollo application or pogo UART task is already dead.
-                </span>
-              </label>
-              <label className="confirm-label" htmlFor="boundary-temple-flash-confirmation">
-                Type <strong>FLASH GLASSES FIRMWARE</strong>
-              </label>
-              <input
-                id="boundary-temple-flash-confirmation"
-                className="confirm-input"
-                value={templeFlashText}
-                onChange={(event) => setTempleFlashText(event.target.value)}
-                placeholder="FLASH GLASSES FIRMWARE"
-                autoComplete="off"
-                disabled={!firmware?.templeFlashEligible || Boolean(operation)}
-              />
-              <Button
-                tone="danger"
-                onClick={flashReviewedCfw}
-                busy={operation === "temple-flash"}
-                disabled={!templeFlashReady}
-              >
-                Flash reviewed CFW main
-              </Button>
-              {!firmware?.templeFlashEligible ? (
-                <small className="pogo-presence-warning">
-                  Load the exact reviewed 2.2.6.10 CFW bundle in “Choose image” to
-                  enable this operation.
-                </small>
-              ) : report && !flashRoutesPresent ? (
-                <small className="pogo-presence-warning">
-                  Fresh analysis does not report every selected route as seated.
-                </small>
-              ) : null}
-            </div>
-            {templeFlashAudit ? (
-              <div hidden className={cx(
-                "temple-flash-audit",
-                templeFlashAudit.outcome === "success" && "is-success",
-              )}>
-                <div>
-                  <strong>
-                    {templeFlashAudit.outcome === "success"
-                      ? "Transfer and restoration verified"
-                      : "Stopped · state failed or uncertain"}
-                  </strong>
-                  <span>
-                    {templeFlashAudit.routeResults
-                      .map((item) => `${item.route}: ${item.outcome}`)
-                      .join(" · ")}
-                  </span>
-                </div>
-                <Button
-                  tone="ghost"
-                  onClick={() =>
-                    downloadBlob(
-                      new Blob([`${JSON.stringify(templeFlashAudit, null, 2)}\n`], {
-                        type: "application/json",
-                      }),
-                      `g2-cfw-flash-${new Date().toISOString().replaceAll(":", "-")}.json`,
-                    )
-                  }
-                >
-                  Download audit
-                </Button>
-              </div>
-            ) : null}
             <small className="transfer-warning">
               Attempt 6 sent all 3,540 data records without retry, received the finish
               acknowledgement, verified 2.2.6.10/hardware 5 after reboot, restored all
@@ -2460,6 +2368,7 @@ function App() {
             </small>
           </div>
         </section>
+
 
         </div>
         <footer className="footer">

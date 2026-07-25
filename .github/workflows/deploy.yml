@@ -1,0 +1,231 @@
+name: Deploy webflasher
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: webflasher-production
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and package webflasher
+    runs-on:
+      - self-hosted
+      - ubuntu-ci
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          clean: true
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        shell: bash
+        run: npm ci
+
+      - name: Test and build website
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run check
+          npm run test:python
+
+      - name: Validate deployment output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/index.html
+          test -d dist/assets
+          if find dist -type l -print -quit | grep -q .; then
+            echo "The deployable site must not contain symbolic links." >&2
+            exit 1
+          fi
+
+      - name: Build deployment artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact_dir="${RUNNER_TEMP}/webflasher-artifact"
+          mkdir -p "${artifact_dir}"
+          tar \
+            --sort=name \
+            --mtime='UTC 1970-01-01' \
+            --owner=0 \
+            --group=0 \
+            --numeric-owner \
+            -C dist \
+            -czf "${artifact_dir}/webflasher-site.tar.gz" \
+            .
+          (
+            cd "${artifact_dir}"
+            sha256sum webflasher-site.tar.gz > webflasher-site.tar.gz.sha256
+          )
+
+      - name: Upload deployment artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: webflasher-site-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/webflasher-artifact/webflasher-site.tar.gz
+            ${{ runner.temp }}/webflasher-artifact/webflasher-site.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  deploy:
+    name: Deploy to production
+    needs: build
+    runs-on:
+      - self-hosted
+      - Linux
+      - ARM64
+      - rpi4
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://webflasher.sybilsight.com/
+
+    steps:
+      - name: Download deployment artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: webflasher-site-${{ github.sha }}
+          path: ${{ runner.temp }}/webflasher-release
+
+      - name: Verify deployment artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}/webflasher-release"
+          sha256sum --check webflasher-site.tar.gz.sha256
+
+      - name: Deploy website
+        env:
+          SSH_TARGET: homeassistant
+          DEPLOY_ROOT: /root/share
+          SITE_NAME: webflasher
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          archive="${RUNNER_TEMP}/webflasher-release/webflasher-site.tar.gz"
+          remote_stage="${DEPLOY_ROOT}/.${SITE_NAME}-deploy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          remote_target="${DEPLOY_ROOT}/${SITE_NAME}"
+          remote_backup="${DEPLOY_ROOT}/.${SITE_NAME}-previous"
+          ssh_options=(
+            -o BatchMode=yes
+            -o ConnectTimeout=15
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=3
+          )
+
+          case "${remote_stage}" in
+            /root/share/.webflasher-deploy-*) ;;
+            *)
+              echo "Refusing unexpected staging path: ${remote_stage}" >&2
+              exit 1
+              ;;
+          esac
+
+          cleanup() {
+            ssh "${ssh_options[@]}" "${SSH_TARGET}" sh -s -- "${remote_stage}" <<'CLEANUP_SCRIPT' || true
+          set -eu
+          stage="$1"
+          case "${stage}" in
+            /root/share/.webflasher-deploy-*) ;;
+            *) exit 1 ;;
+          esac
+          if [ -e "${stage}" ]; then
+            rm -rf -- "${stage}"
+          fi
+          CLEANUP_SCRIPT
+          }
+          trap cleanup EXIT
+
+          ssh -G "${SSH_TARGET}" >/dev/null
+          ssh "${ssh_options[@]}" "${SSH_TARGET}" sh -s -- "${DEPLOY_ROOT}" <<'PREFLIGHT_SCRIPT'
+          set -eu
+          deploy_root="$1"
+          [ "${deploy_root}" = /root/share ]
+          [ -d "${deploy_root}" ]
+          [ -w "${deploy_root}" ]
+          for required_command in tar stat chown chmod find mv; do
+            command -v "${required_command}" >/dev/null
+          done
+          PREFLIGHT_SCRIPT
+
+          ssh "${ssh_options[@]}" "${SSH_TARGET}" sh -s -- "${remote_stage}" <<'STAGE_SCRIPT'
+          set -eu
+          stage="$1"
+          case "${stage}" in
+            /root/share/.webflasher-deploy-*) ;;
+            *) exit 1 ;;
+          esac
+          if [ -e "${stage}" ]; then
+            rm -rf -- "${stage}"
+          fi
+          mkdir -p "${stage}"
+          STAGE_SCRIPT
+
+          gzip -dc "${archive}" |
+            ssh "${ssh_options[@]}" "${SSH_TARGET}" \
+              tar -xpf - -C "${remote_stage}"
+
+          ssh "${ssh_options[@]}" "${SSH_TARGET}" sh -s -- \
+            "${remote_stage}" "${remote_target}" "${remote_backup}" <<'PUBLISH_SCRIPT'
+          set -eu
+          stage="$1"
+          target="$2"
+          backup="$3"
+
+          case "${stage}" in
+            /root/share/.webflasher-deploy-*) ;;
+            *) exit 1 ;;
+          esac
+          [ "${target}" = /root/share/webflasher ]
+          [ "${backup}" = /root/share/.webflasher-previous ]
+          [ -s "${stage}/index.html" ]
+          [ ! -L "${target}" ]
+
+          owner_group="0:0"
+          if [ -d "${target}" ]; then
+            owner_group="$(stat -c '%u:%g' "${target}")"
+          fi
+          chown -R "${owner_group}" "${stage}"
+          chmod -R g+rwX "${stage}"
+          find "${stage}" -type d -exec chmod g+s {} +
+
+          if [ -e "${backup}" ]; then
+            rm -rf -- "${backup}"
+          fi
+
+          moved_previous=false
+          if [ -e "${target}" ]; then
+            mv "${target}" "${backup}"
+            moved_previous=true
+          fi
+
+          if ! mv "${stage}" "${target}"; then
+            if [ "${moved_previous}" = true ]; then
+              mv "${backup}" "${target}"
+            fi
+            exit 1
+          fi
+          PUBLISH_SCRIPT
+
+          trap - EXIT
+          echo "Deployed ${GITHUB_SHA} to ${SSH_TARGET}:${remote_target}"
