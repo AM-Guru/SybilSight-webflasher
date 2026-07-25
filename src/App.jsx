@@ -932,10 +932,9 @@ function App() {
               reports when each application link returns. This console can also load the
               exact reviewed read-only SRAM bridge for checksum-valid status or version
               replies from either pogo route. SybilSight’s separate hash-gated write
-              bridge has now completed one full reviewed-CFW Apollo-main transfer to a
-              running right temple, including finish acknowledgement, post-reboot
+              bridge has now completed the reviewed-CFW Apollo-main transfer on both
+              running temple routes, including finish acknowledgement, post-reboot
               version, byte-for-byte route restoration, and normal case-app return.
-              The left route has only demonstrated a safe pre-transfer rejection.
             </p>
           </div>
           <Button
@@ -964,7 +963,7 @@ function App() {
             </div>
             <div className="is-gated">
               <span>POGO OTA</span>
-              <strong>Right main transfer verified · left fail-closed</strong>
+              <strong>Both running-temple routes verified</strong>
             </div>
             <div className="is-blocked">
               <span>APPLICATION-DEAD TEMPLE</span>
@@ -1061,16 +1060,17 @@ function App() {
             <div className="pogo-tool-heading">
               <div>
                 <div className="eyebrow">Latest transfer evidence</div>
-                <h3>Right-temple main recovery is hardware-validated.</h3>
+                <h3>Both temple main-recovery routes are hardware-validated.</h3>
               </div>
               <StatusPill tone="success">Case bridge succeeded</StatusPill>
             </div>
             <p>
-              SybilSight’s fail-closed case-USB host now has one complete right-temple
-              result on the running application’s 0x52–0x55 path. It accepts only the
-              exact reviewed CFW Apollo main component, never blindly replays start or
-              header, retries only 0x54 data, waits at 6-KiB boundaries, and requires a
-              matching post-reboot version.
+              SybilSight’s fail-closed case-USB host now has complete results for both
+              temple routes on the running application’s 0x52–0x55 path. It accepts
+              only the exact reviewed CFW Apollo main component, never blindly replays
+              start or header, retries only the exact current 0x54 data record after a
+              lost reply or explicit rejection, waits at 6-KiB boundaries, and requires
+              a matching post-reboot version.
             </p>
             <div className="transfer-facts">
               <div>
@@ -1088,16 +1088,16 @@ function App() {
               <div>
                 <span>CASE-USB ATTEMPTS</span>
                 <strong>
-                  {POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts} · 1 complete
+                  {POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts} · 2 complete
                 </strong>
               </div>
               <div>
-                <span>VERIFIED RIGHT TRANSFER</span>
+                <span>VERIFIED EACH ROUTE</span>
                 <strong>
-                  {POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulTransfer.payloadBytes.toLocaleString()}
+                  {POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulTransfers.right.payloadBytes.toLocaleString()}
                   {" B · "}
-                  {POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulTransfer.recordsSent.toLocaleString()}
-                  {" records"}
+                  {POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulTransfers.right.recordsSent.toLocaleString()}
+                  {" records each"}
                 </strong>
               </div>
               <div>
@@ -1115,9 +1115,15 @@ function App() {
               ten YHM registers, and resumed case firmware 1.2.57. Because stock and
               reviewed CFW share the same version string, the exact input and main
               payload SHA-256 pins remain essential provenance. Attempt 7 rejected the
-              left route at status 3 before any firmware transmission. The successful
-              writer is not yet ported into this browser build, so this page still
-              exposes no 0x52–0x55 sender.
+              left route at status 3 before any firmware transmission. Attempt 8 then
+              accepted 2,733,000 left-temple bytes before an explicit 0x54 status-1
+              rejection; all ten route registers and case firmware 1.2.57 were restored.
+              The updated host safely retries that exact data record because a rejection
+              does not advance the expected sequence. Attempt 9 subsequently completed
+              the left transfer with all 3,540 records, zero retries, finish and
+              postflight confirmation, full route restoration, and case-app return.
+              The successful writer is not yet ported into this browser build, so this
+              page still exposes no 0x52–0x55 sender.
             </small>
           </div>
           <div className="sbl-audit">
@@ -1226,7 +1232,7 @@ function App() {
           <SectionHeading
             eyebrow="03 · Choose image"
             title="Official archive, reviewed CFW, or your own file"
-            copy="Official bundles are pinned CDN copies. The CFW is the reviewed SybilSight transformation of stock 2.2.6.10; its exact Apollo-main payload now has one verified right-temple case-USB transfer, while browser execution and the left route remain gated."
+            copy="Official bundles are pinned CDN copies. The CFW is the reviewed SybilSight transformation of stock 2.2.6.10; its exact Apollo-main payload now has verified case-USB transfers on both running temple routes."
             action={
               catalogState === "ready" ? (
                 <StatusPill tone="quiet">
@@ -1355,10 +1361,9 @@ function App() {
                       <strong>Reviewed CFW targets the glasses; do not stage it as case firmware.</strong>
                       <span>
                         Its case component is byte-identical to the stock 1.2.57 component.
-                        The exact reviewed Apollo main payload has one successful
-                        right-temple transfer through SybilSight’s volatile case bridge,
-                        but that writer is not exposed in this browser build and no
-                        successful left-temple transfer has been recorded.
+                        The exact reviewed Apollo main payload has successful left- and
+                        right-temple transfers through SybilSight’s volatile case bridge.
+                        The writer is not exposed in this browser build.
                       </span>
                       <ul>
                         {firmware.provenance.capabilities.map((capability) => (

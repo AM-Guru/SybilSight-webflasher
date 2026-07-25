@@ -36,9 +36,8 @@ Production deployment:
   component in a selected official or reviewed-CFW bundle without emitting
   any OTA command, and explicitly marks the Apollo bootloader as omitted.
 - Reports the latest main-only transfer research, including the validated
-  direct-UART host, the successful right-temple case-USB bridge transfer, and
-  the left route's fail-closed rejection, without enabling that writer in the
-  browser.
+  direct-UART host and successful case-USB bridge transfers on both running
+  temple routes, without enabling that writer in the browser.
 - Decodes read-only Apollo510 INFOC and active INFO0 debugger dumps locally,
   then fails closed unless every known SBL UART field matches the pogo route.
 - Provides a session console with downloadable logs.
@@ -66,8 +65,8 @@ authenticate, deeply inspect, and archive it, but deliberately does not offer
 its case component as a way to “install CFW.” The patch changes the glasses'
 Apollo application and its case component is byte-identical to stock case
 1.2.57. The stock case application cannot deliver it; SybilSight's separate
-volatile, hash-gated bridge has now completed one right-temple Apollo-main
-transfer. That writer is not yet implemented in this browser.
+volatile, hash-gated bridge has now completed Apollo-main transfers on both
+running temple routes. That writer is not yet implemented in this browser.
 
 The case write and bank-activation path is research-derived and experimental.
 It has not been physically validated by this repository on sacrificial
@@ -170,13 +169,16 @@ The webflasher implements only this reviewed read bridge. It exposes no
 arbitrary USB-to-pogo sender and no browser-side `0x52...0x55` writer.
 
 SybilSight now includes a fail-closed host for an electrically validated raw
-temple UART. Its seven offline tests pass. It validates the complete bundle,
+temple UART. Its eight offline tests pass. It validates the complete bundle,
 permits only the Apollo main component, never blindly replays `0x52` start or
-`0x53` header, retries only `0x54` data using the previous-sequence behavior,
-waits 100 ms at each 6-KiB handoff, and requires the exact package version
-after reboot. It cannot use the unmodified case console by itself.
+`0x53` header, and retries only the exact current `0x54` record. That retry is
+safe both when an accepted record's reply was lost—the previous sequence is
+idempotent—and when an explicit rejection left the expected sequence
+unchanged. The host waits 100 ms at each 6-KiB handoff and requires the exact
+package version after reboot. It cannot use the unmodified case console by
+itself.
 
-Seven experimental case-USB runs were attempted with the reviewed CFW.
+Nine experimental case-USB runs were attempted with the reviewed CFW.
 Attempts 1 through 5 ended `failed_or_uncertain`. Attempt 3 used bridge
 SHA-256
 `9945e4cd3b2ba1edb2328b5ddf6d3580443d566d333aef8e4d061f2981febecd`
@@ -202,8 +204,8 @@ Stock case firmware 1.2.57 resumed. This is useful fail-closed restoration
 evidence, but the runner correctly did not mark cleanup verified because the
 retained terminal status was `16` (host request timeout).
 
-The newest uncommitted bridge assembles to the declared 2,872 bytes with
-SHA-256
+The reviewed case-write bridge source now lives alongside the SybilSight host
+and assembles to the declared 2,872 bytes with SHA-256
 `08a08f45ac125a1dba6469234e56cacd32147d9e79203327987276d2fb182b02`.
 Attempt 6 used those exact bytes and completed the right-temple transfer:
 
@@ -221,19 +223,43 @@ provenance. Attempt 7 used the same bridge on the left route and failed closed
 at setup status 3 because the observed YHM baseline was not an allowlisted
 seated-idle state; it transmitted no firmware bytes.
 
+Attempt 8 reached the left temple with the same bridge and reviewed CFW.
+Preflight again reported firmware 2.2.6.10/hardware 5. The temple accepted
+2,733,000 of 3,539,474 Apollo-main bytes before returning explicit status 1
+for a `0x54` data record. The audit retained 2,733 as the expected next
+sequence count, zero temple-UART errors, complete baseline/selected/restored
+masks, byte-for-byte YHM restoration, and normal case firmware 1.2.57 return.
+The run remains `failed_or_uncertain` because there was no finish
+acknowledgement or postflight version.
+
+That explicit rejection exposed a safe retry case missing from the original
+host policy: a rejected record does not advance the temple's expected
+sequence, so the exact CRC-protected record can be retried. SybilSight now
+tests and permits that data-only retry alongside the existing lost-reply
+retry; start and component-header transactions remain non-replayable.
+
+Attempt 9 then completed the left-temple transfer using the same pinned bridge
+and reviewed CFW. All 3,539,474 bytes were accepted in 3,540 records with zero
+retries, the `0x55` finish acknowledgement arrived, and postflight reported
+firmware 2.2.6.10/hardware 5. The retained result recorded status zero,
+complete baseline/selected/restored masks, byte-for-byte YHM restoration, and
+normal case firmware 1.2.57 return.
+
 Accordingly, the validated scope is the reviewed Apollo main image on a
-running right temple. Left-temple transfer and application-dead recovery
-remain unproven, and this browser build still has no writer implementation.
-The console continues to mark the Apollo bootloader component **OMIT FROM
-POGO** until an independent SBL, MRAM-recovery, or SWD route is proven.
+running left or right temple. Application-dead recovery remains unproven, and
+this browser build still has no writer implementation. The console continues
+to mark the Apollo bootloader component **OMIT FROM POGO** until an
+independent SBL, MRAM-recovery, or SWD route is proven.
 
 For offline analysis, selected `EVENOTA` bundles show the exact number of
 1,000-byte `0x54` records and final sequence value for each component. The
 recovered writer grammar uses an exact 128-byte component header for `0x53`,
 CRC-16/CCITT-FALSE over each `0x54` data payload, a modulo-256 sequence, and
 6,000-byte deferred batches. The expected sequence starts at zero and accepts
-the immediately previous value as an idempotent `0x54` retry. Start and header
-are not treated as replay-safe. This calculation never contacts a temple.
+the immediately previous value as an idempotent `0x54` retry; an explicitly
+rejected current record can also be retried because the sequence did not
+advance. Start and header are not treated as replay-safe. This calculation
+never contacts a temple.
 Every displayed acknowledgement is described as parser acceptance, not proof
 of a durable write, and post-reset version confirmation remains mandatory.
 
