@@ -302,25 +302,58 @@ test("marks the Apollo bootloader as omitted from pogo OTA", () => {
   assert.match(main.commitBoundary, /LittleFS/);
   assert.equal(main.startAndHeaderReplayAllowed, false);
   assert.equal(main.dataRetryOnly, true);
-  assert.equal(main.deferredBatchSettleMs, 100);
+  assert.equal(main.deferredBatchSettleMs, 250);
+  assert.equal(main.maximumDataRetries, 5);
+  assert.equal(main.stabilityReadQueries, 1);
+  assert.equal(main.preStartSettleMs, 250);
   assert.equal(main.postflightVersionRequired, true);
 });
 
 test("records successful case-pogo transfers and enables only the guarded browser writer", () => {
   assert.equal(POGO_TRANSFER_RESEARCH.directTempleHost.offlineTestsPassed, 8);
   assert.equal(POGO_TRANSFER_RESEARCH.directTempleHost.dataRetryReasons.length, 2);
-  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 9);
+  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 20);
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.status,
-    "hardware-validated-both-running-temples",
+    "official-both-case-usb-right-ble-left",
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.currentSourceReviewGate,
-    "passed-hardware-validated-both",
+    "hardware-validated-route-phase-fail-closed-and-selected-version",
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.declaredSha256,
     POGO_TRANSFER_RESEARCH.caseUsbBridge.observedSha256,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.officialRestore.right.acceptedBytes,
+    3523396,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.officialRestore.left.outcome,
+    "success",
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.officialRestore.left.componentEndStatus,
+    8,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.interruptedStartRecovery
+      .startOrHeaderReplayAllowed,
+    false,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.interruptedStartRecovery
+      .wiredRetryPolicy,
+    "stop",
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.directTempleHost.stabilityReadQueries,
+    1,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.directTempleHost.preStartSettleMs,
+    250,
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.bestPartialTransfer.acceptedBytes,
@@ -406,7 +439,7 @@ test("records successful case-pogo transfers and enables only the guarded browse
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.hardwareAttemptsWithCurrentSource,
-    4,
+    5,
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulHardwareAttemptsWithCurrentSource,

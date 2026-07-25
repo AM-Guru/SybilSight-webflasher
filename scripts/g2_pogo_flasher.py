@@ -77,6 +77,35 @@ MAIN_RUN_BASE = 0x00438000
 MAIN_FLAG_ADDRESS = 0x007FE000
 MAIN_DATA_TYPE = 0xCB
 VERSION_RE = re.compile(r"^s200_v(\d+\.\d+\.\d+\.\d+)$")
+FINAL_RESTORE_REQUIREMENT = (
+    "After a raw-UART transfer, restore through the Case and make the traced "
+    "DEB0 bilateral reset the final temple mutation, then verify both selected "
+    "contacts and checksum-valid version liveness."
+)
+
+
+def ota_transition_recovery_guidance(command: int) -> str:
+    """Return the fail-closed operator action for a non-idempotent transition."""
+    if command == 0x52:
+        return (
+            "Do not replay START in this session or loop fresh wired attempts. "
+            "After the fixture/Case route is verified restored, issue the "
+            "bilateral DEB0 reset. If the temple still advertises, use a fresh "
+            "BLE connection to install the complete six-component hash-pinned "
+            "package, then finish with DEB0 and read-only bilateral liveness."
+        )
+    if command == 0x53:
+        return (
+            "Do not replay HEADER in this session. Preserve the audit, verify "
+            "fixture/Case route cleanup, issue the bilateral DEB0 reset, and "
+            "begin any retry as a completely fresh recovery session."
+        )
+    return (
+        "Do not replay FINISH. Preserve the audit as failed or uncertain, "
+        "restore the fixture/Case route, issue the bilateral DEB0 reset, and "
+        "use read-only liveness plus the next fresh recovery session to decide "
+        "whether the complete package must be reinstalled."
+    )
 
 
 class FlasherError(RuntimeError):
@@ -97,6 +126,19 @@ class ProtocolError(FlasherError):
 
 class DeviceRejected(FlasherError):
     """The temple returned a nonzero product-OTA status."""
+
+
+class NonIdempotentOtaError(SafetyError):
+    """A START, HEADER, or FINISH result became uncertain and must not replay."""
+
+    def __init__(self, stage: str, command: int, cause: Exception) -> None:
+        self.stage = stage
+        self.command = command
+        self.recovery_recommendation = ota_transition_recovery_guidance(command)
+        super().__init__(
+            f"{stage} (0x{command:02x}) failed and was not replayed: {cause}. "
+            f"{self.recovery_recommendation}"
+        )
 
 
 @dataclass(frozen=True)
@@ -411,18 +453,22 @@ class MainFirmwareFlasher:
         response_timeout: float = 5.0,
         finish_timeout: float = 60.0,
         data_retries: int = 2,
+        retry_backoff_seconds: float = 0.250,
         batch_settle_seconds: float = 0.100,
         sleeper: Callable[[float], None] = time.sleep,
         progress: Callable[[int, int], None] | None = None,
     ) -> None:
         if data_retries < 0:
             raise ValueError("data_retries cannot be negative")
+        if retry_backoff_seconds < 0:
+            raise ValueError("retry_backoff_seconds cannot be negative")
         if batch_settle_seconds < 0:
             raise ValueError("batch_settle_seconds cannot be negative")
         self.transport = transport
         self.response_timeout = response_timeout
         self.finish_timeout = finish_timeout
         self.data_retries = data_retries
+        self.retry_backoff_seconds = retry_backoff_seconds
         self.batch_settle_seconds = batch_settle_seconds
         self.sleeper = sleeper
         self.progress = progress
@@ -437,6 +483,17 @@ class MainFirmwareFlasher:
         frame = self.transport.transact(request, timeout)
         require_ota_ack(frame, request[0])
 
+    def _send_non_idempotent(
+        self,
+        request: bytes,
+        timeout: float,
+        stage: str,
+    ) -> None:
+        try:
+            self._send_acknowledged(request, timeout)
+        except (TransportTimeout, ProtocolError, DeviceRejected) as error:
+            raise NonIdempotentOtaError(stage, request[0], error) from error
+
     def flash_main(self, component: Component) -> FlashResult:
         validate_main_component(component)
         records = list(iter_component_data_requests(component.payload))
@@ -446,12 +503,13 @@ class MainFirmwareFlasher:
 
         # Start and header are not treated as idempotent.  An uncertain reply
         # aborts the operation rather than replaying state transitions.
-        self._send_acknowledged(
-            production_ota_start_request(), self.response_timeout
+        self._send_non_idempotent(
+            production_ota_start_request(), self.response_timeout, "START"
         )
-        self._send_acknowledged(
+        self._send_non_idempotent(
             production_ota_header_request(component.header),
             self.response_timeout,
+            "HEADER",
         )
 
         for index, request in enumerate(records):
@@ -471,7 +529,10 @@ class MainFirmwareFlasher:
                     # sequence, while an accepted record whose reply was lost
                     # accepts the immediately previous sequence again.  The
                     # exact CRC-protected 0x54 record is safe in both cases.
-                    self.sleeper(0.050)
+                    # The temple can remain busy after deferred C1 storage.
+                    # Retrying the same sequence is idempotent, but an
+                    # immediate retry only repeats the same busy window.
+                    self.sleeper(self.retry_backoff_seconds * (attempt + 1))
             payload_bytes_sent += data_length
             if self.progress is not None:
                 self.progress(index + 1, total_records)
@@ -489,8 +550,8 @@ class MainFirmwareFlasher:
         # postflight liveness alone cannot distinguish them.  Require the
         # checksum-valid zero-status 0x55 response instead of accepting a
         # reset-raced timeout as success.
-        self._send_acknowledged(
-            production_ota_finish_request(), self.finish_timeout
+        self._send_non_idempotent(
+            production_ota_finish_request(), self.finish_timeout, "FINISH"
         )
 
         return FlashResult(
@@ -797,6 +858,7 @@ def main() -> int:
         "device": args.device,
         "package": asdict(plan),
         "bootloader_component_allowed": False,
+        "required_final_restore_step": FINAL_RESTORE_REQUIREMENT,
         "outcome": "started",
     }
     try:
@@ -850,12 +912,14 @@ def main() -> int:
             interval=args.postflight_interval,
         )
         audit["postflight_version"] = asdict(postflight)
+        audit["restore_complete"] = False
         audit["outcome"] = "success"
         print(
             f"Postflight: firmware={postflight.firmware}, "
             f"hardware={postflight.hardware}"
         )
         print("Main-firmware flash completed and postflight liveness verified.")
+        print(f"Required final restore step: {FINAL_RESTORE_REQUIREMENT}")
         return_code = 0
     except (
         OSError,
@@ -864,6 +928,12 @@ def main() -> int:
     ) as error:
         audit["outcome"] = "failed_or_uncertain"
         audit["error"] = str(error)
+        if isinstance(error, NonIdempotentOtaError):
+            audit["failure_stage"] = error.stage
+            audit["failed_command"] = f"0x{error.command:02x}"
+            audit["recovery_recommendation"] = (
+                error.recovery_recommendation
+            )
         print(
             "Flash stopped; device state may be incomplete or uncertain: "
             f"{error}",

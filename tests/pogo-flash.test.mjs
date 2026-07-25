@@ -15,6 +15,7 @@ import {
   TEMPLE_FLASH_TARGETS,
   TempleRejectedError,
   assertPinnedTempleFlashCandidate,
+  classifyPogoFlashRecoveryBoundary,
   assertReviewedCfwFlashCandidate,
   crc16CcittFalse,
   decodeTempleVersion,
@@ -34,6 +35,7 @@ import { sha256Hex, writeU32LE } from "../src/lib/firmware.js";
 import {
   G2CaseSession,
   canRunFinalResetAfterFailure,
+  writePogoFlashTransactionHeader,
 } from "../src/lib/serial.js";
 
 function makeTempleFrame(payload) {
@@ -59,6 +61,24 @@ function makeBridgeResponse(sequence, captured, { status = 0, uartErrors = 0 } =
   return { header, tail };
 }
 
+test("paces the fixed transaction header across the CH340 idle boundary", async () => {
+  const writes = [];
+  const sleeps = [];
+  const header = Uint8Array.from({ length: 10 }, (_, index) => index);
+  await writePogoFlashTransactionHeader(
+    {
+      write: async (bytes) => writes.push([...bytes]),
+    },
+    header,
+    async (milliseconds) => sleeps.push(milliseconds),
+  );
+  assert.deepEqual(writes, [
+    [0, 1, 2, 3, 4],
+    [5, 6, 7, 8, 9],
+  ]);
+  assert.deepEqual(sleeps, [5]);
+});
+
 test("pins the hardware-validated volatile flash bridge", async () => {
   const payload = await getVerifiedPogoFlashBridgePayload();
   assert.equal(payload.length, POGO_FLASH_BRIDGE_BYTES);
@@ -82,7 +102,7 @@ test("matches recovered temple request and CRC vectors", () => {
 
 test("validates setup, stop-and-wait framing, and bridge response checksums", () => {
   const setup = makePogoFlashSetup("right");
-  assert.equal(Buffer.from(setup).toString("hex"), "4732465701010042005a");
+  assert.equal(Buffer.from(setup).toString("hex"), "4732465701010142005b");
   const ready = new Uint8Array([
     0x47, 0x32, 0x52, 0x44, 1, 0, 1, 0x42, 0xff, 3, 0xff, 3, 0,
   ]);
@@ -188,6 +208,36 @@ test("binds retained restoration proof to route and final host sequence", () => 
         },
       ),
     PogoFlashSafetyError,
+  );
+});
+
+test("classifies zero-byte no-frame START as the BLE fallback boundary", () => {
+  const recovery = classifyPogoFlashRecoveryBoundary(
+    new Error("no complete temple frame through Case bridge"),
+    { declaredSize: 0, acceptedSize: 0, templeTxCount: 2 },
+    "START",
+  );
+  assert.equal(
+    recovery.classification,
+    "wired_start_no_frame_zero_byte_boundary",
+  );
+  assert.equal(recovery.startOrHeaderReplayAllowed, false);
+  assert.match(recovery.recommendedNextTransport, /BLE full-package/);
+  assert.equal(
+    classifyPogoFlashRecoveryBoundary(
+      new Error("no complete temple frame through Case bridge"),
+      { declaredSize: 3532396, acceptedSize: 1000 },
+      "START",
+    ),
+    null,
+  );
+  assert.equal(
+    classifyPogoFlashRecoveryBoundary(
+      new Error("no complete temple frame through Case bridge"),
+      { declaredSize: 0, acceptedSize: 0, templeTxCount: 1 },
+      "PREFLIGHT",
+    ),
+    null,
   );
 });
 

@@ -40,6 +40,7 @@ import {
   RetryablePogoFlashError,
   PogoFlashSafetyError,
   assertPinnedTempleFlashCandidate,
+  classifyPogoFlashRecoveryBoundary,
   decodeTempleVersion,
   getVerifiedPogoFlashBridgePayload,
   makeOtaDataRequest,
@@ -69,9 +70,33 @@ const REVIEWED_CASE_ROM_COMMANDS = Object.freeze([
   0x00, 0x01, 0x02, READ_MEMORY, GO, WRITE_MEMORY, EXTENDED_ERASE,
   0x63, 0x73, 0x82, 0x92,
 ]);
+// Repeated read-only probes consumed the same short app-mode route needed by
+// START on hardware. One checksum-valid version query is the just-in-time
+// liveness gate; it is not a multi-query stability claim.
+const POGO_STABILITY_READ_QUERIES = 1;
+const POGO_STABILITY_INTERVAL_MS = 25;
 
 export function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+export async function writePogoFlashTransactionHeader(
+  bridge,
+  header,
+  sleeper = delay,
+) {
+  if (!(header instanceof Uint8Array) || header.length !== 10) {
+    throw new PogoFlashSafetyError(
+      "The Case flash bridge transaction header must be exactly 10 bytes.",
+    );
+  }
+  // The physical CH340 captured only five bytes from one 10-byte write after
+  // the former two-second pre-start idle. Independently flush both halves so the
+  // bridge either receives the complete header or times out before any temple
+  // request payload can be sent.
+  await bridge.write(header.subarray(0, 5));
+  await sleeper(5);
+  await bridge.write(header.subarray(5));
 }
 
 export function canRunFinalResetAfterFailure(routeResults) {
@@ -530,6 +555,7 @@ class CasePogoFlashTransport {
     this.retainedResult = null;
     this.caseReport = null;
     this.completedTransfer = null;
+    this.routePhaseSetupAttempts = 0;
   }
 
   async closeTransport(name) {
@@ -547,6 +573,30 @@ class CasePogoFlashTransport {
   }
 
   async open() {
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      try {
+        await this.openOnce();
+        this.routePhaseSetupAttempts = attempt;
+        return;
+      } catch (error) {
+        const routePhaseMismatch =
+          error instanceof PogoFlashSafetyError &&
+          error.message.includes(
+            "YHM baseline is not an allowlisted seated-idle state",
+          );
+        if (!routePhaseMismatch || attempt === 4) throw error;
+        this.session.log(
+          `${this.route}: Case idle phase does not match the selected mutation route; retrying before any temple transmission.`,
+          "warn",
+        );
+        this.active = false;
+        this.bridgeLaunched = false;
+        await delay(500 * attempt);
+      }
+    }
+  }
+
+  async openOnce() {
     const payload = await getVerifiedPogoFlashBridgePayload();
     const zeroProof = new Uint8Array(POGO_FLASH_PROOF.length);
     const zeroResult = new Uint8Array(POGO_FLASH_RESULT_LENGTH);
@@ -612,7 +662,7 @@ class CasePogoFlashTransport {
       parsePogoFlashReady(ready, setup);
       this.active = true;
       this.session.log(
-        `${this.route}: verified the 2,872-byte volatile writer and selected the seated route.`,
+        `${this.route}: verified the 2,912-byte volatile writer and selected the mutation-compatible Case phase.`,
       );
     } catch (error) {
       await this.closeTransport("loader");
@@ -651,7 +701,8 @@ class CasePogoFlashTransport {
     }
     this.sequence = (this.sequence + 1) & 0xff;
     try {
-      await this.bridge.write(
+      await writePogoFlashTransactionHeader(
+        this.bridge,
         makePogoFlashTransactionHeader(this.sequence, bytes.length),
       );
       const headerToken = await this.bridge.readExact(
@@ -714,7 +765,10 @@ class CasePogoFlashTransport {
   async requestExit() {
     if (!this.active || !this.bridge) return null;
     this.sequence = (this.sequence + 1) & 0xff;
-    await this.bridge.write(makePogoFlashTransactionHeader(this.sequence, 0));
+    await writePogoFlashTransactionHeader(
+      this.bridge,
+      makePogoFlashTransactionHeader(this.sequence, 0),
+    );
     const response = await this.readBridgeResponse(10000);
     if (
       response.status !== 0 ||
@@ -1433,9 +1487,12 @@ export class G2CaseSession {
     };
     let operationError = null;
     let cleanupError = null;
+    let failureStage = "setup";
 
     try {
       await transport.open();
+      result.routePhaseSetupAttempts = transport.routePhaseSetupAttempts;
+      failureStage = "PREFLIGHT";
       const preflightFrame = await transport.transact(makeTempleVersionRequest(), 8000);
       const preflight = decodeTempleVersion(preflightFrame);
       result.preflightVersion = preflight;
@@ -1451,9 +1508,45 @@ export class G2CaseSession {
         `${route}: preflight firmware=${preflight.firmware}, hardware=${preflight.hardware}.`,
       );
 
+      // Take one just-in-time liveness sample before the first non-idempotent
+      // OTA transition. Repeated probes consume the short app-mode route and
+      // do not prove that the later mutation will work.
+      for (let probe = 2; probe <= POGO_STABILITY_READ_QUERIES; probe += 1) {
+        await delay(POGO_STABILITY_INTERVAL_MS);
+        try {
+          const observed = decodeTempleVersion(
+            await transport.transact(makeTempleVersionRequest(), 8000),
+          );
+          if (
+            observed.firmware !== preflight.firmware ||
+            observed.hardware !== preflight.hardware
+          ) {
+            throw new PogoFlashSafetyError(
+              `${route}: stability query ${probe}/${POGO_STABILITY_READ_QUERIES} changed from ${preflight.firmware}/hardware ${preflight.hardware} to ${observed.firmware}/hardware ${observed.hardware}.`,
+            );
+          }
+        } catch (error) {
+          throw new PogoFlashSafetyError(
+            `${route}: stability query ${probe}/${POGO_STABILITY_READ_QUERIES} failed before any OTA command: ${error.message}`,
+          );
+        }
+      }
+      result.stabilityPreflight = {
+        outcome: "success",
+        queries: POGO_STABILITY_READ_QUERIES,
+        intervalMs: POGO_STABILITY_INTERVAL_MS,
+      };
+      this.log(
+        `${route}: completed ${POGO_STABILITY_READ_QUERIES} fresh read-only liveness query.`,
+      );
+      await delay(250);
+      transport.drainInput();
+
       // Start and header mutate OTA state and are intentionally never replayed.
+      failureStage = "START";
       const start = makeOtaStartRequest();
       requireOtaAcknowledgement(await transport.transact(start, 8000), start[0]);
+      failureStage = "HEADER";
       const header = makeOtaHeaderRequest(component.header);
       requireOtaAcknowledgement(await transport.transact(header, 8000), header[0]);
 
@@ -1462,6 +1555,7 @@ export class G2CaseSession {
       let acceptedBytes = 0;
       let retries = 0;
       for (let index = 0; index < totalRecords; index += 1) {
+        failureStage = `DATA:${index}`;
         const offset = index * 1000;
         const data = payload.subarray(offset, Math.min(offset + 1000, payload.length));
         const final = index + 1 === totalRecords;
@@ -1472,7 +1566,7 @@ export class G2CaseSession {
             requireOtaAcknowledgement(response, 0x54);
             break;
           } catch (error) {
-            if (!(error instanceof RetryablePogoFlashError) || attempt >= 2) {
+            if (!(error instanceof RetryablePogoFlashError) || attempt >= 5) {
               throw error;
             }
             retries += 1;
@@ -1481,7 +1575,7 @@ export class G2CaseSession {
               `${route}: retrying exact 0x54 record ${index + 1} after ${error.message}`,
               "warn",
             );
-            await delay(50);
+            await delay(250 * (attempt + 1));
           }
         }
         acceptedBytes += data.length;
@@ -1490,11 +1584,12 @@ export class G2CaseSession {
           `${route}: ${index + 1}/${totalRecords} main records`,
         );
         if (acceptedBytes % 6000 === 0 || final) {
-          await delay(100);
+          await delay(250);
         }
       }
 
       const finish = makeOtaFinishRequest();
+      failureStage = "FINISH";
       requireOtaAcknowledgement(await transport.transact(finish, 60000), finish[0]);
       transport.completedTransfer = {
         payloadBytes: acceptedBytes,
@@ -1512,6 +1607,7 @@ export class G2CaseSession {
       );
 
       const deadline = Date.now() + 180000;
+      failureStage = "POSTFLIGHT";
       let lastVersion = null;
       while (Date.now() < deadline) {
         await delay(2000);
@@ -1562,6 +1658,15 @@ export class G2CaseSession {
           restored: compactHex(transport.retainedResult.restored),
         };
       }
+      if (operationError) {
+        result.failureStage = failureStage;
+        const recoveryBoundary = classifyPogoFlashRecoveryBoundary(
+          operationError,
+          transport.retainedResult,
+          failureStage,
+        );
+        if (recoveryBoundary) result.recoveryBoundary = recoveryBoundary;
+      }
     }
 
     if (operationError || cleanupError) {
@@ -1601,7 +1706,7 @@ export class G2CaseSession {
       imageHardwareValidated: target.hardwareValidated,
       mainPayloadSha256: component.payloadSha256,
       bridgeSha256:
-        "08a08f45ac125a1dba6469234e56cacd32147d9e79203327987276d2fb182b02",
+        "db61f28dd3fa100d85b1a0bd5653d71582c9292b6bfd362545b42b08cbd59149",
       routes,
       bootloaderAllowed: false,
       preflightCase: null,

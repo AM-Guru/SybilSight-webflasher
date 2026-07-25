@@ -43,6 +43,7 @@ from g2_case_rom import (
 from g2_pogo_flasher import (
     FlasherError,
     MainFirmwareFlasher,
+    NonIdempotentOtaError,
     ProtocolError,
     SafetyError,
     TempleTransport,
@@ -52,11 +53,11 @@ from g2_pogo_flasher import (
 )
 
 
-BRIDGE_BYTES = 2872
+BRIDGE_BYTES = 2912
 BRIDGE_SHA256 = (
-    "08a08f45ac125a1dba6469234e56cacd32147d9e79203327987276d2fb182b02"
+    "db61f28dd3fa100d85b1a0bd5653d71582c9292b6bfd362545b42b08cbd59149"
 )
-BRIDGE_BANNER = b"G2_POGO_FLASH_BRIDGE_V1\n"
+BRIDGE_BANNER = b"G2_POGO_FLASH_BRIDGE_V3\n"
 REVIEWED_CFW_SHA256 = (
     "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0"
 )
@@ -80,6 +81,14 @@ FINAL_RESET_CONFIRMATION = re.compile(
 )
 POST_RESET_TELEMETRY_ATTEMPTS = 3
 POST_RESET_REOPEN_DELAY_SECONDS = 0.5
+# Repeated read-only probes consume the same short app-mode route needed by the
+# first OTA state transition. Hardware reproduced a missing START after a
+# 10-query gate, then acknowledged the identical START after one fresh version
+# query. Use the checksum-valid query as a just-in-time liveness gate; repeated
+# probes are diagnostic load, not evidence that the later mutation will work.
+FLASH_STABILITY_QUERIES = 1
+FLASH_STABILITY_INTERVAL_SECONDS = 0.025
+FLASH_PRE_START_SETTLE_SECONDS = 0.250
 
 RESULT_ADDRESS = 0x20011A00
 RESULT_LENGTH = 128
@@ -138,13 +147,14 @@ def parse_case_restore_evidence(
         raise SafetyError(
             f"case firmware is {version}, expected {REVIEWED_CASE_VERSION}"
         )
-    telemetry = re.findall(
-        rb"GLS_L:(\d+), GLS_R:(\d+)[^\r\n]*otaGls:(\d+)",
+    presence_telemetry = re.findall(
+        rb"GLS_L:(\d+), GLS_R:(\d+)",
         captured,
     )
-    if not telemetry:
+    if not presence_telemetry:
         raise SafetyError("fresh case temple-presence telemetry was not observed")
-    left_raw, right_raw, ota_raw = telemetry[-1]
+    left_raw, right_raw = presence_telemetry[-1]
+    ota_telemetry = re.findall(rb"otaGls:(\d+)", captured)
     reset_confirmed = bool(FINAL_RESET_CONFIRMATION.search(captured))
     if require_reset_confirmation and not reset_confirmed:
         raise SafetyError(
@@ -154,7 +164,7 @@ def parse_case_restore_evidence(
         "case_version": version,
         "left_present": bool(int(left_raw)),
         "right_present": bool(int(right_raw)),
-        "ota_glasses": int(ota_raw),
+        "ota_glasses": int(ota_telemetry[-1]) if ota_telemetry else None,
         "reset_command": FINAL_RESET_COMMAND.decode("ascii").strip(),
         "reset_confirmed": reset_confirmed,
     }
@@ -264,50 +274,45 @@ def reset_both_temples_and_recheck(device: str) -> dict[str, object]:
 
 
 BRIDGE_BASE64 = (
-    "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"
+    "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"
 )
 
 
@@ -334,11 +339,18 @@ def build_bridge() -> bytes:
 class CaseSramTempleTransport(TempleTransport):
     """Main-only temple transport through a volatile case SRAM bridge."""
 
-    def __init__(self, device: str, route: str) -> None:
+    def __init__(
+        self,
+        device: str,
+        route: str,
+        *,
+        require_route_phase: bool = False,
+    ) -> None:
         if route not in ("left", "right"):
             raise ValueError("route must be left or right")
         self.device = device
         self.route = route
+        self.require_route_phase = require_route_phase
         self.payload = build_bridge()
         self.port: serial.Serial | None = None
         self.sequence = 0
@@ -414,7 +426,7 @@ class CaseSramTempleTransport(TempleTransport):
                 (
                     1,
                     0 if self.route == "left" else 1,
-                    0,
+                    int(self.require_route_phase),
                     0x42,
                     0,
                 )
@@ -483,6 +495,18 @@ class CaseSramTempleTransport(TempleTransport):
                 f"case USB write accepted {written}/{len(data)} bytes for {what}"
             )
 
+    def _write_host_header(self, data: bytes) -> None:
+        """Pace the fixed header across the CH340 after an idle transition."""
+        if len(data) != 10:
+            raise ProtocolError("case bridge transaction header must be 10 bytes")
+        # Hardware evidence captured only the first five bytes of a 10-byte
+        # header after the former two-second pre-start idle. Two independently flushed
+        # five-byte writes avoid that silent CH340 truncation while staying well
+        # inside the bridge's bounded per-byte receive deadline.
+        self._write_host_bytes(data[:5], "transaction header prefix")
+        time.sleep(0.005)
+        self._write_host_bytes(data[5:], "transaction header suffix")
+
     def _read_exact_until(
         self, count: int, deadline: float, what: str
     ) -> bytes:
@@ -544,7 +568,7 @@ class CaseSramTempleTransport(TempleTransport):
         header.extend(struct.pack("<H", len(request)))
         header.append(0)
         header.append(sum(header) & 0xFF)
-        self._write_host_bytes(bytes(header), "transaction header")
+        self._write_host_header(bytes(header))
         deadline = time.monotonic() + 8.0
         if self._read_exact_until(
             1, deadline, "transaction-header flow-control token"
@@ -611,8 +635,7 @@ class CaseSramTempleTransport(TempleTransport):
         header.extend((1, self.sequence))
         header.extend(b"\0\0\0")
         header.append(sum(header) & 0xFF)
-        self.port.write(header)
-        self.port.flush()
+        self._write_host_header(bytes(header))
         status, errors, captured = self._read_response(10.0)
         if status != 0 or errors != 0 or len(captured) != 10:
             raise ProtocolError(
@@ -836,6 +859,69 @@ def can_run_final_reset_after_failure(
         and result.get("case_application_version") == REVIEWED_CASE_VERSION
         for result in route_results
     )
+
+
+def classify_zero_byte_start_boundary(
+    error: Exception,
+    retained_result: dict[str, object],
+) -> dict[str, object] | None:
+    """Recognize the interrupted-session START failure proven on 2026-07-25."""
+    if (
+        not isinstance(error, NonIdempotentOtaError)
+        or error.command != 0x52
+        or "no complete temple frame" not in str(error)
+        or retained_result.get("declared_size") != 0
+        or retained_result.get("accepted_size") != 0
+    ):
+        return None
+    return {
+        "classification": "wired_start_no_frame_zero_byte_boundary",
+        "firmware_bytes_accepted": 0,
+        "start_or_header_replay_allowed": False,
+        "recommended_next_transport": (
+            "fresh BLE full-package session if the temple advertises"
+        ),
+        "recovery_recommendation": error.recovery_recommendation,
+    }
+
+
+def verify_route_stability(
+    flasher: MainFirmwareFlasher,
+    expected_version: str,
+    expected_hardware: int,
+    *,
+    queries: int = FLASH_STABILITY_QUERIES,
+    interval_seconds: float = FLASH_STABILITY_INTERVAL_SECONDS,
+    sleeper=time.sleep,
+) -> dict[str, object]:
+    """Account for the fresh preflight reply and optionally repeat it."""
+    if queries < 1:
+        raise ValueError("liveness preflight requires at least one query")
+    for index in range(2, queries + 1):
+        if interval_seconds:
+            sleeper(interval_seconds)
+        try:
+            observed = flasher.read_version()
+        except FlasherError as error:
+            raise ProtocolError(
+                f"stability query {index}/{queries}: {error}"
+            ) from error
+        if (
+            observed.firmware != expected_version
+            or observed.hardware != expected_hardware
+        ):
+            raise SafetyError(
+                f"stability query {index}/{queries}: expected "
+                f"{expected_version}/hardware {expected_hardware}, observed "
+                f"{observed.firmware}/hardware {observed.hardware}"
+            )
+    return {
+        "queries": queries,
+        "interval_ms": interval_seconds * 1_000.0,
+        "firmware": expected_version,
+        "hardware": expected_hardware,
+        "outcome": "success",
+    }
 
 
 def _write_audit(path: Path, audit: dict[str, object]) -> None:
@@ -1191,14 +1277,43 @@ def main() -> int:
             route_error: Exception | None = None
             cleanup_error: Exception | None = None
             try:
-                print(f"{route}: loading verified volatile case bridge", flush=True)
-                transport = CaseSramTempleTransport(args.device, route)
+                for phase_attempt in range(1, 5):
+                    print(
+                        f"{route}: loading verified volatile case bridge "
+                        f"(route-phase attempt {phase_attempt}/4)",
+                        flush=True,
+                    )
+                    try:
+                        transport = CaseSramTempleTransport(
+                            args.device,
+                            route,
+                            require_route_phase=True,
+                        )
+                        route_result["route_phase_setup_attempts"] = (
+                            phase_attempt
+                        )
+                        break
+                    except SafetyError as error:
+                        if (
+                            "bridge setup status 3:" not in str(error)
+                            or phase_attempt == 4
+                        ):
+                            raise
+                        print(
+                            f"{route}: Case idle phase does not match the "
+                            "selected mutation route; retrying before any "
+                            "temple transmission",
+                            flush=True,
+                        )
+                        time.sleep(0.5 * phase_attempt)
+                assert transport is not None
                 flasher = MainFirmwareFlasher(
                     transport,
                     response_timeout=8.0,
                     finish_timeout=60.0,
-                    data_retries=2,
-                    batch_settle_seconds=0.100,
+                    data_retries=5,
+                    retry_backoff_seconds=0.250,
+                    batch_settle_seconds=0.250,
                     progress=_progress(route),
                 )
                 current = flasher.read_version()
@@ -1219,6 +1334,18 @@ def main() -> int:
                         f"{route}: expected hardware 5, "
                         f"observed {current.hardware}"
                     )
+                route_result["stability_preflight"] = verify_route_stability(
+                    flasher,
+                    current.firmware,
+                    current.hardware,
+                )
+                print(
+                    f"{route}: completed {FLASH_STABILITY_QUERIES} "
+                    "consecutive read-only stability queries",
+                    flush=True,
+                )
+                time.sleep(FLASH_PRE_START_SETTLE_SECONDS)
+                transport.drain_input()
                 print(
                     f"{route}: starting reviewed {image_kind} "
                     "Apollo-main transfer; "
@@ -1281,6 +1408,20 @@ def main() -> int:
                 route_result["outcome"] = "failed_or_uncertain"
                 if route_error is not None:
                     route_result["error"] = str(route_error)
+                    if isinstance(route_error, NonIdempotentOtaError):
+                        route_result["failure_stage"] = route_error.stage
+                        route_result["failed_command"] = (
+                            f"0x{route_error.command:02x}"
+                        )
+                        route_result["recovery_recommendation"] = (
+                            route_error.recovery_recommendation
+                        )
+                    recovery_boundary = classify_zero_byte_start_boundary(
+                        route_error,
+                        route_result.get("retained_result", {}),
+                    )
+                    if recovery_boundary is not None:
+                        route_result["recovery_boundary"] = recovery_boundary
                 if cleanup_error is not None:
                     route_result["cleanup_error"] = str(cleanup_error)
                 cast_results = audit["route_results"]
@@ -1330,6 +1471,15 @@ def main() -> int:
         audit["error"] = str(error)
         route_results = audit["route_results"]
         assert isinstance(route_results, list)
+        for route_result in reversed(route_results):
+            if "recovery_boundary" in route_result:
+                audit["recovery_boundary"] = route_result["recovery_boundary"]
+                break
+            if "recovery_recommendation" in route_result:
+                audit["recovery_recommendation"] = (
+                    route_result["recovery_recommendation"]
+                )
+                break
         if (
             audit["final_reset_and_liveness"] is None
             and can_run_final_reset_after_failure(route_results)

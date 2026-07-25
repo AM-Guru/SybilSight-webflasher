@@ -48,8 +48,8 @@ Production deployment:
 - Computes the recovered `0x52...0x55` pogo OTA record plan for every
   component in a selected official or reviewed-CFW bundle without emitting
   any OTA command, and explicitly marks the Apollo bootloader as omitted.
-- Transfers only the exact reviewed CFW Apollo-main payload for installation
-  on either or both running temples through the hardware-validated volatile
+- Transfers only the exact reviewed CFW or pinned official Apollo-main payload
+  to a selected running temple through the hardware-validated volatile
   case-USB bridge.
   The browser requires fresh presence telemetry, independent bundle/main/
   bridge trust pins, explicit risk confirmations, exact per-record replies,
@@ -186,7 +186,7 @@ stock case firmware 1.2.57 resumed normally. A non-idle charging-route image
 was also physically observed to fail closed before transmission.
 
 The webflasher keeps this fixed read bridge for diagnostics and separately
-embeds the exact reviewed 2,872-byte write bridge. Neither path is an
+embeds the exact reviewed 2,912-byte V3 write bridge. Neither path is an
 arbitrary USB-to-pogo sender. The writer's SRAM code permits only the version
 query and Apollo-main `0x52...0x55` state machine, while the browser
 independently permits only the complete reviewed CFW and its pinned main
@@ -197,9 +197,33 @@ Apollo main component, never blindly replays `0x52` start or `0x53` header,
 and retries only the exact current `0x54` record. That retry is safe both when
 an accepted record's reply was lost—the previous sequence is idempotent—and
 when an explicit rejection left the expected sequence unchanged. The host
-waits 100 ms at each 6-KiB handoff and requires both the checksum-valid
-zero-status `0x55` reply and postflight liveness. The stock case console
+now requires one fresh checksum-valid read-only version reply immediately
+before the first OTA command, waits 250 ms before the non-idempotent start,
+retries a data record at most five times with 250-ms linear backoff, waits
+250 ms at each 6-KiB handoff, and requires both the checksum-valid zero-status
+`0x55` reply and postflight liveness. The stock case console
 cannot do this without the temporary SRAM bridge.
+
+The first 100-query gate was retired after a fresh hardware comparison showed
+the live left route fail at query 52 and the already verified-stock right
+route fail at query 53, both with zero UART error flags. Slowing the left probe
+to 250 ms moved the failure to query 15, showing an elapsed app-mode route
+window rather than a left-contact-specific query count. A later controlled
+session then reproduced a missing START after the replacement 10-query gate,
+while the identical START was acknowledged after one fresh version query.
+Repeated probes were therefore consuming the route they were intended to
+validate. The replacement is a single just-in-time checksum-valid liveness
+query.
+
+The first Bluetooth-off left restore iteration then exposed a separate CH340
+idle-boundary defect before any OTA payload reached the temple. Retained bridge
+state showed `ota_state=0`, zero declared/accepted bytes, and a host-header
+timeout after exactly five of ten bytes. Both the Python and browser writers
+therefore flush transaction headers as two paced five-byte writes; payload
+flow control and all non-idempotent replay prohibitions remain unchanged. A
+read-only transition then proved that the former two-second drain outlived the
+selected app-mode route, while 250 ms retained a checksum-valid reply. The
+pre-start drain is therefore 250 ms.
 
 Nine experimental case-USB runs were attempted with the reviewed CFW.
 Attempts 1 through 5 ended `failed_or_uncertain`. Attempt 3 used bridge
@@ -227,9 +251,14 @@ Stock case firmware 1.2.57 resumed. This is useful fail-closed restoration
 evidence, but the runner correctly did not mark cleanup verified because the
 retained terminal status was `16` (host request timeout).
 
-The reviewed case-write bridge source now lives alongside the SybilSight host
-and assembles to the declared 2,872 bytes with SHA-256
-`08a08f45ac125a1dba6469234e56cacd32147d9e79203327987276d2fb182b02`.
+The reviewed case-write bridge source now lives alongside the SybilSight host.
+Its V3 build gives the allowlisted START, HEADER, and FINISH controls a longer
+bounded temple-response capture window, retaining the short window for DATA
+and read-only requests, and rejects a mutating setup when the Case idle-route
+phase does not match the selected temple. It assembles to the declared 2,912
+bytes with
+SHA-256
+`db61f28dd3fa100d85b1a0bd5653d71582c9292b6bfd362545b42b08cbd59149`.
 Attempt 6 used those exact bytes and completed the right-temple transfer:
 
 - the reviewed CFW bundle SHA-256 and main-payload SHA-256 were pinned;
@@ -277,11 +306,29 @@ checksum-valid left version reply decoded as 2.2.6.10/hardware 5, and the user
 confirmed both displays working. That recovery sent no firmware bytes, so it
 validates reset-and-liveness recovery—not an official-image transfer.
 
-Accordingly, the validated write scope is the reviewed Apollo main image on a
-running left or right temple. Stock images remain hash-pinned but do not yet
-have completed case-USB transfer evidence. The guarded browser and Python
-implementations expose that boundary and now require the validated final
-dual-reset/contact/version phase. Application-dead recovery remains unproven.
+The subsequent 2026-07-25 rollback incident produced the first completed
+case-USB official-image restore: the right temple accepted all 3,524 records
+and 3,523,396 pinned stock bytes, returned firmware 2.2.6.10/hardware 5, and
+the Case restored its YHM baseline byte-for-byte. The left data path became
+intermittent despite `GLS_L=1` and normal charging voltage. It accepted 85,000
+bytes on one attempt, then later read-only sessions lost complete frames at
+queries 5, 41, and 81 with zero UART error flags. Presence/charging therefore
+does not prove a reliable pogo data contact.
+
+The browser and Python implementations now parse `GLS_L`/`GLS_R` from the
+Case's `A3` line even when `otaGls` is absent (`otaGls` is reported separately
+on `A4` by the tested Case), enforce the just-in-time liveness query before any
+OTA mutation, and retain the validated final dual-reset/contact/version phase.
+Case USB completed the pinned official Apollo-main transfer on the right. The
+left product-test path remained unreliable after its interrupted 85,000-byte
+session even with phone Bluetooth disabled: multiple fresh sessions sent START
+but accepted zero header/data bytes. A fresh local BLE connection using the
+reviewed upstream `g2flash.py` then completed all six pinned official
+components: 1,053 status-zero block ACKs, six END status-8 (`UPDATING`)
+verifications, zero
+resends, and all 861 Apollo-main blocks. The prescribed final `DEB0` reset
+subsequently returned checksum-valid 2.2.6.10/hardware-5 replies from both
+temples. Application-dead recovery remains unproven.
 Both continue to mark the Apollo bootloader component **OMIT FROM POGO** until
 an independent SBL, MRAM-recovery, or SWD route is proven.
 
@@ -378,8 +425,8 @@ The webflasher uses only the read-only factory commands:
 | --- | --- |
 | `DEA0` | Case model and firmware version |
 | `DEA2` | Eight-byte factory identifier |
-| `DEA3` | Battery, lid, USB, glasses-presence, and temperature telemetry |
-| `DEA4` | Scalar case state |
+| `DEA3` | Battery, lid, USB, glasses-presence, and temperature telemetry; the tested Case omits `otaGls` here |
+| `DEA4` | Scalar case state plus asynchronous telemetry containing `otaGls` |
 
 Analysis exposes only those read queries. The separate, user-invoked glasses
 check exposes `DEB0`, a traced reversible hardware reset of both temples; no
@@ -421,19 +468,33 @@ exercised by this repository on connected G2 hardware.
 
 ### 4. Guarded running-temple CFW writer
 
-For the exact reviewed CFW only, the webflasher loads the separately pinned
-2,872-byte bridge at `0x20010000`. It first requires case firmware 1.2.57,
+For the exact reviewed CFW or official recovery package, the webflasher loads
+the separately pinned 2,912-byte V3 bridge at `0x20010000`. It first requires
+case firmware 1.2.57,
 fresh seated-route telemetry, the complete CFW bundle SHA-256, the Apollo-main
 payload SHA-256, hardware revision 5, and explicit user confirmations.
 
 The host uses 32-byte stop-and-wait USB chunks, never retries start or header,
-retries only the identical CRC-protected data record up to two times, and
-settles for 100 ms at every 6-KiB parser handoff. Success additionally
+retries only the identical CRC-protected data record up to five times with
+linear backoff, and settles for 250 ms at every 6-KiB parser handoff. V3 also
+rejects a mutating setup before temple transmission when the Case idle-route
+phase does not match the selected side; only that pre-transmission setup may
+be retried with a fresh volatile bridge. Success additionally
 requires the exact `0x55` acknowledgement and a checksum-valid postflight
 version. It then exits the bridge, binds the retained proof to the route and
 final host sequence, verifies all ten YHM registers were restored
 byte-for-byte with zero UART errors, clears and rereads the volatile evidence,
 and requires the normal case 1.2.57 banner.
+
+If a running temple has an interrupted product-test session and repeated fresh
+`0x52` START requests receive no frame while accepting zero header/data bytes,
+stop retrying that state machine. Restore the Case/YHM state, issue the
+bilateral reset, and prefer a fresh BLE full-component session when the arm
+advertises. The July 25 left recovery established this fallback with the exact
+pinned stock package. Browser and Python audits now label this exact signature
+`wired_start_no_frame_zero_byte_boundary`, record that START/HEADER replay is
+forbidden, and retain the fresh-BLE recommendation in the downloadable result.
+The browser does not itself perform that BLE session.
 
 Any missing transaction or cleanup proof is reported as
 `failed_or_uncertain`. The next selected route is not attempted. No bridge
@@ -670,6 +731,22 @@ python3 scripts/g2_case_pogo_flasher.py flash-reviewed-cfw \
   --log /path/to/g2-cfw-flash-audit.json
 ```
 
+To restore the exact pinned official `2.2.6.10` Apollo main on a selected
+running route:
+
+```bash
+python3 scripts/g2_case_pogo_flasher.py flash-reviewed-official \
+  /path/to/g2-2.2.6.10-official.bin \
+  --device /dev/cu.usbserial-XXXX \
+  --routes right \
+  --glasses-seated-confirmed \
+  --execute-main-ota \
+  --accept-single-slot-risk \
+  --confirm-image-sha256 \
+  f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa \
+  --log /path/to/g2-official-flash-audit.json
+```
+
 The tool rechecks case 1.2.57 and fresh selected-route presence before loading
 the writer. It independently verifies the bridge, complete bundle, and main
 payload hashes, every SRAM write, hardware revision 5, every OTA reply, final
@@ -680,7 +757,10 @@ normal case return. Any missing proof is failure or uncertain state.
 independently validated raw 1-Mbaud temple UART. Do not point that direct-UART
 tool at the stock case CH340; use `g2_case_pogo_flasher.py` for the retail
 case USB connection. Neither path backs up Apollo MRAM or recovers a temple
-whose application/UART task is already dead.
+whose application/UART task is already dead. The raw-UART tool cannot issue
+the Case reset: after a successful raw transfer, run the Case wrapper's
+`reset-both-temples` command so bilateral `DEB0` remains the final mutation
+and both routes receive read-only liveness verification.
 
 ## Firmware archive
 

@@ -1926,7 +1926,11 @@ function App() {
                   allowlist; requires finish and post-reboot replies; restores all
                   ten YHM route registers; confirms Case firmware 1.2.57 returns;
                   then makes the traced dual-temple reset the final temple mutation
-                  and verifies contacts plus checksum-valid version liveness.
+                  and verifies contacts plus checksum-valid version liveness. If
+                  START returns no frame with zero declared/accepted bytes, the
+                  audit stops wired retries and points to the proven fresh-BLE
+                  full-package fallback; this Web Serial tool does not perform
+                  that BLE transfer.
                 </p>
               </div>
               <StatusPill tone={firmware?.templeFlashEligible ? "success" : "quiet"}>
@@ -2059,6 +2063,10 @@ function App() {
                   <strong>DEB0 reset · contacts · version liveness</strong>
                 </div>
                 <div>
+                  <span>PROVEN FALLBACK FROM WIRED</span>
+                  <strong>Fresh BLE · all 6 stock components · 1,053 ACKs</strong>
+                </div>
+                <div>
                   <span>EXCLUDED</span>
                   <strong>Apollo bootloader + all peripheral components</strong>
                 </div>
@@ -2091,6 +2099,17 @@ function App() {
                       ? " · B0 reset: confirmed"
                       : ""}
                   </span>
+                  {templeFlashAudit.routeResults
+                    .find((item) => item.recoveryBoundary)
+                    ?.recoveryBoundary?.recoveryRecommendation ? (
+                      <span>
+                        {
+                          templeFlashAudit.routeResults.find(
+                            (item) => item.recoveryBoundary,
+                          ).recoveryBoundary.recoveryRecommendation
+                        }
+                      </span>
+                    ) : null}
                 </div>
                 <Button
                   tone="ghost"
@@ -2127,8 +2146,10 @@ function App() {
                 B0 reset, renewed contact presence, and post-reset version
                 liveness required on every selected route. The recovery-session
                 reset revived a nonresponsive left application/display without
-                sending firmware bytes. Only the reviewed CFW main has confirmed
-                left- and right-temple transfers on hardware.
+                sending firmware bytes. The reviewed CFW main has confirmed wired
+                left- and right-temple transfers. Stock is now proven by a complete
+                wired right-main restore and a complete fresh-BLE six-component
+                left restore; the browser remains a wired, main-only writer.
               </p>
             </div>
             <Button
@@ -2290,7 +2311,7 @@ function App() {
               <div>
                 <span>CASE-USB ATTEMPTS</span>
                 <strong>
-                  {POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts} · 2 complete
+                  {POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts} · 3 complete wired
                 </strong>
               </div>
               <div>
@@ -2308,6 +2329,15 @@ function App() {
                   {POGO_TRANSFER_RESEARCH.caseUsbBridge.hardwareAttemptsWithCurrentSource}
                   {" hardware runs · "}
                   {POGO_TRANSFER_RESEARCH.caseUsbBridge.observedBytes.toLocaleString()} B
+                </strong>
+              </div>
+              <div>
+                <span>OFFICIAL LEFT FALLBACK</span>
+                <strong>
+                  {POGO_TRANSFER_RESEARCH.caseUsbBridge.officialRestore.left.blockAcks.toLocaleString()}
+                  {" BLE ACKs · "}
+                  {POGO_TRANSFER_RESEARCH.caseUsbBridge.officialRestore.left.fullPackageComponents}
+                  {" components"}
                 </strong>
               </div>
             </div>
@@ -2333,7 +2363,13 @@ function App() {
               browser port preserves those same gates. A later recovery session found
               GLS_L=0/GLS_R=1 with no left application reply; the traced dual-route reset
               restored both contacts, a checksum-valid left 2.2.6.10/hardware-5 reply,
-              and both displays without transmitting firmware. Restore audits therefore
+              and both displays without transmitting firmware. A later interrupted
+              85,000-byte official left run left the wired product-test service in a state
+              where fresh START requests returned no frame and retained zero declared and
+              accepted bytes. That signature now stops wired retries. A fresh BLE session
+              then installed all six pinned stock components with 1,053 block ACKs, six
+              END status-8 verifications, zero resends, and all 861 main blocks before the
+              final bilateral reset verified both temples. Restore audits therefore
               require that reset and liveness phase last. Until the Web Serial write path
               receives an independent hardware run, retain the downloaded audit and treat
               any interrupted result as failed or uncertain.

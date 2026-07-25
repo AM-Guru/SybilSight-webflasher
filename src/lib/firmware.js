@@ -48,12 +48,16 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
       "lost reply after an accepted record",
       "explicit record rejection without sequence advance",
     ]),
-    deferredBatchSettleMs: 100,
+    deferredBatchSettleMs: 250,
+    maximumDataRetries: 5,
+    retryBackoffMs: Object.freeze([250, 500, 750, 1000, 1250]),
+    stabilityReadQueries: 1,
+    preStartSettleMs: 250,
     postflightVersionRequired: true,
   }),
   caseUsbBridge: Object.freeze({
-    status: "hardware-validated-both-running-temples",
-    attempts: 9,
+    status: "official-both-case-usb-right-ble-left",
+    attempts: 20,
     attemptedBridgeSha256: Object.freeze([
       "6780d7ba8bf9a6539719dda4111c4fbaab706c74c16cda1e41751616f69109b4",
       "82ad4f81ab3ad1ab4a27185e845811722417a19f546075e1f8d488a2ab3ee264",
@@ -64,9 +68,54 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
       "08a08f45ac125a1dba6469234e56cacd32147d9e79203327987276d2fb182b02",
       "08a08f45ac125a1dba6469234e56cacd32147d9e79203327987276d2fb182b02",
       "08a08f45ac125a1dba6469234e56cacd32147d9e79203327987276d2fb182b02",
+      "050c8116a1e074ec1763989174cbc109c4ffe57996de9ba0b9ecf4ced8cb5a5a",
+      "db61f28dd3fa100d85b1a0bd5653d71582c9292b6bfd362545b42b08cbd59149",
     ]),
     validationBoundary:
-      "Attempts 6 and 9 completed and verified the reviewed CFW Apollo-main transfer on the right and left running temples respectively, including finish acknowledgement, postflight version, route restoration, and Case-app return.",
+      "Attempts 6 and 9 completed the reviewed CFW Apollo-main transfer on the right and left running temples. Case USB completed the pinned official Apollo-main transfer on the right. After an interrupted 85,000-byte wired left transfer left product-test START unreliable, a fresh upstream BLE session completed all six pinned official left components with 1,053 status-zero block ACKs, six verified END results, and zero resends.",
+    officialRestore: Object.freeze({
+      packageSha256:
+        "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa",
+      mainSha256:
+        "36c5b0e499a68ac2493a497bdab9740fd3e7027730c26a9094eca47268a27863",
+      right: Object.freeze({
+        acceptedBytes: 3523396,
+        recordsSent: 3524,
+        retries: 0,
+        postflightVersion: "2.2.6.10",
+        caseRestoreVerified: true,
+      }),
+      left: Object.freeze({
+        outcome: "success",
+        transport: "fresh local BLE via reviewed jimrandomh/g2flash.py",
+        fullPackageComponents: 6,
+        blockAcks: 1053,
+        componentEndVerifications: 6,
+        componentEndStatus: 8,
+        blockResends: 0,
+        mainBytes: 3523396,
+        mainBlocks: 861,
+        elapsedSeconds: 468,
+        postResetVersion: "2.2.6.10",
+        postResetHardware: 5,
+        finalBilateralResetVerified: true,
+        priorWiredAcceptedBytesBeforeFailure: 85000,
+        firstReviewedCfwDifferenceOffset: 41642,
+      }),
+    }),
+    dataContactFinding:
+      "GLS_L/GLS_R presence and charging voltage do not prove a live pogo data path. Repeated read-only probes consume the short app-mode route: hardware lost START after a 10-query gate but acknowledged the identical START after one fresh checksum-valid version query, so use that single query immediately before OTA.",
+    interruptedStartRecovery: Object.freeze({
+      classification: "wired_start_no_frame_zero_byte_boundary",
+      signature:
+        "A fresh route returns a checksum-valid version, then 0x52 START returns no frame while retained declared and accepted sizes remain zero.",
+      startOrHeaderReplayAllowed: false,
+      wiredRetryPolicy: "stop",
+      fallback:
+        "After verified Case/YHM cleanup and bilateral DEB0, use a fresh BLE full-package session if the temple advertises; finish with bilateral DEB0 and read-only liveness.",
+      provenLeftResult:
+        "Six pinned official components, 1,053 status-zero block ACKs, six END status-8 (UPDATING) verifications, zero resends, then bilateral 2.2.6.10/hardware-5 liveness.",
+    }),
     bestPartialTransfer: Object.freeze({
       route: "right",
       preflightFirmware: "2.2.6.10",
@@ -179,14 +228,15 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
       caseRestoreVerified: true,
       caseApplicationVersion: "1.2.57",
     }),
-    currentSourceReviewGate: "passed-hardware-validated-both",
-    declaredBytes: 2872,
+    currentSourceReviewGate:
+      "hardware-validated-route-phase-fail-closed-and-selected-version",
+    declaredBytes: 2912,
     declaredSha256:
-      "08a08f45ac125a1dba6469234e56cacd32147d9e79203327987276d2fb182b02",
-    observedBytes: 2872,
+      "db61f28dd3fa100d85b1a0bd5653d71582c9292b6bfd362545b42b08cbd59149",
+    observedBytes: 2912,
     observedSha256:
-      "08a08f45ac125a1dba6469234e56cacd32147d9e79203327987276d2fb182b02",
-    hardwareAttemptsWithCurrentSource: 4,
+      "db61f28dd3fa100d85b1a0bd5653d71582c9292b6bfd362545b42b08cbd59149",
+    hardwareAttemptsWithCurrentSource: 5,
     successfulHardwareAttemptsWithCurrentSource: 2,
     postRestoreReset: Object.freeze({
       status: "hardware-validated-revived-left-temple",
@@ -362,7 +412,11 @@ export function describePogoOtaComponent(typeId, payloadSize) {
         "Parser acceptance only; post-reset liveness and version verification remain mandatory.",
       startAndHeaderReplayAllowed: false,
       dataRetryOnly: true,
-      deferredBatchSettleMs: 100,
+      deferredBatchSettleMs: 250,
+      maximumDataRetries: 5,
+      retryBackoffMs: [250, 500, 750, 1000, 1250],
+      stabilityReadQueries: 1,
+      preStartSettleMs: 250,
       postflightVersionRequired: true,
     };
   }

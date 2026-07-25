@@ -27,13 +27,16 @@ from g2_case_pogo_flasher import (  # noqa: E402
     build_parser,
     build_bridge,
     can_run_final_reset_after_failure,
+    classify_zero_byte_start_boundary,
     parse_case_restore_evidence,
     reset_both_temples_and_recheck,
+    verify_route_stability,
 )
 import g2_case_pogo_flasher as case_flasher  # noqa: E402
 from g2_pogo_flasher import (  # noqa: E402
     DeviceRejected,
     MainFirmwareFlasher,
+    NonIdempotentOtaError,
     ProtocolError,
     SafetyError,
     TransportTimeout,
@@ -277,6 +280,83 @@ class G2FlashToolTests(unittest.TestCase):
                 require_reset_confirmation=True,
             )
 
+    def test_case_presence_accepts_a3_telemetry_without_a4_ota_field(self) -> None:
+        report = parse_case_restore_evidence(
+            b"****** B200 1.2.57 ABC******\r\n"
+            b"****** B200 vol:4166 pct:100, open:1, usb:1, cur:-19, "
+            b"GLS_L:1, GLS_R:1 temp:350\r\n",
+            require_reset_confirmation=False,
+        )
+        self.assertTrue(report["left_present"])
+        self.assertTrue(report["right_present"])
+        self.assertIsNone(report["ota_glasses"])
+
+    def test_flash_stability_preflight_is_read_only_and_consecutive(self) -> None:
+        self.assertEqual(case_flasher.FLASH_STABILITY_QUERIES, 1)
+        self.assertEqual(case_flasher.FLASH_PRE_START_SETTLE_SECONDS, 0.250)
+
+        class FakeFlasher:
+            def __init__(self) -> None:
+                self.queries = 0
+
+            def read_version(self):
+                self.queries += 1
+                return type(
+                    "Version",
+                    (),
+                    {"firmware": "2.2.6.10", "hardware": 5},
+                )()
+
+        flasher = FakeFlasher()
+        sleeps: list[float] = []
+        report = verify_route_stability(
+            flasher,
+            "2.2.6.10",
+            5,
+            queries=4,
+            interval_seconds=0.025,
+            sleeper=sleeps.append,
+        )
+        self.assertEqual(flasher.queries, 3)
+        self.assertEqual(sleeps, [0.025, 0.025, 0.025])
+        self.assertEqual(report["outcome"], "success")
+        flasher.queries = 0
+        sleeps.clear()
+        report = verify_route_stability(
+            flasher,
+            "2.2.6.10",
+            5,
+            queries=1,
+            interval_seconds=0.025,
+            sleeper=sleeps.append,
+        )
+        self.assertEqual(flasher.queries, 0)
+        self.assertEqual(sleeps, [])
+        self.assertEqual(report["queries"], 1)
+
+    def test_case_bridge_transaction_header_is_split_after_idle(self) -> None:
+        transport = case_flasher.CaseSramTempleTransport.__new__(
+            case_flasher.CaseSramTempleTransport
+        )
+
+        class FakePort:
+            def __init__(self) -> None:
+                self.writes: list[bytes] = []
+
+            def write(self, data: bytes) -> int:
+                self.writes.append(data)
+                return len(data)
+
+            def flush(self) -> None:
+                return None
+
+        transport.port = FakePort()
+        header = bytes(range(10))
+        with patch.object(case_flasher.time, "sleep") as sleep:
+            transport._write_host_header(header)
+        self.assertEqual(transport.port.writes, [header[:5], header[5:]])
+        sleep.assert_called_once_with(0.005)
+
     def test_final_reset_reopens_console_before_fresh_telemetry(self) -> None:
         reset_port = self.FakeCasePort()
         incomplete_port = self.FakeCasePort()
@@ -349,6 +429,48 @@ class G2FlashToolTests(unittest.TestCase):
             ])
         )
 
+    def test_zero_byte_start_boundary_routes_to_fresh_ble(self) -> None:
+        error = NonIdempotentOtaError(
+            "START",
+            0x52,
+            TransportTimeout("no complete temple frame through case bridge"),
+        )
+        result = classify_zero_byte_start_boundary(
+            error,
+            {
+                "declared_size": 0,
+                "accepted_size": 0,
+                "temple_tx_count": 2,
+            },
+        )
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(
+            result["classification"],
+            "wired_start_no_frame_zero_byte_boundary",
+        )
+        self.assertEqual(result["firmware_bytes_accepted"], 0)
+        self.assertIn("fresh BLE", result["recommended_next_transport"])
+
+    def test_start_timeout_is_classified_and_never_replayed(self) -> None:
+        class StartTimeoutTransport(FakeTransport):
+            def transact(self, request: bytes, timeout: float) -> bytes:
+                self.requests.append(request)
+                if request[0] == 0x52:
+                    raise TransportTimeout("no complete temple frame")
+                return super().transact(request, timeout)
+
+        transport = StartTimeoutTransport()
+        with self.assertRaises(NonIdempotentOtaError) as caught:
+            MainFirmwareFlasher(transport).flash_main(make_main_component())
+        self.assertEqual(caught.exception.stage, "START")
+        self.assertEqual(caught.exception.command, 0x52)
+        self.assertIn("fresh BLE connection", str(caught.exception))
+        self.assertEqual(
+            [request[0] for request in transport.requests],
+            [0x52],
+        )
+
     def test_portable_synthetic_package_plan(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             image = Path(directory) / "synthetic.bin"
@@ -400,15 +522,17 @@ class G2FlashToolTests(unittest.TestCase):
         self.assertEqual(result.records_sent, 3)
         self.assertEqual(result.data_retries, 1)
         self.assertEqual(data_requests[1], data_requests[2])
-        self.assertIn(0.050, sleeps)
+        self.assertIn(0.250, sleeps)
 
     def test_missing_finish_ack_is_failed_or_uncertain(self) -> None:
-        with self.assertRaises(TransportTimeout):
+        with self.assertRaises(NonIdempotentOtaError) as caught:
             MainFirmwareFlasher(
                 FakeTransport(finish_timeout=True),
                 batch_settle_seconds=0,
                 sleeper=lambda _: None,
             ).flash_main(make_main_component())
+        self.assertEqual(caught.exception.stage, "FINISH")
+        self.assertEqual(caught.exception.command, 0x55)
 
 
 if __name__ == "__main__":
