@@ -18,7 +18,9 @@ jobs:
     name: Build and package webflasher
     runs-on:
       - self-hosted
-      - ubuntu-ci
+      - Linux
+      - ARM64
+      - rpi4
     timeout-minutes: 15
 
     steps:
@@ -117,6 +119,7 @@ jobs:
         env:
           SSH_TARGET: homeassistant
           DEPLOY_ROOT: /root/share
+          WEB_ROOT: /root/share/webflasher/
           SITE_NAME: webflasher
         shell: bash
         run: |
@@ -124,7 +127,7 @@ jobs:
 
           archive="${RUNNER_TEMP}/webflasher-release/webflasher-site.tar.gz"
           remote_stage="${DEPLOY_ROOT}/.${SITE_NAME}-deploy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          remote_target="${DEPLOY_ROOT}/${SITE_NAME}"
+          remote_target="${WEB_ROOT%/}"
           remote_backup="${DEPLOY_ROOT}/.${SITE_NAME}-previous"
           ssh_options=(
             -o BatchMode=yes
@@ -157,10 +160,14 @@ jobs:
           trap cleanup EXIT
 
           ssh -G "${SSH_TARGET}" >/dev/null
-          ssh "${ssh_options[@]}" "${SSH_TARGET}" sh -s -- "${DEPLOY_ROOT}" <<'PREFLIGHT_SCRIPT'
+          ssh "${ssh_options[@]}" "${SSH_TARGET}" sh -s -- \
+            "${DEPLOY_ROOT}" "${WEB_ROOT}" <<'PREFLIGHT_SCRIPT'
           set -eu
           deploy_root="$1"
+          web_root="$2"
           [ "${deploy_root}" = /root/share ]
+          [ "${web_root}" = /root/share/webflasher/ ]
+          [ "${web_root%/}" = "${deploy_root}/webflasher" ]
           [ -d "${deploy_root}" ]
           [ -w "${deploy_root}" ]
           for required_command in tar stat chown chmod find mv; do

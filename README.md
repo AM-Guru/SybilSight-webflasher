@@ -769,6 +769,13 @@ The repository includes
 - the application from `/share/webflasher`; and
 - `/firmware-updates/*` from `/share/sybilsight`.
 
+Pushes to `main` run the test and build steps on the organization's
+`self-hosted`, `Linux`, `ARM64`, `rpi4` GitHub Actions runner. The release is
+then checksummed, staged over the runner's `homeassistant` SSH target, and
+atomically published to `/root/share/webflasher/` on that host. Home
+Assistant's Caddy container sees the same directory as `/share/webflasher`.
+The previous release is retained at `/root/share/.webflasher-previous`.
+
 The example also applies a content security policy, security headers, SPA
 fallback, catalog revalidation, and immutable caching for versioned firmware
 files.
