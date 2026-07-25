@@ -1,0 +1,35 @@
+# ---- webflasher.sybilsight.com ---------------------------------------------
+webflasher.sybilsight.com {
+	import common
+
+	@firmwareIndex path /firmware-updates/source-files/index.json
+	header @firmwareIndex Cache-Control "no-cache"
+
+	@firmwareFiles {
+		path /firmware-updates/source-files/*
+		not path /firmware-updates/source-files/index.json
+	}
+	header @firmwareFiles Cache-Control "public, max-age=31536000, immutable"
+
+	handle /firmware-updates/* {
+		root * /share/sybilsight
+		file_server
+	}
+	handle {
+		root * /share/webflasher
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+		Permissions-Policy "camera=(), geolocation=(), microphone=(), payment=()"
+	}
+
+	log {
+		output file /share/caddy/logs/webflasher.log {
+			roll_size 10mb
+			roll_keep 5
+		}
+	}
+}

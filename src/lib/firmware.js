@@ -1,0 +1,690 @@
+export const EVENOTA_MAGIC = new Uint8Array([
+  0x45, 0x56, 0x45, 0x4e, 0x4f, 0x54, 0x41, 0x00,
+]);
+export const EXPECTED_COMPONENTS = [
+  "firmware/codec.bin",
+  "firmware/ble_em9305.bin",
+  "firmware/touch.bin",
+  "firmware/box.bin",
+  "ota/s200_bootloader.bin",
+  "ota/s200_firmware_ota.bin",
+];
+export const EXPECTED_COMPONENT_TYPES = [4, 5, 3, 6, 1, 0];
+export const EVENOTA_TOC_TRAILER = new Uint8Array([
+  0x65, 0x76, 0x65, 0x6e, 0x6f, 0x74, 0x61, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+]);
+export const APOLLO_BOOTLOADER_BASE = 0x00410000;
+export const APOLLO_APPLICATION_BASE = 0x00438000;
+export const APOLLO_UPDATE_FLAG_ADDRESS = 0x007fe000;
+export const REVIEWED_CFW = Object.freeze({
+  version: "2.2.6.10-cfw",
+  baseVersion: "2.2.6.10",
+  baseSha256: "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa",
+  sha256: "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0",
+  capabilities: [
+    "576×288 image containers",
+    "RLE and LZ4 image payloads",
+    "8bpp XOR-delta frame updates",
+    "Per-lens stereo image pairs",
+    "Settings capability field 100",
+    "Ring long-press and release events",
+  ],
+});
+export const OFFICIAL_G2_SHA256 = Object.freeze({
+  "2.0.1.14": "d45005d5f75985339b234550b384899bb89fb37cfe4de4928abc9e882f0709e2",
+  "2.0.3.20": "84866f11895c34d15838736a373a50f06765232e2561fedd8ba1b62ba509c09c",
+  "2.0.5.12": "83e3cc196df2d7bd74f735f2ffbfd9f01c204da2cb73a1fb6fee5119f1125e21",
+  "2.0.6.14": "f3c4c40aa122f61e859b82ee5eaa296ac8fa3a96e7b9905fd8d112ded732c5da",
+  "2.0.7.16": "47bdd17b9227d56566280fad42248dbecfe4fc70017ad9c74c3d949e27116b5e",
+  "2.0.8.20": "a5e74e6830f4d9f4b8d06e18f11fb7e8f57383e3204504c299c413ce44940c23",
+  "2.0.9.20": "4b0055531530b3206f7e3acf103e30edeba6c35ed746aba09e52083efb6a2592",
+  "2.1.1.8": "1aa72ae9bd4e291866193e80f3f950eb35450d87bd3eab1ed017cb5c3875b3fa",
+  "2.1.1.12": "75ca2a401f813cf23f864106f4dedbc7e00c4c4b37cd50dcf17f7e9fe503c63e",
+  "2.2.0.24": "b3b0e213f7eb9568c97603a011b4a0261f9a4dbf9f7c933ff16b25aeb7efe0a6",
+  "2.2.4.34": "f9a93621a7141e0ae54ca6371cd2f1b4afbffa61f302ace096e0656ba25b1754",
+  "2.2.6.10": REVIEWED_CFW.baseSha256,
+});
+export const FLASH_BASE = 0x08000000;
+export const FLASH_SIZE = 0x80000;
+export const BANK_SIZE = 0x40000;
+export const OPTION_BASE = 0x1fff7800;
+export const OPTION_SIZE = 128;
+export const FLASH_PAGE_SIZE = 0x800;
+export const DEVICE_DATA_OFFSETS = [0x3f000, 0x3f800];
+
+function asBytes(input) {
+  return input instanceof Uint8Array ? input : new Uint8Array(input);
+}
+
+export function equalBytes(left, right) {
+  const a = asBytes(left);
+  const b = asBytes(right);
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index += 1) {
+    if (a[index] !== b[index]) return false;
+  }
+  return true;
+}
+
+export function readU32LE(data, offset) {
+  const bytes = asBytes(data);
+  return (
+    bytes[offset] |
+    (bytes[offset + 1] << 8) |
+    (bytes[offset + 2] << 16) |
+    (bytes[offset + 3] << 24)
+  ) >>> 0;
+}
+
+export function readU32BE(data, offset) {
+  const bytes = asBytes(data);
+  return (
+    (bytes[offset] << 24) |
+    (bytes[offset + 1] << 16) |
+    (bytes[offset + 2] << 8) |
+    bytes[offset + 3]
+  ) >>> 0;
+}
+
+export function writeU32LE(data, offset, value) {
+  const bytes = asBytes(data);
+  bytes[offset] = value & 0xff;
+  bytes[offset + 1] = (value >>> 8) & 0xff;
+  bytes[offset + 2] = (value >>> 16) & 0xff;
+  bytes[offset + 3] = (value >>> 24) & 0xff;
+}
+
+export function hex(value, width = 8) {
+  return `0x${(value >>> 0).toString(16).toUpperCase().padStart(width, "0")}`;
+}
+
+export function hexBytes(data, separator = " ") {
+  return [...asBytes(data)]
+    .map((value) => value.toString(16).toUpperCase().padStart(2, "0"))
+    .join(separator);
+}
+
+export function crc32c(data) {
+  let crc = 0;
+  for (const value of asBytes(data)) {
+    crc = (crc ^ (value << 24)) >>> 0;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = ((crc << 1) ^ (crc & 0x80000000 ? 0x1edc6f41 : 0)) >>> 0;
+    }
+  }
+  return crc >>> 0;
+}
+
+export function crc32(data) {
+  let crc = 0xffffffff;
+  for (const value of asBytes(data)) {
+    crc ^= value;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = ((crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0)) >>> 0;
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+export function describePogoOtaTransfer(payloadSize) {
+  if (!Number.isSafeInteger(payloadSize) || payloadSize < 0) {
+    throw new Error("Pogo OTA payload size must be a nonnegative integer.");
+  }
+  const dataRecordCount = Math.max(1, Math.ceil(payloadSize / 1000));
+  const finalDataBytes =
+    payloadSize === 0 ? 0 : payloadSize % 1000 || 1000;
+  return {
+    dataRecordCount,
+    finalSequence: (dataRecordCount - 1) & 0xff,
+    finalDataBytes,
+    fullDeferredBatches: Math.floor(payloadSize / 6000),
+    wireRequestBytes: 143 + payloadSize + dataRecordCount * 9,
+  };
+}
+
+export function describePogoOtaComponent(typeId, payloadSize) {
+  const transfer = describePogoOtaTransfer(payloadSize);
+  if (typeId === 1) {
+    return {
+      ...transfer,
+      disposition: "omit",
+      safetyLabel: "OMIT FROM POGO",
+      commitBoundary:
+        "0x55 can report success before the later direct MRAM copy to 0x00410000.",
+      acknowledgement:
+        "Parser result only; it does not prove the Even bootloader MRAM copy succeeded.",
+    };
+  }
+  if (typeId === 0) {
+    return {
+      ...transfer,
+      disposition: "capture-gated-main",
+      safetyLabel: "MAIN CANDIDATE · CAPTURE-GATED",
+      commitBoundary:
+        "The complete image is staged in LittleFS before its CRC, update flag, and reset.",
+      acknowledgement:
+        "Parser acceptance only; post-reset liveness and version verification remain mandatory.",
+    };
+  }
+  return {
+    ...transfer,
+    disposition: "capture-gated-subordinate",
+    safetyLabel: "COMPONENT INSTALLER · CAPTURE-GATED",
+    commitBoundary:
+      "Payload first lands in LittleFS, then passes to its component-specific installer.",
+    acknowledgement:
+      "Parser acceptance only; it does not prove a durable write or successful installation.",
+  };
+}
+
+export function additiveBigEndianWordSum(data) {
+  const bytes = asBytes(data);
+  let total = 0;
+  for (let offset = 0; offset < bytes.length; offset += 4) {
+    let word = 0;
+    for (let index = 0; index < 4; index += 1) {
+      word = (word << 8) >>> 0;
+      if (offset + index < bytes.length) word |= bytes[offset + index];
+    }
+    total = (total + word) >>> 0;
+  }
+  return total;
+}
+
+export async function sha256Hex(data) {
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", asBytes(data));
+  return [...new Uint8Array(digest)]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function hasMagic(data, magic) {
+  const bytes = asBytes(data);
+  return (
+    bytes.length >= magic.length &&
+    magic.every((value, index) => bytes[index] === value)
+  );
+}
+
+function readCString(data, offset, maxLength = 80) {
+  const bytes = asBytes(data);
+  const endLimit = Math.min(bytes.length, offset + maxLength);
+  let end = offset;
+  while (end < endLimit && bytes[end] !== 0) end += 1;
+  return new TextDecoder("utf-8", { fatal: true }).decode(
+    bytes.subarray(offset, end),
+  );
+}
+
+function ascii(data) {
+  return new TextDecoder("latin1").decode(asBytes(data));
+}
+
+export function isPlausibleCaseImage(data) {
+  const bytes = asBytes(data);
+  if (bytes.length < 8 || bytes.length > DEVICE_DATA_OFFSETS[0]) return false;
+  const stackPointer = readU32LE(bytes, 0);
+  const resetHandler = readU32LE(bytes, 4);
+  const resetAddress = resetHandler & ~1;
+  return (
+    (stackPointer & 0xff000000) === 0x20000000 &&
+    (resetHandler & 1) === 1 &&
+    resetAddress >= FLASH_BASE &&
+    resetAddress < FLASH_BASE + bytes.length
+  );
+}
+
+export function detectCaseVersion(data) {
+  const match = ascii(asBytes(data).subarray(0, 0x10000)).match(
+    /(?:^|[^0-9])((?:1|2)\.\d{1,3}\.\d{1,3})(?:[^0-9]|$)/,
+  );
+  return match?.[1] ?? "Unknown";
+}
+
+export function parseCaseComponent(payload) {
+  const bytes = asBytes(payload);
+  if (bytes.length < 0x28 || ascii(bytes.subarray(0, 4)) !== "EVEN") {
+    throw new Error("The charging-case component is missing its EVEN wrapper.");
+  }
+  const imageSize = readU32BE(bytes, 8);
+  const storedSum = readU32BE(bytes, 12);
+  if (imageSize !== bytes.length - 0x20) {
+    throw new Error(
+      `The charging-case wrapper declares ${imageSize} bytes, but contains ${bytes.length - 0x20}.`,
+    );
+  }
+  const rawImage = bytes.slice(0x20);
+  const calculatedSum = additiveBigEndianWordSum(rawImage);
+  if (storedSum !== calculatedSum) {
+    throw new Error(
+      `The charging-case checksum is ${hex(storedSum)}, expected ${hex(calculatedSum)}.`,
+    );
+  }
+  if (!isPlausibleCaseImage(rawImage)) {
+    throw new Error("The charging-case image has an invalid Cortex-M vector.");
+  }
+  return {
+    rawImage,
+    imageSize,
+    checksum: storedSum,
+    version: detectCaseVersion(rawImage),
+  };
+}
+
+export function parseMainOTAPreamble(payload) {
+  const bytes = asBytes(payload);
+  if (bytes.length < 0x28) {
+    throw new Error("The Apollo main-image preamble or vector is truncated.");
+  }
+  const sizeAndFlags = readU32LE(bytes, 0);
+  const declaredTotalSize = sizeAndFlags & 0x00ffffff;
+  const flags = sizeAndFlags >>> 24;
+  if (declaredTotalSize !== bytes.length) {
+    throw new Error(
+      `The Apollo main image declares ${declaredTotalSize} bytes, but contains ${bytes.length}.`,
+    );
+  }
+  if (flags !== 0x04) {
+    throw new Error(`The Apollo main-image flags are ${hex(flags, 2)}, expected 0x04.`);
+  }
+  for (const offset of [0x08, 0x0c, 0x18, 0x1c]) {
+    if (readU32LE(bytes, offset) !== 0) {
+      throw new Error(`The Apollo main-image reserved word at ${hex(offset, 2)} is not zero.`);
+    }
+  }
+  const storedCrc32 = readU32LE(bytes, 4);
+  const calculatedCrc32 = crc32(bytes.subarray(8));
+  if (storedCrc32 !== calculatedCrc32) {
+    throw new Error(
+      `The Apollo main image failed its inner CRC-32 check (${hex(storedCrc32)} stored, ${hex(calculatedCrc32)} calculated).`,
+    );
+  }
+  const firmwareDataType = readU32LE(bytes, 0x10);
+  if (firmwareDataType !== 0xcb) {
+    throw new Error(
+      `The Apollo main-image data type is ${hex(firmwareDataType)}, expected 0x000000CB.`,
+    );
+  }
+  const runBase = readU32LE(bytes, 0x14);
+  if (runBase !== APOLLO_APPLICATION_BASE) {
+    throw new Error(
+      `The Apollo main-image target is ${hex(runBase)}, expected ${hex(APOLLO_APPLICATION_BASE)}.`,
+    );
+  }
+  const installedImageSize = bytes.length - 0x20;
+  const installedImageEnd = runBase + installedImageSize;
+  if (
+    installedImageSize <= 0 ||
+    installedImageEnd > APOLLO_UPDATE_FLAG_ADDRESS
+  ) {
+    throw new Error(
+      `The Apollo main image ends at ${hex(installedImageEnd)}, beyond the update flag at ${hex(APOLLO_UPDATE_FLAG_ADDRESS)}.`,
+    );
+  }
+  const initialStackPointer = readU32LE(bytes, 0x20);
+  const resetHandler = readU32LE(bytes, 0x24);
+  const resetAddress = resetHandler & ~1;
+  if (
+    (initialStackPointer & 0xff000000) !== 0x20000000 ||
+    (resetHandler & 1) !== 1 ||
+    resetAddress < runBase ||
+    resetAddress >= installedImageEnd
+  ) {
+    throw new Error("The Apollo main image has an implausible Cortex-M vector.");
+  }
+  return {
+    declaredTotalSize,
+    flags,
+    crcCheckEnabled: Boolean(sizeAndFlags & (1 << 26)),
+    crc32: storedCrc32,
+    firmwareDataType,
+    runBase,
+    installedImageSize,
+    installedImageEnd,
+    initialStackPointer,
+    resetHandler,
+  };
+}
+
+export function classifyG2Firmware(fileSha256) {
+  const digest = fileSha256.toLowerCase();
+  if (digest === REVIEWED_CFW.sha256) {
+    return {
+      channel: "custom",
+      trust: "reviewed-custom",
+      label: `Reviewed CFW · stock ${REVIEWED_CFW.baseVersion} base`,
+      version: REVIEWED_CFW.version,
+      baseVersion: REVIEWED_CFW.baseVersion,
+      capabilities: REVIEWED_CFW.capabilities,
+    };
+  }
+  const official = Object.entries(OFFICIAL_G2_SHA256).find(
+    ([, sha256]) => sha256 === digest,
+  );
+  if (official) {
+    return {
+      channel: "official",
+      trust: "official-pinned",
+      label: `Official G2 ${official[0]} · pinned SHA-256`,
+      version: official[0],
+      baseVersion: null,
+      capabilities: [],
+    };
+  }
+  return {
+    channel: "local",
+    trust: "unrecognized",
+    label: "Structurally valid · publisher not recognized",
+    version: null,
+    baseVersion: null,
+    capabilities: [],
+  };
+}
+
+export function parseEvenOTA(input) {
+  const bytes = asBytes(input);
+  if (!hasMagic(bytes, EVENOTA_MAGIC)) {
+    throw new Error("This file is not an EVENOTA firmware bundle.");
+  }
+  if (bytes.length < 0x40) throw new Error("The EVENOTA header is truncated.");
+  const count = readU32LE(bytes, 8);
+  if (count !== 5 && count !== 6) {
+    throw new Error(`Expected 5 or 6 G2 components; this bundle contains ${count}.`);
+  }
+  const expectedNames =
+    count === 6
+      ? EXPECTED_COMPONENTS
+      : EXPECTED_COMPONENTS.filter((name) => name !== "ota/s200_bootloader.bin");
+  const expectedTypes =
+    count === 6
+      ? EXPECTED_COMPONENT_TYPES
+      : EXPECTED_COMPONENT_TYPES.filter((typeId) => typeId !== 1);
+
+  const components = [];
+  const tocEnd = 0x40 + count * 16;
+  const firstExpectedOffset = tocEnd + 16;
+  if (
+    firstExpectedOffset > bytes.length ||
+    !equalBytes(bytes.subarray(tocEnd, firstExpectedOffset), EVENOTA_TOC_TRAILER)
+  ) {
+    throw new Error("The EVENOTA table trailer is missing or corrupt.");
+  }
+  let expectedOffset = firstExpectedOffset;
+
+  for (let index = 0; index < count; index += 1) {
+    const tocOffset = 0x40 + index * 16;
+    const entryId = readU32LE(bytes, tocOffset);
+    const componentOffset = readU32LE(bytes, tocOffset + 4);
+    const storedSize = readU32LE(bytes, tocOffset + 8);
+    const tocCrc = readU32LE(bytes, tocOffset + 12);
+
+    if (
+      componentOffset < tocEnd ||
+      componentOffset + storedSize > bytes.length ||
+      componentOffset + 128 > bytes.length
+    ) {
+      throw new Error(`Component ${index + 1} is outside the bundle.`);
+    }
+    if (componentOffset !== expectedOffset) {
+      throw new Error(`Component ${index + 1} is not contiguous.`);
+    }
+
+    const payloadSize = readU32LE(bytes, componentOffset + 8);
+    const echoedCrc = readU32LE(bytes, componentOffset + 12);
+    const typeId = readU32LE(bytes, componentOffset + 0x24);
+    const name = readCString(bytes, componentOffset + 48);
+    if (storedSize !== payloadSize + 128) {
+      throw new Error(`Component ${name || index + 1} has inconsistent sizing.`);
+    }
+    if (
+      name !== expectedNames[index] ||
+      typeId !== expectedTypes[index]
+    ) {
+      throw new Error(`Unexpected G2 component topology at entry ${index + 1}.`);
+    }
+
+    const payload = bytes.slice(
+      componentOffset + 128,
+      componentOffset + 128 + payloadSize,
+    );
+    const calculatedCrc = crc32c(payload);
+    if (calculatedCrc !== tocCrc || calculatedCrc !== echoedCrc) {
+      throw new Error(`${name} failed its CRC-32C integrity check.`);
+    }
+    let inner = null;
+    if (typeId === 0) {
+      inner = parseMainOTAPreamble(payload);
+    } else if (typeId === 1) {
+      const initialStackPointer = readU32LE(payload, 0);
+      const resetHandler = readU32LE(payload, 4);
+      const resetAddress = resetHandler & ~1;
+      const bootloaderEnd = APOLLO_BOOTLOADER_BASE + payload.length;
+      if (
+        payload.length < 8 ||
+        bootloaderEnd > APOLLO_APPLICATION_BASE ||
+        (initialStackPointer & 0xff000000) !== 0x20000000 ||
+        (resetHandler & 1) !== 1 ||
+        resetAddress < APOLLO_BOOTLOADER_BASE ||
+        resetAddress >= bootloaderEnd
+      ) {
+        throw new Error(
+          "The Apollo bootloader exceeds its region or has an implausible Cortex-M vector.",
+        );
+      }
+      inner = {
+        runBase: APOLLO_BOOTLOADER_BASE,
+        installedImageSize: payload.length,
+        installedImageEnd: bootloaderEnd,
+        initialStackPointer,
+        resetHandler,
+      };
+    }
+    components.push({
+      index,
+      entryId,
+      typeId,
+      name,
+      offset: componentOffset,
+      payloadSize,
+      crc32c: calculatedCrc,
+      payload,
+      inner,
+    });
+    expectedOffset = componentOffset + storedSize;
+  }
+
+  if (expectedOffset !== bytes.length) {
+    throw new Error("The EVENOTA component table does not close at end-of-file.");
+  }
+  const caseEntry = components.find((component) => component.typeId === 6);
+  if (!caseEntry) {
+    throw new Error("The EVENOTA bundle does not contain charging-case firmware.");
+  }
+  const chargingCase = parseCaseComponent(caseEntry.payload);
+  const mainEntry = components.find((component) => component.typeId === 0);
+  const versionMatch = ascii(bytes).match(/s200_v(\d+\.\d+\.\d+\.\d+)/);
+  return {
+    format: "EVENOTA",
+    version: versionMatch?.[1] ?? "Unknown",
+    components,
+    chargingCase,
+    mainFirmware: mainEntry?.inner ?? null,
+  };
+}
+
+export async function parseFirmwareInput(input, fileName = "firmware.bin") {
+  const bytes = asBytes(input);
+  const fileSha256 = await sha256Hex(bytes);
+
+  if (hasMagic(bytes, EVENOTA_MAGIC)) {
+    const bundle = parseEvenOTA(bytes);
+    const provenance = classifyG2Firmware(fileSha256);
+    return {
+      kind: "bundle",
+      fileName,
+      fileSize: bytes.length,
+      fileSha256,
+      g2Version: bundle.version,
+      caseVersion: bundle.chargingCase.version,
+      caseImage: bundle.chargingCase.rawImage,
+      mainFirmware: bundle.mainFirmware,
+      provenance,
+      caseRecoveryEligible: provenance.channel !== "custom",
+      components: bundle.components.map(({ name, typeId, payloadSize, crc32c: crc }) => ({
+        name,
+        typeId,
+        payloadSize,
+        crc32c: hex(crc),
+        pogoOta: describePogoOtaComponent(typeId, payloadSize),
+      })),
+    };
+  }
+
+  if (bytes.length >= 4 && ascii(bytes.subarray(0, 4)) === "EVEN") {
+    const component = parseCaseComponent(bytes);
+    return {
+      kind: "case-component",
+      fileName,
+      fileSize: bytes.length,
+      fileSha256,
+      g2Version: null,
+      caseVersion: component.version,
+      caseImage: component.rawImage,
+      mainFirmware: null,
+      provenance: {
+        channel: "local",
+        trust: "local-case-component",
+        label: "Locally supplied case component",
+        capabilities: [],
+      },
+      caseRecoveryEligible: true,
+      components: [],
+    };
+  }
+
+  if (isPlausibleCaseImage(bytes)) {
+    return {
+      kind: "raw-case",
+      fileName,
+      fileSize: bytes.length,
+      fileSha256,
+      g2Version: null,
+      caseVersion: detectCaseVersion(bytes),
+      caseImage: bytes.slice(),
+      mainFirmware: null,
+      provenance: {
+        channel: "local",
+        trust: "local-raw-case",
+        label: "Locally supplied raw case image",
+        capabilities: [],
+      },
+      caseRecoveryEligible: true,
+      components: [],
+    };
+  }
+
+  throw new Error(
+    "Unsupported firmware file. Choose a G2 EVENOTA bundle, firmware_box.bin component, or validated raw case image.",
+  );
+}
+
+export function decodeOptionBytes(input) {
+  const bytes = asBytes(input);
+  if (bytes.length !== OPTION_SIZE) {
+    throw new Error(`Expected ${OPTION_SIZE} option bytes.`);
+  }
+  const userWord = readU32LE(bytes, 0);
+  const complement = readU32LE(bytes, 4);
+  if (((~userWord) >>> 0) !== complement) {
+    throw new Error("The option-byte user word complement is invalid.");
+  }
+  const rdp = userWord & 0xff;
+  const swapBank = Boolean((userWord >>> 20) & 1);
+  const dualBank = Boolean((userWord >>> 22) & 1);
+  return {
+    raw: bytes.slice(),
+    userWord,
+    complement,
+    rdp,
+    swapBank,
+    dualBank,
+    activePhysicalBank: swapBank ? 1 : 2,
+    inactivePhysicalBank: swapBank ? 2 : 1,
+  };
+}
+
+export function toggledBankOptionBytes(input) {
+  const decoded = decodeOptionBytes(input);
+  if (decoded.rdp !== 0xaa || !decoded.dualBank) {
+    throw new Error(
+      "Refusing to switch banks: the case is not in the verified level-0 dual-bank configuration.",
+    );
+  }
+  const next = decoded.raw.slice();
+  const nextUserWord = (decoded.userWord ^ (1 << 20)) >>> 0;
+  writeU32LE(next, 0, nextUserWord);
+  writeU32LE(next, 4, (~nextUserWord) >>> 0);
+  return next;
+}
+
+export function parseConsoleReport(...chunks) {
+  const text = chunks.filter(Boolean).join("\n").replace(/\0/g, "");
+  const caseVersion =
+    text.match(/\*{4,}\s*B200\s+(\d+\.\d+\.\d+)/)?.[1] ??
+    text.match(/\bB200\s+(\d+\.\d+\.\d+),/)?.[1] ??
+    null;
+  const serialNumber =
+    text.match(/\*{4,}\s*B200\s+\d+\.\d+\.\d+\s+([0-9A-Fa-f]{16,32})\*{4,}/)?.[1] ??
+    null;
+  const identifier =
+    text.match(/(?:^|\n)((?:[0-9A-Fa-f]{2}\s+){7}[0-9A-Fa-f]{2})(?:\r?\n|$)/)?.[1]
+      ?.trim()
+      .toUpperCase() ?? null;
+  const telemetryMatch = text.match(
+    /B200\s+vol:(-?\d+)\s+pct:(-?\d+),\s*open:(\d+),\s*usb:(\d+),\s*cur:(-?\d+),\s*GLS_L:(\d+),\s*GLS_R:(\d+)\s+temp:(-?\d+)(?:,\s*chEn:(\d+),\s*aging:(\d+),\s*otaGls:(\d+))?/,
+  );
+  const telemetry = telemetryMatch
+    ? {
+        voltage: Number(telemetryMatch[1]),
+        percent: Number(telemetryMatch[2]),
+        open: telemetryMatch[3] === "1",
+        usbPresent: telemetryMatch[4] === "1",
+        current: Number(telemetryMatch[5]),
+        leftPresent: telemetryMatch[6] === "1",
+        rightPresent: telemetryMatch[7] === "1",
+        temperature: Number(telemetryMatch[8]),
+        chargingEnabled:
+          telemetryMatch[9] == null ? null : telemetryMatch[9] === "1",
+        aging: telemetryMatch[10] == null ? null : telemetryMatch[10] === "1",
+        glassesOta:
+          telemetryMatch[11] == null ? null : telemetryMatch[11] === "1",
+      }
+    : null;
+  const scalarState = text.match(/(?:^|\n)(?:state[:=]\s*)?(-?\d+)(?:\r?\n|$)/i)?.[1] ?? null;
+  return { text, caseVersion, serialNumber, identifier, telemetry, scalarState };
+}
+
+export function bytesToBase64(input) {
+  const bytes = asBytes(input);
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return btoa(binary);
+}
+
+export function base64ToBytes(value) {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+export function formatBytes(value) {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KiB`;
+  return `${(value / 1024 / 1024).toFixed(2)} MiB`;
+}
