@@ -27,6 +27,33 @@ import {
   parseTempleFrame,
   validatePogoBridgeRetainedResult,
 } from "./pogoBridge.js";
+import {
+  POGO_FLASH_BRIDGE_ADDRESS,
+  POGO_FLASH_BRIDGE_BANNER,
+  POGO_FLASH_PROOF,
+  POGO_FLASH_PROOF_ADDRESS,
+  POGO_FLASH_RESULT_ADDRESS,
+  POGO_FLASH_RESULT_LENGTH,
+  POGO_FLASH_STATUS,
+  REVIEWED_CASE_VERSION,
+  REVIEWED_CFW_BASE_VERSION,
+  RetryablePogoFlashError,
+  PogoFlashSafetyError,
+  assertReviewedCfwFlashCandidate,
+  decodeTempleVersion,
+  getVerifiedPogoFlashBridgePayload,
+  makeOtaDataRequest,
+  makeOtaFinishRequest,
+  makeOtaHeaderRequest,
+  makeOtaStartRequest,
+  makePogoFlashSetup,
+  makePogoFlashTransactionHeader,
+  makeTempleVersionRequest,
+  parsePogoFlashReady,
+  parsePogoFlashResponse,
+  parsePogoFlashRetainedResult,
+  requireOtaAcknowledgement,
+} from "./pogoFlashBridge.js";
 
 const ACK = 0x79;
 const NACK = 0x1f;
@@ -38,9 +65,39 @@ const GO = 0x21;
 const WRITE_MEMORY = 0x31;
 const EXTENDED_ERASE = 0x44;
 const INACTIVE_ALIAS = FLASH_BASE + BANK_SIZE;
+const REVIEWED_CASE_ROM_COMMANDS = Object.freeze([
+  0x00, 0x01, 0x02, READ_MEMORY, GO, WRITE_MEMORY, EXTENDED_ERASE,
+  0x63, 0x73, 0x82, 0x92,
+]);
 
 export function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function compactHex(input) {
+  return [...(input ?? [])]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function requireReviewedCaseRom(loader) {
+  if (loader.version !== 0x31 || loader.productId !== 0x0467) {
+    throw new PogoFlashSafetyError(
+      `The case ROM identity differs from the reviewed device (protocol=0x${loader.version
+        ?.toString(16)}, product=0x${loader.productId?.toString(16)}).`,
+    );
+  }
+  if (
+    loader.commands.length !== REVIEWED_CASE_ROM_COMMANDS.length ||
+    !REVIEWED_CASE_ROM_COMMANDS.every((command) =>
+      loader.commands.includes(command))
+  ) {
+    throw new PogoFlashSafetyError(
+      `The case ROM command table differs from the reviewed device (${loader.commands
+        .map((command) => command.toString(16).padStart(2, "0"))
+        .join(" ")}).`,
+    );
+  }
 }
 
 function xor(bytes) {
@@ -328,6 +385,10 @@ class Stm32Bootloader {
     await this.expectAck("Go address");
   }
 
+  async releaseBootSelection() {
+    await this.transport.setSignals(true, false);
+  }
+
   async erasePages(pageNumbers) {
     this.requireCommand(EXTENDED_ERASE, "Extended Erase");
     if (!pageNumbers.length || pageNumbers.length > 128) {
@@ -402,6 +463,19 @@ async function openPogoBridgeHost(port) {
   return transport;
 }
 
+async function openPogoFlashBridgeHost(port) {
+  const transport = new SerialTransport(port);
+  await transport.open({
+    baudRate: 115200,
+    dataBits: 8,
+    stopBits: 1,
+    parity: "none",
+    flowControl: "none",
+    bufferSize: 65536,
+  });
+  return transport;
+}
+
 async function queryNormal(transport, command, duration = 850) {
   if (![0xa0, 0xa2, 0xa3, 0xa4].includes(command)) {
     throw new Error("Only the read-only A0/A2/A3/A4 query allowlist is available.");
@@ -422,6 +496,322 @@ async function resetTemples(transport) {
     );
   }
   return resetOutput;
+}
+
+class CasePogoFlashTransport {
+  constructor(session, route, { progressBase = 0, progressSpan = 1 } = {}) {
+    if (!["left", "right"].includes(route)) {
+      throw new PogoFlashSafetyError("The case bridge route must be left or right.");
+    }
+    this.session = session;
+    this.port = session.port;
+    this.route = route;
+    this.reportProgress = (fraction, detail) =>
+      session.progress(progressBase + fraction * progressSpan, detail);
+    this.loader = null;
+    this.bridge = null;
+    this.sequence = 0;
+    this.bridgeLaunched = false;
+    this.active = false;
+    this.closed = false;
+    this.restoreVerified = false;
+    this.retainedResult = null;
+    this.caseReport = null;
+    this.completedTransfer = null;
+  }
+
+  async closeTransport(name) {
+    const transport = this[name];
+    this[name] = null;
+    if (!transport) return;
+    try {
+      await transport.close();
+    } catch (error) {
+      this.session.log(
+        `${name === "bridge" ? "Flash bridge" : "ROM loader"} close was not confirmed: ${error.message}`,
+        "warn",
+      );
+    }
+  }
+
+  async open() {
+    const payload = await getVerifiedPogoFlashBridgePayload();
+    const zeroProof = new Uint8Array(POGO_FLASH_PROOF.length);
+    const zeroResult = new Uint8Array(POGO_FLASH_RESULT_LENGTH);
+    try {
+      this.loader = new Stm32Bootloader(this.port, this.session.log);
+      await this.loader.connect();
+      requireReviewedCaseRom(this.loader);
+
+      await this.loader.writeMemory(POGO_FLASH_PROOF_ADDRESS, zeroProof);
+      await this.loader.writeMemory(POGO_FLASH_RESULT_ADDRESS, zeroResult);
+      const initialProof = await this.loader.readRange(
+        POGO_FLASH_PROOF_ADDRESS,
+        zeroProof.length,
+      );
+      const initialResult = await this.loader.readRange(
+        POGO_FLASH_RESULT_ADDRESS,
+        zeroResult.length,
+      );
+      if (
+        !equalBytes(initialProof, zeroProof) ||
+        !equalBytes(initialResult, zeroResult)
+      ) {
+        throw new PogoFlashSafetyError(
+          "The volatile flash bridge proof/result locations did not clear.",
+        );
+      }
+      for (let offset = 0; offset < payload.length; offset += 256) {
+        const chunk = payload.subarray(offset, Math.min(offset + 256, payload.length));
+        const address = POGO_FLASH_BRIDGE_ADDRESS + offset;
+        await this.loader.writeMemory(address, chunk);
+        const readback = await this.loader.readMemory(address, chunk.length);
+        if (!equalBytes(readback, chunk)) {
+          throw new PogoFlashSafetyError(
+            `The volatile flash bridge readback differs at 0x${address.toString(16)}.`,
+          );
+        }
+        this.reportProgress(
+          0.02 + ((offset + chunk.length) / payload.length) * 0.04,
+          `${this.route}: verifying volatile flash bridge`,
+        );
+      }
+      await this.loader.go(POGO_FLASH_BRIDGE_ADDRESS);
+      await this.loader.releaseBootSelection();
+      this.bridgeLaunched = true;
+      await this.closeTransport("loader");
+
+      this.bridge = await openPogoFlashBridgeHost(this.port);
+      await delay(120);
+      if (this.bridge.queuedBytes > 0) {
+        const banner = await this.bridge.readExact(
+          POGO_FLASH_BRIDGE_BANNER.length,
+          800,
+          "flash bridge banner",
+        );
+        if (!equalBytes(banner, POGO_FLASH_BRIDGE_BANNER)) {
+          throw new PogoFlashSafetyError("The volatile flash bridge banner is invalid.");
+        }
+      }
+
+      const setup = makePogoFlashSetup(this.route);
+      await this.bridge.write(setup);
+      const ready = await this.bridge.readExact(13, 10000, "flash bridge ready response");
+      parsePogoFlashReady(ready, setup);
+      this.active = true;
+      this.session.log(
+        `${this.route}: verified the 2,872-byte volatile writer and selected the seated route.`,
+      );
+    } catch (error) {
+      await this.closeTransport("loader");
+      await this.closeTransport("bridge");
+      throw error;
+    }
+  }
+
+  async readBridgeResponse(timeoutMs) {
+    const header = await this.bridge.readExact(
+      11,
+      Math.max(10000, timeoutMs + 10000),
+      "flash bridge response header",
+    );
+    const length = header[8];
+    if (length > 64) {
+      throw new RetryablePogoFlashError(
+        `The flash bridge declared ${length} captured bytes.`,
+      );
+    }
+    const tail = await this.bridge.readExact(
+      length + 1,
+      Math.max(10000, timeoutMs + 10000),
+      "flash bridge response payload",
+    );
+    return parsePogoFlashResponse(header, tail, this.sequence);
+  }
+
+  async transact(request, timeoutMs) {
+    if (!this.active || !this.bridge) {
+      throw new PogoFlashSafetyError("The volatile flash bridge is not active.");
+    }
+    const bytes = request instanceof Uint8Array ? request : new Uint8Array(request);
+    if (!bytes.length || bytes.length > 1009) {
+      throw new PogoFlashSafetyError("The temple request is outside the bridge bounds.");
+    }
+    this.sequence = (this.sequence + 1) & 0xff;
+    try {
+      await this.bridge.write(
+        makePogoFlashTransactionHeader(this.sequence, bytes.length),
+      );
+      const headerToken = await this.bridge.readExact(
+        1,
+        8000,
+        "transaction-header flow-control token",
+      );
+      if (headerToken[0] !== 0xc3) {
+        throw new RetryablePogoFlashError(
+          "The flash bridge rejected the transaction header.",
+        );
+      }
+      for (let offset = 0; offset < bytes.length; offset += 32) {
+        await this.bridge.write(bytes.subarray(offset, Math.min(offset + 32, bytes.length)));
+        const token = await this.bridge.readExact(
+          1,
+          8000,
+          `transaction flow-control token at ${offset}`,
+        );
+        if (token[0] !== 0xc3) {
+          throw new RetryablePogoFlashError(
+            `The flash bridge did not consume the payload chunk at ${offset}.`,
+          );
+        }
+      }
+      const checksum = [...bytes].reduce((sum, value) => (sum + value) & 0xff, 0);
+      await this.bridge.write(new Uint8Array([checksum]));
+      const response = await this.readBridgeResponse(timeoutMs);
+      if (response.uartErrors) {
+        throw new RetryablePogoFlashError(
+          `The pogo UART reported error mask 0x${response.uartErrors.toString(16)}.`,
+        );
+      }
+      if (response.status === 6) {
+        throw new RetryablePogoFlashError(
+          "No complete temple response arrived through the case bridge.",
+        );
+      }
+      if (response.status !== 0) {
+        throw new PogoFlashSafetyError(
+          `The case bridge stopped safely: ${POGO_FLASH_STATUS[response.status] ?? `status ${response.status}`}.`,
+        );
+      }
+      return response.captured;
+    } catch (error) {
+      if (
+        error instanceof RetryablePogoFlashError ||
+        error instanceof PogoFlashSafetyError
+      ) {
+        throw error;
+      }
+      throw new RetryablePogoFlashError(error?.message ?? String(error));
+    }
+  }
+
+  drainInput() {
+    this.bridge?.clear();
+  }
+
+  async requestExit() {
+    if (!this.active || !this.bridge) return null;
+    this.sequence = (this.sequence + 1) & 0xff;
+    await this.bridge.write(makePogoFlashTransactionHeader(this.sequence, 0));
+    const response = await this.readBridgeResponse(10000);
+    if (
+      response.status !== 0 ||
+      response.uartErrors !== 0 ||
+      response.captured.length !== 10
+    ) {
+      throw new PogoFlashSafetyError(
+        `The bridge exit did not return a restored route (status=${response.status}, errors=${response.uartErrors}, bytes=${response.captured.length}).`,
+      );
+    }
+    this.active = false;
+    return response.captured;
+  }
+
+  async verifyAndClearRetainedResult() {
+    const zeroProof = new Uint8Array(POGO_FLASH_PROOF.length);
+    const zeroResult = new Uint8Array(POGO_FLASH_RESULT_LENGTH);
+    this.loader = new Stm32Bootloader(this.port, this.session.log);
+    let validationError = null;
+    try {
+      await this.loader.connect();
+      requireReviewedCaseRom(this.loader);
+      const proof = await this.loader.readRange(
+        POGO_FLASH_PROOF_ADDRESS,
+        POGO_FLASH_PROOF.length,
+      );
+      const result = await this.loader.readRange(
+        POGO_FLASH_RESULT_ADDRESS,
+        POGO_FLASH_RESULT_LENGTH,
+      );
+      try {
+        const retainedResult = parsePogoFlashRetainedResult(
+          result,
+          proof,
+          this.route,
+          this.sequence,
+          {
+            expectedAcceptedSize: this.completedTransfer?.payloadBytes ?? null,
+            expectedOtaSequence: this.completedTransfer?.records ?? null,
+          },
+        );
+        this.retainedResult = retainedResult;
+      } catch (error) {
+        validationError = error;
+      }
+
+      await this.loader.writeMemory(POGO_FLASH_PROOF_ADDRESS, zeroProof);
+      await this.loader.writeMemory(POGO_FLASH_RESULT_ADDRESS, zeroResult);
+      const proofCheck = await this.loader.readRange(
+        POGO_FLASH_PROOF_ADDRESS,
+        zeroProof.length,
+      );
+      const resultCheck = await this.loader.readRange(
+        POGO_FLASH_RESULT_ADDRESS,
+        zeroResult.length,
+      );
+      if (!equalBytes(proofCheck, zeroProof) || !equalBytes(resultCheck, zeroResult)) {
+        throw new PogoFlashSafetyError(
+          "The volatile flash bridge proof/result could not be cleared.",
+        );
+      }
+      if (validationError) throw validationError;
+      this.restoreVerified = true;
+    } finally {
+      await this.closeTransport("loader");
+    }
+  }
+
+  async close() {
+    if (this.closed) {
+      if (!this.restoreVerified || !this.caseReport) {
+        throw new PogoFlashSafetyError(
+          "The flash bridge cleanup did not previously complete.",
+        );
+      }
+      return;
+    }
+    this.closed = true;
+    const errors = [];
+    if (this.bridge) {
+      try {
+        await this.requestExit();
+      } catch (error) {
+        errors.push(`bridge exit: ${error.message}`);
+      }
+      await this.closeTransport("bridge");
+    }
+    await this.closeTransport("loader");
+    await delay(350);
+
+    if (this.bridgeLaunched) {
+      try {
+        await this.verifyAndClearRetainedResult();
+      } catch (error) {
+        errors.push(`retained route-restoration proof: ${error.message}`);
+      }
+    }
+    try {
+      this.caseReport = await this.session.restoreNormal({
+        requireVersion: true,
+        expectedVersion: REVIEWED_CASE_VERSION,
+      });
+    } catch (error) {
+      errors.push(`case application return: ${error.message}`);
+    }
+    if (errors.length) {
+      throw new PogoFlashSafetyError(errors.join("; "));
+    }
+  }
 }
 
 export class G2CaseSession {
@@ -505,14 +895,34 @@ export class G2CaseSession {
     }
   }
 
-  async restoreNormal() {
+  async restoreNormal({ requireVersion = false, expectedVersion = null } = {}) {
     try {
       const normal = await openNormalConsole(this.port);
-      await normal.collectFor(900);
-      await normal.close();
-      this.log("Case returned to its normal application.");
+      let text;
+      try {
+        text = new TextDecoder().decode(
+          await normal.collectFor(requireVersion ? 5000 : 900),
+        );
+      } finally {
+        await normal.close();
+      }
+      const report = parseConsoleReport(text);
+      if (requireVersion && !report.caseVersion) {
+        throw new Error("The normal B200 application banner was not observed.");
+      }
+      if (expectedVersion && report.caseVersion !== expectedVersion) {
+        throw new Error(
+          `The case returned firmware ${report.caseVersion ?? "unknown"}, expected ${expectedVersion}.`,
+        );
+      }
+      this.log(
+        `Case returned to its normal application${report.caseVersion ? ` · B200 ${report.caseVersion}` : ""}.`,
+      );
+      return report;
     } catch (error) {
       this.log(`Normal-application return was not confirmed: ${error.message}`, "warn");
+      if (requireVersion) throw error;
+      return null;
     }
   }
 
@@ -756,6 +1166,269 @@ export class G2CaseSession {
       }
       await this.restoreNormal();
       if (residueCleared) this.progress(1, "Case application restored");
+    }
+  }
+
+  async readTempleFlashPreflight(routes) {
+    this.log("Refreshing case firmware and seated-temple telemetry before flashing.");
+    const normal = await openNormalConsole(this.port);
+    try {
+      const bootText = new TextDecoder().decode(await normal.collectFor(2500));
+      const telemetryText = await queryNormal(normal, 0xa3, 1000);
+      const report = parseConsoleReport(bootText, telemetryText);
+      if (report.caseVersion !== REVIEWED_CASE_VERSION) {
+        throw new PogoFlashSafetyError(
+          `The volatile writer is pinned to case ${REVIEWED_CASE_VERSION}; this case reports ${report.caseVersion ?? "unknown"}.`,
+        );
+      }
+      if (!report.telemetry) {
+        throw new PogoFlashSafetyError(
+          "Fresh case telemetry was not available before the mutating operation.",
+        );
+      }
+      for (const route of routes) {
+        const present =
+          route === "left"
+            ? report.telemetry.leftPresent
+            : report.telemetry.rightPresent;
+        if (!present) {
+          throw new PogoFlashSafetyError(
+            `Fresh case telemetry does not report the ${route} temple as seated.`,
+          );
+        }
+      }
+      return report;
+    } finally {
+      await normal.close();
+    }
+  }
+
+  async flashReviewedCfwRoute(component, route, routeIndex, routeCount) {
+    const progressBase = routeIndex / routeCount;
+    const progressSpan = 1 / routeCount;
+    const transport = new CasePogoFlashTransport(this, route, {
+      progressBase,
+      progressSpan,
+    });
+    const result = {
+      route,
+      outcome: "started",
+      preflightVersion: null,
+      transfer: null,
+      postflightVersion: null,
+      caseRestoreVerified: false,
+      caseApplicationVersion: null,
+      retainedResult: null,
+    };
+    let operationError = null;
+    let cleanupError = null;
+
+    try {
+      await transport.open();
+      const preflightFrame = await transport.transact(makeTempleVersionRequest(), 8000);
+      const preflight = decodeTempleVersion(preflightFrame);
+      result.preflightVersion = preflight;
+      if (
+        preflight.firmware !== REVIEWED_CFW_BASE_VERSION ||
+        preflight.hardware !== 5
+      ) {
+        throw new PogoFlashSafetyError(
+          `${route}: expected running firmware ${REVIEWED_CFW_BASE_VERSION}/hardware 5, observed ${preflight.firmware}/hardware ${preflight.hardware}.`,
+        );
+      }
+      this.log(
+        `${route}: preflight firmware=${preflight.firmware}, hardware=${preflight.hardware}.`,
+      );
+
+      // Start and header mutate OTA state and are intentionally never replayed.
+      const start = makeOtaStartRequest();
+      requireOtaAcknowledgement(await transport.transact(start, 8000), start[0]);
+      const header = makeOtaHeaderRequest(component.header);
+      requireOtaAcknowledgement(await transport.transact(header, 8000), header[0]);
+
+      const payload = component.payload;
+      const totalRecords = Math.ceil(payload.length / 1000);
+      let acceptedBytes = 0;
+      let retries = 0;
+      for (let index = 0; index < totalRecords; index += 1) {
+        const offset = index * 1000;
+        const data = payload.subarray(offset, Math.min(offset + 1000, payload.length));
+        const final = index + 1 === totalRecords;
+        const request = makeOtaDataRequest(data, final, index & 0xff);
+        for (let attempt = 0; ; attempt += 1) {
+          try {
+            const response = await transport.transact(request, 8000);
+            requireOtaAcknowledgement(response, 0x54);
+            break;
+          } catch (error) {
+            if (!(error instanceof RetryablePogoFlashError) || attempt >= 2) {
+              throw error;
+            }
+            retries += 1;
+            transport.drainInput();
+            this.log(
+              `${route}: retrying exact 0x54 record ${index + 1} after ${error.message}`,
+              "warn",
+            );
+            await delay(50);
+          }
+        }
+        acceptedBytes += data.length;
+        transport.reportProgress(
+          0.08 + ((index + 1) / totalRecords) * 0.78,
+          `${route}: ${index + 1}/${totalRecords} main records`,
+        );
+        if (acceptedBytes % 6000 === 0 || final) {
+          await delay(100);
+        }
+      }
+
+      const finish = makeOtaFinishRequest();
+      requireOtaAcknowledgement(await transport.transact(finish, 60000), finish[0]);
+      transport.completedTransfer = {
+        payloadBytes: acceptedBytes,
+        records: totalRecords,
+      };
+      result.transfer = {
+        recordsSent: totalRecords,
+        payloadBytesSent: acceptedBytes,
+        dataRetries: retries,
+        finishAckReceived: true,
+      };
+      this.log(
+        `${route}: all ${totalRecords.toLocaleString()} records and the finish acknowledgement were accepted.`,
+        "success",
+      );
+
+      const deadline = Date.now() + 180000;
+      let lastVersion = null;
+      while (Date.now() < deadline) {
+        await delay(2000);
+        transport.drainInput();
+        try {
+          const version = decodeTempleVersion(
+            await transport.transact(makeTempleVersionRequest(), 8000),
+          );
+          lastVersion = version;
+          if (
+            version.firmware === REVIEWED_CFW_BASE_VERSION &&
+            version.hardware === preflight.hardware
+          ) {
+            result.postflightVersion = version;
+            break;
+          }
+        } catch (error) {
+          if (!(error instanceof RetryablePogoFlashError)) throw error;
+        }
+      }
+      if (!result.postflightVersion) {
+        throw new RetryablePogoFlashError(
+          lastVersion
+            ? `${route}: postflight reported ${lastVersion.firmware}/hardware ${lastVersion.hardware}.`
+            : `${route}: no checksum-valid postflight version arrived within 180 seconds.`,
+        );
+      }
+      transport.reportProgress(0.9, `${route}: postflight liveness verified`);
+      this.log(
+        `${route}: postflight firmware=${result.postflightVersion.firmware}, hardware=${result.postflightVersion.hardware}.`,
+        "success",
+      );
+    } catch (error) {
+      operationError = error;
+    } finally {
+      try {
+        await transport.close();
+      } catch (error) {
+        cleanupError = error;
+      }
+      result.caseRestoreVerified = transport.restoreVerified;
+      result.caseApplicationVersion = transport.caseReport?.caseVersion ?? null;
+      if (transport.retainedResult) {
+        result.retainedResult = {
+          ...transport.retainedResult,
+          baseline: compactHex(transport.retainedResult.baseline),
+          selected: compactHex(transport.retainedResult.selected),
+          restored: compactHex(transport.retainedResult.restored),
+        };
+      }
+    }
+
+    if (operationError || cleanupError) {
+      result.outcome = "failed_or_uncertain";
+      if (operationError) result.error = operationError.message;
+      if (cleanupError) result.cleanupError = cleanupError.message;
+      const details = [
+        operationError && `temple transaction: ${operationError.message}`,
+        cleanupError && `case cleanup: ${cleanupError.message}`,
+      ].filter(Boolean);
+      const error = new PogoFlashSafetyError(`${route}: ${details.join("; ")}`);
+      error.routeResult = result;
+      throw error;
+    }
+    result.outcome = "success";
+    transport.reportProgress(1, `${route}: route and case application restored`);
+    return result;
+  }
+
+  async flashReviewedCfwMain(firmware, routeSelection = "both") {
+    const component = await assertReviewedCfwFlashCandidate(firmware);
+    const routes =
+      routeSelection === "both"
+        ? ["right", "left"]
+        : [routeSelection];
+    if (!routes.every((route) => ["left", "right"].includes(route))) {
+      throw new PogoFlashSafetyError("Choose both, left, or right for temple flashing.");
+    }
+
+    const audit = {
+      schemaVersion: 1,
+      startedAt: new Date().toISOString(),
+      operation: "g2_case_usb_reviewed_cfw_main_only",
+      imageSha256: firmware.fileSha256,
+      mainPayloadSha256: component.payloadSha256,
+      bridgeSha256:
+        "08a08f45ac125a1dba6469234e56cacd32147d9e79203327987276d2fb182b02",
+      routes,
+      bootloaderAllowed: false,
+      preflightCase: null,
+      routeResults: [],
+      outcome: "started",
+    };
+    try {
+      const preflightCase = await this.readTempleFlashPreflight(routes);
+      audit.preflightCase = {
+        firmware: preflightCase.caseVersion,
+        lidOpen: preflightCase.telemetry?.open ?? null,
+        usbPresent: preflightCase.telemetry?.usbPresent ?? null,
+        leftPresent: preflightCase.telemetry?.leftPresent ?? null,
+        rightPresent: preflightCase.telemetry?.rightPresent ?? null,
+      };
+      for (let index = 0; index < routes.length; index += 1) {
+        const route = routes[index];
+        try {
+          audit.routeResults.push(
+            await this.flashReviewedCfwRoute(
+              component,
+              route,
+              index,
+              routes.length,
+            ),
+          );
+        } catch (error) {
+          if (error.routeResult) audit.routeResults.push(error.routeResult);
+          throw error;
+        }
+      }
+      audit.outcome = "success";
+      this.progress(1, "Reviewed CFW transfer and case restoration verified");
+      return audit;
+    } catch (error) {
+      audit.outcome = "failed_or_uncertain";
+      audit.error = error.message;
+      error.audit = audit;
+      throw error;
+    } finally {
+      audit.finishedAt = new Date().toISOString();
     }
   }
 

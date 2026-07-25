@@ -306,7 +306,7 @@ test("marks the Apollo bootloader as omitted from pogo OTA", () => {
   assert.equal(main.postflightVersionRequired, true);
 });
 
-test("records successful case-pogo transfers on both running temples while keeping the browser writer disabled", () => {
+test("records successful case-pogo transfers and enables only the guarded browser writer", () => {
   assert.equal(POGO_TRANSFER_RESEARCH.directTempleHost.offlineTestsPassed, 8);
   assert.equal(POGO_TRANSFER_RESEARCH.directTempleHost.dataRetryReasons.length, 2);
   assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 9);
@@ -412,7 +412,7 @@ test("records successful case-pogo transfers on both running temples while keepi
     POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulHardwareAttemptsWithCurrentSource,
     2,
   );
-  assert.equal(POGO_TRANSFER_RESEARCH.webWriterEnabled, false);
+  assert.equal(POGO_TRANSFER_RESEARCH.webWriterEnabled, true);
 });
 
 test("decodes Apollo510 INFOC and INFO0 recovery provisioning offline", () => {

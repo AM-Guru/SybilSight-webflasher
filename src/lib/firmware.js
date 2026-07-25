@@ -22,6 +22,9 @@ export const REVIEWED_CFW = Object.freeze({
   baseVersion: "2.2.6.10",
   baseSha256: "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa",
   sha256: "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0",
+  mainPayloadBytes: 3539474,
+  mainPayloadSha256:
+    "38dea7dc05e832e6f5aea8fa726454b2ec44055af5d456b323448ee6989e53d1",
   capabilities: [
     "576×288 image containers",
     "RLE and LZ4 image payloads",
@@ -184,7 +187,7 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
     hardwareAttemptsWithCurrentSource: 4,
     successfulHardwareAttemptsWithCurrentSource: 2,
   }),
-  webWriterEnabled: false,
+  webWriterEnabled: true,
 });
 export const OFFICIAL_G2_SHA256 = Object.freeze({
   "2.0.1.14": "d45005d5f75985339b234550b384899bb89fb37cfe4de4928abc9e882f0709e2",
@@ -645,6 +648,7 @@ export function parseEvenOTA(input) {
       typeId,
       name,
       offset: componentOffset,
+      header: bytes.slice(componentOffset, componentOffset + 128),
       payloadSize,
       crc32c: calculatedCrc,
       payload,
@@ -679,6 +683,26 @@ export async function parseFirmwareInput(input, fileName = "firmware.bin") {
   if (hasMagic(bytes, EVENOTA_MAGIC)) {
     const bundle = parseEvenOTA(bytes);
     const provenance = classifyG2Firmware(fileSha256);
+    const mainEntry = bundle.components.find((component) => component.typeId === 0);
+    const mainPayloadSha256 = mainEntry
+      ? await sha256Hex(mainEntry.payload)
+      : null;
+    const mainComponent = mainEntry
+      ? {
+          name: mainEntry.name,
+          typeId: mainEntry.typeId,
+          header: mainEntry.header,
+          payload: mainEntry.payload,
+          payloadSha256: mainPayloadSha256,
+        }
+      : null;
+    const templeFlashEligible = Boolean(
+      provenance.channel === "custom" &&
+      fileSha256 === REVIEWED_CFW.sha256 &&
+      mainComponent?.name === "ota/s200_firmware_ota.bin" &&
+      mainComponent?.payload.length === REVIEWED_CFW.mainPayloadBytes &&
+      mainPayloadSha256 === REVIEWED_CFW.mainPayloadSha256
+    );
     return {
       kind: "bundle",
       fileName,
@@ -688,8 +712,10 @@ export async function parseFirmwareInput(input, fileName = "firmware.bin") {
       caseVersion: bundle.chargingCase.version,
       caseImage: bundle.chargingCase.rawImage,
       mainFirmware: bundle.mainFirmware,
+      mainComponent,
       provenance,
       caseRecoveryEligible: provenance.channel !== "custom",
+      templeFlashEligible,
       components: bundle.components.map(({ name, typeId, payloadSize, crc32c: crc }) => ({
         name,
         typeId,
@@ -711,6 +737,7 @@ export async function parseFirmwareInput(input, fileName = "firmware.bin") {
       caseVersion: component.version,
       caseImage: component.rawImage,
       mainFirmware: null,
+      mainComponent: null,
       provenance: {
         channel: "local",
         trust: "local-case-component",
@@ -718,6 +745,7 @@ export async function parseFirmwareInput(input, fileName = "firmware.bin") {
         capabilities: [],
       },
       caseRecoveryEligible: true,
+      templeFlashEligible: false,
       components: [],
     };
   }
@@ -732,6 +760,7 @@ export async function parseFirmwareInput(input, fileName = "firmware.bin") {
       caseVersion: detectCaseVersion(bytes),
       caseImage: bytes.slice(),
       mainFirmware: null,
+      mainComponent: null,
       provenance: {
         channel: "local",
         trust: "local-raw-case",
@@ -739,6 +768,7 @@ export async function parseFirmwareInput(input, fileName = "firmware.bin") {
         capabilities: [],
       },
       caseRecoveryEligible: true,
+      templeFlashEligible: false,
       components: [],
     };
   }

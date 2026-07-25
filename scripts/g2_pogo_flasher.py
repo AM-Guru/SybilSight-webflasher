@@ -6,8 +6,9 @@ OTA wrapper (commands 0x52 through 0x55).  It deliberately supports only the
 Apollo main component from a complete, validated EVENOTA package.
 
 The serial transport must expose the *raw temple UART* at 1,000,000 baud,
-8N1.  The stock charging-case CH340 console is not such an endpoint: it needs
-a separately reviewed USB-to-pogo bridge before this flasher can use it.
+8N1.  The stock charging-case CH340 console is not such an endpoint; use the
+sibling ``g2_case_pogo_flasher.py`` tool for the reviewed volatile case-to-pogo
+transport.
 
 Examples:
 
@@ -462,12 +463,14 @@ class MainFirmwareFlasher:
                         request, self.response_timeout
                     )
                     break
-                except (TransportTimeout, ProtocolError):
+                except (TransportTimeout, ProtocolError, DeviceRejected):
                     if attempt >= self.data_retries:
                         raise
                     retries_used += 1
-                    # The temple explicitly accepts the immediately previous
-                    # 0x54 sequence as an idempotent retry.
+                    # A rejected record does not advance the expected
+                    # sequence, while an accepted record whose reply was lost
+                    # accepts the immediately previous sequence again.  The
+                    # exact CRC-protected 0x54 record is safe in both cases.
                     self.sleeper(0.050)
             payload_bytes_sent += data_length
             if self.progress is not None:
@@ -482,21 +485,19 @@ class MainFirmwareFlasher:
                 # conservative settling interval at every 6-KiB boundary.
                 self.sleeper(self.batch_settle_seconds)
 
-        finish_ack_received = True
-        try:
-            self._send_acknowledged(
-                production_ota_finish_request(), self.finish_timeout
-            )
-        except TransportTimeout:
-            # A reset can race the final UART reply.  The caller must require a
-            # matching post-reboot version before treating this as success.
-            finish_ack_received = False
+        # The reviewed stock and CFW images report the same public version, so
+        # postflight liveness alone cannot distinguish them.  Require the
+        # checksum-valid zero-status 0x55 response instead of accepting a
+        # reset-raced timeout as success.
+        self._send_acknowledged(
+            production_ota_finish_request(), self.finish_timeout
+        )
 
         return FlashResult(
             records_sent=total_records,
             payload_bytes_sent=payload_bytes_sent,
             data_retries=retries_used,
-            finish_ack_received=finish_ack_received,
+            finish_ack_received=True,
         )
 
 

@@ -1,123 +1,136 @@
-# G2 pogo main-firmware flasher
+# G2 running-temple firmware tools
 
-`g2_pogo_flasher.py` implements the recovered `0x52` through `0x55`
-product-test OTA protocol exposed by a **running** G2 temple application.
+These Python tools implement the recovered `0x52` through `0x55` product-test
+OTA protocol exposed by a **running** G2 temple application:
 
-It is intentionally fail-closed:
+- `g2_case_pogo_flasher.py` uses the retail case's CH340 USB connection and
+  the exact reviewed volatile SRAM/YHM bridge.
+- `g2_pogo_flasher.py` uses an independently validated raw 1-Mbaud temple
+  UART.
+- `g2_pogo_protocol.py` contains the hardware-independent parser, checksums,
+  and request builders shared by the tools.
 
-- only a complete, six-component EVENOTA package with the reviewed topology is
-  accepted;
-- outer component CRC-32C, the main image's nested reflected CRC-32, vector
-  table, load address, installed span, filename, storage type, and package
-  layout are validated;
-- only `ota/s200_firmware_ota.bin` (component type 0) can be transmitted;
-- `ota/s200_bootloader.bin` is always rejected;
-- mutating operation requires two risk confirmations plus the complete image
-  SHA-256;
-- `0x52` and `0x53` are never blindly replayed;
-- only `0x54` data records are retried, using the firmware's explicitly
-  supported previous-sequence behavior;
-- every 6-KiB deferred-write boundary gets a configurable settling interval;
-  and
-- success requires a matching, checksum-valid post-reboot version response.
+They are intentionally fail-closed:
 
-## Transport requirement
+- a complete six-component `EVENOTA` package must pass topology and checksum
+  validation;
+- only `ota/s200_firmware_ota.bin` (Apollo component type 0) is sent;
+- the Apollo bootloader and all peripheral components are rejected;
+- the case-USB writer accepts only the exact reviewed CFW bundle, main
+  payload, and embedded 2,872-byte bridge hashes;
+- `0x52` start and `0x53` header are never replayed;
+- only the identical CRC-protected current `0x54` data record is retried,
+  after a lost/corrupt reply or an explicit rejection that did not advance the
+  temple sequence;
+- every 6-KiB parser handoff gets a 100-ms settling interval;
+- the checksum-valid, zero-status `0x55` reply is mandatory; and
+- success also requires postflight liveness, exact retained accepted
+  size/sequence, byte-for-byte YHM restoration, volatile proof cleanup, and
+  case 1.2.57 return.
 
-The serial device must expose one temple's raw UART at 1,000,000 baud, 8N1,
-without flow control.
+## Install
 
-The stock case CH340 port (`/dev/cu.usbserial-10` in the current test setup)
-is the case STM32's USART1 console. It is **not** a transparent temple UART and
-cannot be passed directly to this tool. A later case transport must load a
-separately reviewed SRAM bridge, select one YHM2510 contact route, and present
-the transaction API expected by the flasher. The existing
-`g2_case_pogo_read_bridge.py` remains intentionally read-only.
-
-Do not attach a generic USB-UART adapter directly to the charging contacts.
-Use the case's level-shifting/routing front end or an electrically validated
-fixture.
-
-## Offline inspection
-
-```sh
-python3 scripts/firmware/g2_pogo_flasher.py inspect \
-  firmware/ota/2026-07-22/g2-2.2.6.10-e28738432d7b612d625331b00383149b.bin
+```bash
+python3 -m pip install -r scripts/requirements.txt
 ```
 
-Add `--json` for machine-readable output. Inspection does not open a serial
-port.
+## Case-USB tool
 
-## Read-only preflight
+Offline package/bridge inspection:
 
-After a raw temple-UART endpoint exists:
+```bash
+python3 scripts/g2_case_pogo_flasher.py inspect \
+  /path/to/g2-2.2.6.10-cfw.bin
+```
 
-```sh
-python3 scripts/firmware/g2_pogo_flasher.py preflight \
-  --device /dev/cu.usbserial-X \
+Read-only preflight of a seated route:
+
+```bash
+python3 scripts/g2_case_pogo_flasher.py preflight \
+  --device /dev/cu.usbserial-XXXX \
+  --route right \
+  --glasses-seated-confirmed
+```
+
+Reviewed-CFW main reinstall, right route followed by left:
+
+```bash
+python3 scripts/g2_case_pogo_flasher.py flash-reviewed-cfw \
+  /path/to/g2-2.2.6.10-cfw.bin \
+  --device /dev/cu.usbserial-XXXX \
+  --routes both \
+  --glasses-seated-confirmed \
+  --execute-main-ota \
+  --accept-single-slot-risk \
+  --confirm-image-sha256 \
+  5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0 \
+  --log /path/to/g2-cfw-flash-audit.json
+```
+
+Before entering the ROM loader, the tool requires a normal case 1.2.57 banner
+and fresh `DEA3` presence for every selected route. The embedded bridge is
+decoded, SHA-256 checked, written only to an exact SRAM allowlist, and read
+back block by block. Its host leg runs at 115,200 baud with 32-byte
+stop-and-wait flow control; its independent case-to-temple leg remains
+1,000,000 baud.
+
+“Both” uses independent bridge sessions. It completes the right route,
+retained cleanup, and normal case return before beginning the left. Any
+missing proof stops the operation and records `failed_or_uncertain` in the
+audit. `--log` is required: the tool refuses hardware access unless it can
+create a private, atomically updated audit checkpoint.
+
+`stress-preflight` repeats the read-only version transaction. `stress-usb`
+tests only the CH340/case receive envelope and does not forward its payload to
+the temple. See `--help` for their bounded arguments.
+
+## Direct raw-UART tool
+
+The direct tool is useful only when an electrically safe fixture exposes one
+temple's raw UART at 1,000,000 baud, 8N1, without flow control:
+
+```bash
+python3 scripts/g2_pogo_flasher.py preflight \
+  --device /dev/cu.usbserial-RAW \
   --direct-temple-uart-confirmed \
   --expect-version 2.2.6.10
 ```
 
-This sends only the recovered `0x24` version query.
+Do not pass the retail case CH340 to the direct tool. It is the case STM32's
+console, not a transparent temple UART. Use `g2_case_pogo_flasher.py` for that
+connection, and do not attach a generic USB-UART adapter directly to the
+charging contacts.
 
-## Main-firmware flash
+The direct tool can inspect or transmit another complete validated package
+when its full SHA-256 is explicitly confirmed. The case-USB writer is more
+restrictive and accepts only the reviewed CFW.
 
-Run `inspect` first and copy the complete image SHA-256 from its output:
+## Recovery boundary
 
-```sh
-python3 scripts/firmware/g2_pogo_flasher.py flash \
-  firmware/ota/2026-07-22/g2-2.2.6.10-e28738432d7b612d625331b00383149b.bin \
-  --device /dev/cu.usbserial-X \
-  --direct-temple-uart-confirmed \
-  --execute-main-ota \
-  --accept-single-slot-risk \
-  --confirm-image-sha256 \
-  f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa \
-  --expect-current-version 2.2.6.10 \
-  --log /path/to/g2-pogo-flash.json
+This is a running-application, single-slot reinstall path. A `0x54` response
+acknowledges parser acceptance, not a separate durable flash commit. Stock and
+reviewed CFW both publicly report 2.2.6.10, so postflight version alone does
+not identify installed provenance.
+
+These tools cannot:
+
+- back up installed Apollo MRAM, INFO0/INFOC, calibration, pairing state, or
+  keys;
+- operate after the Apollo application or its pogo-UART task has stopped;
+- enter or use a protected Ambiq SBL; or
+- safely rewrite the only Even bootloader.
+
+Installed-state backup still requires permitted SWD/debug read access or a
+separately reviewed read service. Application-dead restoration requires a
+proven Apollo SBL/MRAM-recovery or SWD route.
+
+## Offline tests
+
+```bash
+npm run test:python
 ```
 
-The tool sends:
-
-1. one `0x52` start;
-2. one `0x53` containing the exact 128-byte main-component header;
-3. all sequenced `0x54` records, each containing at most 1,000 data bytes and
-   CRC-16/CCITT-FALSE; and
-4. one `0x55` result check.
-
-For the mirrored `2.2.6.10` image this is 3,524 data records carrying
-3,523,396 bytes.
-
-The `0x54` reply is an acceptance/enqueue acknowledgement, not a durable-write
-acknowledgement. The default 100-ms delay at every 6-KiB boundary is
-conservative but still experimental; validate it on sacrificial hardware
-before relying on the tool for recovery.
-
-If the final reply races the application reset, the tool reports
-`finish_ack=False` and continues to require the exact package version during
-postflight. Lack of a matching postflight response is failure or uncertain
-state, never success.
-
-## What this tool cannot do
-
-- It cannot communicate through the unmodified stock case USB console.
-- It cannot back up installed Apollo MRAM, INFO0/INFOC, calibration, pairing
-  state, or keys.
-- It cannot operate after the temple application or its box-UART task has
-  stopped.
-- It cannot enter or use the protected Ambiq SBL.
-- It cannot safely rewrite the Even bootloader.
-
-Exact installed-state backup still requires permitted SWD/debug read access or
-custom code that implements a read service. Dead-application restoration
-requires a separately proven Apollo SBL/MRAM-recovery or SWD route.
-
-## Tests
-
-```sh
-python3 -m unittest -v scripts/firmware/test_g2_pogo_flasher.py
-```
-
-The tests are offline. They validate the mirrored package, bootloader
-rejection, nested-image corruption rejection, version decoding, reply status
-handling, and idempotent `0x54` retry behavior.
+The tests use no serial hardware. They cover protocol vectors, package
+validation, bootloader rejection, bridge size/hash/vector pins, reply shape
+and status handling, exact data-record retries, and mandatory finish
+acknowledgement.

@@ -1,7 +1,7 @@
 # Even Realities G2 Webflasher
 
-A browser-based analyzer, backup utility, and guarded recovery console for the
-Even Realities G2 charging case.
+A browser-based analyzer, backup utility, guarded charging-case recovery
+console, and application-alive CFW reinstall tool for the Even Realities G2.
 
 The webflasher communicates directly with the case through Web Serial. All
 device communication and firmware validation happen locally in the browser;
@@ -35,16 +35,21 @@ Production deployment:
 - Computes the recovered `0x52...0x55` pogo OTA record plan for every
   component in a selected official or reviewed-CFW bundle without emitting
   any OTA command, and explicitly marks the Apollo bootloader as omitted.
-- Reports the latest main-only transfer research, including the validated
-  direct-UART host and successful case-USB bridge transfers on both running
-  temple routes, without enabling that writer in the browser.
+- Transfers only the exact reviewed CFW Apollo-main payload for installation
+  on either or both running temples through the hardware-validated volatile
+  case-USB bridge.
+  The browser requires fresh presence telemetry, independent bundle/main/
+  bridge trust pins, explicit risk confirmations, exact per-record replies,
+  postflight liveness, retained route-restoration proof, volatile-data
+  cleanup, and normal case 1.2.57 return.
 - Decodes read-only Apollo510 INFOC and active INFO0 debugger dumps locally,
   then fails closed unless every known SBL UART field matches the pogo route.
 - Provides a session console with downloadable logs.
 
 ## Important limitation
 
-This is a **charging-case recovery tool**.
+This is a **charging-case recovery and running-temple reinstall tool**. It is
+not a dead-temple recovery tool.
 
 The stock G2 case firmware does not expose a USB command that writes Apollo
 firmware to an unresponsive glasses temple. The case can power, reset, and
@@ -60,13 +65,12 @@ load that exact digest-pinned bridge into high case SRAM. The payload contains
 only embedded status/version requests and cannot accept arbitrary temple
 bytes or firmware-transfer commands.
 
-That boundary also applies to the reviewed CFW. The webflasher can download,
-authenticate, deeply inspect, and archive it, but deliberately does not offer
-its case component as a way to “install CFW.” The patch changes the glasses'
-Apollo application and its case component is byte-identical to stock case
-1.2.57. The stock case application cannot deliver it; SybilSight's separate
-volatile, hash-gated bridge has now completed Apollo-main transfers on both
-running temple routes. That writer is not yet implemented in this browser.
+That boundary also applies to the reviewed CFW. Its case component is
+byte-identical to stock case 1.2.57, so the webflasher never presents case-bank
+staging as a way to install CFW. Instead, the guarded running-temple control
+loads a volatile, hash-gated case bridge and sends only the pinned CFW Apollo
+main. The stock case application itself still has no such forwarding command.
+This path cannot run if the temple application or its UART task is dead.
 
 The case write and bank-activation path is research-derived and experimental.
 It has not been physically validated by this repository on sacrificial
@@ -165,18 +169,21 @@ restored byte-for-byte, the retained proof/result regions were cleared, and
 stock case firmware 1.2.57 resumed normally. A non-idle charging-route image
 was also physically observed to fail closed before transmission.
 
-The webflasher implements only this reviewed read bridge. It exposes no
-arbitrary USB-to-pogo sender and no browser-side `0x52...0x55` writer.
+The webflasher keeps this fixed read bridge for diagnostics and separately
+embeds the exact reviewed 2,872-byte write bridge. Neither path is an
+arbitrary USB-to-pogo sender. The writer's SRAM code permits only the version
+query and Apollo-main `0x52...0x55` state machine, while the browser
+independently permits only the complete reviewed CFW and its pinned main
+payload.
 
-SybilSight now includes a fail-closed host for an electrically validated raw
-temple UART. Its eight offline tests pass. It validates the complete bundle,
-permits only the Apollo main component, never blindly replays `0x52` start or
-`0x53` header, and retries only the exact current `0x54` record. That retry is
-safe both when an accepted record's reply was lost—the previous sequence is
-idempotent—and when an explicit rejection left the expected sequence
-unchanged. The host waits 100 ms at each 6-KiB handoff and requires the exact
-package version after reboot. It cannot use the unmodified case console by
-itself.
+The shared fail-closed host validates the complete bundle, permits only the
+Apollo main component, never blindly replays `0x52` start or `0x53` header,
+and retries only the exact current `0x54` record. That retry is safe both when
+an accepted record's reply was lost—the previous sequence is idempotent—and
+when an explicit rejection left the expected sequence unchanged. The host
+waits 100 ms at each 6-KiB handoff and requires both the checksum-valid
+zero-status `0x55` reply and postflight liveness. The stock case console
+cannot do this without the temporary SRAM bridge.
 
 Nine experimental case-USB runs were attempted with the reviewed CFW.
 Attempts 1 through 5 ended `failed_or_uncertain`. Attempt 3 used bridge
@@ -246,9 +253,9 @@ complete baseline/selected/restored masks, byte-for-byte YHM restoration, and
 normal case firmware 1.2.57 return.
 
 Accordingly, the validated scope is the reviewed Apollo main image on a
-running left or right temple. Application-dead recovery remains unproven, and
-this browser build still has no writer implementation. The console continues
-to mark the Apollo bootloader component **OMIT FROM POGO** until an
+running left or right temple. The guarded browser and Python implementations
+now expose that exact scope. Application-dead recovery remains unproven. Both
+continue to mark the Apollo bootloader component **OMIT FROM POGO** until an
 independent SBL, MRAM-recovery, or SWD route is proven.
 
 For offline analysis, selected `EVENOTA` bundles show the exact number of
@@ -258,10 +265,11 @@ CRC-16/CCITT-FALSE over each `0x54` data payload, a modulo-256 sequence, and
 6,000-byte deferred batches. The expected sequence starts at zero and accepts
 the immediately previous value as an idempotent `0x54` retry; an explicitly
 rejected current record can also be retried because the sequence did not
-advance. Start and header are not treated as replay-safe. This calculation
-never contacts a temple.
-Every displayed acknowledgement is described as parser acceptance, not proof
-of a durable write, and post-reset version confirmation remains mandatory.
+advance. Start and header are not treated as replay-safe. Offline calculation
+never contacts a temple. During a real transfer, each acknowledgement is
+parser acceptance rather than independent proof of a durable write. The final
+acknowledgement, post-reset version, route restore, retained-proof cleanup, and
+case-application return are all mandatory for a successful audit.
 
 ### Temple backup boundary
 
@@ -378,7 +386,28 @@ SybilSight physically validated the payload and host protocol with its Python
 runner; this Web Serial port follows the same gates but has not yet been
 exercised by this repository on connected G2 hardware.
 
-### 4. Preservation backup
+### 4. Guarded running-temple CFW writer
+
+For the exact reviewed CFW only, the webflasher loads the separately pinned
+2,872-byte bridge at `0x20010000`. It first requires case firmware 1.2.57,
+fresh seated-route telemetry, the complete CFW bundle SHA-256, the Apollo-main
+payload SHA-256, hardware revision 5, and explicit user confirmations.
+
+The host uses 32-byte stop-and-wait USB chunks, never retries start or header,
+retries only the identical CRC-protected data record up to two times, and
+settles for 100 ms at every 6-KiB parser handoff. Success additionally
+requires the exact `0x55` acknowledgement and a checksum-valid postflight
+version. It then exits the bridge, binds the retained proof to the route and
+final host sequence, verifies all ten YHM registers were restored
+byte-for-byte with zero UART errors, clears and rereads the volatile evidence,
+and requires the normal case 1.2.57 banner.
+
+Any missing transaction or cleanup proof is reported as
+`failed_or_uncertain`. The next selected route is not attempted. No bridge
+operation erases or writes case flash, case option bytes, the Apollo
+bootloader, or peripheral firmware.
+
+### 5. Preservation backup
 
 Before recovery, the tool reads:
 
@@ -389,7 +418,7 @@ The downloaded `.g2case-backup.json` contains base64-encoded device memory,
 SHA-256 hashes, firmware information, bank state, and any identifiers exposed
 by the case. Treat it as private device data.
 
-### 5. Firmware validation
+### 6. Firmware validation
 
 For an official `EVENOTA` bundle, the browser validates:
 
@@ -411,7 +440,7 @@ Successful integrity checks are reported separately from publisher trust.
 Only a complete pinned digest identifies an archived official image or the
 reviewed CFW.
 
-### 6. Inactive-bank staging
+### 7. Inactive-bank staging
 
 Staging erases only the pages required by the selected case image in the
 currently inactive physical bank. It does not mass-erase the MCU, overwrite the
@@ -421,7 +450,7 @@ active bank, or erase the device-data pages at bank offsets `0x3F000` and
 The image is written in ROM-loader blocks, read back, and compared
 byte-for-byte and by SHA-256.
 
-### 7. Bank activation
+### 8. Bank activation
 
 Activation is separate from staging. The tool rereads the inactive bank,
 confirms it still matches, rereads the option bytes, and refuses to continue if
@@ -480,6 +509,25 @@ the tool reports a non-idle YHM baseline, let stock charging activity settle
 and retry. This control cannot emit arbitrary bytes or install official or CFW
 firmware.
 
+### Flash the reviewed CFW on running temples
+
+1. Analyze case firmware 1.2.57 with the glasses seated and both desired
+   routes reported present.
+2. Load the exact reviewed `2.2.6.10-cfw` bundle from the catalog or disk.
+3. Under **Guarded running-temple reinstall**, select both routes or one
+   explicit route. Both runs right first and then left; each route gets a
+   fresh volatile bridge session and complete cleanup.
+4. Confirm the glasses are seated, accept the single-slot risk, and type
+   `FLASH REVIEWED CFW`.
+5. Keep the case powered, the lid and glasses still, and the browser awake
+   until the audit reports success or `failed_or_uncertain`.
+6. Download the audit JSON. Do not treat a same-version postflight reply alone
+   as proof of CFW; stock and CFW both report 2.2.6.10.
+
+This is an application-alive reinstall path. If the temple no longer answers
+the version preflight, do not attempt it repeatedly: use a separately proven
+SBL/MRAM-recovery or SWD route.
+
 ### Inspect dead-temple recovery provisioning
 
 1. Acquire INFOC and the selected active INFO0 through a read-only debugger
@@ -508,6 +556,60 @@ path, and a positive result is not authorization to send an SBL image.
 
 If staging fails, the original active bank remains selected. Do not attempt
 activation unless staging and readback both completed successfully.
+
+## Python flashing tools
+
+Install the Python tool's only external dependency:
+
+```bash
+python3 -m pip install -r scripts/requirements.txt
+```
+
+The case-USB tool performs the same reviewed-CFW, running-temple operation as
+the browser. Offline inspection opens no hardware:
+
+```bash
+python3 scripts/g2_case_pogo_flasher.py inspect \
+  /path/to/g2-2.2.6.10-cfw.bin
+```
+
+A read-only preflight loads the volatile bridge, queries one running route,
+proves YHM restoration, clears the retained evidence, and returns to case
+1.2.57:
+
+```bash
+python3 scripts/g2_case_pogo_flasher.py preflight \
+  --device /dev/cu.usbserial-XXXX \
+  --route right \
+  --glasses-seated-confirmed
+```
+
+To flash the exact reviewed CFW main on both routes:
+
+```bash
+python3 scripts/g2_case_pogo_flasher.py flash-reviewed-cfw \
+  /path/to/g2-2.2.6.10-cfw.bin \
+  --device /dev/cu.usbserial-XXXX \
+  --routes both \
+  --glasses-seated-confirmed \
+  --execute-main-ota \
+  --accept-single-slot-risk \
+  --confirm-image-sha256 \
+  5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0 \
+  --log /path/to/g2-cfw-flash-audit.json
+```
+
+The tool rechecks case 1.2.57 and fresh selected-route presence before loading
+the writer. It independently verifies the bridge, complete bundle, and main
+payload hashes, every SRAM write, hardware revision 5, every OTA reply, final
+accepted size/sequence, retained route restoration, volatile cleanup, and
+normal case return. Any missing proof is failure or uncertain state.
+
+`scripts/g2_pogo_flasher.py` provides the same main-only host for an
+independently validated raw 1-Mbaud temple UART. Do not point that direct-UART
+tool at the stock case CH340; use `g2_case_pogo_flasher.py` for the retail
+case USB connection. Neither path backs up Apollo MRAM or recovers a temple
+whose application/UART task is already dead.
 
 ## Firmware archive
 
@@ -585,6 +687,7 @@ Available commands:
 | --- | --- |
 | `npm run dev` | Start the Vite development server on port 3000 |
 | `npm test` | Run firmware-parser and safety tests |
+| `npm run test:python` | Run the offline Python protocol/transport tests |
 | `npm run build` | Create the static production build in `dist/` |
 | `npm run check` | Run tests followed by the production build |
 | `npm run preview` | Serve the production build locally on port 4173 |
@@ -615,9 +718,15 @@ src/App.jsx                    Guided recovery interface
 src/lib/serial.js              Web Serial and STM32 ROM-loader transport
 src/lib/firmware.js            Bundle, checksum, image, and option-byte logic
 src/lib/pogoBridge.js          Pinned read-only SRAM bridge and proof validation
+src/lib/pogoFlashBridge.js     Pinned main-only write bridge and protocol gates
 scripts/build-firmware-archive.mjs
                                CDN mirroring and archive extraction
+scripts/g2_pogo_flasher.py     Raw 1-Mbaud temple-UART flasher
+scripts/g2_case_pogo_flasher.py
+                               Case-USB reviewed-CFW flasher
+scripts/g2_case_rom.py         Safety-scoped volatile-SRAM ROM primitives
 tests/firmware.test.mjs        Parser and safety tests
+tests/pogo-flash.test.mjs      Write-bridge and OTA protocol vectors
 deploy/webflasher.caddy        Production Caddy site block
 public/even-g2-case-grey.png   G2 product image
 ```

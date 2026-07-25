@@ -323,6 +323,11 @@ function App() {
   const [pogoRoute, setPogoRoute] = useState("left");
   const [pogoOperation, setPogoOperation] = useState("version");
   const [pogoConfirm, setPogoConfirm] = useState(false);
+  const [templeFlashRoute, setTempleFlashRoute] = useState("both");
+  const [templeFlashSeated, setTempleFlashSeated] = useState(false);
+  const [templeFlashRisk, setTempleFlashRisk] = useState(false);
+  const [templeFlashText, setTempleFlashText] = useState("");
+  const [templeFlashAudit, setTempleFlashAudit] = useState(null);
   const [recoveryDumps, setRecoveryDumps] = useState({});
   const [recoveryConfig, setRecoveryConfig] = useState(null);
   const [recoveryConfigError, setRecoveryConfigError] = useState("");
@@ -418,6 +423,7 @@ function App() {
       setStaged(null);
       setPogoResults({});
       setPogoConfirm(false);
+      setTempleFlashAudit(null);
       addLog("Analysis complete. No device memory was changed.", "success");
     });
   };
@@ -430,6 +436,7 @@ function App() {
       setStaged(null);
       setPogoResults({});
       setPogoConfirm(false);
+      setTempleFlashAudit(null);
       addLog("Fresh analysis complete.", "success");
     });
   };
@@ -497,6 +504,10 @@ function App() {
       : parsed;
     setFirmware(accepted);
     setStaged(null);
+    setTempleFlashAudit(null);
+    setTempleFlashText("");
+    setTempleFlashSeated(false);
+    setTempleFlashRisk(false);
     addLog(
       `Validated ${fileName} · ${accepted.provenance.label} · ${accepted.fileSha256.slice(0, 16)}…`,
       "success",
@@ -609,6 +620,36 @@ function App() {
     });
   };
 
+  const flashReviewedCfw = async () => {
+    if (
+      !firmware?.templeFlashEligible ||
+      !templeFlashSeated ||
+      !templeFlashRisk ||
+      templeFlashText.trim().toUpperCase() !== "FLASH REVIEWED CFW"
+    ) {
+      return;
+    }
+    await run("temple-flash", async () => {
+      try {
+        const audit = await getSession().flashReviewedCfwMain(
+          firmware,
+          templeFlashRoute,
+        );
+        setTempleFlashAudit(audit);
+        setTempleFlashText("");
+        setTempleFlashSeated(false);
+        setTempleFlashRisk(false);
+        addLog(
+          `Reviewed CFW main transfer completed on ${audit.routes.join(" + ")} with route restoration verified.`,
+          "success",
+        );
+      } catch (caught) {
+        if (caught?.audit) setTempleFlashAudit(caught.audit);
+        throw caught;
+      }
+    });
+  };
+
   const stageFirmware = async () => {
     if (!report || !backup || !firmware?.caseRecoveryEligible) return;
     await run("stage", async () => {
@@ -653,12 +694,29 @@ function App() {
     connect: Boolean(report),
     analyze: Boolean(report),
     backup: Boolean(backup),
-    firmware: Boolean(firmware?.caseRecoveryEligible),
+    firmware: Boolean(
+      firmware?.caseRecoveryEligible || firmware?.templeFlashEligible,
+    ),
     recover: Boolean(staged),
   };
   const telemetry = report?.console?.telemetry;
   const selectedTemplePresent =
     pogoRoute === "left" ? telemetry?.leftPresent : telemetry?.rightPresent;
+  const flashRoutesPresent =
+    templeFlashRoute === "both"
+      ? telemetry?.leftPresent && telemetry?.rightPresent
+      : templeFlashRoute === "left"
+        ? telemetry?.leftPresent
+        : telemetry?.rightPresent;
+  const templeFlashReady = Boolean(
+    report?.console?.caseVersion === "1.2.57" &&
+    firmware?.templeFlashEligible &&
+    flashRoutesPresent &&
+    templeFlashSeated &&
+    templeFlashRisk &&
+    templeFlashText.trim().toUpperCase() === "FLASH REVIEWED CFW" &&
+    !operation
+  );
   const canStage = Boolean(
     report && backup && firmware?.caseRecoveryEligible && !operation,
   );
@@ -687,15 +745,15 @@ function App() {
 
       <aside className="sidebar">
         <a className="brand" href="#connect" aria-label="SybilSight G2 Recovery Console">
-          <span className="brand-mark">S/S</span>
-          <span>
-            <strong>SYBIL/SIGHT</strong>
-            <small>G2 recovery console</small>
+          <span className="brand-wordmark" aria-hidden="true">
+            <strong>SYBIL</strong>
+            <strong>SIGHT</strong>
           </span>
+          <small>G2 WebFlasher</small>
         </a>
         <div className="sidebar-intro">
-          <span className="hardware-label">B200 · USB SERIAL</span>
-          <h1>Restore the case.<br />Preserve the evidence.</h1>
+          <span className="hardware-label">DEVICE SERVICE · USB SERIAL</span>
+          <h1>Recover with precision.<br />Protect every byte.</h1>
           <p>
             A guided, local-only console for the Even Realities G2 charging case.
           </p>
@@ -727,11 +785,11 @@ function App() {
 
         <section className="hero" id="connect">
           <div className="hero-copy">
-            <div className="eyebrow">Even Realities G2 · charging case</div>
+            <div className="eyebrow">Recovery console · Even Realities G2</div>
             <h2>
-              USB recovery,
+              Restore with precision.
               <br />
-              with guardrails.
+              Zero compromise.
             </h2>
             <p>
               Inspect the factory console and both STM32 banks, capture a complete
@@ -931,10 +989,10 @@ function App() {
               The traced B0 command can hardware-reset both seated temples, and the case
               reports when each application link returns. This console can also load the
               exact reviewed read-only SRAM bridge for checksum-valid status or version
-              replies from either pogo route. SybilSight’s separate hash-gated write
-              bridge has now completed the reviewed-CFW Apollo-main transfer on both
-              running temple routes, including finish acknowledgement, post-reboot
-              version, byte-for-byte route restoration, and normal case-app return.
+              replies from either pogo route. Its hash-gated writer can install only the
+              exact reviewed-CFW Apollo main on a running temple, with finish
+              acknowledgement, post-reboot version, byte-for-byte route restoration,
+              and normal case-app return required on every selected route.
             </p>
           </div>
           <Button
@@ -961,9 +1019,9 @@ function App() {
               <span>RUNNING TEMPLE</span>
               <strong>Reviewed read-only pogo bridge available</strong>
             </div>
-            <div className="is-gated">
+            <div className="is-confirmed">
               <span>POGO OTA</span>
-              <strong>Both running-temple routes verified</strong>
+              <strong>Reviewed CFW main writer enabled</strong>
             </div>
             <div className="is-blocked">
               <span>APPLICATION-DEAD TEMPLE</span>
@@ -1059,18 +1117,18 @@ function App() {
           <div className="transfer-research">
             <div className="pogo-tool-heading">
               <div>
-                <div className="eyebrow">Latest transfer evidence</div>
-                <h3>Both temple main-recovery routes are hardware-validated.</h3>
+                <div className="eyebrow">Guarded running-temple reinstall</div>
+                <h3>Flash the exact reviewed CFW through the case.</h3>
               </div>
-              <StatusPill tone="success">Case bridge succeeded</StatusPill>
+              <StatusPill tone={firmware?.templeFlashEligible ? "success" : "quiet"}>
+                {firmware?.templeFlashEligible ? "Exact CFW validated" : "Load reviewed CFW"}
+              </StatusPill>
             </div>
             <p>
-              SybilSight’s fail-closed case-USB host now has complete results for both
-              temple routes on the running application’s 0x52–0x55 path. It accepts
-              only the exact reviewed CFW Apollo main component, never blindly replays
-              start or header, retries only the exact current 0x54 data record after a
-              lost reply or explicit rejection, waits at 6-KiB boundaries, and requires
-              a matching post-reboot version.
+              The browser now uses the physically validated case-USB bridge on the
+              running application’s 0x52–0x55 path. It independently pins the 2,872-byte
+              SRAM payload, complete CFW bundle, and Apollo-main payload; the bridge and
+              host both reject the Apollo bootloader and every peripheral component.
             </p>
             <div className="transfer-facts">
               <div>
@@ -1109,6 +1167,118 @@ function App() {
                 </strong>
               </div>
             </div>
+            <div className="temple-flash-controls">
+              <label>
+                Temple route
+                <select
+                  value={templeFlashRoute}
+                  onChange={(event) => {
+                    setTempleFlashRoute(event.target.value);
+                    setTempleFlashSeated(false);
+                    setTempleFlashText("");
+                  }}
+                  disabled={Boolean(operation)}
+                >
+                  <option value="both">Both temples · right then left</option>
+                  <option value="right">Right temple only</option>
+                  <option value="left">Left temple only</option>
+                </select>
+              </label>
+              <div className="temple-flash-pins">
+                <span>CFW BUNDLE SHA-256</span>
+                <code>5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0</code>
+                <span>APOLLO MAIN SHA-256</span>
+                <code>38dea7dc05e832e6f5aea8fa726454b2ec44055af5d456b323448ee6989e53d1</code>
+              </div>
+            </div>
+            <div className="temple-flash-confirmations">
+              <label className="pogo-confirm">
+                <input
+                  type="checkbox"
+                  checked={templeFlashSeated}
+                  onChange={(event) => setTempleFlashSeated(event.target.checked)}
+                  disabled={!report || !flashRoutesPresent || Boolean(operation)}
+                />
+                <span>
+                  I confirm the selected temple route{templeFlashRoute === "both" ? "s are" : " is"} seated
+                  and I will not move the glasses, case, or USB cable.
+                </span>
+              </label>
+              <label className="pogo-confirm">
+                <input
+                  type="checkbox"
+                  checked={templeFlashRisk}
+                  onChange={(event) => setTempleFlashRisk(event.target.checked)}
+                  disabled={!firmware?.templeFlashEligible || Boolean(operation)}
+                />
+                <span>
+                  I understand this is a single-slot application reinstall. It cannot
+                  recover a temple whose Apollo application or pogo UART task is already dead.
+                </span>
+              </label>
+              <label className="confirm-label" htmlFor="temple-flash-confirmation">
+                Type <strong>FLASH REVIEWED CFW</strong>
+              </label>
+              <input
+                id="temple-flash-confirmation"
+                className="confirm-input"
+                value={templeFlashText}
+                onChange={(event) => setTempleFlashText(event.target.value)}
+                placeholder="FLASH REVIEWED CFW"
+                autoComplete="off"
+                disabled={!firmware?.templeFlashEligible || Boolean(operation)}
+              />
+              <Button
+                tone="danger"
+                onClick={flashReviewedCfw}
+                busy={operation === "temple-flash"}
+                disabled={!templeFlashReady}
+              >
+                Flash reviewed CFW main
+              </Button>
+              {!firmware?.templeFlashEligible ? (
+                <small className="pogo-presence-warning">
+                  Load the exact reviewed 2.2.6.10 CFW bundle in “Choose image” to
+                  enable this operation.
+                </small>
+              ) : report && !flashRoutesPresent ? (
+                <small className="pogo-presence-warning">
+                  Fresh analysis does not report every selected route as seated.
+                </small>
+              ) : null}
+            </div>
+            {templeFlashAudit ? (
+              <div className={cx(
+                "temple-flash-audit",
+                templeFlashAudit.outcome === "success" && "is-success",
+              )}>
+                <div>
+                  <strong>
+                    {templeFlashAudit.outcome === "success"
+                      ? "Transfer and restoration verified"
+                      : "Stopped · state failed or uncertain"}
+                  </strong>
+                  <span>
+                    {templeFlashAudit.routeResults
+                      .map((item) => `${item.route}: ${item.outcome}`)
+                      .join(" · ")}
+                  </span>
+                </div>
+                <Button
+                  tone="ghost"
+                  onClick={() =>
+                    downloadBlob(
+                      new Blob([`${JSON.stringify(templeFlashAudit, null, 2)}\n`], {
+                        type: "application/json",
+                      }),
+                      `g2-cfw-flash-${new Date().toISOString().replaceAll(":", "-")}.json`,
+                    )
+                  }
+                >
+                  Download audit
+                </Button>
+              </div>
+            ) : null}
             <small className="transfer-warning">
               Attempt 6 sent all 3,540 data records without retry, received the finish
               acknowledgement, verified 2.2.6.10/hardware 5 after reboot, restored all
@@ -1121,9 +1291,10 @@ function App() {
               The updated host safely retries that exact data record because a rejection
               does not advance the expected sequence. Attempt 9 subsequently completed
               the left transfer with all 3,540 records, zero retries, finish and
-              postflight confirmation, full route restoration, and case-app return.
-              The successful writer is not yet ported into this browser build, so this
-              page still exposes no 0x52–0x55 sender.
+              postflight confirmation, full route restoration, and case-app return. This
+              browser port preserves those same gates; until its Web Serial path receives
+              an independent hardware run, retain the downloaded audit and treat any
+              interrupted result as failed or uncertain.
             </small>
           </div>
           <div className="sbl-audit">
@@ -1363,7 +1534,8 @@ function App() {
                         Its case component is byte-identical to the stock 1.2.57 component.
                         The exact reviewed Apollo main payload has successful left- and
                         right-temple transfers through SybilSight’s volatile case bridge.
-                        The writer is not exposed in this browser build.
+                        It is eligible only for the guarded running-temple writer above,
+                        never for case-bank staging.
                       </span>
                       <ul>
                         {firmware.provenance.capabilities.map((capability) => (
@@ -1523,7 +1695,7 @@ function App() {
         </section>
 
         <footer className="footer">
-          <span>SybilSight research utility · local Web Serial</span>
+          <span>Sybil Sight™ · G2 WebFlasher · local Web Serial</span>
           <span>No device data is uploaded by this app.</span>
         </footer>
       </main>
