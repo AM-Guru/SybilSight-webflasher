@@ -66,7 +66,7 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
       "08a08f45ac125a1dba6469234e56cacd32147d9e79203327987276d2fb182b02",
     ]),
     validationBoundary:
-      "Attempts 6 and 9 completed and verified the reviewed CFW Apollo-main transfer on the right and left running temples respectively, including finish acknowledgement, postflight version, route restoration, and case-app return.",
+      "Attempts 6 and 9 completed and verified the reviewed CFW Apollo-main transfer on the right and left running temples respectively, including finish acknowledgement, postflight version, route restoration, and Case-app return.",
     bestPartialTransfer: Object.freeze({
       route: "right",
       preflightFirmware: "2.2.6.10",
@@ -409,24 +409,24 @@ export function detectCaseVersion(data) {
 export function parseCaseComponent(payload) {
   const bytes = asBytes(payload);
   if (bytes.length < 0x28 || ascii(bytes.subarray(0, 4)) !== "EVEN") {
-    throw new Error("The charging-case component is missing its EVEN wrapper.");
+    throw new Error("The Charging-Case component is missing its EVEN wrapper.");
   }
   const imageSize = readU32BE(bytes, 8);
   const storedSum = readU32BE(bytes, 12);
   if (imageSize !== bytes.length - 0x20) {
     throw new Error(
-      `The charging-case wrapper declares ${imageSize} bytes, but contains ${bytes.length - 0x20}.`,
+      `The Charging-Case wrapper declares ${imageSize} bytes, but contains ${bytes.length - 0x20}.`,
     );
   }
   const rawImage = bytes.slice(0x20);
   const calculatedSum = additiveBigEndianWordSum(rawImage);
   if (storedSum !== calculatedSum) {
     throw new Error(
-      `The charging-case checksum is ${hex(storedSum)}, expected ${hex(calculatedSum)}.`,
+      `The Charging-Case checksum is ${hex(storedSum)}, expected ${hex(calculatedSum)}.`,
     );
   }
   if (!isPlausibleCaseImage(rawImage)) {
-    throw new Error("The charging-case image has an invalid Cortex-M vector.");
+    throw new Error("The Charging-Case image has an invalid Cortex-M vector.");
   }
   return {
     rawImage,
@@ -664,7 +664,7 @@ export function parseEvenOTA(input) {
   }
   const caseEntry = components.find((component) => component.typeId === 6);
   if (!caseEntry) {
-    throw new Error("The EVENOTA bundle does not contain charging-case firmware.");
+    throw new Error("The EVENOTA bundle does not contain Charging-Case firmware.");
   }
   const chargingCase = parseCaseComponent(caseEntry.payload);
   const mainEntry = components.find((component) => component.typeId === 0);
@@ -751,7 +751,7 @@ export async function parseFirmwareInput(input, fileName = "firmware.bin") {
       provenance: {
         channel: "local",
         trust: "local-case-component",
-        label: "Locally supplied case component",
+        label: "Locally supplied Case component",
         capabilities: [],
       },
       caseRecoveryEligible: true,
@@ -775,7 +775,7 @@ export async function parseFirmwareInput(input, fileName = "firmware.bin") {
       provenance: {
         channel: "local",
         trust: "local-raw-case",
-        label: "Locally supplied raw case image",
+        label: "Locally supplied raw Case image",
         capabilities: [],
       },
       caseRecoveryEligible: true,
@@ -786,7 +786,7 @@ export async function parseFirmwareInput(input, fileName = "firmware.bin") {
   }
 
   throw new Error(
-    "Unsupported firmware file. Choose a G2 EVENOTA bundle, firmware_box.bin component, or validated raw case image.",
+    "Unsupported firmware file. Choose a G2 EVENOTA bundle, firmware_box.bin component, or validated raw Case image.",
   );
 }
 
@@ -819,7 +819,7 @@ export function toggledBankOptionBytes(input) {
   const decoded = decodeOptionBytes(input);
   if (decoded.rdp !== 0xaa || !decoded.dualBank) {
     throw new Error(
-      "Refusing to switch banks: the case is not in the verified level-0 dual-bank configuration.",
+      "Refusing to switch banks: the Case is not in the verified level-0 dual-bank configuration.",
     );
   }
   const next = decoded.raw.slice();

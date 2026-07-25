@@ -225,18 +225,18 @@ export function parsePogoFlashReady(response, setup) {
     bytes[7] !== request[7] ||
     bytes[12] !== sum8(bytes.subarray(0, 12))
   ) {
-    throw new PogoFlashSafetyError("The case bridge ready response is invalid.");
+    throw new PogoFlashSafetyError("The Case bridge ready response is invalid.");
   }
   const baselineMask = bytes[8] | (bytes[9] << 8);
   const selectedMask = bytes[10] | (bytes[11] << 8);
   if (bytes[5] !== 0) {
     throw new PogoFlashSafetyError(
-      `The case bridge stopped during setup: ${POGO_FLASH_STATUS[bytes[5]] ?? `status ${bytes[5]}`}.`,
+      `The Case bridge stopped during setup: ${POGO_FLASH_STATUS[bytes[5]] ?? `status ${bytes[5]}`}.`,
     );
   }
   if (baselineMask !== 0x3ff || selectedMask !== 0x3ff) {
     throw new PogoFlashSafetyError(
-      "The case bridge did not prove complete baseline and selected-route reads.",
+      "The Case bridge did not prove complete baseline and selected-route reads.",
     );
   }
   return { route: bytes[6] === 0 ? "left" : "right", baselineMask, selectedMask };
@@ -264,11 +264,11 @@ export function parsePogoFlashResponse(header, tail, expectedSequence) {
     prefix[8] > 64 ||
     suffix.length !== prefix[8] + 1
   ) {
-    throw new RetryablePogoFlashError("The case bridge response header is invalid.");
+    throw new RetryablePogoFlashError("The Case bridge response header is invalid.");
   }
   const complete = concatBytes(prefix, suffix);
   if (complete.at(-1) !== sum8(complete.subarray(0, -1))) {
-    throw new RetryablePogoFlashError("The case bridge response checksum is invalid.");
+    throw new RetryablePogoFlashError("The Case bridge response checksum is invalid.");
   }
   return {
     sequence: prefix[5],

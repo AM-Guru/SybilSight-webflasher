@@ -110,7 +110,7 @@ export function buildG2SystemBackupArtifact({
   return {
     schemaVersion: SYSTEM_BACKUP_SCHEMA_VERSION,
     backupKind: "even-realities-g2-system-recovery",
-    device: "Even Realities G2 charging case and Smart Glasses",
+    device: "Even Realities G2 Charging Case and Smart Glasses",
     createdAt,
     scope: {
       chargingCase: "byte-for-byte installed flash and option bytes",

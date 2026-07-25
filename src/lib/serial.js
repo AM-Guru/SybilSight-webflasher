@@ -83,7 +83,7 @@ function compactHex(input) {
 function requireReviewedCaseRom(loader) {
   if (loader.version !== 0x31 || loader.productId !== 0x0467) {
     throw new PogoFlashSafetyError(
-      `The case ROM identity differs from the reviewed device (protocol=0x${loader.version
+      `The Case ROM identity differs from the reviewed device (protocol=0x${loader.version
         ?.toString(16)}, product=0x${loader.productId?.toString(16)}).`,
     );
   }
@@ -93,7 +93,7 @@ function requireReviewedCaseRom(loader) {
       loader.commands.includes(command))
   ) {
     throw new PogoFlashSafetyError(
-      `The case ROM command table differs from the reviewed device (${loader.commands
+      `The Case ROM command table differs from the reviewed device (${loader.commands
         .map((command) => command.toString(16).padStart(2, "0"))
         .join(" ")}).`,
     );
@@ -311,7 +311,7 @@ class Stm32Bootloader {
 
   requireCommand(command, label) {
     if (!this.commands.includes(command)) {
-      throw new Error(`The case ROM loader does not advertise ${label}.`);
+      throw new Error(`The Case ROM loader does not advertise ${label}.`);
     }
   }
 
@@ -322,7 +322,7 @@ class Stm32Bootloader {
 
   async expectAck(label, timeoutMs = 3000) {
     const value = (await this.transport.readExact(1, timeoutMs, `${label} ACK`))[0];
-    if (value === NACK) throw new Error(`The case returned NACK during ${label}.`);
+    if (value === NACK) throw new Error(`The Case returned NACK during ${label}.`);
     if (value !== ACK) {
       throw new Error(
         `Unexpected 0x${value.toString(16).padStart(2, "0")} during ${label}.`,
@@ -492,7 +492,7 @@ async function resetTemples(transport) {
   const resetOutput = new TextDecoder().decode(await transport.collectFor(2200));
   if (!/reset gls L & R, reason: cmd/i.test(resetOutput)) {
     throw new Error(
-      "The case did not confirm the traced B0 left/right temple reset command.",
+      "The Case did not confirm the traced B0 left/right temple reset command.",
     );
   }
   return resetOutput;
@@ -501,7 +501,7 @@ async function resetTemples(transport) {
 class CasePogoFlashTransport {
   constructor(session, route, { progressBase = 0, progressSpan = 1 } = {}) {
     if (!["left", "right"].includes(route)) {
-      throw new PogoFlashSafetyError("The case bridge route must be left or right.");
+      throw new PogoFlashSafetyError("The Case bridge route must be left or right.");
     }
     this.session = session;
     this.port = session.port;
@@ -675,12 +675,12 @@ class CasePogoFlashTransport {
       }
       if (response.status === 6) {
         throw new RetryablePogoFlashError(
-          "No complete temple response arrived through the case bridge.",
+          "No complete temple response arrived through the Case bridge.",
         );
       }
       if (response.status !== 0) {
         throw new PogoFlashSafetyError(
-          `The case bridge stopped safely: ${POGO_FLASH_STATUS[response.status] ?? `status ${response.status}`}.`,
+          `The Case bridge stopped safely: ${POGO_FLASH_STATUS[response.status] ?? `status ${response.status}`}.`,
         );
       }
       return response.captured;
@@ -806,7 +806,7 @@ class CasePogoFlashTransport {
         expectedVersion: REVIEWED_CASE_VERSION,
       });
     } catch (error) {
-      errors.push(`case application return: ${error.message}`);
+      errors.push(`Case application return: ${error.message}`);
     }
     if (errors.length) {
       throw new PogoFlashSafetyError(errors.join("; "));
@@ -912,7 +912,7 @@ export class G2CaseSession {
       }
       if (expectedVersion && report.caseVersion !== expectedVersion) {
         throw new Error(
-          `The case returned firmware ${report.caseVersion ?? "unknown"}, expected ${expectedVersion}.`,
+          `The Case returned firmware ${report.caseVersion ?? "unknown"}, expected ${expectedVersion}.`,
         );
       }
       this.log(
@@ -931,12 +931,12 @@ export class G2CaseSession {
       this.progress(progressBase + fraction * progressSpan, detail);
     const loader = new Stm32Bootloader(this.port, this.log);
     try {
-      this.log("Starting a read-only 512 KiB case backup.");
+      this.log("Starting a read-only 512 KiB Case backup.");
       await loader.connect();
       const flash = await loader.readRange(FLASH_BASE, FLASH_SIZE, (fraction) =>
         reportProgress(
           fraction * 0.96,
-          `Backing up case · ${Math.round(fraction * 100)}%`,
+          `Backing up Case · ${Math.round(fraction * 100)}%`,
         ),
       );
       const optionBytes = await loader.readRange(OPTION_BASE, OPTION_SIZE);
@@ -957,7 +957,7 @@ export class G2CaseSession {
     try {
       const boot = new TextDecoder().decode(await normal.collectFor(3000));
       const resetOutput = await resetTemples(normal);
-      this.log("The case confirmed its left/right hardware reset sequence.");
+      this.log("The Case confirmed its left/right hardware reset sequence.");
       await delay(6500);
       const telemetry = await queryNormal(normal, 0xa3, 1000);
       return parseConsoleReport(boot, resetOutput, telemetry);
@@ -1181,7 +1181,7 @@ export class G2CaseSession {
   }
 
   async readTempleFlashPreflight(routes) {
-    this.log("Refreshing case firmware and seated-temple telemetry before flashing.");
+    this.log("Refreshing Case firmware and seated-temple telemetry before flashing.");
     const normal = await openNormalConsole(this.port);
     try {
       const bootText = new TextDecoder().decode(await normal.collectFor(2500));
@@ -1189,12 +1189,12 @@ export class G2CaseSession {
       const report = parseConsoleReport(bootText, telemetryText);
       if (report.caseVersion !== REVIEWED_CASE_VERSION) {
         throw new PogoFlashSafetyError(
-          `The volatile writer is pinned to case ${REVIEWED_CASE_VERSION}; this case reports ${report.caseVersion ?? "unknown"}.`,
+          `The volatile writer is pinned to Case ${REVIEWED_CASE_VERSION}; this Case reports ${report.caseVersion ?? "unknown"}.`,
         );
       }
       if (!report.telemetry) {
         throw new PogoFlashSafetyError(
-          "Fresh case telemetry was not available before the mutating operation.",
+          "Fresh Case telemetry was not available before the mutating operation.",
         );
       }
       for (const route of routes) {
@@ -1204,7 +1204,7 @@ export class G2CaseSession {
             : report.telemetry.rightPresent;
         if (!present) {
           throw new PogoFlashSafetyError(
-            `Fresh case telemetry does not report the ${route} temple as seated.`,
+            `Fresh Case telemetry does not report the ${route} temple as seated.`,
           );
         }
       }
@@ -1370,14 +1370,14 @@ export class G2CaseSession {
       if (cleanupError) result.cleanupError = cleanupError.message;
       const details = [
         operationError && `temple transaction: ${operationError.message}`,
-        cleanupError && `case cleanup: ${cleanupError.message}`,
+        cleanupError && `Case cleanup: ${cleanupError.message}`,
       ].filter(Boolean);
       const error = new PogoFlashSafetyError(`${route}: ${details.join("; ")}`);
       error.routeResult = result;
       throw error;
     }
     result.outcome = "success";
-    transport.reportProgress(1, `${route}: route and case application restored`);
+    transport.reportProgress(1, `${route}: route and Case application restored`);
     return result;
   }
 
@@ -1434,7 +1434,7 @@ export class G2CaseSession {
         }
       }
       audit.outcome = "success";
-      this.progress(1, "Reviewed CFW transfer and case restoration verified");
+      this.progress(1, "Reviewed CFW transfer and Case restoration verified");
       return audit;
     } catch (error) {
       audit.outcome = "failed_or_uncertain";
@@ -1480,7 +1480,7 @@ export class G2CaseSession {
       const sourceSha256 = await sha256Hex(caseImage);
       const readbackSha256 = await sha256Hex(readback);
       if (sourceSha256 !== readbackSha256 || !equalBytes(caseImage, readback)) {
-        throw new Error("Inactive-bank readback does not match the selected case image.");
+        throw new Error("Inactive-bank readback does not match the selected Case image.");
       }
       this.progress(1, "Inactive bank verified");
       this.log(`Inactive bank staged and verified · ${readbackSha256.slice(0, 16)}…`);
@@ -1519,7 +1519,7 @@ export class G2CaseSession {
       if (!optionWriteStarted) throw error;
       if (/NACK|unexpected 0x/i.test(error?.message ?? "")) throw error;
       this.log(
-        "The option-byte write reset the case before the final acknowledgement; checking the normal application.",
+        "The option-byte write reset the Case before the final acknowledgement; checking the normal application.",
         "warn",
       );
     } finally {

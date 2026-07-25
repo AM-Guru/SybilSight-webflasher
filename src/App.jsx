@@ -79,33 +79,59 @@ function Field({ label, value, detail, status }) {
   );
 }
 
-function StepRail({ complete }) {
-  const steps = [
-    ["connect", "Connect", "USB Serial"],
-    ["analyze", "Analyze", "Status + banks"],
-    ["backup", "Preserve", "Case + glasses backup"],
-    ["firmware", "Choose image", "CDN or local file"],
-    ["recover", "Recover", "Stage, verify, activate"],
-    ["recovery-console", "Recovery Console", "Temple tools"],
-  ];
+export const WORKFLOW_STEPS = [
+  ["connect", "Connect", "USB Serial"],
+  ["analyze", "Analyze", "Status + banks"],
+  ["backup", "Preserve", "Case + Glasses backup"],
+  ["firmware", "Choose image", "CDN or local file"],
+];
+export const RECOVERY_STEPS = [
+  ["recover", "Recover", "Stage, verify, activate"],
+  ["recovery-console", "Recovery Console", "Temple tools"],
+];
+export const SECTION_KEYS = [...WORKFLOW_STEPS, ...RECOVERY_STEPS].map(
+  ([key]) => key,
+);
+
+function StepRail({ complete, active }) {
+  const renderGroup = (steps, offset) =>
+    steps.map(([key, title, detail], index) => (
+      <a
+        href={`#${key}`}
+        className={cx(
+          "step-link",
+          complete[key] && "is-complete",
+          active === key && "is-current",
+        )}
+        aria-current={active === key ? "page" : undefined}
+        key={key}
+      >
+        <span className="step-number">
+          {complete[key] ? (
+            <Icon name="check" />
+          ) : (
+            String(index + offset + 1).padStart(2, "0")
+          )}
+        </span>
+        <span>
+          <strong>{title}</strong>
+          <small>{detail}</small>
+        </span>
+      </a>
+    ));
   return (
-    <nav className="step-rail" aria-label="Recovery workflow">
-      {steps.map(([key, title, detail], index) => (
-        <a
-          href={`#${key}`}
-          className={cx("step-link", complete[key] && "is-complete")}
-          key={key}
-        >
-          <span className="step-number">
-            {complete[key] ? <Icon name="check" /> : String(index + 1).padStart(2, "0")}
-          </span>
-          <span>
-            <strong>{title}</strong>
-            <small>{detail}</small>
-          </span>
-        </a>
-      ))}
-    </nav>
+    <div className="step-rails">
+      <nav className="step-rail" aria-label="Setup workflow">
+        {renderGroup(WORKFLOW_STEPS, 0)}
+      </nav>
+      <nav
+        className="step-rail step-rail-recovery"
+        aria-label="Recovery"
+        data-group-label="Recovery"
+      >
+        {renderGroup(RECOVERY_STEPS, WORKFLOW_STEPS.length)}
+      </nav>
+    </div>
   );
 }
 
@@ -305,7 +331,7 @@ function SmartGlassesAnalyticsCard({ analytics, label }) {
         <code>
           {proof
             ? `${proof.baselineMask} → ${proof.selectedMask} → ${proof.restoredMask}`
-            : "Run the full glasses analysis to capture transport proof"}
+            : "Run the full Glasses analysis to capture transport proof"}
         </code>
         {proof ? (
           <small>
@@ -338,11 +364,11 @@ function ShellEvidenceView({ analytics, onDownload }) {
       <div className="shell-analysis-heading">
         <div>
           <div className="eyebrow">Local evidence export</div>
-          <h3>Case shell, glasses frames, and recovery provenance</h3>
+          <h3>Case shell, Glasses frames, and recovery provenance</h3>
           <p>
-            Factory-console output belongs to the charging case. Temple frames and
-            YHM masks belong to the selected glasses route and were transported
-            through the case’s volatile SRAM bridge.
+            Factory-console output belongs to the Charging Case. Temple frames and
+            YHM masks belong to the selected Glasses route and were transported
+            through the Case’s volatile SRAM bridge.
           </p>
         </div>
         <Button tone="secondary" onClick={onDownload}>
@@ -363,7 +389,7 @@ function ShellEvidenceView({ analytics, onDownload }) {
             ))}
           </div>
           <details open>
-            <summary>Raw case console output</summary>
+            <summary>Raw Case console output</summary>
             <pre>{caseShell.rawOutput || "No console output captured."}</pre>
           </details>
         </article>
@@ -379,7 +405,7 @@ function ShellEvidenceView({ analytics, onDownload }) {
                     ? `${temple.firmwareVersion} · HW ${temple.hardwareRevision}`
                     : temple.present
                       ? "Seated; no application reply captured"
-                      : "Not detected by case telemetry"}
+                      : "Not detected by Case telemetry"}
                 </span>
                 {["version", "status"].map((kind) => (
                   <code key={kind}>
@@ -494,6 +520,8 @@ function App() {
   const [error, setError] = useState("");
   const [logs, setLogs] = useState([]);
   const [consoleOpen, setConsoleOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState(SECTION_KEYS[0]);
+  const pendingAnchorRef = useRef(null);
   const [confirmText, setConfirmText] = useState("");
   const [confirmBackup, setConfirmBackup] = useState(false);
   const [recheckReport, setRecheckReport] = useState(null);
@@ -529,7 +557,7 @@ function App() {
 
   const getSession = useCallback(
     (port = portRef.current) => {
-      if (!port) throw new Error("Connect the G2 case first.");
+      if (!port) throw new Error("Connect the G2 Case first.");
       if (!sessionRef.current || sessionRef.current.port !== port) {
         sessionRef.current = new G2CaseSession(port, {
           log: addLog,
@@ -540,6 +568,51 @@ function App() {
     },
     [addLog, setSessionProgress],
   );
+
+  // Panes are addressed by hash so deep links, back/forward, and in-page anchors
+  // keep working even though the page no longer scrolls as one document.
+  useEffect(() => {
+    const applyHash = () => {
+      const id = window.location.hash.slice(1);
+      if (!id) return;
+      if (SECTION_KEYS.includes(id)) {
+        pendingAnchorRef.current = null;
+        setActiveSection(id);
+        return;
+      }
+      // An anchor inside a pane (e.g. #smart-glasses-recovery): open its pane,
+      // then bring the target into view within that pane.
+      const target = document.getElementById(id);
+      const pane = target?.closest("[data-pane]");
+      if (!pane) return;
+      if (pane.classList.contains("is-active")) {
+        // Already showing: no re-render is coming, so scroll now.
+        target.scrollIntoView({ block: "start", behavior: "smooth" });
+        return;
+      }
+      // Hand off to the post-render effect, which would otherwise reset us to
+      // the top of the newly opened pane.
+      pendingAnchorRef.current = id;
+      setActiveSection(pane.dataset.pane);
+    };
+    applyHash();
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
+  }, []);
+
+  // Each pane is its own scroll context; entering one starts at its top unless
+  // the navigation targeted an anchor inside it.
+  useEffect(() => {
+    const viewport = document.querySelector(".pane-viewport");
+    if (!viewport) return;
+    const anchor = pendingAnchorRef.current;
+    pendingAnchorRef.current = null;
+    if (anchor) {
+      document.getElementById(anchor)?.scrollIntoView({ block: "start" });
+      return;
+    }
+    viewport.scrollTo({ top: 0 });
+  }, [activeSection]);
 
   useEffect(() => {
     let active = true;
@@ -592,11 +665,11 @@ function App() {
 
   const connectAndAnalyze = async () => {
     await run("analyze", async () => {
-      addLog("Waiting for a G2 case USB Serial selection.");
+      addLog("Waiting for a G2 Case USB Serial selection.");
       const port = await requestG2CasePort();
       portRef.current = port;
       sessionRef.current = null;
-      addLog("G2 case serial interface selected.");
+      addLog("G2 Case serial interface selected.");
       const result = await getSession(port).analyze();
       setReport(result);
       setBackup(null);
@@ -631,7 +704,7 @@ function App() {
         !report?.console?.telemetry?.rightPresent
       ) {
         throw new Error(
-          "Seat both Smart Glasses temples in the case, refresh analysis, and try the combined backup again.",
+          "Seat both Smart Glasses temples in the Case, refresh analysis, and try the combined backup again.",
         );
       }
       if (catalogState !== "ready") {
@@ -714,7 +787,7 @@ function App() {
       }));
       setSessionProgress(1, "Case + Smart Glasses backup verified");
       addLog(
-        `Combined backup downloaded · full case + both G2 ${recoveryRelease.version} temple snapshots + validated official recovery bundle.`,
+        `Combined backup downloaded · full Case + both G2 ${recoveryRelease.version} temple snapshots + validated official recovery bundle.`,
         "success",
       );
     });
@@ -739,7 +812,7 @@ function App() {
             trust: expected.trust ?? parsed.provenance.trust,
             label:
               expected.channel === "custom"
-                ? `Smart glasses CFW · stock ${expected.baseVersion} base`
+                ? `Smart Glasses CFW · stock ${expected.baseVersion} base`
                 : `Verified G2 ${expected.version} · archived SHA-256`,
             capabilities:
               expected.capabilities ?? parsed.provenance.capabilities ?? [],
@@ -769,7 +842,7 @@ function App() {
     }
     await run("firmware", async () => {
       addLog(
-        `Loading verified ${release.caseRecoveryEligible ? "charging case" : "smart glasses"} image ${release.version}.`,
+        `Loading verified ${release.caseRecoveryEligible ? "Charging Case" : "Smart Glasses"} image ${release.version}.`,
       );
       const response = await fetch(release.url, { cache: "no-store" });
       if (!response.ok) throw new Error(`Firmware archive returned HTTP ${response.status}.`);
@@ -851,7 +924,7 @@ function App() {
         !report?.console?.telemetry?.rightPresent
       ) {
         throw new Error(
-          "Seat both Smart Glasses temples, refresh the case analysis, and try again.",
+          "Seat both Smart Glasses temples, refresh the Case analysis, and try again.",
         );
       }
       const session = getSession();
@@ -975,7 +1048,7 @@ function App() {
       setRecheckReport(result);
       setConfirmText("");
       setConfirmBackup(false);
-      addLog("The staged case bank was activated and the case restarted.", "success");
+      addLog("The staged Case bank was activated and the Case restarted.", "success");
       const fresh = await getSession().analyze();
       setReport(fresh);
       setBackup(null);
@@ -1068,11 +1141,11 @@ function App() {
           <span className="hardware-label">DEVICE SERVICE · USB SERIAL</span>
           <h1>Recover with precision.<br />Protect every byte.</h1>
           <p>
-            A guided, local-only console for the Even Realities G2 charging case
-            and smart glasses.
+            A guided, local-only console for the Even Realities G2 Charging Case
+            and Smart Glasses.
           </p>
         </div>
-        <StepRail complete={complete} />
+        <StepRail complete={complete} active={activeSection} />
         <div className="sidebar-foot">
           <span className={cx("support-dot", serialSupported && "is-supported")} />
           <span>
@@ -1085,7 +1158,7 @@ function App() {
         <header className="topbar">
           <div className="topbar-status">
             <span className={cx("connection-dot", report && "is-connected")} />
-            <span>{report ? "Case analyzed" : "No case connected"}</span>
+            <span>{report ? "Case analyzed" : "No Case connected"}</span>
             {operation ? <strong>{progress.detail}</strong> : null}
           </div>
           <button className="console-trigger" onClick={() => setConsoleOpen(true)}>
@@ -1095,12 +1168,17 @@ function App() {
           </button>
         </header>
 
-        <OperationError error={error} onDismiss={() => setError("")} />
+        <div className="pane-viewport">
+          <OperationError error={error} onDismiss={() => setError("")} />
 
-        <section className="hero" id="connect">
+        <section
+          className={cx("hero pane", activeSection === "connect" && "is-active")}
+          id="connect"
+          data-pane="connect"
+        >
           <div className="hero-copy">
             <div className="eyebrow">
-              Recovery console · G2 charging case &amp; smart glasses
+              Recovery console · G2 Charging Case &amp; Smart Glasses
             </div>
             <h2>
               Restore with precision.
@@ -1109,7 +1187,7 @@ function App() {
             </h2>
             <p>
               Inspect the factory console and both STM32 banks, capture a complete
-              device-specific case backup, snapshot both Smart Glasses temples,
+              device-specific Case backup, snapshot both Smart Glasses temples,
               then stage and verify a recovery image before changing the active bank.
             </p>
             <div className="hero-actions">
@@ -1119,7 +1197,7 @@ function App() {
                 disabled={!serialSupported || Boolean(operation)}
               >
                 <Icon name="usb" />
-                {report ? "Choose another case" : "Connect & analyze case"}
+                {report ? "Choose another Case" : "Connect & analyze Case"}
               </Button>
               {report ? (
                 <Button
@@ -1142,7 +1220,7 @@ function App() {
             <img
               className="hero-product-image"
               src="/even-g2-case-grey.png"
-              alt="Even Realities G2 smart glasses in their charging case"
+              alt="Even Realities G2 Smart Glasses in their Charging Case"
               width="1501"
               height="1501"
               fetchPriority="high"
@@ -1159,18 +1237,22 @@ function App() {
           </div>
         </section>
 
-        <section className="content-section" id="analyze">
+        <section
+          className={cx("content-section pane", activeSection === "analyze" && "is-active")}
+          id="analyze"
+          data-pane="analyze"
+        >
           <SectionHeading
             eyebrow="01 · Analyze"
             title="Analyze the Case and Smart Glasses"
-            copy="Separate the case factory shell, STM32 banks, and option bytes from left/right temple data captured through the case pogo routes."
+            copy="Separate the Case factory shell, STM32 banks, and option bytes from left/right temple data captured through the Case pogo routes."
             action={
               report ? (
                 <StatusPill tone="success">
                   <Icon name="check" /> Case pass complete
                 </StatusPill>
               ) : (
-                <StatusPill>Waiting for case</StatusPill>
+                <StatusPill>Waiting for Case</StatusPill>
               )
             }
           />
@@ -1233,7 +1315,7 @@ function App() {
                     </div>
                   </div>
                   <div className="metric-caption">
-                    Live case-link telemetry, not simple switches
+                    Live Case-link telemetry, not simple switches
                   </div>
                 </article>
                 <article className="status-card">
@@ -1321,8 +1403,8 @@ function App() {
                       <p>
                         Captures version, hardware revision, battery, voltage, raw
                         frames, and exact route-restoration proof for left and right.
-                        Presence alone comes from the case; every other value requires
-                        a checksum-valid reply from the glasses application.
+                        Presence alone comes from the Case; every other value requires
+                        a checksum-valid reply from the Glasses application.
                       </p>
                     </div>
                     <label className="confirm-check">
@@ -1339,7 +1421,7 @@ function App() {
                         }
                       />
                       <span>
-                        Both temples are seated; keep the case and USB cable still.
+                        Both temples are seated; keep the Case and USB cable still.
                       </span>
                     </label>
                     <Button
@@ -1354,7 +1436,7 @@ function App() {
                     >
                       <Icon name="scan" />
                       {fullGlassesAnalysisComplete
-                        ? "Refresh both glasses"
+                        ? "Refresh both Glasses"
                         : "Analyze both Smart Glasses"}
                     </Button>
                     {!telemetry?.leftPresent || !telemetry?.rightPresent ? (
@@ -1392,7 +1474,7 @@ function App() {
                           : "Recovery readiness is not yet proven for both routes"}
                       </strong>
                       <span>
-                        Requires case 1.2.57, each running temple on 2.2.6.10 /
+                        Requires Case 1.2.57, each running temple on 2.2.6.10 /
                         hardware 5, and both applications responsive. The Apollo
                         bootloader is never transferred.
                       </span>
@@ -1420,17 +1502,21 @@ function App() {
           ) : (
             <div className="empty-panel">
               <Icon name="scan" />
-              <strong>Connect the case to populate this analysis.</strong>
+              <strong>Connect the Case to populate this analysis.</strong>
               <span>The first pass does not erase, write, or change option bytes.</span>
             </div>
           )}
         </section>
 
-        <section className="content-section" id="backup">
+        <section
+          className={cx("content-section pane", activeSection === "backup" && "is-active")}
+          id="backup"
+          data-pane="backup"
+        >
           <SectionHeading
             eyebrow="02 · Preserve"
-            title="Back up the case and Smart Glasses"
-            copy="Captures the full case memory, verifies both seated temples, and embeds the matching digest-pinned official glasses recovery bundle into one local file."
+            title="Back up the Case and Smart Glasses"
+            copy="Captures the full Case memory, verifies both seated temples, and embeds the matching digest-pinned official Glasses recovery bundle into one local file."
             action={
               backup ? (
                 <StatusPill tone="success"><Icon name="check" /> Downloaded</StatusPill>
@@ -1452,10 +1538,10 @@ function App() {
               <div>
                 <h3>Complete G2 recovery set</h3>
                 <p>
-                  The case is preserved byte-for-byte. Each running temple contributes
+                  The Case is preserved byte-for-byte. Each running temple contributes
                   a checksum-validated version snapshot, and the matching official
-                  glasses firmware is embedded for recovery. Installed Apollo memory
-                  cannot be read through the case, so the glasses portion is not an
+                  Glasses firmware is embedded for recovery. Installed Apollo memory
+                  cannot be read through the Case, so the Glasses portion is not an
                   MRAM, key, pairing, or calibration dump.
                 </p>
                 <Button
@@ -1470,15 +1556,15 @@ function App() {
                   <Icon name="backup" />
                   {backup
                     ? "Download a fresh recovery set"
-                    : "Back up case + Smart Glasses"}
+                    : "Back up Case + Smart Glasses"}
                 </Button>
               </div>
             </article>
             <div className="backup-checklist">
-              <div><Icon name="check" /><span><strong>Exact case acquisition</strong>512 KiB flash + 128-byte options</span></div>
+              <div><Icon name="check" /><span><strong>Exact Case acquisition</strong>512 KiB flash + 128-byte options</span></div>
               <div><Icon name="check" /><span><strong>Both temples captured</strong>Version, hardware, raw frame + route proof</span></div>
               <div><Icon name="check" /><span><strong>Glasses recovery image</strong>Matching official bundle, size + SHA-256 validated</span></div>
-              <div><Icon name="check" /><span><strong>Application restored</strong>Normal case console after every read</span></div>
+              <div><Icon name="check" /><span><strong>Application restored</strong>Normal Case console after every read</span></div>
               {backup ? (
                 <div className="backup-digest">
                   <span>CASE FLASH SHA-256</span>
@@ -1491,11 +1577,15 @@ function App() {
           </div>
         </section>
 
-        <section className="content-section" id="firmware">
+        <section
+          className={cx("content-section pane", activeSection === "firmware" && "is-active")}
+          id="firmware"
+          data-pane="firmware"
+        >
           <SectionHeading
             eyebrow="03 · Choose image"
             title="The SybilSight verified library, or your own file"
-            copy="Every entry in the library is a hash-pinned image that is re-validated locally before any write is enabled: charging case recovery images, plus the reviewed SybilSight transformation of stock 2.2.6.10 for the smart glasses. You can also supply your own file."
+            copy="Every entry in the library is a hash-pinned image that is re-validated locally before any write is enabled: Charging Case recovery images, plus the reviewed SybilSight transformation of stock 2.2.6.10 for the Smart Glasses. You can also supply your own file."
             action={
               catalogState === "ready" ? (
                 <StatusPill tone="quiet">
@@ -1524,8 +1614,8 @@ function App() {
                   {catalog.map((release) => (
                     <option value={release.id} key={release.id}>
                       {release.caseRecoveryEligible
-                        ? `Charging case ${release.caseVersion} · G2 ${release.version}`
-                        : `Smart glasses ${release.baseVersion ?? release.version} · CFW`}
+                        ? `Charging Case ${release.caseVersion} · G2 ${release.version}`
+                        : `Smart Glasses ${release.baseVersion ?? release.version} · CFW`}
                     </option>
                   ))}
                 </select>
@@ -1541,10 +1631,10 @@ function App() {
                 <div className="release-meta">
                   <span>
                     {!selectedRelease.caseRecoveryEligible
-                      ? "Smart glasses CFW · analysis/download only"
+                      ? "Smart Glasses CFW · analysis/download only"
                       : selectedRelease === latestCaseRelease
-                        ? "Latest case image"
-                        : "Earlier case image"}
+                        ? "Latest Case image"
+                        : "Earlier Case image"}
                   </span>
                   <span>{formatBytes(selectedRelease.size)}</span>
                   <code>{selectedRelease.sha256.slice(0, 20)}…</code>
@@ -1569,7 +1659,7 @@ function App() {
                 <Icon name="file" />
                 <span>
                   <strong>Choose a local firmware file</strong>
-                  EVENOTA bundle, firmware_box.bin, or validated raw case image
+                  EVENOTA bundle, firmware_box.bin, or validated raw Case image
                 </span>
               </label>
             </article>
@@ -1581,13 +1671,13 @@ function App() {
                   <div className="eyebrow">Validated locally</div>
                   <h3>
                     {firmware.provenance.channel === "custom"
-                      ? `Smart glasses ${firmware.provenance.baseVersion ?? firmware.g2Version} CFW`
-                      : `Charging case ${firmware.caseVersion}`}
+                      ? `Smart Glasses ${firmware.provenance.baseVersion ?? firmware.g2Version} CFW`
+                      : `Charging Case ${firmware.caseVersion}`}
                   </h3>
                   <p>
                     {firmware.kind === "bundle"
-                      ? `${firmware.provenance.label}. The ${firmware.components.length}-component bundle passed outer CRC-32C, Apollo preamble/CRC/vector, case wrapper, and case vector checks.`
-                      : "Validated standalone charging-case image."}
+                      ? `${firmware.provenance.label}. The ${firmware.components.length}-component bundle passed outer CRC-32C, Apollo preamble/CRC/vector, Case wrapper, and Case vector checks.`
+                      : "Validated standalone Charging-Case image."}
                   </p>
                   <div className="firmware-facts">
                     <Field
@@ -1620,13 +1710,13 @@ function App() {
                   </div>
                   {firmware.provenance.channel === "custom" ? (
                     <div className="firmware-boundary firmware-boundary-custom">
-                      <strong>Reviewed CFW targets the glasses; do not stage it as case firmware.</strong>
+                      <strong>Reviewed CFW targets the Glasses; do not stage it as Case firmware.</strong>
                       <span>
-                        Its case component is byte-identical to the stock 1.2.57 component.
+                        Its Case component is byte-identical to the stock 1.2.57 component.
                         The exact reviewed Apollo main payload has successful left- and
-                        right-temple transfers through SybilSight’s volatile case bridge.
+                        right-temple transfers through SybilSight’s volatile Case bridge.
                         It is eligible only for the guarded running-temple writer in Recover,
-                        never for case-bank staging.
+                        never for Case-bank staging.
                       </span>
                       <ul>
                         {firmware.provenance.capabilities.map((capability) => (
@@ -1640,7 +1730,7 @@ function App() {
                       <strong>Integrity is valid; publisher provenance is unknown.</strong>
                       <span>
                         A self-consistent local bundle is not proof that Even or SybilSight
-                        published it. Only its extracted case image is eligible here.
+                        published it. Only its extracted Case image is eligible here.
                       </span>
                     </div>
                   ) : null}
@@ -1687,18 +1777,22 @@ function App() {
           </div>
         </section>
 
-        <section className="content-section recovery-section" id="recover">
+        <section
+          className={cx("content-section recovery-section pane", activeSection === "recover" && "is-active")}
+          id="recover"
+          data-pane="recover"
+        >
           <SectionHeading
             eyebrow="04 · Recover"
             title="Recover the Case or Smart Glasses"
-            copy="Use dual-bank staging for the charging case, or the hardware-validated case-to-pogo path to reinstall the reviewed Apollo main on responsive Smart Glasses."
+            copy="Use dual-bank staging for the Charging Case, or the hardware-validated Case-to-pogo path to reinstall the reviewed Apollo main on responsive Smart Glasses."
           />
           <div className="recovery-target-heading">
             <div>
               <div className="eyebrow">Charging Case</div>
-              <h3>Dual-bank case recovery</h3>
+              <h3>Dual-bank Case recovery</h3>
               <p>
-                The active bank remains untouched while the selected case image is
+                The active bank remains untouched while the selected Case image is
                 written and byte-for-byte verified in the fallback bank.
               </p>
             </div>
@@ -1717,7 +1811,7 @@ function App() {
               <div>
                 <h3>Preflight</h3>
                 <ul>
-                  <li className={report ? "done" : ""}>Fresh case analysis</li>
+                  <li className={report ? "done" : ""}>Fresh Case analysis</li>
                   <li className={backup ? "done" : ""}>
                     Case + Smart Glasses recovery set downloaded
                   </li>
@@ -1728,7 +1822,7 @@ function App() {
                 {firmware && !firmware.caseRecoveryEligible ? (
                   <p className="preflight-blocked">
                     The reviewed CFW is authenticated, but it targets the G2 Apollo
-                    application and cannot be staged through the case USB loader.
+                    application and cannot be staged through the Case USB loader.
                   </p>
                 ) : null}
               </div>
@@ -1763,8 +1857,8 @@ function App() {
                 <h3>Activate staged bank</h3>
                 <p>
                   This rewrites the full option block with only nSWAP_BANK changed,
-                  then resets the case. The write path is research-derived and has not
-                  yet been physically exercised on a sacrificial G2 case.
+                  then resets the Case. The write path is research-derived and has not
+                  yet been physically exercised on a sacrificial G2 Case.
                 </p>
                 <label className="confirm-check">
                   <input
@@ -1802,14 +1896,14 @@ function App() {
             <div className="smart-glasses-recovery-heading">
               <div>
                 <div className="eyebrow">Smart Glasses</div>
-                <h3>Running-temple recovery through the case</h3>
+                <h3>Running-temple recovery through the Case</h3>
                 <p>
                   Reinstalls the Apollo main from any image in the SybilSight
                   verified library — stock or reviewed CFW — using the successful
-                  right- and left-temple procedure. The writer pins the case SRAM
+                  right- and left-temple procedure. The writer pins the Case SRAM
                   bridge and re-hashes the main payload against its own compiled-in
                   allowlist; requires finish and post-reboot replies; restores all
-                  ten YHM route registers; and confirms case firmware 1.2.57 returns.
+                  ten YHM route registers; and confirms Case firmware 1.2.57 returns.
                 </p>
               </div>
               <StatusPill tone={firmware?.templeFlashEligible ? "success" : "quiet"}>
@@ -1829,7 +1923,7 @@ function App() {
               </div>
               <div className={firmware?.templeFlashEligible ? "done" : ""}>
                 <Icon name="check" />
-                <span>Pinned glasses image loaded</span>
+                <span>Pinned Glasses image loaded</span>
               </div>
               <div className={fullGlassesAnalysisComplete ? "done" : ""}>
                 <Icon name="check" />
@@ -1863,7 +1957,7 @@ function App() {
                   />
                   <span>
                     The selected route{templeFlashRoute === "both" ? "s are" : " is"}
-                    {" "}seated; I will not move the glasses, case, or USB cable.
+                    {" "}seated; I will not move the Glasses, Case, or USB cable.
                   </span>
                 </label>
                 <label className="pogo-confirm">
@@ -1986,19 +2080,23 @@ function App() {
           </div>
         </section>
 
-        <section className="boundary-section" id="recovery-console">
+        <section
+          className={cx("boundary-section pane", activeSection === "recovery-console" && "is-active")}
+          id="recovery-console"
+          data-pane="recovery-console"
+        >
           <div className="boundary-mark"><Icon name="glasses" /></div>
           <div>
             <div className="eyebrow">Recovery boundary</div>
-            <h2>The case can recover a running temple. Dead-temple recovery is not proven.</h2>
+            <h2>The Case can recover a running temple. Dead-temple recovery is not proven.</h2>
             <p>
-              The traced B0 command can hardware-reset both seated temples, and the case
+              The traced B0 command can hardware-reset both seated temples, and the Case
               reports when each application link returns. This console can also load the
               exact reviewed read-only SRAM bridge for checksum-valid status or version
               replies from either pogo route. Its hash-gated writer can install only an
               Apollo main from its own compiled-in allowlist — stock or reviewed CFW —
               on a running temple, with finish acknowledgement, post-reboot version,
-              byte-for-byte route restoration, and normal case-app return required on
+              byte-for-byte route restoration, and normal Case-app return required on
               every selected route. Only the reviewed CFW main has confirmed
               left- and right-temple transfers on hardware.
             </p>
@@ -2040,14 +2138,14 @@ function App() {
             <div className="pogo-tool-heading">
               <div>
                 <div className="eyebrow">Volatile read-only bridge</div>
-                <h3>Query a running temple through the case</h3>
+                <h3>Query a running temple through the Case</h3>
               </div>
               <StatusPill tone="success">Pinned SHA-256 · SRAM only</StatusPill>
             </div>
             <p>
-              Loads the physically reviewed 1,712-byte bridge into high case SRAM,
+              Loads the physically reviewed 1,712-byte bridge into high Case SRAM,
               emits one embedded status or version request, verifies exact YHM route
-              restoration, clears the retained proof/result, and returns to stock case
+              restoration, clears the retained proof/result, and returns to stock Case
               firmware. Arbitrary bytes and OTA commands are absent from the payload.
             </p>
             <div className="pogo-controls">
@@ -2100,13 +2198,13 @@ function App() {
                   disabled={!report || !selectedTemplePresent || Boolean(operation)}
                 />
                 <span>
-                  I confirm the {pogoRoute} temple is seated and will leave the case
+                  I confirm the {pogoRoute} temple is seated and will leave the Case
                   connected while the reviewed bridge runs.
                 </span>
               </label>
               {report && !selectedTemplePresent ? (
                 <small className="pogo-presence-warning">
-                  The latest case telemetry does not report this temple as present.
+                  The latest Case telemetry does not report this temple as present.
                   Refresh analysis after seating it.
                 </small>
               ) : null}
@@ -2126,14 +2224,14 @@ function App() {
             <div className="pogo-tool-heading">
               <div>
                 <div className="eyebrow">Validated recovery evidence</div>
-                <h3>Successful case-to-glasses transfer record</h3>
+                <h3>Successful Case-to-Glasses transfer record</h3>
               </div>
               <StatusPill tone={firmware?.templeFlashEligible ? "success" : "quiet"}>
                 {firmware?.templeFlashEligible ? "Exact CFW validated" : "Load reviewed CFW"}
               </StatusPill>
             </div>
             <p>
-              The physically validated case-USB bridge uses the running
+              The physically validated Case-USB bridge uses the running
               application’s 0x52–0x55 path. The recovery controls now live in Recover;
               this evidence remains here so the writer’s allowlist, hardware results,
               and known failure boundary are visible alongside the diagnostic tools.
@@ -2215,7 +2313,7 @@ function App() {
                 />
                 <span>
                   I confirm the selected temple route{templeFlashRoute === "both" ? "s are" : " is"} seated
-                  and I will not move the glasses, case, or USB cable.
+                  and I will not move the Glasses, Case, or USB cable.
                 </span>
               </label>
               <label className="pogo-confirm">
@@ -2296,16 +2394,16 @@ function App() {
             <small className="transfer-warning">
               Attempt 6 sent all 3,540 data records without retry, received the finish
               acknowledgement, verified 2.2.6.10/hardware 5 after reboot, restored all
-              ten YHM registers, and resumed case firmware 1.2.57. Because stock and
+              ten YHM registers, and resumed Case firmware 1.2.57. Because stock and
               reviewed CFW share the same version string, the exact input and main
               payload SHA-256 pins remain essential provenance. Attempt 7 rejected the
               left route at status 3 before any firmware transmission. Attempt 8 then
               accepted 2,733,000 left-temple bytes before an explicit 0x54 status-1
-              rejection; all ten route registers and case firmware 1.2.57 were restored.
+              rejection; all ten route registers and Case firmware 1.2.57 were restored.
               The updated host safely retries that exact data record because a rejection
               does not advance the expected sequence. Attempt 9 subsequently completed
               the left transfer with all 3,540 records, zero retries, finish and
-              postflight confirmation, full route restoration, and case-app return. This
+              postflight confirmation, full route restoration, and Case-app return. This
               browser port preserves those same gates; until its Web Serial path receives
               an independent hardware run, retain the downloaded audit and treat any
               interrupted result as failed or uncertain.
@@ -2363,6 +2461,7 @@ function App() {
           </div>
         </section>
 
+        </div>
         <footer className="footer">
           <span>Sybil Sight™ · G2 WebFlasher · local Web Serial</span>
           <span>No device data is uploaded by this app.</span>

@@ -4290,3 +4290,226 @@ code {
     border-bottom: 0;
   }
 }
+
+/* ==========================================================================
+   Pane shell — each anchored section is its own full-height screen.
+   The document no longer scrolls; .pane-viewport is the single scroll
+   context, so an over-tall pane scrolls within itself.
+   ========================================================================== */
+
+html,
+body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.app-shell {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.main {
+  display: flex;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.pane-viewport {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+}
+
+.pane:not(.is-active) {
+  display: none;
+}
+
+/* Fill the viewport, but let taller content extend and scroll. */
+.pane.is-active {
+  min-height: 100%;
+  border-bottom: 0;
+  scroll-margin-top: 0;
+}
+
+.hero.pane.is-active {
+  min-height: 100%;
+}
+
+/* The topbar is part of the flex column now, not sticky over a long page. */
+.topbar {
+  position: static;
+  flex: none;
+}
+
+.footer {
+  flex: none;
+  border-top: 1px solid var(--line);
+}
+
+/* ---------------------------------------------- sidebar: task vs recovery */
+
+.step-rails {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+/* The recovery group is pushed to the bottom and separated by a stroke. */
+.step-rail-recovery {
+  margin-top: auto;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.step-rail-recovery::after {
+  position: absolute;
+  top: -9px;
+  left: 0;
+  padding-right: 8px;
+  color: var(--text-faint, #777d79);
+  background: var(--surface-deep, #080a09);
+  content: attr(data-group-label);
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.step-rail-recovery {
+  position: relative;
+}
+
+.step-link.is-current {
+  color: var(--ink, #f7f7f7);
+}
+
+.step-link.is-current .step-number {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(0, 255, 136, 0.12);
+}
+
+.step-link.is-current.is-complete .step-number {
+  color: #06130d;
+  background: var(--accent);
+}
+
+@media (max-width: 850px) {
+  /* Below the sidebar breakpoint the shell returns to normal document flow. */
+  html,
+  body {
+    overflow: auto;
+  }
+
+  .app-shell,
+  .main {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .pane-viewport {
+    overflow: visible;
+  }
+
+  .step-rails {
+    display: block;
+  }
+
+  .step-rail-recovery {
+    margin-top: 18px;
+  }
+}
+
+/* ---------------------------------------------- pane-fit typography scale */
+
+/* Panes are height-bound now, so vertical rhythm keys off viewport height as
+   well as width. The hero must fit outright: its CTA is the entry point. */
+.pane.is-active {
+  padding-top: clamp(28px, 5vh, 72px);
+  padding-bottom: clamp(28px, 5vh, 72px);
+}
+
+.hero.pane {
+  align-content: center;
+  gap: clamp(28px, 5vw, 96px);
+}
+
+.hero.pane .hero-copy h2 {
+  margin: 12px 0 16px;
+  font-size: clamp(32px, min(4.6vw, 7.4vh), 68px);
+}
+
+.hero.pane .hero-copy > p {
+  font-size: clamp(13px, 1.7vh, 17px);
+}
+
+.hero.pane .hero-actions {
+  margin-top: clamp(18px, 3vh, 34px);
+}
+
+.hero.pane .hero-visual {
+  min-height: min(500px, 60vh);
+}
+
+.pane.is-active .section-heading {
+  margin-bottom: clamp(22px, 3.4vh, 44px);
+}
+
+.pane.is-active .section-heading h2 {
+  font-size: clamp(26px, min(3vw, 4.6vh), 44px);
+}
+
+/* --------------------------------------- sidebar fit on short viewports */
+
+/* The rail is the only flexible band in the sidebar: let it absorb the
+   remaining height and scroll rather than overrunning the status foot. */
+.step-rails {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.sidebar-foot {
+  flex: none;
+}
+
+/* Guarantee separation even when the auto margin has no slack left. */
+.step-rail-recovery {
+  margin-top: auto;
+  padding-top: 20px;
+}
+
+@media (max-height: 820px) {
+  .sidebar {
+    padding-top: 26px;
+  }
+
+  .sidebar-intro {
+    margin: 30px 0 26px;
+  }
+
+  .sidebar-intro h1 {
+    font-size: clamp(21px, 1.7vw, 26px);
+  }
+
+  .sidebar-intro p {
+    display: none;
+  }
+
+  .step-link {
+    padding: 7px 0;
+  }
+}
+
+@media (max-height: 680px) {
+  .sidebar-intro {
+    display: none;
+  }
+}
