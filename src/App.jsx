@@ -916,7 +916,7 @@ function App() {
 
   const restartAndRecheck = async () => {
     await run("recheck", async () => {
-      const result = await getSession().restartAndRecheck();
+      const result = await getSession().restartAndVerifyBothTemples();
       setRecheckReport(result);
       if (report) {
         setReport({
@@ -928,7 +928,10 @@ function App() {
       setPogoResults({});
       setPogoConfirm(false);
       setGlassesAnalyzeConfirm(false);
-      addLog("Both seated temples were reset and stock presence checks resumed.", "success");
+      addLog(
+        "Both temples were reset; reopened Case telemetry and checksum-valid application liveness were verified without sending firmware.",
+        "success",
+      );
     });
   };
 
@@ -2141,7 +2144,10 @@ function App() {
             <div className="recheck-result">
               <Icon name="check" />
               B0 reset confirmed · L {recheckReport.telemetry?.leftPresent ? "present" : "absent"} · R{" "}
-              {recheckReport.telemetry?.rightPresent ? "present" : "absent"}
+              {recheckReport.telemetry?.rightPresent ? "present" : "absent"} ·{" "}
+              {recheckReport.applicationLivenessVerified
+                ? "both applications verified"
+                : "application liveness pending"}
             </div>
           ) : null}
           <div className="boundary-evidence">

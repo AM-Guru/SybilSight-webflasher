@@ -106,6 +106,21 @@ hardware recovery session in which the Case moved from
 firmware bytes. Version remains liveness evidence only; the selected image
 hash is the stock/CFW provenance.
 
+The reset acknowledgement and post-reset state are collected in distinct
+serial sessions. The tested Case confirmed `DEB0` but returned no telemetry
+when `DEA3` was sent later through that same open console. The tool now closes
+the confirmation session, waits 6.5 seconds, and makes up to three fresh
+console attempts with explicit `DEA0` and `DEA3` queries before the read-only
+version checks.
+
+The same guarded sequence is available without a firmware transfer:
+
+```bash
+python3 scripts/g2_case_pogo_flasher.py reset-both-temples \
+  --device /dev/cu.usbserial-10 \
+  --glasses-seated-confirmed
+```
+
 After a failed transfer, the same final phase is attempted only when every
 attempted route has verified YHM cleanup and Case 1.2.57 return. The audit
 retains `failed_or_uncertain`; if any cleanup is unverified, no reset command

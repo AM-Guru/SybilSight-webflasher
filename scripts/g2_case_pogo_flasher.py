@@ -78,6 +78,8 @@ FINAL_RESET_CONFIRMATION = re.compile(
     rb"reset gls L & R, reason: cmd",
     re.IGNORECASE,
 )
+POST_RESET_TELEMETRY_ATTEMPTS = 3
+POST_RESET_REOPEN_DELAY_SECONDS = 0.5
 
 RESULT_ADDRESS = 0x20011A00
 RESULT_LENGTH = 128
@@ -183,8 +185,59 @@ def read_case_preflight(device: str, routes: tuple[str, ...]) -> dict[str, objec
     return report
 
 
+def read_post_reset_case_telemetry(
+    device: str,
+    attempts: int = POST_RESET_TELEMETRY_ATTEMPTS,
+) -> dict[str, object]:
+    """Reopen the normal console and retry fresh telemetry after a B0 reset."""
+    if attempts < 1:
+        raise ValueError("post-reset telemetry attempts must be positive")
+    errors: list[str] = []
+    for attempt in range(1, attempts + 1):
+        port: serial.Serial | None = None
+        try:
+            port = _open_case_console(device)
+            captured = bytearray(_drain_case_console(port, 2.5))
+            port.reset_input_buffer()
+            if port.write(b"DEA0\n") != 5:
+                raise ProtocolError(
+                    "post-reset case version query was truncated"
+                )
+            port.flush()
+            captured.extend(_drain_case_console(port, 0.9))
+            port.reset_input_buffer()
+            if port.write(b"DEA3\n") != 5:
+                raise ProtocolError(
+                    "post-reset case telemetry query was truncated"
+                )
+            port.flush()
+            captured.extend(_drain_case_console(port, 1.0))
+            report = parse_case_restore_evidence(
+                bytes(captured),
+                require_reset_confirmation=False,
+            )
+            report["post_reset_telemetry_session"] = "reopened"
+            report["post_reset_telemetry_attempt"] = attempt
+            return report
+        except (
+            OSError,
+            FlasherError,
+            serial.SerialException,
+        ) as error:
+            errors.append(f"attempt {attempt}: {error}")
+        finally:
+            if port is not None:
+                port.close()
+        if attempt != attempts:
+            time.sleep(POST_RESET_REOPEN_DELAY_SECONDS)
+    raise SafetyError(
+        "fresh case telemetry did not return after "
+        f"{attempts} reopened serial sessions ({'; '.join(errors)})"
+    )
+
+
 def reset_both_temples_and_recheck(device: str) -> dict[str, object]:
-    """Run the traced B0 dual-temple reset after route/case restoration."""
+    """Confirm B0, then verify telemetry through a newly opened serial session."""
     port = _open_case_console(device)
     try:
         captured = bytearray(_drain_case_console(port, 2.5))
@@ -197,18 +250,17 @@ def reset_both_temples_and_recheck(device: str) -> dict[str, object]:
             raise SafetyError(
                 "case did not confirm the traced B0 left/right temple reset"
             )
-        time.sleep(6.5)
-        port.reset_input_buffer()
-        if port.write(b"DEA3\n") != 5:
-            raise ProtocolError("post-reset case telemetry query was truncated")
-        port.flush()
-        captured.extend(_drain_case_console(port, 1.0))
     finally:
         port.close()
-    return parse_case_restore_evidence(
-        bytes(captured),
-        require_reset_confirmation=True,
-    )
+    # Hardware observation: the Case can confirm DEB0 yet omit A3 telemetry in
+    # that same console session while both temple links restart. Closing and
+    # reopening the normal console produced fresh GLS_L/GLS_R state.
+    time.sleep(6.5)
+    report = read_post_reset_case_telemetry(device)
+    report["reset_command"] = FINAL_RESET_COMMAND.decode("ascii").strip()
+    report["reset_confirmed"] = True
+    report["reset_confirmation_session"] = "pre-restart"
+    return report
 
 
 BRIDGE_BASE64 = (
@@ -839,6 +891,17 @@ def build_parser() -> argparse.ArgumentParser:
     host_stress.add_argument("--payload-bytes", type=int, default=1009)
     host_stress.add_argument("--glasses-seated-confirmed", action="store_true")
 
+    reset = subparsers.add_parser(
+        "reset-both-temples",
+        help=(
+            "send the traced DEB0 bilateral reset, reopen the Case console, "
+            "and verify both running temples"
+        ),
+    )
+    reset.add_argument("--device", required=True)
+    reset.add_argument("--expect-version", default=REVIEWED_BASE_VERSION)
+    reset.add_argument("--glasses-seated-confirmed", action="store_true")
+
     for command, help_text in (
         (
             "flash-reviewed-cfw",
@@ -881,6 +944,27 @@ def main() -> int:
 
     if not args.glasses_seated_confirmed:
         parser.error("hardware access requires --glasses-seated-confirmed")
+
+    if args.command == "reset-both-temples":
+        try:
+            report = final_reset_and_verify_liveness(
+                args.device,
+                ("right", "left"),
+                args.expect_version,
+            )
+            print(json.dumps(report, indent=2, sort_keys=True))
+            return 0
+        except (
+            OSError,
+            FlasherError,
+            BootloaderError,
+            serial.SerialException,
+        ) as error:
+            print(
+                f"Bilateral reset was not fully verified: {error}",
+                file=sys.stderr,
+            )
+            return 1
 
     if args.command == "stress-usb":
         if not 1 <= args.transactions <= 10_000:

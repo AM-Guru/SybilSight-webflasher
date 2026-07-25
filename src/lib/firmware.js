@@ -193,7 +193,9 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
       caseApplicationVersion: "1.2.57",
       command: "DEB0",
       implementationEvidence:
-        "The fixed yhm-reset-status-query SRAM probe reproduced the traced dual-route reset waveform and restored the captured YHM image byte-for-byte.",
+        "Case 1.2.57 confirmed the traced DEB0 command; a separately reopened console then reported both contacts before checksum-valid read-only version queries succeeded on both routes.",
+      postResetConsoleBehavior:
+        "The reset-confirmation session returned no later A3 telemetry. Closing it, waiting for the temple links, and opening a new normal-console session restored fresh A0/A3 observation.",
       before: Object.freeze({
         leftPresent: false,
         rightPresent: true,
@@ -204,6 +206,8 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
         rightPresent: true,
         leftFirmware: "2.2.6.10",
         leftHardware: 5,
+        rightFirmware: "2.2.6.10",
+        rightHardware: 5,
         bothDisplaysWorking: true,
       }),
       firmwareBytesTransmitted: 0,
@@ -211,6 +215,8 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
         "restore the selected YHM route byte-for-byte",
         "verify the Case application returns as 1.2.57",
         "issue the traced stock B0 dual-temple reset",
+        "close the reset-confirmation serial session",
+        "reopen the normal console and query fresh A0/A3 state",
         "wait for both selected contacts to return",
         "require checksum-valid version liveness from every restored route",
       ]),

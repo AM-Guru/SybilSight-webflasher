@@ -827,10 +827,20 @@ class CasePogoFlashTransport {
 }
 
 export class G2CaseSession {
-  constructor(port, { log = () => {}, progress = () => {} } = {}) {
+  constructor(
+    port,
+    {
+      log = () => {},
+      progress = () => {},
+      openNormal = openNormalConsole,
+      wait = delay,
+    } = {},
+  ) {
     this.port = port;
     this.log = log;
     this.progress = progress;
+    this.openNormal = openNormal;
+    this.wait = wait;
   }
 
   async analyze() {
@@ -963,19 +973,75 @@ export class G2CaseSession {
     }
   }
 
+  async readPostResetCaseTelemetry(attempts = 3) {
+    if (!Number.isInteger(attempts) || attempts < 1) {
+      throw new Error("Post-reset telemetry attempts must be a positive integer.");
+    }
+    const errors = [];
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      let normal = null;
+      try {
+        normal = await this.openNormal(this.port);
+        const boot = new TextDecoder().decode(await normal.collectFor(2500));
+        const version = await queryNormal(normal, 0xa0, 900);
+        const telemetry = await queryNormal(normal, 0xa3, 1000);
+        const report = parseConsoleReport(boot, version, telemetry);
+        if (report.caseVersion !== REVIEWED_CASE_VERSION) {
+          throw new Error(
+            `the Case returned firmware ${report.caseVersion ?? "unknown"}, expected ${REVIEWED_CASE_VERSION}`,
+          );
+        }
+        if (!report.telemetry) {
+          throw new Error("fresh GLS_L/GLS_R telemetry was not observed");
+        }
+        return {
+          ...report,
+          postResetTelemetrySession: "reopened",
+          postResetTelemetryAttempt: attempt,
+        };
+      } catch (error) {
+        errors.push(`attempt ${attempt}: ${error.message}`);
+        this.log(
+          `Post-reset Case-console attempt ${attempt}/${attempts} did not return complete telemetry: ${error.message}`,
+          "warn",
+        );
+      } finally {
+        if (normal) await normal.close();
+      }
+      if (attempt !== attempts) await this.wait(500);
+    }
+    throw new Error(
+      `Fresh Case telemetry did not return after ${attempts} reopened serial sessions (${errors.join("; ")}).`,
+    );
+  }
+
   async restartAndRecheck() {
     this.log("Starting the traced stock reset for both seated G2 temples.");
-    const normal = await openNormalConsole(this.port);
+    const normal = await this.openNormal(this.port);
+    let boot;
+    let resetOutput;
     try {
-      const boot = new TextDecoder().decode(await normal.collectFor(3000));
-      const resetOutput = await resetTemples(normal);
+      boot = new TextDecoder().decode(await normal.collectFor(3000));
+      resetOutput = await resetTemples(normal);
       this.log("The Case confirmed its left/right hardware reset sequence.");
-      await delay(6500);
-      const telemetry = await queryNormal(normal, 0xa3, 1000);
-      return parseConsoleReport(boot, resetOutput, telemetry);
     } finally {
       await normal.close();
     }
+    this.log(
+      "Reset confirmation captured; reopening the Case console for fresh post-reset telemetry.",
+    );
+    await this.wait(6500);
+    const telemetryReport = await this.readPostResetCaseTelemetry();
+    const resetReport = parseConsoleReport(boot, resetOutput);
+    return {
+      ...resetReport,
+      ...telemetryReport,
+      text: [resetReport.text, telemetryReport.text].filter(Boolean).join("\n"),
+      serialNumber: telemetryReport.serialNumber ?? resetReport.serialNumber,
+      identifier: telemetryReport.identifier ?? resetReport.identifier,
+      resetConfirmed: true,
+      resetConfirmationSession: "pre-restart",
+    };
   }
 
   async probeRunningTemple(
@@ -1226,12 +1292,15 @@ export class G2CaseSession {
     }
   }
 
-  async finalizeTempleRestore(routes, expectedVersion) {
-    this.log(
-      "All selected routes and the Case application are restored; sending the final traced B0 dual-temple reset.",
-    );
-    this.progress(0.93, "Final dual-temple reset");
-    const resetReport = await this.restartAndRecheck();
+  async verifyPostResetTempleLiveness(
+    resetReport,
+    routes,
+    {
+      expectedVersion = null,
+      progressBase = 0.95,
+      progressSpan = 0.04,
+    } = {},
+  ) {
     if (resetReport.caseVersion !== REVIEWED_CASE_VERSION) {
       throw new PogoFlashSafetyError(
         `The final reset returned Case ${resetReport.caseVersion ?? "unknown"}, expected ${REVIEWED_CASE_VERSION}.`,
@@ -1258,16 +1327,19 @@ export class G2CaseSession {
     for (let index = 0; index < routes.length; index += 1) {
       const route = routes[index];
       const probe = await this.probeRunningTemple("version", route, {
-        progressBase: 0.95 + (index / routes.length) * 0.04,
-        progressSpan: 0.04 / routes.length,
+        progressBase: progressBase + (index / routes.length) * progressSpan,
+        progressSpan: progressSpan / routes.length,
       });
       const version = probe.decoded;
       if (
-        version.firmwareVersion !== expectedVersion ||
-        version.hardwareRevision !== 5
+        version.hardwareRevision !== 5 ||
+        (expectedVersion && version.firmwareVersion !== expectedVersion)
       ) {
+        const expected = expectedVersion
+          ? `${expectedVersion}/hardware 5`
+          : "hardware 5";
         throw new PogoFlashSafetyError(
-          `${route}: post-reset expected ${expectedVersion}/hardware 5, observed ${version.firmwareVersion}/hardware ${version.hardwareRevision}.`,
+          `${route}: post-reset expected ${expected}, observed ${version.firmwareVersion}/hardware ${version.hardwareRevision}.`,
         );
       }
       versions[route] = {
@@ -1280,6 +1352,41 @@ export class G2CaseSession {
       requireVersion: true,
       expectedVersion: REVIEWED_CASE_VERSION,
     });
+    return { versions, finalCase };
+  }
+
+  async restartAndVerifyBothTemples() {
+    const resetReport = await this.restartAndRecheck();
+    const { versions, finalCase } = await this.verifyPostResetTempleLiveness(
+      resetReport,
+      ["right", "left"],
+      { progressBase: 0.6, progressSpan: 0.38 },
+    );
+    this.progress(1, "Reset, contacts, and temple liveness verified");
+    this.log(
+      "B0 reset confirmed in the first serial session; reopened Case telemetry and checksum-valid left/right version replies verified.",
+      "success",
+    );
+    return {
+      ...resetReport,
+      caseVersion: finalCase.caseVersion,
+      versions,
+      applicationLivenessVerified: true,
+      firmwareBytesTransmitted: 0,
+    };
+  }
+
+  async finalizeTempleRestore(routes, expectedVersion) {
+    this.log(
+      "All selected routes and the Case application are restored; sending the final traced B0 dual-temple reset.",
+    );
+    this.progress(0.93, "Final dual-temple reset");
+    const resetReport = await this.restartAndRecheck();
+    const { versions, finalCase } = await this.verifyPostResetTempleLiveness(
+      resetReport,
+      routes,
+      { expectedVersion },
+    );
     this.progress(1, "Final reset and temple liveness verified");
     this.log(
       "Final B0 reset confirmed; selected contacts and checksum-valid post-reset version replies verified.",
@@ -1291,6 +1398,9 @@ export class G2CaseSession {
       templeMutation: "traced stock dual-temple reset",
       resetConfirmed: true,
       caseFirmware: finalCase.caseVersion,
+      resetConfirmationSession: resetReport.resetConfirmationSession,
+      postResetTelemetrySession: resetReport.postResetTelemetrySession,
+      postResetTelemetryAttempt: resetReport.postResetTelemetryAttempt,
       leftPresent: resetReport.telemetry.leftPresent,
       rightPresent: resetReport.telemetry.rightPresent,
       versions,

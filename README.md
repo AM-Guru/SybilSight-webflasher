@@ -39,8 +39,9 @@ Production deployment:
   region, installed-image boundary, and vector.
 - Stages case firmware in the inactive bank and verifies a byte-for-byte
   readback before activation is available.
-- Uses the traced stock `B0` command to reset both seated temples, then waits
-  for their case links and presence telemetry to return.
+- Uses the traced stock `B0` command to reset both seated temples, closes the
+  reset-confirmation console, then retries fresh Case sessions until their
+  links and presence telemetry return.
 - Runs the exact reviewed, read-only USB-to-pogo SRAM bridge for left/right
   temple status or firmware/hardware version, with retained transport and
   YHM-restoration proof.
@@ -528,7 +529,10 @@ normal application and ROM-loader modes.
 1. Insert the left and right temples into the case.
 2. Click **Reset both temples & recheck**.
 3. Wait for the case to confirm `reset gls L & R, reason: cmd`.
-4. Review `GLS_L` and `GLS_R` after their application links return.
+4. The browser closes that console, waits for the temple links, and retries
+   explicit `DEA0`/`DEA3` queries in newly opened serial sessions.
+5. Review `GLS_L`, `GLS_R`, and the checksum-valid version liveness returned
+   by both read-only pogo routes.
 
 This is the physically traced case reset path and does not write firmware.
 Live testing found no separate G2 recovery/DFU advertisement across this reset
@@ -536,9 +540,12 @@ while the temples were seated.
 
 The 2026-07-25 recovery session validated its practical recovery value. Before
 the reset, Case 1.2.57 reported `GLS_L=0, GLS_R=1` and the left application
-did not answer. The fixed dual-route reset restored `GLS_L=1, GLS_R=1`; a
-read-only bridge then returned left firmware 2.2.6.10/hardware 5, and both
-displays worked. No firmware bytes were sent in that recovery sequence.
+did not answer. The Case confirmed the fixed dual-route reset, but the
+original serial session did not return the immediate post-reset telemetry.
+Reopening the normal console restored observation of `GLS_L=1, GLS_R=1`;
+read-only bridge queries then returned firmware 2.2.6.10/hardware 5 from both
+routes, and both displays worked. No firmware bytes were sent in that
+recovery sequence.
 
 It also does not invoke the application-alive `0x52...0x55` pogo OTA wrapper;
 the stock case has no USB forwarding route to it.
@@ -575,8 +582,10 @@ firmware.
 
 After every selected route and Case 1.2.57 return are verified, the web
 flasher sends `DEB0` as the final temple-mutating command. It waits for every
-selected contact to return, performs checksum-valid read-only version probes,
-and verifies the Case application again. The audit is successful only if this
+selected contact to return, but does not reuse the reset-confirmation console:
+it closes that session and makes up to three newly opened `DEA0`/`DEA3`
+attempts. It then performs checksum-valid read-only version probes and
+verifies the Case application again. The audit is successful only if this
 `finalResetAndLiveness` phase succeeds. Version is liveness evidence; the
 complete image and Apollo-main hashes remain provenance.
 

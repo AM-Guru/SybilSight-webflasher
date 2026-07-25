@@ -339,6 +339,103 @@ test("makes the dual-temple reset the final restore mutation and verifies livene
   );
 });
 
+test("closes the reset console and retries telemetry in reopened sessions", async () => {
+  const encoder = new TextEncoder();
+  const writes = [];
+  const transports = [
+    {
+      outputs: [
+        "****** B200 1.2.57 DEVICE******\r\n",
+        "reset gls L & R, reason: cmd\r\n",
+      ],
+    },
+    {
+      outputs: [
+        "",
+        "B200 1.2.57, 3\r\n",
+        "telemetry unavailable\r\n",
+      ],
+    },
+    {
+      outputs: [
+        "****** B200 1.2.57 DEVICE******\r\n",
+        "B200 1.2.57, 3\r\n",
+        "****** B200 vol:4155 pct:100, open:1, usb:1, cur:-9, "
+          + "GLS_L:1, GLS_R:1 temp:265, chEn:1, aging:0, otaGls:0\r\n",
+      ],
+    },
+  ].map((fixture, index) => ({
+    closed: false,
+    clear() {},
+    async write(data) {
+      writes.push({ index, text: new TextDecoder().decode(data) });
+    },
+    async collectFor() {
+      return encoder.encode(fixture.outputs.shift() ?? "");
+    },
+    async close() {
+      this.closed = true;
+    },
+  }));
+  let openIndex = 0;
+  const session = new G2CaseSession(null, {
+    openNormal: async () => {
+      if (openIndex > 0) {
+        assert.equal(
+          transports[openIndex - 1].closed,
+          true,
+          "each reset/telemetry console must close before the next opens",
+        );
+      }
+      return transports[openIndex++];
+    },
+    wait: async () => {},
+  });
+
+  const report = await session.restartAndRecheck();
+
+  assert.equal(openIndex, 3);
+  assert.equal(report.resetConfirmed, true);
+  assert.equal(report.postResetTelemetrySession, "reopened");
+  assert.equal(report.postResetTelemetryAttempt, 2);
+  assert.equal(report.telemetry.leftPresent, true);
+  assert.equal(report.telemetry.rightPresent, true);
+  assert.deepEqual(
+    writes.map(({ text }) => text),
+    ["DEB0\n", "DEA0\n", "DEA3\n", "DEA0\n", "DEA3\n"],
+  );
+});
+
+test("standalone reset verifies both temple applications without firmware", async () => {
+  const events = [];
+  const session = new G2CaseSession(null, { progress: () => {} });
+  session.restartAndRecheck = async () => ({
+    caseVersion: "1.2.57",
+    telemetry: { leftPresent: true, rightPresent: true },
+    resetConfirmed: true,
+    postResetTelemetrySession: "reopened",
+  });
+  session.probeRunningTemple = async (operation, route) => {
+    events.push(`${operation}:${route}`);
+    return {
+      decoded: { firmwareVersion: "2.2.6.10", hardwareRevision: 5 },
+      transportProof: { restoredMask: 0x3ff },
+    };
+  };
+  session.restoreNormal = async () => {
+    events.push("case:restore");
+    return { caseVersion: "1.2.57" };
+  };
+
+  const report = await session.restartAndVerifyBothTemples();
+
+  assert.deepEqual(events, ["version:right", "version:left", "case:restore"]);
+  assert.equal(report.applicationLivenessVerified, true);
+  assert.equal(report.firmwareBytesTransmitted, 0);
+  assert.equal(report.versions.left.firmware, "2.2.6.10");
+  assert.equal(report.versions.right.hardware, 5);
+});
+
 test("fails the final restore gate when a selected contact does not return", async () => {
   const session = new G2CaseSession(null);
   session.restartAndRecheck = async () => ({

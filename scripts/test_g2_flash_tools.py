@@ -9,6 +9,7 @@ import tempfile
 import unittest
 import zlib
 from pathlib import Path
+from unittest.mock import patch
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
@@ -27,7 +28,9 @@ from g2_case_pogo_flasher import (  # noqa: E402
     build_bridge,
     can_run_final_reset_after_failure,
     parse_case_restore_evidence,
+    reset_both_temples_and_recheck,
 )
+import g2_case_pogo_flasher as case_flasher  # noqa: E402
 from g2_pogo_flasher import (  # noqa: E402
     DeviceRejected,
     MainFirmwareFlasher,
@@ -186,6 +189,24 @@ class FakeTransport:
 
 
 class G2FlashToolTests(unittest.TestCase):
+    class FakeCasePort:
+        def __init__(self) -> None:
+            self.closed = False
+            self.writes: list[bytes] = []
+
+        def reset_input_buffer(self) -> None:
+            return None
+
+        def write(self, data: bytes) -> int:
+            self.writes.append(data)
+            return len(data)
+
+        def flush(self) -> None:
+            return None
+
+        def close(self) -> None:
+            self.closed = True
+
     def test_protocol_vectors(self) -> None:
         protocol_self_test()
 
@@ -224,6 +245,16 @@ class G2FlashToolTests(unittest.TestCase):
         self.assertEqual(args.command, "flash-reviewed-official")
         self.assertEqual(args.routes, "right")
 
+    def test_reset_only_command_is_bilateral_and_hardware_gated(self) -> None:
+        args = build_parser().parse_args([
+            "reset-both-temples",
+            "--device",
+            "/dev/null",
+            "--glasses-seated-confirmed",
+        ])
+        self.assertEqual(args.command, "reset-both-temples")
+        self.assertEqual(args.expect_version, "2.2.6.10")
+
     def test_final_reset_requires_b0_confirmation_and_contacts(self) -> None:
         report = parse_case_restore_evidence(
             b"****** B200 1.2.57 ABC******\r\n"
@@ -245,6 +276,61 @@ class G2FlashToolTests(unittest.TestCase):
                 b"GLS_L:1, GLS_R:1 temp:350, chEn:1, aging:0, otaGls:0\r\n",
                 require_reset_confirmation=True,
             )
+
+    def test_final_reset_reopens_console_before_fresh_telemetry(self) -> None:
+        reset_port = self.FakeCasePort()
+        incomplete_port = self.FakeCasePort()
+        telemetry_port = self.FakeCasePort()
+        ports = [reset_port, incomplete_port, telemetry_port]
+        outputs = {
+            id(reset_port): iter([
+                b"****** B200 1.2.57 ABC******\r\n",
+                b"reset gls L & R, reason: cmd\r\n",
+            ]),
+            id(incomplete_port): iter([
+                b"****** B200 1.2.57 ABC******\r\n",
+                b"B200 1.2.57, 3\r\n",
+                b"post-reset links still starting\r\n",
+            ]),
+            id(telemetry_port): iter([
+                b"****** B200 1.2.57 ABC******\r\n",
+                b"B200 1.2.57, 3\r\n",
+                b"****** B200 vol:4155 pct:100, open:1, usb:1, cur:-9, "
+                b"GLS_L:1, GLS_R:1 temp:265, chEn:1, aging:0, otaGls:0\r\n",
+            ]),
+        }
+        open_count = 0
+
+        def open_console(_: str) -> G2FlashToolTests.FakeCasePort:
+            nonlocal open_count
+            if open_count:
+                self.assertTrue(
+                    ports[open_count - 1].closed,
+                    "each reset/telemetry console must close before the next",
+                )
+            port = ports[open_count]
+            open_count += 1
+            return port
+
+        def drain(port: G2FlashToolTests.FakeCasePort, _: float) -> bytes:
+            return next(outputs[id(port)])
+
+        with (
+            patch.object(case_flasher, "_open_case_console", open_console),
+            patch.object(case_flasher, "_drain_case_console", drain),
+            patch.object(case_flasher.time, "sleep"),
+        ):
+            report = reset_both_temples_and_recheck("/dev/fake")
+
+        self.assertEqual(reset_port.writes, [FINAL_RESET_COMMAND])
+        self.assertEqual(incomplete_port.writes, [b"DEA0\n", b"DEA3\n"])
+        self.assertEqual(telemetry_port.writes, [b"DEA0\n", b"DEA3\n"])
+        self.assertTrue(telemetry_port.closed)
+        self.assertTrue(report["reset_confirmed"])
+        self.assertEqual(report["post_reset_telemetry_session"], "reopened")
+        self.assertEqual(report["post_reset_telemetry_attempt"], 2)
+        self.assertTrue(report["left_present"])
+        self.assertTrue(report["right_present"])
 
     def test_failure_reset_requires_verified_cleanup_on_every_attempt(self) -> None:
         verified = {
