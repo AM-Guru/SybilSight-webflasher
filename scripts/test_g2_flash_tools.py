@@ -17,8 +17,16 @@ if str(SCRIPT_DIR) not in sys.path:
 from g2_case_pogo_flasher import (  # noqa: E402
     BRIDGE_BYTES,
     BRIDGE_SHA256,
+    FINAL_RESET_COMMAND,
+    REVIEWED_CFW_SHA256,
+    REVIEWED_OFFICIAL_MAIN_BYTES,
+    REVIEWED_OFFICIAL_MAIN_SHA256,
+    REVIEWED_OFFICIAL_SHA256,
     _write_audit,
+    build_parser,
     build_bridge,
+    can_run_final_reset_after_failure,
+    parse_case_restore_evidence,
 )
 from g2_pogo_flasher import (  # noqa: E402
     DeviceRejected,
@@ -196,6 +204,64 @@ class G2FlashToolTests(unittest.TestCase):
             self.assertEqual(path.read_text(encoding="utf-8"), '{\n  "outcome": "started"\n}\n')
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
             self.assertFalse(path.with_suffix(".json.partial").exists())
+
+    def test_official_restore_command_is_distinct_and_available(self) -> None:
+        self.assertNotEqual(REVIEWED_OFFICIAL_SHA256, REVIEWED_CFW_SHA256)
+        self.assertEqual(REVIEWED_OFFICIAL_MAIN_BYTES, 3_523_396)
+        self.assertEqual(len(REVIEWED_OFFICIAL_MAIN_SHA256), 64)
+        args = build_parser().parse_args([
+            "flash-reviewed-official",
+            "stock.bin",
+            "--device",
+            "/dev/null",
+            "--routes",
+            "right",
+            "--confirm-image-sha256",
+            REVIEWED_OFFICIAL_SHA256,
+            "--log",
+            "audit.json",
+        ])
+        self.assertEqual(args.command, "flash-reviewed-official")
+        self.assertEqual(args.routes, "right")
+
+    def test_final_reset_requires_b0_confirmation_and_contacts(self) -> None:
+        report = parse_case_restore_evidence(
+            b"****** B200 1.2.57 ABC******\r\n"
+            b"reset gls L & R, reason: cmd\r\n"
+            b"****** B200 vol:4166 pct:100, open:1, usb:1, cur:-19, "
+            b"GLS_L:1, GLS_R:1 temp:350, chEn:1, aging:0, otaGls:0\r\n",
+            require_reset_confirmation=True,
+        )
+        self.assertEqual(FINAL_RESET_COMMAND, b"DEB0\n")
+        self.assertTrue(report["reset_confirmed"])
+        self.assertTrue(report["left_present"])
+        self.assertTrue(report["right_present"])
+
+    def test_final_reset_evidence_rejects_missing_confirmation(self) -> None:
+        with self.assertRaises(SafetyError):
+            parse_case_restore_evidence(
+                b"****** B200 1.2.57 ABC******\r\n"
+                b"****** B200 vol:4166 pct:100, open:1, usb:1, cur:-19, "
+                b"GLS_L:1, GLS_R:1 temp:350, chEn:1, aging:0, otaGls:0\r\n",
+                require_reset_confirmation=True,
+            )
+
+    def test_failure_reset_requires_verified_cleanup_on_every_attempt(self) -> None:
+        verified = {
+            "case_restore_verified": True,
+            "case_application_version": "1.2.57",
+        }
+        self.assertTrue(can_run_final_reset_after_failure([verified]))
+        self.assertFalse(can_run_final_reset_after_failure([]))
+        self.assertFalse(
+            can_run_final_reset_after_failure([
+                verified,
+                {
+                    "case_restore_verified": False,
+                    "case_application_version": "1.2.57",
+                },
+            ])
+        )
 
     def test_portable_synthetic_package_plan(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

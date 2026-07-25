@@ -412,6 +412,26 @@ test("records successful case-pogo transfers and enables only the guarded browse
     POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulHardwareAttemptsWithCurrentSource,
     2,
   );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.postRestoreReset.command,
+    "DEB0",
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.postRestoreReset.before.leftPresent,
+    false,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.postRestoreReset.after.leftPresent,
+    true,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.postRestoreReset.after.bothDisplaysWorking,
+    true,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.postRestoreReset.firmwareBytesTransmitted,
+    0,
+  );
   assert.equal(POGO_TRANSFER_RESEARCH.webWriterEnabled, true);
 });
 

@@ -1001,55 +1001,6 @@ code {
   font-size: 11px;
 }
 
-.boundary-section {
-  display: grid;
-  padding: 44px clamp(24px, 5vw, 72px);
-  color: #eeeae1;
-  background:
-    linear-gradient(120deg, rgba(255, 107, 61, 0.13), transparent 55%),
-    #22221e;
-  grid-template-columns: 72px minmax(300px, 1fr) auto;
-  gap: 24px;
-  align-items: center;
-}
-
-.boundary-mark {
-  display: grid;
-  width: 58px;
-  height: 58px;
-  color: var(--accent);
-  border: 1px solid #343936;
-  border-radius: 50%;
-  background: #171714;
-  font-size: 22px;
-  place-items: center;
-}
-
-.boundary-section .eyebrow {
-  color: var(--accent);
-}
-
-.boundary-section h2 {
-  margin: 8px 0 9px;
-  font-size: clamp(20px, 2.3vw, 33px);
-  font-weight: 500;
-  letter-spacing: -0.04em;
-}
-
-.boundary-section p {
-  max-width: 850px;
-  margin: 0;
-  color: #9f9c93;
-  font-size: 11px;
-  line-height: 1.7;
-}
-
-.boundary-section .button-secondary {
-  color: #f2efe7;
-  border-color: #4a4942;
-  background: #30302b;
-}
-
 .recheck-result {
   color: #8ed5b8;
   font-family: var(--mono);
@@ -2465,16 +2416,6 @@ code {
     scroll-margin-top: 64px;
   }
 
-  .boundary-section {
-    padding: 40px 24px;
-    grid-template-columns: 58px 1fr;
-  }
-
-  .boundary-section .button {
-    grid-column: 2;
-    justify-self: start;
-  }
-
   .recheck-result,
   .boundary-evidence,
   .pogo-tool,
@@ -2605,11 +2546,6 @@ code {
     border-left: 0;
   }
 
-  .boundary-section {
-    grid-template-columns: 1fr;
-  }
-
-  .boundary-section .button,
   .recheck-result,
   .boundary-evidence,
   .pogo-tool,
@@ -3201,34 +3137,6 @@ code {
   color: var(--accent);
   border-color: rgba(0, 255, 136, 0.25);
   background: rgba(0, 255, 136, 0.06);
-}
-
-.boundary-section {
-  color: #f2f4f3;
-  border-bottom: 1px solid var(--line);
-  background:
-    linear-gradient(120deg, rgba(0, 255, 136, 0.07), transparent 48%),
-    #0a0c0b;
-}
-
-.boundary-mark {
-  color: var(--accent);
-  border-color: rgba(0, 255, 136, 0.28);
-  background: rgba(0, 255, 136, 0.055);
-}
-
-.boundary-section h2 {
-  font-weight: 800;
-}
-
-.boundary-section p {
-  color: #8d928f;
-}
-
-.boundary-section .button-secondary {
-  color: #e9ecea;
-  border-color: #343936;
-  background: #161918;
 }
 
 .recheck-result,
@@ -4364,20 +4272,6 @@ body {
   border-top: 1px solid var(--line);
 }
 
-.step-rail-recovery::after {
-  position: absolute;
-  top: -9px;
-  left: 0;
-  padding-right: 8px;
-  color: var(--text-faint, #777d79);
-  background: var(--surface-deep, #080a09);
-  content: attr(data-group-label);
-  font-family: var(--mono);
-  font-size: 8px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
 .step-rail-recovery {
   position: relative;
 }
@@ -4553,14 +4447,6 @@ body {
   border-radius: var(--radius-card, 14px);
 }
 
-/* The stray grid-column values are meaningless outside the old grid. */
-#recover .recheck-result,
-#recover .boundary-evidence,
-#recover .pogo-tool,
-#recover .sbl-audit,
-#recover .transfer-research {
-  grid-column: auto;
-}
 
 /* Body copy in the moved tool cards was styled by `.boundary-section p`,
    which no longer wraps them — restore the sibling card scale. */

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Flash reviewed G2 CFW main firmware through the charging-case USB port.
+"""Flash a reviewed G2 main image through the charging-case USB port.
 
 The case STM32 runs a hash-gated bridge only from SRAM.  The bridge selects
 one YHM2510 pogo route, permits the read-only 0x24 request and a main-only
@@ -60,12 +60,24 @@ BRIDGE_BANNER = b"G2_POGO_FLASH_BRIDGE_V1\n"
 REVIEWED_CFW_SHA256 = (
     "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0"
 )
+REVIEWED_OFFICIAL_SHA256 = (
+    "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa"
+)
+REVIEWED_OFFICIAL_MAIN_SHA256 = (
+    "36c5b0e499a68ac2493a497bdab9740fd3e7027730c26a9094eca47268a27863"
+)
+REVIEWED_OFFICIAL_MAIN_BYTES = 3_523_396
 REVIEWED_MAIN_SHA256 = (
     "38dea7dc05e832e6f5aea8fa726454b2ec44055af5d456b323448ee6989e53d1"
 )
 REVIEWED_MAIN_BYTES = 3_539_474
 REVIEWED_BASE_VERSION = "2.2.6.10"
 REVIEWED_CASE_VERSION = "1.2.57"
+FINAL_RESET_COMMAND = b"DEB0\n"
+FINAL_RESET_CONFIRMATION = re.compile(
+    rb"reset gls L & R, reason: cmd",
+    re.IGNORECASE,
+)
 
 RESULT_ADDRESS = 0x20011A00
 RESULT_LENGTH = 128
@@ -86,8 +98,15 @@ READY_STATUS = {
 }
 
 
-def read_case_preflight(device: str, routes: tuple[str, ...]) -> dict[str, object]:
-    """Require case 1.2.57 and fresh presence for every selected route."""
+def _drain_case_console(port: serial.Serial, duration: float) -> bytes:
+    deadline = time.monotonic() + duration
+    captured = bytearray()
+    while time.monotonic() < deadline:
+        captured.extend(port.read(4096))
+    return bytes(captured)
+
+
+def _open_case_console(device: str) -> serial.Serial:
     port = serial.Serial()
     port.port = device
     port.baudrate = 1_000_000
@@ -99,53 +118,97 @@ def read_case_preflight(device: str, routes: tuple[str, ...]) -> dict[str, objec
     port.dtr = True
     port.rts = True
     port.open()
-    try:
-        time.sleep(0.05)
-        port.rts = False
-        boot_deadline = time.monotonic() + 2.5
-        captured = bytearray()
-        while time.monotonic() < boot_deadline:
-            captured.extend(port.read(4096))
-        port.reset_input_buffer()
-        if port.write(b"DEA3\n") != 5:
-            raise ProtocolError("case telemetry query was truncated")
-        port.flush()
-        query_deadline = time.monotonic() + 1.0
-        while time.monotonic() < query_deadline:
-            captured.extend(port.read(4096))
-    finally:
-        port.close()
+    time.sleep(0.05)
+    port.rts = False
+    return port
 
-    version_matches = re.findall(rb"\*{6} B200 ([0-9.]+) ", captured)
-    if not version_matches:
+
+def parse_case_restore_evidence(
+    captured: bytes,
+    *,
+    require_reset_confirmation: bool,
+) -> dict[str, object]:
+    versions = re.findall(rb"\bB200 ([0-9.]+)", captured)
+    if not versions:
         raise SafetyError("normal case firmware banner was not observed")
-    version = version_matches[-1].decode("ascii", errors="replace")
+    version = versions[-1].decode("ascii", errors="replace")
     if version != REVIEWED_CASE_VERSION:
         raise SafetyError(
             f"case firmware is {version}, expected {REVIEWED_CASE_VERSION}"
         )
-    telemetry_matches = re.findall(
+    telemetry = re.findall(
         rb"GLS_L:(\d+), GLS_R:(\d+)[^\r\n]*otaGls:(\d+)",
         captured,
     )
-    if not telemetry_matches:
+    if not telemetry:
         raise SafetyError("fresh case temple-presence telemetry was not observed")
-    left_raw, right_raw, ota_raw = telemetry_matches[-1]
-    presence = {
-        "left": bool(int(left_raw)),
-        "right": bool(int(right_raw)),
+    left_raw, right_raw, ota_raw = telemetry[-1]
+    reset_confirmed = bool(FINAL_RESET_CONFIRMATION.search(captured))
+    if require_reset_confirmation and not reset_confirmed:
+        raise SafetyError(
+            "case did not confirm the traced B0 left/right temple reset"
+        )
+    return {
+        "case_version": version,
+        "left_present": bool(int(left_raw)),
+        "right_present": bool(int(right_raw)),
+        "ota_glasses": int(ota_raw),
+        "reset_command": FINAL_RESET_COMMAND.decode("ascii").strip(),
+        "reset_confirmed": reset_confirmed,
     }
+
+
+def read_case_preflight(device: str, routes: tuple[str, ...]) -> dict[str, object]:
+    """Require case 1.2.57 and fresh presence for every selected route."""
+    port = _open_case_console(device)
+    try:
+        captured = bytearray(_drain_case_console(port, 2.5))
+        port.reset_input_buffer()
+        if port.write(b"DEA3\n") != 5:
+            raise ProtocolError("case telemetry query was truncated")
+        port.flush()
+        captured.extend(_drain_case_console(port, 1.0))
+    finally:
+        port.close()
+
+    report = parse_case_restore_evidence(
+        bytes(captured),
+        require_reset_confirmation=False,
+    )
     for route in routes:
-        if not presence[route]:
+        if not report[f"{route}_present"]:
             raise SafetyError(
                 f"fresh case telemetry does not report {route} as seated"
             )
-    return {
-        "case_version": version,
-        "left_present": presence["left"],
-        "right_present": presence["right"],
-        "ota_glasses": int(ota_raw),
-    }
+    return report
+
+
+def reset_both_temples_and_recheck(device: str) -> dict[str, object]:
+    """Run the traced B0 dual-temple reset after route/case restoration."""
+    port = _open_case_console(device)
+    try:
+        captured = bytearray(_drain_case_console(port, 2.5))
+        port.reset_input_buffer()
+        if port.write(FINAL_RESET_COMMAND) != len(FINAL_RESET_COMMAND):
+            raise ProtocolError("case B0 reset command was truncated")
+        port.flush()
+        captured.extend(_drain_case_console(port, 2.2))
+        if not FINAL_RESET_CONFIRMATION.search(captured):
+            raise SafetyError(
+                "case did not confirm the traced B0 left/right temple reset"
+            )
+        time.sleep(6.5)
+        port.reset_input_buffer()
+        if port.write(b"DEA3\n") != 5:
+            raise ProtocolError("post-reset case telemetry query was truncated")
+        port.flush()
+        captured.extend(_drain_case_console(port, 1.0))
+    finally:
+        port.close()
+    return parse_case_restore_evidence(
+        bytes(captured),
+        require_reset_confirmation=True,
+    )
 
 
 BRIDGE_BASE64 = (
@@ -675,6 +738,54 @@ def _close_checked(transport: CaseSramTempleTransport) -> None:
     )
 
 
+def final_reset_and_verify_liveness(
+    device: str,
+    routes: tuple[str, ...],
+    expected_version: str,
+) -> dict[str, object]:
+    """Make B0 the final temple mutation, then run read-only liveness checks."""
+    reset_report = reset_both_temples_and_recheck(device)
+    for route in routes:
+        if not reset_report[f"{route}_present"]:
+            raise SafetyError(
+                f"{route}: contact did not return after the final B0 reset"
+            )
+
+    versions: dict[str, object] = {}
+    for route in routes:
+        transport: CaseSramTempleTransport | None = None
+        try:
+            transport = CaseSramTempleTransport(device, route)
+            version = MainFirmwareFlasher(transport).read_version()
+            if version.firmware != expected_version or version.hardware != 5:
+                raise SafetyError(
+                    f"{route}: post-reset expected {expected_version}/hardware 5, "
+                    f"observed {version.firmware}/hardware {version.hardware}"
+                )
+            versions[route] = asdict(version)
+        finally:
+            if transport is not None:
+                _close_checked(transport)
+    return {
+        "outcome": "success",
+        "temple_mutation": "traced stock DEB0 dual-temple reset",
+        "case": reset_report,
+        "versions": versions,
+        "version_is_liveness_not_image_provenance": True,
+    }
+
+
+def can_run_final_reset_after_failure(
+    route_results: list[dict[str, object]],
+) -> bool:
+    """Permit failure recovery only after every attempted route cleaned up."""
+    return bool(route_results) and all(
+        result.get("case_restore_verified") is True
+        and result.get("case_application_version") == REVIEWED_CASE_VERSION
+        for result in route_results
+    )
+
+
 def _write_audit(path: Path, audit: dict[str, object]) -> None:
     """Atomically persist a private audit checkpoint."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -728,18 +839,30 @@ def build_parser() -> argparse.ArgumentParser:
     host_stress.add_argument("--payload-bytes", type=int, default=1009)
     host_stress.add_argument("--glasses-seated-confirmed", action="store_true")
 
-    flash = subparsers.add_parser("flash-reviewed-cfw")
-    flash.add_argument("image", type=Path)
-    flash.add_argument("--device", required=True)
-    flash.add_argument(
-        "--routes", choices=("both", "left", "right"), default="both"
-    )
-    flash.add_argument("--glasses-seated-confirmed", action="store_true")
-    flash.add_argument("--execute-main-ota", action="store_true")
-    flash.add_argument("--accept-single-slot-risk", action="store_true")
-    flash.add_argument("--confirm-image-sha256", required=True)
-    flash.add_argument("--expect-current-version", default=REVIEWED_BASE_VERSION)
-    flash.add_argument("--log", type=Path, required=True)
+    for command, help_text in (
+        (
+            "flash-reviewed-cfw",
+            "flash the exact reviewed CFW Apollo-main image",
+        ),
+        (
+            "flash-reviewed-official",
+            "restore the exact pinned official Apollo-main image",
+        ),
+    ):
+        flash = subparsers.add_parser(command, help=help_text)
+        flash.add_argument("image", type=Path)
+        flash.add_argument("--device", required=True)
+        flash.add_argument(
+            "--routes", choices=("both", "left", "right"), default="both"
+        )
+        flash.add_argument("--glasses-seated-confirmed", action="store_true")
+        flash.add_argument("--execute-main-ota", action="store_true")
+        flash.add_argument("--accept-single-slot-risk", action="store_true")
+        flash.add_argument("--confirm-image-sha256", required=True)
+        flash.add_argument(
+            "--expect-current-version", default=REVIEWED_BASE_VERSION
+        )
+        flash.add_argument("--log", type=Path, required=True)
     return parser
 
 
@@ -885,7 +1008,30 @@ def main() -> int:
                     return_code = 1
         return return_code
 
-    assert args.command == "flash-reviewed-cfw"
+    assert args.command in (
+        "flash-reviewed-cfw",
+        "flash-reviewed-official",
+    )
+    image_kind = (
+        "CFW"
+        if args.command == "flash-reviewed-cfw"
+        else "official"
+    )
+    reviewed_sha256 = (
+        REVIEWED_CFW_SHA256
+        if args.command == "flash-reviewed-cfw"
+        else REVIEWED_OFFICIAL_SHA256
+    )
+    reviewed_main_sha256 = (
+        REVIEWED_MAIN_SHA256
+        if args.command == "flash-reviewed-cfw"
+        else REVIEWED_OFFICIAL_MAIN_SHA256
+    )
+    reviewed_main_bytes = (
+        REVIEWED_MAIN_BYTES
+        if args.command == "flash-reviewed-cfw"
+        else REVIEWED_OFFICIAL_MAIN_BYTES
+    )
     if not args.execute_main_ota:
         parser.error("flash requires --execute-main-ota")
     if not args.accept_single_slot_risk:
@@ -895,20 +1041,28 @@ def main() -> int:
     except (OSError, FlasherError, ValueError) as error:
         print(f"Package validation failed: {error}", file=sys.stderr)
         return 1
-    if plan.image_sha256 != REVIEWED_CFW_SHA256:
+    if plan.image_sha256 != reviewed_sha256:
         parser.error(
-            "this case bridge command accepts only the reviewed CFW image "
-            + REVIEWED_CFW_SHA256
+            "this case bridge command accepts only the reviewed "
+            + image_kind
+            + " image "
+            + reviewed_sha256
         )
     if (
-        plan.main_payload_bytes != REVIEWED_MAIN_BYTES
-        or plan.main_payload_sha256 != REVIEWED_MAIN_SHA256
+        plan.main_payload_bytes != reviewed_main_bytes
+        or plan.main_payload_sha256 != reviewed_main_sha256
     ):
         parser.error(
-            "the Apollo-main component does not match the reviewed CFW pin"
+            "the Apollo-main component does not match the reviewed "
+            + image_kind
+            + " pin"
         )
     if args.confirm_image_sha256.lower() != plan.image_sha256:
-        parser.error("--confirm-image-sha256 does not match the CFW image")
+        parser.error(
+            "--confirm-image-sha256 does not match the "
+            + image_kind
+            + " image"
+        )
 
     routes = (
         ("right", "left")
@@ -916,15 +1070,16 @@ def main() -> int:
         else (args.routes,)
     )
     audit: dict[str, object] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "started_at_utc": datetime.now(timezone.utc).isoformat(),
-        "operation": "g2_case_usb_reviewed_cfw_main_only",
+        "operation": f"g2_case_usb_reviewed_{image_kind.lower()}_main_only",
         "device": args.device,
         "routes": routes,
         "package": asdict(plan),
         "bridge_sha256": BRIDGE_SHA256,
         "bootloader_component_allowed": False,
         "route_results": [],
+        "final_reset_and_liveness": None,
         "outcome": "started",
     }
     try:
@@ -981,7 +1136,8 @@ def main() -> int:
                         f"observed {current.hardware}"
                     )
                 print(
-                    f"{route}: starting reviewed CFW Apollo-main transfer; "
+                    f"{route}: starting reviewed {image_kind} "
+                    "Apollo-main transfer; "
                     "do not disturb the case",
                     flush=True,
                 )
@@ -1061,6 +1217,23 @@ def main() -> int:
             assert isinstance(cast_results, list)
             cast_results.append(route_result)
             _write_audit(args.log, audit)
+        print(
+            "All selected routes and the case application are restored; "
+            "sending the final traced B0 dual-temple reset",
+            flush=True,
+        )
+        final_reset = final_reset_and_verify_liveness(
+            args.device,
+            routes,
+            plan.expected_device_version,
+        )
+        audit["final_reset_and_liveness"] = final_reset
+        _write_audit(args.log, audit)
+        print(
+            "Final B0 reset confirmed; selected contacts and checksum-valid "
+            "post-reset version replies verified",
+            flush=True,
+        )
         audit["outcome"] = "success"
         return_code = 0
     except (
@@ -1071,6 +1244,36 @@ def main() -> int:
     ) as error:
         audit["outcome"] = "failed_or_uncertain"
         audit["error"] = str(error)
+        route_results = audit["route_results"]
+        assert isinstance(route_results, list)
+        if (
+            audit["final_reset_and_liveness"] is None
+            and can_run_final_reset_after_failure(route_results)
+        ):
+            try:
+                audit["final_reset_and_liveness"] = (
+                    final_reset_and_verify_liveness(
+                        args.device,
+                        routes,
+                        plan.expected_device_version,
+                    )
+                )
+                print(
+                    "Transfer remains failed or uncertain; final B0 reset and "
+                    "post-reset liveness nevertheless verified",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            except (
+                OSError,
+                FlasherError,
+                BootloaderError,
+                serial.SerialException,
+            ) as reset_error:
+                audit["final_reset_and_liveness"] = {
+                    "outcome": "failed",
+                    "error": str(reset_error),
+                }
         print(
             "Flash stopped; the current route may be incomplete or uncertain: "
             f"{error}",

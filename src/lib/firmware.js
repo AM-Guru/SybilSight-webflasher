@@ -188,6 +188,35 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
       "08a08f45ac125a1dba6469234e56cacd32147d9e79203327987276d2fb182b02",
     hardwareAttemptsWithCurrentSource: 4,
     successfulHardwareAttemptsWithCurrentSource: 2,
+    postRestoreReset: Object.freeze({
+      status: "hardware-validated-revived-left-temple",
+      caseApplicationVersion: "1.2.57",
+      command: "DEB0",
+      implementationEvidence:
+        "The fixed yhm-reset-status-query SRAM probe reproduced the traced dual-route reset waveform and restored the captured YHM image byte-for-byte.",
+      before: Object.freeze({
+        leftPresent: false,
+        rightPresent: true,
+        leftApplicationReply: false,
+      }),
+      after: Object.freeze({
+        leftPresent: true,
+        rightPresent: true,
+        leftFirmware: "2.2.6.10",
+        leftHardware: 5,
+        bothDisplaysWorking: true,
+      }),
+      firmwareBytesTransmitted: 0,
+      requiredFinalRestorePhase: Object.freeze([
+        "restore the selected YHM route byte-for-byte",
+        "verify the Case application returns as 1.2.57",
+        "issue the traced stock B0 dual-temple reset",
+        "wait for both selected contacts to return",
+        "require checksum-valid version liveness from every restored route",
+      ]),
+      provenanceBoundary:
+        "The version reply proves post-reset application liveness only; exact image hashes remain the stock/CFW provenance.",
+    }),
   }),
   webWriterEnabled: true,
 });

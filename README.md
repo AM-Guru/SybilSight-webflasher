@@ -267,11 +267,22 @@ firmware 2.2.6.10/hardware 5. The retained result recorded status zero,
 complete baseline/selected/restored masks, byte-for-byte YHM restoration, and
 normal case firmware 1.2.57 return.
 
-Accordingly, the validated scope is the reviewed Apollo main image on a
-running left or right temple. The guarded browser and Python implementations
-now expose that exact scope. Application-dead recovery remains unproven. Both
-continue to mark the Apollo bootloader component **OMIT FROM POGO** until an
-independent SBL, MRAM-recovery, or SWD route is proven.
+A later failed-OTA recovery added one more hardware result. The right display
+worked, but the Case initially reported `GLS_L=0, GLS_R=1` and the left
+application did not answer. The fixed reset probe reproduced the stock
+dual-route reset waveform, restored its captured YHM image byte-for-byte, and
+returned Case 1.2.57. Fresh telemetry then reported both contacts; a
+checksum-valid left version reply decoded as 2.2.6.10/hardware 5, and the user
+confirmed both displays working. That recovery sent no firmware bytes, so it
+validates reset-and-liveness recovery—not an official-image transfer.
+
+Accordingly, the validated write scope is the reviewed Apollo main image on a
+running left or right temple. Stock images remain hash-pinned but do not yet
+have completed case-USB transfer evidence. The guarded browser and Python
+implementations expose that boundary and now require the validated final
+dual-reset/contact/version phase. Application-dead recovery remains unproven.
+Both continue to mark the Apollo bootloader component **OMIT FROM POGO** until
+an independent SBL, MRAM-recovery, or SWD route is proven.
 
 For offline analysis, selected `EVENOTA` bundles show the exact number of
 1,000-byte `0x54` records and final sequence value for each component. The
@@ -523,6 +534,12 @@ This is the physically traced case reset path and does not write firmware.
 Live testing found no separate G2 recovery/DFU advertisement across this reset
 while the temples were seated.
 
+The 2026-07-25 recovery session validated its practical recovery value. Before
+the reset, Case 1.2.57 reported `GLS_L=0, GLS_R=1` and the left application
+did not answer. The fixed dual-route reset restored `GLS_L=1, GLS_R=1`; a
+read-only bridge then returned left firmware 2.2.6.10/hardware 5, and both
+displays worked. No firmware bytes were sent in that recovery sequence.
+
 It also does not invoke the application-alive `0x52...0x55` pogo OTA wrapper;
 the stock case has no USB forwarding route to it.
 
@@ -541,20 +558,32 @@ the tool reports a non-idle YHM baseline, let stock charging activity settle
 and retry. This control cannot emit arbitrary bytes or install official or CFW
 firmware.
 
-### Flash the reviewed CFW on running temples
+### Restore a pinned main image on running temples
 
 1. Analyze case firmware 1.2.57 with the glasses seated and both desired
    routes reported present.
-2. Load the exact reviewed `2.2.6.10-cfw` bundle from the catalog or disk.
+2. Load a hash-pinned stock or reviewed-CFW bundle from the catalog or disk.
 3. Under **Guarded running-temple reinstall**, select both routes or one
    explicit route. Both runs right first and then left; each route gets a
    fresh volatile bridge session and complete cleanup.
 4. Confirm the glasses are seated, accept the single-slot risk, and type
-   `FLASH REVIEWED CFW`.
+   `FLASH GLASSES FIRMWARE`.
 5. Keep the case powered, the lid and glasses still, and the browser awake
    until the audit reports success or `failed_or_uncertain`.
 6. Download the audit JSON. Do not treat a same-version postflight reply alone
    as proof of CFW; stock and CFW both report 2.2.6.10.
+
+After every selected route and Case 1.2.57 return are verified, the web
+flasher sends `DEB0` as the final temple-mutating command. It waits for every
+selected contact to return, performs checksum-valid read-only version probes,
+and verifies the Case application again. The audit is successful only if this
+`finalResetAndLiveness` phase succeeds. Version is liveness evidence; the
+complete image and Apollo-main hashes remain provenance.
+
+For a failed or uncertain transfer, the same reset is attempted only when
+every attempted route has verified route cleanup and Case 1.2.57 return. The
+original transfer outcome remains failed or uncertain. If cleanup is not
+verified, the flasher does not send the reset.
 
 This is an application-alive reinstall path. If the temple no longer answers
 the version preflight, do not attempt it repeatedly: use a separately proven

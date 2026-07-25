@@ -31,6 +31,10 @@ import {
   requireOtaAcknowledgement,
 } from "../src/lib/pogoFlashBridge.js";
 import { sha256Hex, writeU32LE } from "../src/lib/firmware.js";
+import {
+  G2CaseSession,
+  canRunFinalResetAfterFailure,
+} from "../src/lib/serial.js";
 
 function makeTempleFrame(payload) {
   const frame = new Uint8Array(payload.length + 5);
@@ -290,5 +294,78 @@ test("accepts a pinned stock main but still rejects a mismatched payload", async
       make(new Uint8Array(stock.mainBytes), stock.mainSha256),
     ),
     PogoFlashSafetyError,
+  );
+});
+
+test("makes the dual-temple reset the final restore mutation and verifies liveness", async () => {
+  const events = [];
+  const session = new G2CaseSession(null, {
+    log: (message) => events.push(`log:${message}`),
+    progress: () => {},
+  });
+  session.restartAndRecheck = async () => {
+    events.push("mutate:DEB0");
+    return {
+      caseVersion: "1.2.57",
+      telemetry: { leftPresent: true, rightPresent: true },
+    };
+  };
+  session.probeRunningTemple = async (operation, route) => {
+    events.push(`read:${operation}:${route}`);
+    return {
+      decoded: { firmwareVersion: "2.2.6.10", hardwareRevision: 5 },
+      transportProof: { restoredMask: 0x3ff },
+    };
+  };
+  session.restoreNormal = async () => {
+    events.push("read:case-version");
+    return { caseVersion: "1.2.57" };
+  };
+
+  const report = await session.finalizeTempleRestore(
+    ["right", "left"],
+    "2.2.6.10",
+  );
+  assert.equal(report.command, "DEB0");
+  assert.equal(report.resetConfirmed, true);
+  assert.deepEqual(Object.keys(report.versions), ["right", "left"]);
+  assert.equal(
+    events.filter((event) => event.startsWith("mutate:")).at(-1),
+    "mutate:DEB0",
+  );
+  assert.deepEqual(
+    events.filter((event) => event.startsWith("read:")),
+    ["read:version:right", "read:version:left", "read:case-version"],
+  );
+});
+
+test("fails the final restore gate when a selected contact does not return", async () => {
+  const session = new G2CaseSession(null);
+  session.restartAndRecheck = async () => ({
+    caseVersion: "1.2.57",
+    telemetry: { leftPresent: false, rightPresent: true },
+  });
+  session.probeRunningTemple = async () => {
+    throw new Error("must not probe an absent selected route");
+  };
+  await assert.rejects(
+    () => session.finalizeTempleRestore(["left"], "2.2.6.10"),
+    /left: contact did not return/,
+  );
+});
+
+test("attempts failure recovery only after every route has verified cleanup", () => {
+  const verified = {
+    caseRestoreVerified: true,
+    caseApplicationVersion: "1.2.57",
+  };
+  assert.equal(canRunFinalResetAfterFailure([verified]), true);
+  assert.equal(canRunFinalResetAfterFailure([]), false);
+  assert.equal(
+    canRunFinalResetAfterFailure([
+      verified,
+      { caseRestoreVerified: false, caseApplicationVersion: "1.2.57" },
+    ]),
+    false,
   );
 });

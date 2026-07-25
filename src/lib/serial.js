@@ -74,6 +74,18 @@ export function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+export function canRunFinalResetAfterFailure(routeResults) {
+  return (
+    Array.isArray(routeResults) &&
+    routeResults.length > 0 &&
+    routeResults.every(
+      (result) =>
+        result?.caseRestoreVerified === true &&
+        result?.caseApplicationVersion === REVIEWED_CASE_VERSION,
+    )
+  );
+}
+
 function compactHex(input) {
   return [...(input ?? [])]
     .map((value) => value.toString(16).padStart(2, "0"))
@@ -1214,9 +1226,87 @@ export class G2CaseSession {
     }
   }
 
-  async flashReviewedCfwRoute(component, route, routeIndex, routeCount) {
-    const progressBase = routeIndex / routeCount;
-    const progressSpan = 1 / routeCount;
+  async finalizeTempleRestore(routes, expectedVersion) {
+    this.log(
+      "All selected routes and the Case application are restored; sending the final traced B0 dual-temple reset.",
+    );
+    this.progress(0.93, "Final dual-temple reset");
+    const resetReport = await this.restartAndRecheck();
+    if (resetReport.caseVersion !== REVIEWED_CASE_VERSION) {
+      throw new PogoFlashSafetyError(
+        `The final reset returned Case ${resetReport.caseVersion ?? "unknown"}, expected ${REVIEWED_CASE_VERSION}.`,
+      );
+    }
+    if (!resetReport.telemetry) {
+      throw new PogoFlashSafetyError(
+        "Fresh Case telemetry did not return after the final B0 reset.",
+      );
+    }
+    for (const route of routes) {
+      const present =
+        route === "left"
+          ? resetReport.telemetry.leftPresent
+          : resetReport.telemetry.rightPresent;
+      if (!present) {
+        throw new PogoFlashSafetyError(
+          `${route}: contact did not return after the final B0 reset.`,
+        );
+      }
+    }
+
+    const versions = {};
+    for (let index = 0; index < routes.length; index += 1) {
+      const route = routes[index];
+      const probe = await this.probeRunningTemple("version", route, {
+        progressBase: 0.95 + (index / routes.length) * 0.04,
+        progressSpan: 0.04 / routes.length,
+      });
+      const version = probe.decoded;
+      if (
+        version.firmwareVersion !== expectedVersion ||
+        version.hardwareRevision !== 5
+      ) {
+        throw new PogoFlashSafetyError(
+          `${route}: post-reset expected ${expectedVersion}/hardware 5, observed ${version.firmwareVersion}/hardware ${version.hardwareRevision}.`,
+        );
+      }
+      versions[route] = {
+        firmware: version.firmwareVersion,
+        hardware: version.hardwareRevision,
+        yhmRestoreVerified: probe.transportProof?.restoredMask === 0x3ff,
+      };
+    }
+    const finalCase = await this.restoreNormal({
+      requireVersion: true,
+      expectedVersion: REVIEWED_CASE_VERSION,
+    });
+    this.progress(1, "Final reset and temple liveness verified");
+    this.log(
+      "Final B0 reset confirmed; selected contacts and checksum-valid post-reset version replies verified.",
+      "success",
+    );
+    return {
+      outcome: "success",
+      command: "DEB0",
+      templeMutation: "traced stock dual-temple reset",
+      resetConfirmed: true,
+      caseFirmware: finalCase.caseVersion,
+      leftPresent: resetReport.telemetry.leftPresent,
+      rightPresent: resetReport.telemetry.rightPresent,
+      versions,
+      versionIsLivenessNotImageProvenance: true,
+    };
+  }
+
+  async flashPinnedTempleRoute(
+    component,
+    expectedTargetVersion,
+    route,
+    routeIndex,
+    routeCount,
+  ) {
+    const progressBase = (routeIndex / routeCount) * 0.9;
+    const progressSpan = 0.9 / routeCount;
     const transport = new CasePogoFlashTransport(this, route, {
       progressBase,
       progressSpan,
@@ -1322,7 +1412,7 @@ export class G2CaseSession {
           );
           lastVersion = version;
           if (
-            version.firmware === REVIEWED_CFW_BASE_VERSION &&
+            version.firmware === expectedTargetVersion &&
             version.hardware === preflight.hardware
           ) {
             result.postflightVersion = version;
@@ -1381,7 +1471,7 @@ export class G2CaseSession {
     return result;
   }
 
-  async flashReviewedCfwMain(firmware, routeSelection = "both") {
+  async flashPinnedTempleMain(firmware, routeSelection = "both") {
     const { mainComponent: component, target } =
       await assertPinnedTempleFlashCandidate(firmware);
     const routes =
@@ -1393,7 +1483,7 @@ export class G2CaseSession {
     }
 
     const audit = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       startedAt: new Date().toISOString(),
       operation: "g2_case_usb_pinned_main_only",
       imageSha256: firmware.fileSha256,
@@ -1406,6 +1496,7 @@ export class G2CaseSession {
       bootloaderAllowed: false,
       preflightCase: null,
       routeResults: [],
+      finalResetAndLiveness: null,
       outcome: "started",
     };
     try {
@@ -1421,8 +1512,9 @@ export class G2CaseSession {
         const route = routes[index];
         try {
           audit.routeResults.push(
-            await this.flashReviewedCfwRoute(
+            await this.flashPinnedTempleRoute(
               component,
+              target.version,
               route,
               index,
               routes.length,
@@ -1433,12 +1525,36 @@ export class G2CaseSession {
           throw error;
         }
       }
+      audit.finalResetAndLiveness = await this.finalizeTempleRestore(
+        routes,
+        target.version,
+      );
       audit.outcome = "success";
-      this.progress(1, "Reviewed CFW transfer and Case restoration verified");
+      this.progress(1, "Pinned transfer, final reset, and liveness verified");
       return audit;
     } catch (error) {
       audit.outcome = "failed_or_uncertain";
       audit.error = error.message;
+      if (
+        !audit.finalResetAndLiveness &&
+        canRunFinalResetAfterFailure(audit.routeResults)
+      ) {
+        try {
+          audit.finalResetAndLiveness = await this.finalizeTempleRestore(
+            routes,
+            target.version,
+          );
+          this.log(
+            "Transfer remains failed or uncertain; final B0 reset and post-reset liveness nevertheless verified.",
+            "warn",
+          );
+        } catch (resetError) {
+          audit.finalResetAndLiveness = {
+            outcome: "failed",
+            error: resetError.message,
+          };
+        }
+      }
       error.audit = audit;
       throw error;
     } finally {

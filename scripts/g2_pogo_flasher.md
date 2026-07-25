@@ -16,8 +16,8 @@ They are intentionally fail-closed:
   validation;
 - only `ota/s200_firmware_ota.bin` (Apollo component type 0) is sent;
 - the Apollo bootloader and all peripheral components are rejected;
-- the case-USB writer accepts only the exact reviewed CFW bundle, main
-  payload, and embedded 2,872-byte bridge hashes;
+- the case-USB writer exposes distinct commands for the exact reviewed CFW
+  and official 2.2.6.10 bundles and pins the selected complete-image hash;
 - `0x52` start and `0x53` header are never replayed;
 - only the identical CRC-protected current `0x54` data record is retried,
   after a lost/corrupt reply or an explicit rejection that did not advance the
@@ -26,7 +26,9 @@ They are intentionally fail-closed:
 - the checksum-valid, zero-status `0x55` reply is mandatory; and
 - success also requires postflight liveness, exact retained accepted
   size/sequence, byte-for-byte YHM restoration, volatile proof cleanup, and
-  case 1.2.57 return.
+  case 1.2.57 return; then the traced `DEB0` reset is the final
+  temple-mutating operation and fresh contact plus version liveness is
+  required for every restored route.
 
 ## Install
 
@@ -67,6 +69,21 @@ python3 scripts/g2_case_pogo_flasher.py flash-reviewed-cfw \
   --log /path/to/g2-cfw-flash-audit.json
 ```
 
+Pinned official 2.2.6.10 main restore:
+
+```bash
+python3 scripts/g2_case_pogo_flasher.py flash-reviewed-official \
+  /path/to/g2-2.2.6.10-official.bin \
+  --device /dev/cu.usbserial-XXXX \
+  --routes both \
+  --glasses-seated-confirmed \
+  --execute-main-ota \
+  --accept-single-slot-risk \
+  --confirm-image-sha256 \
+  f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa \
+  --log /path/to/g2-official-restore-audit.json
+```
+
 Before entering the ROM loader, the tool requires a normal case 1.2.57 banner
 and fresh `DEA3` presence for every selected route. The embedded bridge is
 decoded, SHA-256 checked, written only to an exact SRAM allowlist, and read
@@ -79,6 +96,20 @@ retained cleanup, and normal case return before beginning the left. Any
 missing proof stops the operation and records `failed_or_uncertain` in the
 audit. `--log` is required: the tool refuses hardware access unless it can
 create a private, atomically updated audit checkpoint.
+
+Once every selected route is restored, the tool verifies Case 1.2.57, sends
+the traced stock `DEB0` dual-temple reset, waits for the selected contacts,
+and performs checksum-valid version reads. This phase was added after a
+hardware recovery session in which the Case moved from
+`GLS_L=0, GLS_R=1` with no left reply to `GLS_L=1, GLS_R=1`, left
+2.2.6.10/hardware 5, and both working displays. The reset recovery sent no
+firmware bytes. Version remains liveness evidence only; the selected image
+hash is the stock/CFW provenance.
+
+After a failed transfer, the same final phase is attempted only when every
+attempted route has verified YHM cleanup and Case 1.2.57 return. The audit
+retains `failed_or_uncertain`; if any cleanup is unverified, no reset command
+is sent.
 
 `stress-preflight` repeats the read-only version transaction. `stress-usb`
 tests only the CH340/case receive envelope and does not forward its payload to
@@ -103,7 +134,8 @@ charging contacts.
 
 The direct tool can inspect or transmit another complete validated package
 when its full SHA-256 is explicitly confirmed. The case-USB writer is more
-restrictive and accepts only the reviewed CFW.
+restrictive and accepts only the separately pinned reviewed CFW or official
+2.2.6.10 package.
 
 ## Recovery boundary
 

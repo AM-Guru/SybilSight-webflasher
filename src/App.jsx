@@ -132,11 +132,7 @@ function StepRail({ complete, active }) {
       <nav className="step-rail" aria-label="Setup workflow">
         {renderGroup(WORKFLOW_STEPS, 0)}
       </nav>
-      <nav
-        className="step-rail step-rail-recovery"
-        aria-label="Recovery"
-        data-group-label="Recovery"
-      >
+      <nav className="step-rail step-rail-recovery" aria-label="Recovery">
         {renderGroup(RECOVERY_STEPS, WORKFLOW_STEPS.length)}
       </nav>
     </div>
@@ -1006,7 +1002,7 @@ function App() {
     });
   };
 
-  const flashReviewedCfw = async () => {
+  const flashTempleFirmware = async () => {
     if (
       !firmware?.templeFlashEligible ||
       !templeFlashSeated ||
@@ -1017,7 +1013,7 @@ function App() {
     }
     await run("temple-flash", async () => {
       try {
-        const audit = await getSession().flashReviewedCfwMain(
+        const audit = await getSession().flashPinnedTempleMain(
           firmware,
           templeFlashRoute,
         );
@@ -1026,7 +1022,7 @@ function App() {
         setTempleFlashSeated(false);
         setTempleFlashRisk(false);
         addLog(
-          `${audit.imageLabel} main transfer completed on ${audit.routes.join(" + ")} with route restoration verified.`,
+          `${audit.imageLabel} completed on ${audit.routes.join(" + ")}; route restoration, final dual reset, contacts, and post-reset liveness verified.`,
           "success",
         );
       } catch (caught) {
@@ -1200,7 +1196,7 @@ function App() {
         >
           <div className="hero-copy">
             <div className="eyebrow">
-              Recovery console · G2 Charging Case &amp; Smart Glasses
+              01 · Connect · G2 Charging Case &amp; Smart Glasses
             </div>
             <h2>
               Restore with precision.
@@ -1265,7 +1261,7 @@ function App() {
           data-pane="analyze"
         >
           <SectionHeading
-            eyebrow="01 · Analyze"
+            eyebrow="02 · Analyze"
             title="Analyze the Case and Smart Glasses"
             copy="Separate the Case factory shell, STM32 banks, and option bytes from left/right temple data captured through the Case pogo routes."
             action={
@@ -1536,7 +1532,7 @@ function App() {
           data-pane="backup"
         >
           <SectionHeading
-            eyebrow="02 · Preserve"
+            eyebrow="03 · Preserve"
             title="Back up the Case and Smart Glasses"
             copy="Captures the full Case memory, verifies both seated temples, and embeds the matching digest-pinned official Glasses recovery bundle into one local file."
             action={
@@ -1605,7 +1601,7 @@ function App() {
           data-pane="firmware"
         >
           <SectionHeading
-            eyebrow="03 · Choose image"
+            eyebrow="04 · Choose image"
             title="The SybilSight verified library, or your own file"
             copy="Every entry in the library is a hash-pinned image that is re-validated locally before any write is enabled: Charging Case recovery images, plus the reviewed SybilSight transformation of stock 2.2.6.10 for the Smart Glasses. You can also supply your own file."
             action={
@@ -1805,7 +1801,7 @@ function App() {
           data-pane="recover"
         >
           <SectionHeading
-            eyebrow="04 · Recovery Console"
+            eyebrow="05 · Recovery Console"
             title="Recover the Case or Smart Glasses"
             copy="Use dual-bank staging for the Charging Case, or the hardware-validated Case-to-pogo path to reinstall a pinned Apollo main on responsive Smart Glasses. Read-only temple probes, provisioning decode, and the recorded transfer evidence sit below."
           />
@@ -1925,7 +1921,9 @@ function App() {
                   right- and left-temple procedure. The writer pins the Case SRAM
                   bridge and re-hashes the main payload against its own compiled-in
                   allowlist; requires finish and post-reboot replies; restores all
-                  ten YHM route registers; and confirms Case firmware 1.2.57 returns.
+                  ten YHM route registers; confirms Case firmware 1.2.57 returns;
+                  then makes the traced dual-temple reset the final temple mutation
+                  and verifies contacts plus checksum-valid version liveness.
                 </p>
               </div>
               <StatusPill tone={firmware?.templeFlashEligible ? "success" : "quiet"}>
@@ -2011,7 +2009,7 @@ function App() {
                 />
                 <Button
                   tone="danger"
-                  onClick={flashReviewedCfw}
+                  onClick={flashTempleFirmware}
                   busy={operation === "temple-flash"}
                   disabled={!templeFlashReady}
                 >
@@ -2054,6 +2052,10 @@ function App() {
                   <strong>Case 1.2.57 · G2 2.2.6.10 · HW 5</strong>
                 </div>
                 <div>
+                  <span>FINAL RECOVERY PHASE</span>
+                  <strong>DEB0 reset · contacts · version liveness</strong>
+                </div>
+                <div>
                   <span>EXCLUDED</span>
                   <strong>Apollo bootloader + all peripheral components</strong>
                 </div>
@@ -2075,13 +2077,16 @@ function App() {
                 <div>
                   <strong>
                     {templeFlashAudit.outcome === "success"
-                      ? "Smart Glasses transfer and restoration verified"
+                      ? "Transfer, final reset, and liveness verified"
                       : "Stopped · state failed or uncertain"}
                   </strong>
                   <span>
                     {templeFlashAudit.routeResults
                       .map((item) => `${item.route}: ${item.outcome}`)
                       .join(" · ")}
+                    {templeFlashAudit.finalResetAndLiveness?.resetConfirmed
+                      ? " · B0 reset: confirmed"
+                      : ""}
                   </span>
                 </div>
                 <Button
@@ -2091,7 +2096,7 @@ function App() {
                       new Blob([`${JSON.stringify(templeFlashAudit, null, 2)}\n`], {
                         type: "application/json",
                       }),
-                      `g2-cfw-flash-${new Date().toISOString().replaceAll(":", "-")}.json`,
+                      `g2-temple-restore-${new Date().toISOString().replaceAll(":", "-")}.json`,
                     )
                   }
                 >
@@ -2115,9 +2120,12 @@ function App() {
                 Its hash-gated writer can install only an Apollo main from its own
                 compiled-in allowlist — stock or reviewed CFW — on a running
                 temple, with finish acknowledgement, post-reboot version,
-                byte-for-byte route restoration, and normal Case-app return
-                required on every selected route. Only the reviewed CFW main has
-                confirmed left- and right-temple transfers on hardware.
+                byte-for-byte route restoration, normal Case-app return, a final
+                B0 reset, renewed contact presence, and post-reset version
+                liveness required on every selected route. The recovery-session
+                reset revived a nonresponsive left application/display without
+                sending firmware bytes. Only the reviewed CFW main has confirmed
+                left- and right-temple transfers on hardware.
               </p>
             </div>
             <Button
@@ -2247,7 +2255,11 @@ function App() {
                 <h3>Successful Case-to-Glasses transfer record</h3>
               </div>
               <StatusPill tone={firmware?.templeFlashEligible ? "success" : "quiet"}>
-                {firmware?.templeFlashEligible ? "Exact CFW validated" : "Load reviewed CFW"}
+                {firmware?.templeFlashEligible
+                  ? firmware.templeFlashTarget?.hardwareValidated
+                    ? "Transfer validated"
+                    : "Hash pinned"
+                  : "Load a pinned image"}
               </StatusPill>
             </div>
             <p>
@@ -2312,9 +2324,13 @@ function App() {
               does not advance the expected sequence. Attempt 9 subsequently completed
               the left transfer with all 3,540 records, zero retries, finish and
               postflight confirmation, full route restoration, and Case-app return. This
-              browser port preserves those same gates; until its Web Serial path receives
-              an independent hardware run, retain the downloaded audit and treat any
-              interrupted result as failed or uncertain.
+              browser port preserves those same gates. A later recovery session found
+              GLS_L=0/GLS_R=1 with no left application reply; the traced dual-route reset
+              restored both contacts, a checksum-valid left 2.2.6.10/hardware-5 reply,
+              and both displays without transmitting firmware. Restore audits therefore
+              require that reset and liveness phase last. Until the Web Serial write path
+              receives an independent hardware run, retain the downloaded audit and treat
+              any interrupted result as failed or uncertain.
             </small>
           </div>
           <div className="sbl-audit">
