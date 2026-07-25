@@ -36,8 +36,9 @@ Production deployment:
   component in a selected official or reviewed-CFW bundle without emitting
   any OTA command, and explicitly marks the Apollo bootloader as omitted.
 - Reports the latest main-only transfer research, including the validated
-  direct-UART host and the failed/uncertain case-USB bridge attempts, without
-  enabling that writer in the browser.
+  direct-UART host, the successful right-temple case-USB bridge transfer, and
+  the left route's fail-closed rejection, without enabling that writer in the
+  browser.
 - Decodes read-only Apollo510 INFOC and active INFO0 debugger dumps locally,
   then fails closed unless every known SBL UART field matches the pogo route.
 - Provides a session console with downloadable logs.
@@ -63,8 +64,10 @@ bytes or firmware-transfer commands.
 That boundary also applies to the reviewed CFW. The webflasher can download,
 authenticate, deeply inspect, and archive it, but deliberately does not offer
 its case component as a way to “install CFW.” The patch changes the glasses'
-Apollo application; its case component is byte-identical to stock case
-1.2.57, and the stock case cannot deliver the patched application to a temple.
+Apollo application and its case component is byte-identical to stock case
+1.2.57. The stock case application cannot deliver it; SybilSight's separate
+volatile, hash-gated bridge has now completed one right-temple Apollo-main
+transfer. That writer is not yet implemented in this browser.
 
 The case write and bank-activation path is research-derived and experimental.
 It has not been physically validated by this repository on sacrificial
@@ -173,8 +176,8 @@ permits only the Apollo main component, never blindly replays `0x52` start or
 waits 100 ms at each 6-KiB handoff, and requires the exact package version
 after reboot. It cannot use the unmodified case console by itself.
 
-Four experimental case-USB bridge revisions were attempted with the reviewed
-CFW. Every audit log ended `failed_or_uncertain`. Attempt 3 used bridge
+Seven experimental case-USB runs were attempted with the reviewed CFW.
+Attempts 1 through 5 ended `failed_or_uncertain`. Attempt 3 used bridge
 SHA-256
 `9945e4cd3b2ba1edb2328b5ddf6d3580443d566d333aef8e4d061f2981febecd`
 but received no case-bridge response header. Attempt 4 used diagnostic bridge
@@ -188,18 +191,41 @@ result had a zero restored-register mask and no cleanup proof, so the log does
 not establish a complete transfer, restored case routing, or a known final
 temple state.
 
-The newest uncommitted bridge source now passes its local compile-time review
-gate: it assembles to the declared 2,840 bytes with SHA-256
-`64ced2734cc27efc4faadc7ce10151a8d5d103be19c5dafec32a9caddaabd988`.
-That revision has zero hardware attempts. A matching hash proves only that the
-reviewed bytes were built; it does not promote the failed/uncertain case path
-to a supported recovery method.
+Attempt 5 used bridge SHA-256
+`9138198c7d031f9a98a5d20c0df55293fdd3b37489c7fddeb4d94c7eed07018f`.
+It timed out after receiving only five bytes of the host transaction header,
+accepted no firmware payload, and never contacted the temple application
+beyond one transmit attempt. Its retained record nevertheless contained the
+expected proof, matching baseline and restored YHM bytes
+`810004aeae03812022ff`, and baseline/selected/restored masks of `0x3ff`.
+Stock case firmware 1.2.57 resumed. This is useful fail-closed restoration
+evidence, but the runner correctly did not mark cleanup verified because the
+retained terminal status was `16` (host request timeout).
 
-Accordingly, the first eventual transfer scope remains Apollo main only, but
-it is still a Class-C sacrificial-hardware experiment rather than a supported
-webflasher operation. This console marks the Apollo bootloader component
-**OMIT FROM POGO** until an independent SBL, MRAM-recovery, or SWD route is
-proven.
+The newest uncommitted bridge assembles to the declared 2,872 bytes with
+SHA-256
+`08a08f45ac125a1dba6469234e56cacd32147d9e79203327987276d2fb182b02`.
+Attempt 6 used those exact bytes and completed the right-temple transfer:
+
+- the reviewed CFW bundle SHA-256 and main-payload SHA-256 were pinned;
+- preflight reported firmware 2.2.6.10 and hardware 5;
+- all 3,539,474 bytes were accepted in 3,540 records with zero retries;
+- the `0x55` finish acknowledgement was received;
+- postflight again reported firmware 2.2.6.10 and hardware 5;
+- all ten YHM registers were restored byte-for-byte;
+- retained status was zero and case firmware 1.2.57 resumed normally.
+
+The postflight version cannot distinguish stock from this CFW because both
+report 2.2.6.10, so the input bundle and main-payload hashes remain essential
+provenance. Attempt 7 used the same bridge on the left route and failed closed
+at setup status 3 because the observed YHM baseline was not an allowlisted
+seated-idle state; it transmitted no firmware bytes.
+
+Accordingly, the validated scope is the reviewed Apollo main image on a
+running right temple. Left-temple transfer and application-dead recovery
+remain unproven, and this browser build still has no writer implementation.
+The console continues to mark the Apollo bootloader component **OMIT FROM
+POGO** until an independent SBL, MRAM-recovery, or SWD route is proven.
 
 For offline analysis, selected `EVENOTA` bundles show the exact number of
 1,000-byte `0x54` records and final sequence value for each component. The

@@ -306,36 +306,74 @@ test("marks the Apollo bootloader as omitted from pogo OTA", () => {
   assert.equal(main.postflightVersionRequired, true);
 });
 
-test("keeps the failed or uncertain case pogo writer disabled", () => {
+test("records the successful right case-pogo transfer while keeping the browser writer disabled", () => {
   assert.equal(POGO_TRANSFER_RESEARCH.directTempleHost.offlineTestsPassed, 7);
-  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 4);
+  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 7);
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.status,
-    "failed-or-uncertain",
+    "hardware-validated-right",
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.currentSourceReviewGate,
-    "passed-offline-unattempted",
+    "passed-hardware-validated-right",
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.declaredSha256,
     POGO_TRANSFER_RESEARCH.caseUsbBridge.observedSha256,
   );
   assert.equal(
-    POGO_TRANSFER_RESEARCH.caseUsbBridge.latestDiagnostic.acceptedBytes,
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.bestPartialTransfer.acceptedBytes,
     97000,
   );
   assert.equal(
-    POGO_TRANSFER_RESEARCH.caseUsbBridge.latestDiagnostic.declaredBytes,
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.bestPartialTransfer.declaredBytes,
     3539474,
   );
   assert.equal(
-    POGO_TRANSFER_RESEARCH.caseUsbBridge.latestDiagnostic.restoredMask,
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.bestPartialTransfer.restoredMask,
     "0x000",
   );
   assert.equal(
-    POGO_TRANSFER_RESEARCH.caseUsbBridge.hardwareAttemptsWithCurrentSource,
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.failClosedAttempt.acceptedBytes,
     0,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.failClosedAttempt.hostChunkOffset,
+    5,
+  );
+  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.failClosedAttempt.status, 16);
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.failClosedAttempt.baseline,
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.failClosedAttempt.restored,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.failClosedAttempt.restoredMask,
+    "0x3ff",
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.failClosedAttempt.caseRestoreVerified,
+    false,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulTransfer.acceptedBytes,
+    3539474,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulTransfer.recordsSent,
+    3540,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulTransfer.finishAckReceived,
+    true,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulTransfer.caseRestoreVerified,
+    true,
+  );
+  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.leftFailClosed.status, 3);
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.hardwareAttemptsWithCurrentSource,
+    2,
   );
   assert.equal(POGO_TRANSFER_RESEARCH.webWriterEnabled, false);
 });
