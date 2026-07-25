@@ -31,6 +31,54 @@ export const REVIEWED_CFW = Object.freeze({
     "Ring long-press and release events",
   ],
 });
+export const POGO_TRANSFER_RESEARCH = Object.freeze({
+  asOf: "2026-07-25",
+  directTempleHost: Object.freeze({
+    status: "offline-validated",
+    offlineTestsPassed: 7,
+    component: "Apollo main only",
+    startAndHeaderReplayAllowed: false,
+    dataRetryOnly: true,
+    deferredBatchSettleMs: 100,
+    postflightVersionRequired: true,
+  }),
+  caseUsbBridge: Object.freeze({
+    status: "failed-or-uncertain",
+    attempts: 4,
+    attemptedBridgeSha256: Object.freeze([
+      "6780d7ba8bf9a6539719dda4111c4fbaab706c74c16cda1e41751616f69109b4",
+      "82ad4f81ab3ad1ab4a27185e845811722417a19f546075e1f8d488a2ab3ee264",
+      "9945e4cd3b2ba1edb2328b5ddf6d3580443d566d333aef8e4d061f2981febecd",
+      "8370f0a7600a986b1b0e95b8e4798a32b03060b9e0e462bb6e4931bae2ea6833",
+    ]),
+    failureBoundary:
+      "The latest diagnostic bridge stopped returning host responses after the right temple accepted 97,000 of 3,539,474 main-image bytes; cleanup and the final temple state remain unproven.",
+    latestDiagnostic: Object.freeze({
+      route: "right",
+      preflightFirmware: "2.2.6.10",
+      preflightHardware: 5,
+      acceptedBytes: 97000,
+      declaredBytes: 3539474,
+      expectedSequence: 97,
+      templeTxCount: 100,
+      templeRxCount: 10,
+      templeUartErrors: 0,
+      baselineMask: "0x3ff",
+      selectedMask: "0x3ff",
+      restoredMask: "0x000",
+      caseRestoreVerified: false,
+    }),
+    currentSourceReviewGate: "passed-offline-unattempted",
+    declaredBytes: 2840,
+    declaredSha256:
+      "64ced2734cc27efc4faadc7ce10151a8d5d103be19c5dafec32a9caddaabd988",
+    observedBytes: 2840,
+    observedSha256:
+      "64ced2734cc27efc4faadc7ce10151a8d5d103be19c5dafec32a9caddaabd988",
+    hardwareAttemptsWithCurrentSource: 0,
+  }),
+  webWriterEnabled: false,
+});
 export const OFFICIAL_G2_SHA256 = Object.freeze({
   "2.0.1.14": "d45005d5f75985339b234550b384899bb89fb37cfe4de4928abc9e882f0709e2",
   "2.0.3.20": "84866f11895c34d15838736a373a50f06765232e2561fedd8ba1b62ba509c09c",
@@ -160,11 +208,15 @@ export function describePogoOtaComponent(typeId, payloadSize) {
     return {
       ...transfer,
       disposition: "capture-gated-main",
-      safetyLabel: "MAIN CANDIDATE · CAPTURE-GATED",
+      safetyLabel: "MAIN ONLY · CASE BRIDGE PARTIAL / UNVALIDATED",
       commitBoundary:
         "The complete image is staged in LittleFS before its CRC, update flag, and reset.",
       acknowledgement:
         "Parser acceptance only; post-reset liveness and version verification remain mandatory.",
+      startAndHeaderReplayAllowed: false,
+      dataRetryOnly: true,
+      deferredBatchSettleMs: 100,
+      postflightVersionRequired: true,
     };
   }
   return {

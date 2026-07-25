@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FLASH_BASE,
   OPTION_BASE,
+  POGO_TRANSFER_RESEARCH,
   bytesToBase64,
   formatBytes,
   hex,
@@ -963,7 +964,7 @@ function App() {
             </div>
             <div className="is-gated">
               <span>POGO OTA</span>
-              <strong>Parser path confirmed · no writer · bootloader omitted</strong>
+              <strong>Direct host tested · case bridge failed/uncertain</strong>
             </div>
             <div className="is-blocked">
               <span>APPLICATION-DEAD TEMPLE</span>
@@ -1054,6 +1055,64 @@ function App() {
               for stock charging activity to settle, then retry if status 3 is reported.
               The payload and protocol are physically verified; this Web Serial port
               remains experimental until exercised on G2 hardware.
+            </small>
+          </div>
+          <div className="transfer-research">
+            <div className="pogo-tool-heading">
+              <div>
+                <div className="eyebrow">Latest transfer evidence</div>
+                <h3>Main-only host exists. Case-USB recovery is not validated.</h3>
+              </div>
+              <StatusPill tone="warm">Browser writer disabled</StatusPill>
+            </div>
+            <p>
+              SybilSight now has a fail-closed raw-temple-UART host for the running
+              application’s 0x52–0x55 path. It accepts only the Apollo main component,
+              never blindly replays start or header, retries only 0x54 data, waits at
+              6-KiB boundaries, and requires a matching post-reboot version.
+            </p>
+            <div className="transfer-facts">
+              <div>
+                <span>DIRECT UART HOST</span>
+                <strong>
+                  {POGO_TRANSFER_RESEARCH.directTempleHost.offlineTestsPassed}/
+                  {POGO_TRANSFER_RESEARCH.directTempleHost.offlineTestsPassed} offline
+                  tests pass
+                </strong>
+              </div>
+              <div>
+                <span>TRANSFER ALLOWLIST</span>
+                <strong>{POGO_TRANSFER_RESEARCH.directTempleHost.component}</strong>
+              </div>
+              <div>
+                <span>CASE-USB ATTEMPTS</span>
+                <strong>
+                  {POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts} · no completed recovery
+                </strong>
+              </div>
+              <div>
+                <span>LATEST PARTIAL PROGRESS</span>
+                <strong className="is-negative">
+                  {POGO_TRANSFER_RESEARCH.caseUsbBridge.latestDiagnostic.acceptedBytes.toLocaleString()}
+                  {" / "}
+                  {POGO_TRANSFER_RESEARCH.caseUsbBridge.latestDiagnostic.declaredBytes.toLocaleString()} B
+                </strong>
+              </div>
+              <div>
+                <span>CURRENT BRIDGE GATE</span>
+                <strong>
+                  Pass offline · {POGO_TRANSFER_RESEARCH.caseUsbBridge.observedBytes.toLocaleString()} B
+                </strong>
+              </div>
+            </div>
+            <small className="transfer-warning">
+              The latest diagnostic attempt selected all ten right-side YHM registers
+              and reported no temple UART error while accepting 97 data records, then
+              stopped returning host responses. Its retained result showed no restored
+              YHM registers, no cleanup proof, and no post-reboot version. The newer
+              {` ${POGO_TRANSFER_RESEARCH.caseUsbBridge.observedBytes.toLocaleString()}-byte `}
+              source passes its local SHA gate but has zero hardware attempts. This
+              webflasher therefore exposes no 0x52–0x55 sender.
             </small>
           </div>
           <div className="sbl-audit">

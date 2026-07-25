@@ -6,6 +6,7 @@ import {
   APOLLO_BOOTLOADER_BASE,
   EXPECTED_COMPONENTS,
   EXPECTED_COMPONENT_TYPES,
+  POGO_TRANSFER_RESEARCH,
   REVIEWED_CFW,
   additiveBigEndianWordSum,
   classifyG2Firmware,
@@ -299,6 +300,44 @@ test("marks the Apollo bootloader as omitted from pogo OTA", () => {
   const main = describePogoOtaComponent(0, 3_523_396);
   assert.equal(main.disposition, "capture-gated-main");
   assert.match(main.commitBoundary, /LittleFS/);
+  assert.equal(main.startAndHeaderReplayAllowed, false);
+  assert.equal(main.dataRetryOnly, true);
+  assert.equal(main.deferredBatchSettleMs, 100);
+  assert.equal(main.postflightVersionRequired, true);
+});
+
+test("keeps the failed or uncertain case pogo writer disabled", () => {
+  assert.equal(POGO_TRANSFER_RESEARCH.directTempleHost.offlineTestsPassed, 7);
+  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 4);
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.status,
+    "failed-or-uncertain",
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.currentSourceReviewGate,
+    "passed-offline-unattempted",
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.declaredSha256,
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.observedSha256,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.latestDiagnostic.acceptedBytes,
+    97000,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.latestDiagnostic.declaredBytes,
+    3539474,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.latestDiagnostic.restoredMask,
+    "0x000",
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.hardwareAttemptsWithCurrentSource,
+    0,
+  );
+  assert.equal(POGO_TRANSFER_RESEARCH.webWriterEnabled, false);
 });
 
 test("decodes Apollo510 INFOC and INFO0 recovery provisioning offline", () => {

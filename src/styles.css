@@ -1106,7 +1106,8 @@ code {
 }
 
 .pogo-tool,
-.sbl-audit {
+.sbl-audit,
+.transfer-research {
   display: grid;
   grid-column: 2 / -1;
   min-width: 0;
@@ -1125,7 +1126,8 @@ code {
 }
 
 .pogo-tool h3,
-.sbl-audit h3 {
+.sbl-audit h3,
+.transfer-research h3 {
   margin: 5px 0 0;
   color: #eeeae1;
   font-size: 17px;
@@ -1264,6 +1266,64 @@ code {
   background:
     linear-gradient(110deg, rgba(228, 180, 92, 0.07), transparent 48%),
     rgba(17, 17, 15, 0.5);
+}
+
+.transfer-research {
+  background:
+    linear-gradient(110deg, rgba(225, 103, 76, 0.09), transparent 48%),
+    rgba(17, 17, 15, 0.5);
+}
+
+.transfer-facts {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid #45443e;
+  border-radius: 3px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.transfer-facts > div {
+  min-width: 0;
+  padding: 13px;
+  border-right: 1px solid #45443e;
+}
+
+.transfer-facts > div:last-child {
+  border-right: 0;
+}
+
+.transfer-facts span,
+.transfer-facts strong {
+  display: block;
+}
+
+.transfer-facts span {
+  color: #89867e;
+  font-family: var(--mono);
+  font-size: 6px;
+  letter-spacing: 0.07em;
+}
+
+.transfer-facts strong {
+  margin-top: 5px;
+  overflow: hidden;
+  color: #c9c5bc;
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transfer-facts strong.is-negative,
+.transfer-warning {
+  color: #e28c7e;
+}
+
+.transfer-warning {
+  font-family: var(--mono);
+  font-size: 7px;
+  line-height: 1.55;
 }
 
 .sbl-upload-grid {
@@ -2294,7 +2354,8 @@ code {
   .recheck-result,
   .boundary-evidence,
   .pogo-tool,
-  .sbl-audit {
+  .sbl-audit,
+  .transfer-research {
     grid-column: 2;
   }
 
@@ -2328,8 +2389,25 @@ code {
     justify-self: start;
   }
 
-  .sbl-facts {
+  .sbl-facts,
+  .transfer-facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .transfer-facts > div:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .transfer-facts > div:nth-child(2n + 1) {
+    border-right: 1px solid #45443e;
+  }
+
+  .transfer-facts > div {
+    border-bottom: 1px solid #45443e;
+  }
+
+  .transfer-facts > div:last-child {
+    border-bottom: 0;
   }
 
   .sbl-facts > div:nth-child(4n) {
@@ -2407,7 +2485,8 @@ code {
   .recheck-result,
   .boundary-evidence,
   .pogo-tool,
-  .sbl-audit {
+  .sbl-audit,
+  .transfer-research {
     grid-column: 1;
   }
 
@@ -2419,7 +2498,8 @@ code {
   .pogo-controls,
   .pogo-results,
   .sbl-upload-grid,
-  .sbl-facts {
+  .sbl-facts,
+  .transfer-facts {
     grid-template-columns: 1fr;
   }
 
@@ -2441,6 +2521,17 @@ code {
   }
 
   .sbl-facts > div:last-child {
+    border-bottom: 0;
+  }
+
+  .transfer-facts > div,
+  .transfer-facts > div:nth-child(2n),
+  .transfer-facts > div:nth-child(2n + 1) {
+    border-right: 0;
+    border-bottom: 1px solid #45443e;
+  }
+
+  .transfer-facts > div:last-child {
     border-bottom: 0;
   }
 

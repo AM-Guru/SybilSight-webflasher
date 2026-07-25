@@ -35,6 +35,9 @@ Production deployment:
 - Computes the recovered `0x52...0x55` pogo OTA record plan for every
   component in a selected official or reviewed-CFW bundle without emitting
   any OTA command, and explicitly marks the Apollo bootloader as omitted.
+- Reports the latest main-only transfer research, including the validated
+  direct-UART host and the failed/uncertain case-USB bridge attempts, without
+  enabling that writer in the browser.
 - Decodes read-only Apollo510 INFOC and active INFO0 debugger dumps locally,
   then fails closed unless every known SBL UART field matches the pogo route.
 - Provides a session console with downloadable logs.
@@ -161,22 +164,52 @@ stock case firmware 1.2.57 resumed normally. A non-idle charging-route image
 was also physically observed to fail closed before transmission.
 
 The webflasher implements only this reviewed read bridge. It exposes no
-arbitrary USB-to-pogo sender and no `0x52...0x55` writer. A firmware transfer
-requires a separately reviewed payload, known-good version-matched component,
-exact reply handling, post-reset version/liveness verification, and
-interruption/fault testing on sacrificial hardware. The first transfer scope
-must be Apollo main only. This webflasher marks the Apollo bootloader
-component **OMIT FROM POGO** until an independent SBL, MRAM-recovery, or SWD
-route is proven.
+arbitrary USB-to-pogo sender and no browser-side `0x52...0x55` writer.
+
+SybilSight now includes a fail-closed host for an electrically validated raw
+temple UART. Its seven offline tests pass. It validates the complete bundle,
+permits only the Apollo main component, never blindly replays `0x52` start or
+`0x53` header, retries only `0x54` data using the previous-sequence behavior,
+waits 100 ms at each 6-KiB handoff, and requires the exact package version
+after reboot. It cannot use the unmodified case console by itself.
+
+Four experimental case-USB bridge revisions were attempted with the reviewed
+CFW. Every audit log ended `failed_or_uncertain`. Attempt 3 used bridge
+SHA-256
+`9945e4cd3b2ba1edb2328b5ddf6d3580443d566d333aef8e4d061f2981febecd`
+but received no case-bridge response header. Attempt 4 used diagnostic bridge
+SHA-256
+`8370f0a7600a986b1b0e95b8e4798a32b03060b9e0e462bb6e4931bae2ea6833`.
+It confirmed the right temple was running 2.2.6.10/hardware 5 and its retained
+diagnostics showed 97,000 of 3,539,474 main-image bytes accepted, expected
+sequence 97, 100 temple transmits, 10 temple responses, and zero reported
+temple-UART errors. It then stopped returning host responses. The retained
+result had a zero restored-register mask and no cleanup proof, so the log does
+not establish a complete transfer, restored case routing, or a known final
+temple state.
+
+The newest uncommitted bridge source now passes its local compile-time review
+gate: it assembles to the declared 2,840 bytes with SHA-256
+`64ced2734cc27efc4faadc7ce10151a8d5d103be19c5dafec32a9caddaabd988`.
+That revision has zero hardware attempts. A matching hash proves only that the
+reviewed bytes were built; it does not promote the failed/uncertain case path
+to a supported recovery method.
+
+Accordingly, the first eventual transfer scope remains Apollo main only, but
+it is still a Class-C sacrificial-hardware experiment rather than a supported
+webflasher operation. This console marks the Apollo bootloader component
+**OMIT FROM POGO** until an independent SBL, MRAM-recovery, or SWD route is
+proven.
 
 For offline analysis, selected `EVENOTA` bundles show the exact number of
 1,000-byte `0x54` records and final sequence value for each component. The
 recovered writer grammar uses an exact 128-byte component header for `0x53`,
 CRC-16/CCITT-FALSE over each `0x54` data payload, a modulo-256 sequence, and
 6,000-byte deferred batches. The expected sequence starts at zero and accepts
-the immediately previous value as an idempotent retry. This calculation never
-contacts a temple. Every displayed acknowledgement is described as parser
-acceptance, not proof of a durable write.
+the immediately previous value as an idempotent `0x54` retry. Start and header
+are not treated as replay-safe. This calculation never contacts a temple.
+Every displayed acknowledgement is described as parser acceptance, not proof
+of a durable write, and post-reset version confirmation remains mandatory.
 
 ### Temple backup boundary
 
