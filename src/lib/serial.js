@@ -2212,6 +2212,10 @@ export class G2CaseSession {
     if (!routes.every((route) => ["left", "right"].includes(route))) {
       throw new PogoFlashSafetyError("Choose both, left, or right for temple flashing.");
     }
+    // DEB0 always resets both seated temples. Even for a one-route repair,
+    // prove that both applications returned before another START and again
+    // after the final reset.
+    const livenessRoutes = ["right", "left"];
 
     const audit = {
       schemaVersion: 3,
@@ -2327,7 +2331,7 @@ export class G2CaseSession {
             audit.routeComponentRestartAttempts.push(error.routeResult);
             audit.routeComponentRestartResets.push(
               await this.resetTempleOtaReceiverForComponentRestart(
-                routes,
+                livenessRoutes,
                 target.version,
                 route,
                 index,
@@ -2343,7 +2347,7 @@ export class G2CaseSession {
         }
       }
       audit.finalResetAndLiveness = await this.finalizeTempleRestore(
-        routes,
+        livenessRoutes,
         target.version,
       );
       if (audit.sourceValidation) {
@@ -2381,7 +2385,7 @@ export class G2CaseSession {
         ),
         finalDualTempleResetVerified:
           audit.finalResetAndLiveness?.resetConfirmed === true,
-        postResetLivenessVerified: routes.every(
+        postResetLivenessVerified: livenessRoutes.every(
           (route) =>
             audit.finalResetAndLiveness?.versions?.[route]?.firmware ===
               target.version &&
@@ -2414,7 +2418,7 @@ export class G2CaseSession {
       ) {
         try {
           audit.finalResetAndLiveness = await this.finalizeTempleRestore(
-            routes,
+            livenessRoutes,
             target.version,
           );
           this.log(
