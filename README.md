@@ -837,12 +837,19 @@ offset, so Update cannot transmit arbitrary changed byte ranges inside that
 component.
 
 Stock and CFW both report version 2.2.6.10, and installed Apollo MRAM readback
-is unavailable. Automatic Update therefore proceeds only when successful
-saved recovery audits for this Case prove the exact source image on **both**
-temples. If both already prove the selected target, Apply performs only the
-required bilateral reset and liveness verification. Unknown, mixed, or failed
-provenance stops before any firmware write and directs the user to Restore;
-Update never silently becomes a full rewrite. A successful Restore or Update
+is unavailable. Saved recovery audits remain the strongest source proof, but
+they are browser-origin-local and are not portable from a localhost hardware
+test to the hosted site. For the exact reviewed Stock 2.2.6.10 ↔ CFW pair,
+Automatic Update can therefore proceed without a saved audit only because the
+difference plan omits five byte-identical components and transfers the
+**complete** pinned target Apollo main, not sparse byte ranges. Every route
+must return a fresh checksum-valid 2.2.6.10/hardware-5 reply immediately
+before its START command. The successful audit records this live
+compatibility proof.
+
+If both saved routes already prove the selected target, Apply performs only
+the required bilateral reset and liveness verification. Saved proof outside
+the reviewed pair still stops before writing. A successful Restore or Update
 saves fresh per-route proof locally, keyed by Case serial, for later
 fail-closed updates.
 

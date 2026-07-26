@@ -3,6 +3,8 @@ export const DEFAULT_AUTOMATIC_INSTALL_MODE = "update";
 export const AUTOMATIC_INSTALL_MODES = Object.freeze(["update", "restore"]);
 
 const ROUTES = Object.freeze(["right", "left"]);
+const REVIEWED_DIFFERENCE_VERSION = "2.2.6.10";
+const MAIN_COMPONENT = "ota/s200_firmware_ota.bin";
 
 function auditVerificationComplete(audit) {
   const verification = audit?.verification;
@@ -58,6 +60,45 @@ function bothRoutesMatch(provenance, imageSha256) {
         (route) =>
           provenance?.[route]?.imageSha256?.toLowerCase() === normalized,
       ),
+  );
+}
+
+function knownRouteProofsBelongToPair(
+  provenance,
+  sourceSha256,
+  targetSha256,
+) {
+  const pair = new Set([sourceSha256, targetSha256].map((value) =>
+    String(value ?? "").toLowerCase(),
+  ));
+  return ROUTES.every((route) => {
+    const known = provenance?.[route]?.imageSha256?.toLowerCase();
+    return !known || pair.has(known);
+  });
+}
+
+function supportsLiveCompatiblePairProof(differencePlan) {
+  const source = differencePlan?.source;
+  const target = differencePlan?.target;
+  const wireTransfer = differencePlan?.wireTransfer;
+  const verification = differencePlan?.verification;
+  return Boolean(
+    differencePlan?.executable &&
+      differencePlan?.changedMainOnly === true &&
+      source?.version === REVIEWED_DIFFERENCE_VERSION &&
+      target?.version === REVIEWED_DIFFERENCE_VERSION &&
+      wireTransfer?.component === MAIN_COMPONENT &&
+      Number.isInteger(wireTransfer?.bytes) &&
+      wireTransfer.bytes > 0 &&
+      wireTransfer?.sparseByteRangesSupported === false &&
+      verification?.targetBundleSha256?.toLowerCase() ===
+        target?.imageSha256?.toLowerCase() &&
+      verification?.targetMainSha256?.toLowerCase() ===
+        target?.mainSha256?.toLowerCase() &&
+      verification?.targetMainBytes === wireTransfer.bytes &&
+      verification?.finishAcknowledgementRequired === true &&
+      verification?.postResetLivenessRequired === true &&
+      verification?.finalDualTempleResetRequired === true,
   );
 }
 
@@ -119,11 +160,29 @@ export function resolveAutomaticApplyPlan({
         "Update is available only for a validated Stock ↔ CFW component-difference pair.",
     };
   }
-  if (!bothRoutesMatch(installedProvenance, sourceSha256)) {
+  if (
+    !knownRouteProofsBelongToPair(
+      installedProvenance,
+      sourceSha256,
+      targetSha256,
+    )
+  ) {
     return {
       executable: false,
       reason:
-        "Update stopped before writing: both temples must have a prior successful audit proving the displayed source image. Version 2.2.6.10 alone cannot distinguish Stock from CFW.",
+        "Update stopped before writing: saved proof identifies firmware outside the exact reviewed Stock ↔ CFW pair. Use Restore to establish a known target.",
+    };
+  }
+
+  const exactSourceProven = bothRoutesMatch(
+    installedProvenance,
+    sourceSha256,
+  );
+  if (!exactSourceProven && !supportsLiveCompatiblePairProof(differencePlan)) {
+    return {
+      executable: false,
+      reason:
+        "Update stopped before writing: without portable source audits, live validation is allowed only for the exact reviewed Stock 2.2.6.10 ↔ CFW pair when the complete pinned target main is transferred.",
     };
   }
 
@@ -132,10 +191,14 @@ export function resolveAutomaticApplyPlan({
     action: "flash",
     route: "both",
     flashMode: "differences",
+    sourceProofMode: exactSourceProven
+      ? "verified-source-audits"
+      : "live-compatible-pair-preflight",
     sourceSha256,
     targetSha256,
-    reason:
-      "Skip byte-identical bundle components and transfer the one changed, CRC-gated Apollo main to both temples.",
+    reason: exactSourceProven
+      ? "Saved bilateral audits prove the exact source. Skip byte-identical bundle components and transfer the changed, CRC-gated Apollo main to both temples."
+      : "No portable source audit is available. The exact reviewed pair transfers the complete pinned target main, so each temple will instead require a just-in-time checksum-valid 2.2.6.10/hardware-5 reply before START.",
   };
 }
 
@@ -173,13 +236,16 @@ export async function executeAutomaticApply({
     audit: await session.flashPinnedTempleMain(
       targetFirmware,
       plan.route,
-      {
-        mode: plan.flashMode,
-        differenceSourceFirmware:
-          plan.flashMode === "differences"
-            ? differenceSourceFirmware
-            : null,
-      },
+      plan.flashMode === "differences"
+        ? {
+            mode: plan.flashMode,
+            differenceSourceFirmware,
+            sourceProofMode: plan.sourceProofMode,
+          }
+        : {
+            mode: plan.flashMode,
+            differenceSourceFirmware: null,
+          },
     ),
   };
 }

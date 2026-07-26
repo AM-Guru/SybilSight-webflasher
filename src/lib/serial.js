@@ -2036,7 +2036,11 @@ export class G2CaseSession {
   async flashPinnedTempleMain(
     firmware,
     routeSelection = "both",
-    { mode = "complete", differenceSourceFirmware = null } = {},
+    {
+      mode = "complete",
+      differenceSourceFirmware = null,
+      sourceProofMode = null,
+    } = {},
   ) {
     const { mainComponent: component, target } =
       await assertPinnedTempleFlashCandidate(firmware);
@@ -2081,6 +2085,19 @@ export class G2CaseSession {
       imageLabel: target.label,
       imageHardwareValidated: target.hardwareValidated,
       mainPayloadSha256: component.payloadSha256,
+      sourceValidation:
+        mode === "differences"
+          ? {
+              mode:
+                sourceProofMode ?? "caller-confirmed-source",
+              exactInstalledImageReadbackAvailable: false,
+              requiredLiveFirmware: target.version,
+              requiredLiveHardware: 5,
+              completeTargetMainTransferred: true,
+              sparseByteRangesTransferred: false,
+              routePreflight: null,
+            }
+          : null,
       bridgeSha256:
         "dcf27971baa964902724fc9aa2f9d0369be6874a5a84231791622bb40bf486a6",
       routes,
@@ -2188,6 +2205,19 @@ export class G2CaseSession {
         routes,
         target.version,
       );
+      if (audit.sourceValidation) {
+        audit.sourceValidation.routePreflight = Object.fromEntries(
+          audit.routeResults.map((result) => [
+            result.route,
+            {
+              firmware: result.preflightVersion?.firmware ?? null,
+              hardware: result.preflightVersion?.hardware ?? null,
+              checksumValid: Boolean(result.preflightVersion),
+              validatedBeforeStart: true,
+            },
+          ]),
+        );
+      }
       audit.verification = {
         targetBundleSha256: firmware.fileSha256,
         targetMainSha256: component.payloadSha256,
@@ -2203,6 +2233,11 @@ export class G2CaseSession {
             result.postflightVersion?.firmware === target.version &&
             result.postflightVersion?.hardware === 5,
         ),
+        everyRoutePreflightCompatible: audit.routeResults.every(
+          (result) =>
+            result.preflightVersion?.firmware === target.version &&
+            result.preflightVersion?.hardware === 5,
+        ),
         finalDualTempleResetVerified:
           audit.finalResetAndLiveness?.resetConfirmed === true,
         postResetLivenessVerified: routes.every(
@@ -2217,6 +2252,7 @@ export class G2CaseSession {
       };
       if (
         !audit.verification.everyRouteAcceptedExactTargetBytes ||
+        !audit.verification.everyRoutePreflightCompatible ||
         !audit.verification.everyRoutePostflightVersionValid ||
         !audit.verification.finalDualTempleResetVerified ||
         !audit.verification.postResetLivenessVerified

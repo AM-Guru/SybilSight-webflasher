@@ -1512,6 +1512,15 @@ function App() {
                   "Target already proven; resetting both temples",
                 );
               } else {
+                if (
+                  applyPlan.sourceProofMode ===
+                  "live-compatible-pair-preflight"
+                ) {
+                  setSessionProgress(
+                    0.16,
+                    "Validating live 2.2.6.10/hardware-5 compatibility before each temple START",
+                  );
+                }
                 setAutomaticStatus(
                   `${automaticInstallMode === "update" ? "Updating" : "Restoring"} both temples automatically…`,
                 );
@@ -1907,9 +1916,11 @@ function App() {
               </div>
               {automaticInstallMode === "update" ? (
                 <small className="automatic-boundary">
-                  Update never guesses Stock vs CFW. It proceeds only when saved,
-                  successful audits prove the exact source on both temples; otherwise
-                  it stops before writing and asks you to use Restore.
+                  Update uses saved bilateral audits when available. For the exact
+                  reviewed Stock 2.2.6.10 ↔ CFW pair, it can instead require a fresh,
+                  checksum-valid 2.2.6.10/hardware-5 reply immediately before each
+                  temple START because it transfers the complete pinned target main,
+                  never sparse byte ranges.
                 </small>
               ) : null}
             </article>

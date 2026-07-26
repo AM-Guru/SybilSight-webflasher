@@ -21,8 +21,30 @@ const both = (sha) => ({
 });
 const differencePlan = {
   executable: true,
-  source: { imageSha256: STOCK_SHA },
-  target: { imageSha256: CFW_SHA },
+  changedMainOnly: true,
+  source: {
+    imageSha256: STOCK_SHA,
+    mainSha256: "c".repeat(64),
+    version: "2.2.6.10",
+  },
+  target: {
+    imageSha256: CFW_SHA,
+    mainSha256: "d".repeat(64),
+    version: "2.2.6.10",
+  },
+  wireTransfer: {
+    component: "ota/s200_firmware_ota.bin",
+    bytes: 1234,
+    sparseByteRangesSupported: false,
+  },
+  verification: {
+    targetBundleSha256: CFW_SHA,
+    targetMainSha256: "d".repeat(64),
+    targetMainBytes: 1234,
+    finishAcknowledgementRequired: true,
+    postResetLivenessRequired: true,
+    finalDualTempleResetRequired: true,
+  },
 };
 
 test("defaults to Easy Mode and differential Update", () => {
@@ -47,7 +69,7 @@ test("Restore always plans a complete bilateral rewrite", () => {
   );
 });
 
-test("Update fails closed when installed Stock/CFW provenance is unknown", () => {
+test("Update accepts the exact full-component pair with live compatibility proof", () => {
   const result = resolveAutomaticApplyPlan({
     installMode: "update",
     targetFirmware: firmware(CFW_SHA),
@@ -55,11 +77,12 @@ test("Update fails closed when installed Stock/CFW provenance is unknown", () =>
     differenceSourceFirmware: firmware(STOCK_SHA),
     differencePlan,
   });
-  assert.equal(result.executable, false);
-  assert.match(result.reason, /stopped before writing/i);
+  assert.equal(result.executable, true);
+  assert.equal(result.sourceProofMode, "live-compatible-pair-preflight");
+  assert.match(result.reason, /just-in-time checksum-valid/i);
 });
 
-test("Update executes only when both temples prove the exact source", () => {
+test("Update prefers bilateral source-audit proof when available", () => {
   const result = resolveAutomaticApplyPlan({
     installMode: "update",
     targetFirmware: firmware(CFW_SHA),
@@ -70,6 +93,37 @@ test("Update executes only when both temples prove the exact source", () => {
   assert.equal(result.executable, true);
   assert.equal(result.flashMode, "differences");
   assert.equal(result.route, "both");
+  assert.equal(result.sourceProofMode, "verified-source-audits");
+});
+
+test("Update rejects unknown provenance when the plan is not a complete target-main transfer", () => {
+  const result = resolveAutomaticApplyPlan({
+    installMode: "update",
+    targetFirmware: firmware(CFW_SHA),
+    installedProvenance: {},
+    differenceSourceFirmware: firmware(STOCK_SHA),
+    differencePlan: {
+      ...differencePlan,
+      wireTransfer: {
+        ...differencePlan.wireTransfer,
+        sparseByteRangesSupported: true,
+      },
+    },
+  });
+  assert.equal(result.executable, false);
+  assert.match(result.reason, /complete pinned target main/i);
+});
+
+test("Update rejects saved provenance outside the exact reviewed pair", () => {
+  const result = resolveAutomaticApplyPlan({
+    installMode: "update",
+    targetFirmware: firmware(CFW_SHA),
+    installedProvenance: both("e".repeat(64)),
+    differenceSourceFirmware: firmware(STOCK_SHA),
+    differencePlan,
+  });
+  assert.equal(result.executable, false);
+  assert.match(result.reason, /outside the exact reviewed/i);
 });
 
 test("Update becomes reset-and-verify when both temples already prove target", () => {
@@ -166,7 +220,11 @@ test("automatic Update invokes the reviewed bilateral difference session", async
     [
       firmware(CFW_SHA),
       "both",
-      { mode: "differences", differenceSourceFirmware: source },
+      {
+        mode: "differences",
+        differenceSourceFirmware: source,
+        sourceProofMode: "verified-source-audits",
+      },
     ],
   ]);
 });

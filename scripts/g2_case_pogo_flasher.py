@@ -1257,6 +1257,11 @@ def main() -> int:
         "package": asdict(plan),
         "bridge_sha256": BRIDGE_SHA256,
         "bootloader_component_allowed": False,
+        "data_replay_allowed": False,
+        "component_attempts_per_invocation": 1,
+        "component_restart_boundary": (
+            "new invocation after verified cleanup and final bilateral reset"
+        ),
         "route_results": [],
         "final_reset_and_liveness": None,
         "outcome": "started",
