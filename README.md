@@ -323,6 +323,35 @@ firmware 2.2.6.10/hardware 5. The retained result recorded status zero,
 complete baseline/selected/restored masks, byte-for-byte YHM restoration, and
 normal case firmware 1.2.57 return.
 
+A later integrated-Chromium Stock-to-CFW difference test exercised the
+production artifact through the corrected local UI. The plan skipped five
+byte-identical components and selected the complete changed Apollo main after
+finding 16,117 differing byte positions. The first run exposed a browser-only
+defect: `serial.js` handled an explicit DATA rejection using
+`TempleRejectedError` without importing that class. The run stopped without
+`FINISH`, restored the Case, and completed bilateral reset/liveness
+verification. The missing import was fixed and covered by a regression test
+that distinguishes an explicit rejection from a missing or malformed reply.
+
+The corrected run then completed the right CFW installation: all 3,540 records
+and 3,539,474 bytes were accepted, `FINISH` was acknowledged, postflight
+reported 2.2.6.10/hardware 5, all YHM registers were restored, and Case 1.2.57
+returned. On the left, DATA record 2,800 was explicitly rejected after
+2,799,000 accepted bytes. The host waited 6.5 seconds and replayed that exact
+unadvanced record once; the replay produced no complete temple response, so
+the host stopped without `FINISH`. Two later fresh left-only setups, including
+one after a 90-second settle, failed closed at status 3 before transmitting
+firmware. The final standalone `DEB0` reset reported both contacts and
+checksum-valid application replies. The tested device therefore ended with
+hash-proven reviewed CFW on the right and its previously proven official Stock
+installation on the left.
+
+Local Vite development now proxies versioned, immutable
+`/firmware-updates/source-files/2…` artifacts to the production WebFlasher
+origin. The catalog remains local, while missing generated archive binaries no
+longer fall through to Vite's `index.html` and fail later as an unsupported
+firmware file.
+
 A later failed-OTA recovery added one more hardware result. The right display
 worked, but the Case initially reported `GLS_L=0, GLS_R=1` and the left
 application did not answer. The fixed reset probe reproduced the stock

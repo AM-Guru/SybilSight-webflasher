@@ -1914,7 +1914,7 @@ function App() {
                 <div className="release-meta">
                   <span>
                     {!selectedRelease.caseRecoveryEligible
-                      ? "Smart Glasses CFW · analysis/download only"
+                      ? "Smart Glasses CFW · pinned temple target"
                       : selectedRelease === latestCaseRelease
                         ? "Latest Case image"
                         : "Earlier Case image"}
@@ -2683,7 +2683,10 @@ function App() {
               <div>
                 <span>CASE-USB ATTEMPTS</span>
                 <strong>
-                  {POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts} · 4 complete wired
+                  {POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts}
+                  {" · "}
+                  {POGO_TRANSFER_RESEARCH.caseUsbBridge.completeWiredTransfers}
+                  {" complete wired"}
                 </strong>
               </div>
               <div>

@@ -36,6 +36,7 @@ import {
   G2CaseSession,
   WEB_SERIAL_ROM_READ_SIZE,
   canRunFinalResetAfterFailure,
+  isExplicitTempleDataRejection,
   isG2CaseSerialPort,
   isWebSerialRomPacketBoundary,
   retryReadOnlyBlock,
@@ -174,6 +175,21 @@ test("retries only a fail-closed read-only YHM idle-phase mismatch", async () =>
   assert.equal(attempts, 3);
   assert.deepEqual(waits, [500, 1000]);
   assert.equal(logs.length, 2);
+});
+
+test("classifies only an explicit temple DATA rejection for exact replay", () => {
+  assert.equal(
+    isExplicitTempleDataRejection(
+      new TempleRejectedError("synthetic explicit DATA rejection"),
+    ),
+    true,
+  );
+  assert.equal(
+    isExplicitTempleDataRejection(
+      new RetryablePogoFlashError("synthetic missing or malformed reply"),
+    ),
+    false,
+  );
 });
 
 test("pins the hardware-validated volatile flash bridge", async () => {

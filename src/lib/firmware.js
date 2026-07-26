@@ -55,8 +55,9 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
     postflightVersionRequired: true,
   }),
   caseUsbBridge: Object.freeze({
-    status: "official-stock-v4-right-case-usb-left-ble",
-    attempts: 23,
+    status: "mixed-right-cfw-left-official-stock",
+    attempts: 28,
+    completeWiredTransfers: 5,
     attemptedBridgeSha256: Object.freeze([
       "6780d7ba8bf9a6539719dda4111c4fbaab706c74c16cda1e41751616f69109b4",
       "82ad4f81ab3ad1ab4a27185e845811722417a19f546075e1f8d488a2ab3ee264",
@@ -73,7 +74,7 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
       "9ab41ffe1b906869b264c9ba3aa739f3bda0ee8bf0051cf67679c204dd86ac2c",
     ]),
     validationBoundary:
-      "Attempts 6 and 9 completed the reviewed CFW Apollo-main transfer on the right and left running temples. V4 then completed the pinned official Apollo-main transfer on the right after extending the bounded DATA-reply window. Left V4 attempts remained staged-only and never reached FINISH; the previously completed fresh upstream BLE session remains the installed six-component official-left provenance with 1,053 status-zero block ACKs, six verified END results, and zero resends.",
+      "Attempts 6 and 9 completed the reviewed CFW Apollo-main transfer on the right and left running temples. V4 then completed the pinned official Apollo-main transfer on the right after extending the bounded DATA-reply window. A later Chromium Stock-to-CFW difference run completed the V4 right transfer again; its left route stopped without FINISH after record 2800 was explicitly rejected and the one delayed exact-record retry returned no complete frame. Two later fresh left setups failed closed at status 3 before transmitting firmware. The final bilateral reset verified both applications, leaving the freshly proven CFW on the right and the previously proven official Stock installation on the left.",
     officialRestore: Object.freeze({
       packageSha256:
         "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa",
@@ -229,6 +230,48 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
       caseRestoreVerified: true,
       caseApplicationVersion: "1.2.57",
     }),
+    browserDifferenceCfwTest: Object.freeze({
+      mode: "Stock-to-reviewed-CFW component differences",
+      imageSha256: REVIEWED_CFW.sha256,
+      mainPayloadSha256: REVIEWED_CFW.mainPayloadSha256,
+      identicalComponentsSkipped: 5,
+      changedComponentsTransferred: 1,
+      differingBytePositions: 16117,
+      right: Object.freeze({
+        outcome: "success",
+        recordsSent: 3540,
+        acceptedBytes: 3539474,
+        finishAckReceived: true,
+        postflightFirmware: "2.2.6.10",
+        postflightHardware: 5,
+        caseApplicationVersion: "1.2.57",
+      }),
+      left: Object.freeze({
+        outcome: "failed_or_uncertain",
+        acceptedBytes: 2799000,
+        rejectedRecord: 2800,
+        explicitRejectionRetryDelayMs: 6500,
+        exactRecordRetries: 1,
+        retryOutcome: "no complete temple response",
+        finishAckReceived: false,
+        installedProvenance: "previously verified official Stock",
+      }),
+      freshLeftSetupRetries: Object.freeze({
+        attempts: 2,
+        status: 3,
+        firmwareBytesTransmitted: 0,
+        secondAttemptSettleMs: 90000,
+      }),
+      finalReset: Object.freeze({
+        command: "DEB0",
+        caseApplicationVersion: "1.2.57",
+        leftPresent: true,
+        rightPresent: true,
+        bothApplicationsVerified: true,
+      }),
+      codeDefectFoundAndFixed:
+        "The browser writer referenced TempleRejectedError without importing it. The import and explicit-rejection classifier regression test were added before the successful right run.",
+    }),
     currentSourceReviewGate:
       "hardware-validated-route-phase-fail-closed-and-selected-version",
     declaredBytes: 2920,
@@ -237,8 +280,8 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
     observedBytes: 2920,
     observedSha256:
       "9ab41ffe1b906869b264c9ba3aa739f3bda0ee8bf0051cf67679c204dd86ac2c",
-    hardwareAttemptsWithCurrentSource: 3,
-    successfulHardwareAttemptsWithCurrentSource: 1,
+    hardwareAttemptsWithCurrentSource: 8,
+    successfulHardwareAttemptsWithCurrentSource: 2,
     postRestoreReset: Object.freeze({
       status: "hardware-validated-revived-left-temple",
       caseApplicationVersion: "1.2.57",

@@ -38,6 +38,7 @@ import {
   REVIEWED_CASE_VERSION,
   REVIEWED_CFW_BASE_VERSION,
   RetryablePogoFlashError,
+  TempleRejectedError,
   PogoFlashSafetyError,
   assertPinnedTempleFlashCandidate,
   classifyPogoFlashRecoveryBoundary,
@@ -77,6 +78,10 @@ const REVIEWED_CASE_ROM_COMMANDS = Object.freeze([
 const POGO_STABILITY_READ_QUERIES = 1;
 const POGO_STABILITY_INTERVAL_MS = 25;
 export const WEB_SERIAL_ROM_READ_SIZE = 31;
+
+export function isExplicitTempleDataRejection(error) {
+  return error instanceof TempleRejectedError;
+}
 
 export function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -1654,7 +1659,7 @@ export class G2CaseSession {
           const response = await transport.transact(request, 8000);
           requireOtaAcknowledgement(response, 0x54);
         } catch (error) {
-          if (!(error instanceof TempleRejectedError)) throw error;
+          if (!isExplicitTempleDataRejection(error)) throw error;
           retries += 1;
           transport.drainInput();
           this.log(

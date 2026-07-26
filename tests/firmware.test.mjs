@@ -313,10 +313,10 @@ test("marks the Apollo bootloader as omitted from pogo OTA", () => {
 test("records successful case-pogo transfers and enables only the guarded browser writer", () => {
   assert.equal(POGO_TRANSFER_RESEARCH.directTempleHost.offlineTestsPassed, 8);
   assert.equal(POGO_TRANSFER_RESEARCH.directTempleHost.dataRetryReasons.length, 1);
-  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 23);
+  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 28);
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.status,
-    "official-stock-v4-right-case-usb-left-ble",
+    "mixed-right-cfw-left-official-stock",
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.currentSourceReviewGate,
@@ -440,11 +440,28 @@ test("records successful case-pogo transfers and enables only the guarded browse
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.hardwareAttemptsWithCurrentSource,
-    3,
+    8,
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulHardwareAttemptsWithCurrentSource,
-    1,
+    2,
+  );
+  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 28);
+  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.completeWiredTransfers, 5);
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.browserDifferenceCfwTest.right
+      .finishAckReceived,
+    true,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.browserDifferenceCfwTest.left
+      .rejectedRecord,
+    2800,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.browserDifferenceCfwTest.left
+      .finishAckReceived,
+    false,
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.postRestoreReset.command,
