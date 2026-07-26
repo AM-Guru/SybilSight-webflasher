@@ -67,6 +67,23 @@ function cx(...values) {
   return values.filter(Boolean).join(" ");
 }
 
+async function fetchCatalogRelease(release, label = "Firmware archive") {
+  const urls = [...new Set([release?.url, release?.sourceUrl].filter(Boolean))];
+  let lastError = null;
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (response.ok) return response;
+      lastError = new Error(`${url} returned HTTP ${response.status}.`);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw new Error(
+    `${label} could not be downloaded${lastError?.message ? `: ${lastError.message}` : "."}`,
+  );
+}
+
 function Icon({ name }) {
   if (name === "tools") {
     return (
@@ -692,6 +709,7 @@ function App() {
   const activeOperationRef = useRef(null);
   const activeOperationTotalRef = useRef(null);
   const progressLogRef = useRef({ name: null, bucket: -1 });
+  const progressRenderRef = useRef({ name: null, updatedAt: 0 });
   const progressHideTimerRef = useRef(null);
 
   const addLog = useCallback((message, tone = "info") => {
@@ -710,12 +728,22 @@ function App() {
       fraction,
       activeOperationTotalRef.current,
     );
-    setProgress({
-      ...normalized,
-      name,
-      detail,
-      visible: true,
-    });
+    const now = performance.now();
+    const previousRender = progressRenderRef.current;
+    const shouldRender =
+      previousRender.name !== name ||
+      normalized.fraction <= 0 ||
+      normalized.fraction >= 1 ||
+      now - previousRender.updatedAt >= 100;
+    if (shouldRender) {
+      progressRenderRef.current = { name, updatedAt: now };
+      setProgress({
+        ...normalized,
+        name,
+        detail,
+        visible: true,
+      });
+    }
     const bucket = Math.min(20, Math.floor(normalized.fraction * 20));
     if (
       name &&
@@ -939,7 +967,7 @@ function App() {
       setDifferencePlan(null);
       setDifferenceState("blocked");
       setDifferenceError(
-        "Load the reviewed Stock 2.2.6.10 or CFW bundle before preparing differences.",
+        "Load the reviewed Stock 2.2.6.10 or CFW 2.2.6.11 bundle before preparing differences.",
       );
       return () => {
         active = false;
@@ -952,7 +980,7 @@ function App() {
       setDifferencePlan(null);
       setDifferenceState("blocked");
       setDifferenceError(
-        "Flash differences is available only for the reviewed Stock 2.2.6.10 ↔ CFW pair.",
+        "Flash differences is available only for the reviewed Stock 2.2.6.10 ↔ CFW 2.2.6.11 pair.",
       );
       return () => {
         active = false;
@@ -965,12 +993,10 @@ function App() {
     setDifferenceState("loading");
     setDifferenceError("");
     (async () => {
-      const response = await fetch(counterpart.url, { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error(
-          `Difference source archive returned HTTP ${response.status}.`,
-        );
-      }
+      const response = await fetchCatalogRelease(
+        counterpart,
+        "Difference source archive",
+      );
       const bytes = new Uint8Array(await response.arrayBuffer());
       if (bytes.length !== counterpart.size) {
         throw new Error("The difference source size does not match its catalog.");
@@ -1085,12 +1111,10 @@ function App() {
         templeProbes,
       );
       setSessionProgress(0.91, "Loading matching Smart Glasses recovery firmware");
-      const response = await fetch(recoveryRelease.url, { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error(
-          `Smart Glasses recovery archive returned HTTP ${response.status}.`,
-        );
-      }
+      const response = await fetchCatalogRelease(
+        recoveryRelease,
+        "Smart Glasses recovery archive",
+      );
       const recoveryBundleBytes = new Uint8Array(await response.arrayBuffer());
       await validateGlassesRecoveryBundle(
         recoveryBundleBytes,
@@ -1201,10 +1225,7 @@ function App() {
   };
 
   const fetchCatalogFirmware = async (release) => {
-    const response = await fetch(release.url, { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`Firmware archive returned HTTP ${response.status}.`);
-    }
+    const response = await fetchCatalogRelease(release);
     return prepareFirmware(
       new Uint8Array(await response.arrayBuffer()),
       release.fileName,
@@ -1444,7 +1465,17 @@ function App() {
         try {
           const session = getSession();
           setSessionProgress(0.03, "Refreshing Case and contact telemetry");
-          const fresh = await session.analyze();
+          const freshConsole = await session.readTempleFlashPreflight([
+            "right",
+            "left",
+          ]);
+          const fresh = {
+            ...report,
+            console: {
+              ...report.console,
+              ...freshConsole,
+            },
+          };
           setReport(fresh);
           const freshTelemetry = fresh.console?.telemetry;
           if (fresh.console?.caseVersion !== "1.2.57") {

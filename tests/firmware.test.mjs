@@ -561,7 +561,7 @@ test("ships the complete official and reviewed-CFW development catalog", async (
     12,
   );
   const cfw = catalog.releases.find((release) => release.channel === "custom");
-  assert.equal(cfw.version, "2.2.6.10-cfw");
+  assert.equal(cfw.version, "2.2.6.11");
   assert.equal(cfw.sha256, REVIEWED_CFW.sha256);
   assert.equal(cfw.caseRecoveryEligible, false);
 });

@@ -37,7 +37,6 @@ import {
   POGO_FLASH_RESULT_LENGTH,
   POGO_FLASH_STATUS,
   REVIEWED_CASE_VERSION,
-  REVIEWED_CFW_BASE_VERSION,
   RetryablePogoFlashError,
   TempleRejectedError,
   PogoFlashSafetyError,
@@ -1921,6 +1920,7 @@ export class G2CaseSession {
 
   async flashPinnedTempleRoute(
     component,
+    expectedSourceVersion,
     expectedTargetVersion,
     route,
     routeIndex,
@@ -1985,11 +1985,13 @@ export class G2CaseSession {
       const preflight = decodeTempleVersion(preflightFrame);
       result.preflightVersion = preflight;
       if (
-        preflight.firmware !== REVIEWED_CFW_BASE_VERSION ||
+        (expectedSourceVersion &&
+          preflight.firmware !== expectedSourceVersion) ||
         preflight.hardware !== 5
       ) {
+        const expected = expectedSourceVersion ?? "a readable G2 version";
         throw new PogoFlashSafetyError(
-          `${route}: expected running firmware ${REVIEWED_CFW_BASE_VERSION}/hardware 5, observed ${preflight.firmware}/hardware ${preflight.hardware}.`,
+          `${route}: expected running firmware ${expected}/hardware 5, observed ${preflight.firmware}/hardware ${preflight.hardware}.`,
         );
       }
       this.log(
@@ -2189,12 +2191,14 @@ export class G2CaseSession {
       throw new PogoFlashSafetyError("Choose complete or differences flashing.");
     }
     let differencePlan = null;
+    let expectedSourceVersion = null;
     if (mode === "differences") {
       await assertPinnedTempleFlashCandidate(differenceSourceFirmware);
       differencePlan = buildBundleDifferencePlan(
         differenceSourceFirmware,
         firmware,
       );
+      expectedSourceVersion = differencePlan.source.version;
       if (!differencePlan.executable) {
         throw new PogoFlashSafetyError(
           "The Stock/CFW difference plan is not an exact one-component transition.",
@@ -2230,13 +2234,24 @@ export class G2CaseSession {
       imageLabel: target.label,
       imageHardwareValidated: target.hardwareValidated,
       mainPayloadSha256: component.payloadSha256,
+      installedIdentity: {
+        channel:
+          firmware.provenance?.channel === "custom" ? "custom" : "official",
+        reportedVersion: target.version,
+        displayVersion:
+          firmware.provenance?.channel === "custom"
+            ? `${target.version} CFW`
+            : target.version,
+        evidence:
+          "pinned target hashes, exact accepted byte count, FINISH acknowledgement, reset, and bilateral liveness",
+      },
       sourceValidation:
         mode === "differences"
           ? {
               mode:
                 sourceProofMode ?? "caller-confirmed-source",
               exactInstalledImageReadbackAvailable: false,
-              requiredLiveFirmware: target.version,
+              requiredLiveFirmware: expectedSourceVersion,
               requiredLiveHardware: 5,
               completeTargetMainTransferred: true,
               sparseByteRangesTransferred: false,
@@ -2276,6 +2291,7 @@ export class G2CaseSession {
           audit.routeResults.push(
             await this.flashPinnedTempleRoute(
               component,
+              expectedSourceVersion,
               target.version,
               route,
               index,
@@ -2332,7 +2348,9 @@ export class G2CaseSession {
             audit.routeComponentRestartResets.push(
               await this.resetTempleOtaReceiverForComponentRestart(
                 livenessRoutes,
-                target.version,
+                error.routeResult?.preflightVersion?.firmware ??
+                  expectedSourceVersion ??
+                  target.version,
                 route,
                 index,
                 routes.length,
@@ -2380,7 +2398,8 @@ export class G2CaseSession {
         ),
         everyRoutePreflightCompatible: audit.routeResults.every(
           (result) =>
-            result.preflightVersion?.firmware === target.version &&
+            (!expectedSourceVersion ||
+              result.preflightVersion?.firmware === expectedSourceVersion) &&
             result.preflightVersion?.hardware === 5,
         ),
         finalDualTempleResetVerified:
@@ -2419,7 +2438,7 @@ export class G2CaseSession {
         try {
           audit.finalResetAndLiveness = await this.finalizeTempleRestore(
             livenessRoutes,
-            target.version,
+            null,
           );
           this.log(
             "Transfer remains failed or uncertain; final B0 reset and post-reset liveness nevertheless verified.",

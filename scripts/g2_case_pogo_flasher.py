@@ -59,7 +59,7 @@ BRIDGE_SHA256 = (
 )
 BRIDGE_BANNER = b"G2_POGO_FLASH_BRIDGE_V7\n"
 REVIEWED_CFW_SHA256 = (
-    "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0"
+    "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86"
 )
 REVIEWED_OFFICIAL_SHA256 = (
     "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa"
@@ -69,10 +69,11 @@ REVIEWED_OFFICIAL_MAIN_SHA256 = (
 )
 REVIEWED_OFFICIAL_MAIN_BYTES = 3_523_396
 REVIEWED_MAIN_SHA256 = (
-    "38dea7dc05e832e6f5aea8fa726454b2ec44055af5d456b323448ee6989e53d1"
+    "be8f5459e32065fbe3038accea49d418ba81884fc8ec4ed8927f37e219407dcf"
 )
-REVIEWED_MAIN_BYTES = 3_539_474
+REVIEWED_MAIN_BYTES = 3_542_584
 REVIEWED_BASE_VERSION = "2.2.6.10"
+REVIEWED_CFW_VERSION = "2.2.6.11"
 REVIEWED_CASE_VERSION = "1.2.57"
 FINAL_RESET_COMMAND = b"DEB0\n"
 FINAL_RESET_CONFIRMATION = re.compile(
@@ -89,6 +90,27 @@ POST_RESET_REOPEN_DELAY_SECONDS = 0.5
 FLASH_STABILITY_QUERIES = 1
 FLASH_STABILITY_INTERVAL_SECONDS = 0.025
 FLASH_PRE_START_SETTLE_SECONDS = 0.250
+PACING_PROFILES = {
+    "conservative": {
+        "deferred_batch_size": 6_000,
+        "batch_settle_seconds": 1.000,
+        "late_batch_settle_seconds": 2.000,
+        "late_batch_threshold": 0.75,
+        "final_settle_seconds": 15.000,
+        "hardware_qualified": True,
+    },
+    # This reduces scheduled idle time by batching twice as many accepted bytes.
+    # It is intentionally opt-in until it has completed repeated bilateral
+    # hardware qualification without a missing ACK or incomplete postflight.
+    "balanced-lab": {
+        "deferred_batch_size": 12_000,
+        "batch_settle_seconds": 0.750,
+        "late_batch_settle_seconds": 1.500,
+        "late_batch_threshold": 0.75,
+        "final_settle_seconds": 15.000,
+        "hardware_qualified": False,
+    },
+}
 
 RESULT_ADDRESS = 0x20011A00
 RESULT_LENGTH = 128
@@ -997,6 +1019,20 @@ def _write_audit(path: Path, audit: dict[str, object]) -> None:
     os.replace(partial, path)
 
 
+def resolve_pacing_profile(
+    name: str,
+    *,
+    accept_experimental_risk: bool,
+) -> dict[str, object]:
+    profile = PACING_PROFILES[name]
+    if not profile["hardware_qualified"] and not accept_experimental_risk:
+        raise ValueError(
+            f"pacing profile {name!r} is not hardware-qualified; "
+            "pass --accept-experimental-pacing-risk to use it"
+        )
+    return dict(profile)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -1070,7 +1106,27 @@ def build_parser() -> argparse.ArgumentParser:
         flash.add_argument("--accept-single-slot-risk", action="store_true")
         flash.add_argument("--confirm-image-sha256", required=True)
         flash.add_argument(
-            "--expect-current-version", default=REVIEWED_BASE_VERSION
+            "--expect-current-version",
+            default=None,
+            help=(
+                "override the live source-version gate; by default CFW install "
+                "requires Stock 2.2.6.10 and official restore accepts Stock "
+                "2.2.6.10 or reviewed CFW 2.2.6.11"
+            ),
+        )
+        flash.add_argument(
+            "--pacing-profile",
+            choices=tuple(PACING_PROFILES),
+            default="conservative",
+            help=(
+                "storage pacing profile; conservative is hardware-qualified "
+                "(default: conservative)"
+            ),
+        )
+        flash.add_argument(
+            "--accept-experimental-pacing-risk",
+            action="store_true",
+            help="required for a pacing profile that is not hardware-qualified",
         )
         flash.add_argument("--log", type=Path, required=True)
     return parser
@@ -1263,10 +1319,26 @@ def main() -> int:
         if args.command == "flash-reviewed-cfw"
         else REVIEWED_OFFICIAL_MAIN_BYTES
     )
+    expected_current_versions = (
+        {args.expect_current_version}
+        if args.expect_current_version
+        else (
+            {REVIEWED_BASE_VERSION}
+            if image_kind == "CFW"
+            else {REVIEWED_BASE_VERSION, REVIEWED_CFW_VERSION}
+        )
+    )
     if not args.execute_main_ota:
         parser.error("flash requires --execute-main-ota")
     if not args.accept_single_slot_risk:
         parser.error("flash requires --accept-single-slot-risk")
+    try:
+        pacing = resolve_pacing_profile(
+            args.pacing_profile,
+            accept_experimental_risk=args.accept_experimental_pacing_risk,
+        )
+    except ValueError as error:
+        parser.error(str(error))
     try:
         plan, component = build_package_plan(args.image)
     except (OSError, FlasherError, ValueError) as error:
@@ -1301,12 +1373,31 @@ def main() -> int:
         else (args.routes,)
     )
     audit: dict[str, object] = {
-        "schema_version": 2,
+        "schema_version": 3,
         "started_at_utc": datetime.now(timezone.utc).isoformat(),
         "operation": f"g2_case_usb_reviewed_{image_kind.lower()}_main_only",
         "device": args.device,
         "routes": routes,
         "package": asdict(plan),
+        "installed_identity": {
+            "channel": "custom" if image_kind == "CFW" else "official",
+            "reported_version": plan.expected_device_version,
+            "display_version": (
+                f"{plan.expected_device_version} CFW"
+                if image_kind == "CFW"
+                else plan.expected_device_version
+            ),
+            "exact_image_sha256": plan.image_sha256,
+            "evidence": (
+                "reviewed image pins, accepted transfer counts, postflight, "
+                "final bilateral reset, and liveness"
+            ),
+        },
+        "accepted_source_versions": sorted(expected_current_versions),
+        "pacing_profile": {
+            "name": args.pacing_profile,
+            **pacing,
+        },
         "bridge_sha256": BRIDGE_SHA256,
         "bootloader_component_allowed": False,
         "data_replay_allowed": False,
@@ -1379,10 +1470,19 @@ def main() -> int:
                     finish_timeout=60.0,
                     data_retries=0,
                     retry_backoff_seconds=30.0,
-                    batch_settle_seconds=1.000,
-                    late_batch_settle_seconds=2.000,
-                    late_batch_threshold=0.75,
-                    final_settle_seconds=15.000,
+                    deferred_batch_size=int(pacing["deferred_batch_size"]),
+                    batch_settle_seconds=float(
+                        pacing["batch_settle_seconds"]
+                    ),
+                    late_batch_settle_seconds=float(
+                        pacing["late_batch_settle_seconds"]
+                    ),
+                    late_batch_threshold=float(
+                        pacing["late_batch_threshold"]
+                    ),
+                    final_settle_seconds=float(
+                        pacing["final_settle_seconds"]
+                    ),
                     progress=_progress(route),
                 )
                 current = flasher.read_version()
@@ -1392,10 +1492,10 @@ def main() -> int:
                     f"hardware={current.hardware}",
                     flush=True,
                 )
-                if current.firmware != args.expect_current_version:
+                if current.firmware not in expected_current_versions:
                     raise SafetyError(
-                        f"{route}: expected firmware "
-                        f"{args.expect_current_version}, observed "
+                        f"{route}: expected source firmware in "
+                        f"{sorted(expected_current_versions)}, observed "
                         f"{current.firmware}"
                     )
                 if current.hardware != 5:

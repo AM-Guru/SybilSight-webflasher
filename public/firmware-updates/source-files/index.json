@@ -1,16 +1,16 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-07-24T19:10:54.150Z",
+  "generatedAt": "2026-07-26T20:44:19.198Z",
   "source": "Even Realities CDN plus SybilSight/SybilSight-v2 release evidence",
   "releases": [
     {
-      "id": "g2-custom-2.2.6.10",
+      "id": "g2-custom-2.2.6.11",
       "channel": "custom",
       "trust": "reviewed-custom",
-      "version": "2.2.6.10-cfw",
-      "internalVersion": "2.2.6.10",
+      "version": "2.2.6.11",
+      "internalVersion": "2.2.6.11",
       "baseVersion": "2.2.6.10",
-      "notes": "Reviewed SybilSight CFW built as an exact, hash-pinned transformation of official G2 2.2.6.10.",
+      "notes": "Reviewed SybilSight CFW built from official G2 2.2.6.10. It reports 2.2.6.11 and EVENCFW/3 so Stock/CFW identity is available before OTA.",
       "capabilities": [
         "576×288 image containers",
         "RLE and LZ4 image payloads",
@@ -22,20 +22,20 @@
       "recoveryTarget": "glasses",
       "caseRecoveryEligible": false,
       "caseVersion": "1.2.57",
-      "url": "/firmware-updates/source-files/2.2.6.10-cfw/g2-2.2.6.10-cfw.bin",
-      "sourceUrl": "https://sybilsight.com/firmware-updates/releases/g2-2.2.6.10-cfw.bin",
-      "fileName": "g2-2.2.6.10-cfw.bin",
-      "size": 4317305,
-      "md5": "969004ec56e49b9a0d9073eddf9030e4",
-      "sha256": "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0",
-      "patchUrl": "/firmware-updates/source-files/2.2.6.10-cfw/cfw_patches-2.2.6.10.json",
-      "patchSha256": "44f3a863dc2e7043cb65bcecd42ea9798c70752309ce21c56bdac5a29c1c476c",
-      "archivedFrom": "SybilSight reviewed CFW mirror",
+      "url": "/firmware-updates/source-files/2.2.6.11/g2-2.2.6.11.bin",
+      "sourceUrl": "https://sybilsight.com/firmware-updates/releases/g2-2.2.6.11.bin",
+      "fileName": "g2-2.2.6.11.bin",
+      "size": 4320415,
+      "md5": "8a7d12c38c07e43469e266df3055e874",
+      "sha256": "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86",
+      "patchUrl": "/firmware-updates/source-files/2.2.6.11/cfw_patches-2.2.6.11.json",
+      "patchSha256": "47b33307da30d08480f226ee519a0c10d20288cbb411695e9a3fc45eaee5a0a2",
+      "archivedFrom": "SybilSight local evidence",
       "mainFirmware": {
         "runBase": "0x00438000",
-        "installedImageSize": 3539442,
-        "installedImageEnd": "0x007981f2",
-        "crc32": "3671845b"
+        "installedImageSize": 3542552,
+        "installedImageEnd": "0x00798e18",
+        "crc32": "437fe10e"
       },
       "components": [
         {
@@ -76,14 +76,23 @@
         {
           "name": "ota/s200_firmware_ota.bin",
           "typeId": 0,
-          "size": 3539474,
-          "crc32c": "e8991d48",
-          "sha256": "38dea7dc05e832e6f5aea8fa726454b2ec44055af5d456b323448ee6989e53d1"
+          "size": 3542584,
+          "crc32c": "ac14ca7d",
+          "sha256": "be8f5459e32065fbe3038accea49d418ba81884fc8ec4ed8927f37e219407dcf"
         }
       ]
     },
     {
+      "id": "g2-official-2.2.6.10",
+      "channel": "official",
+      "trust": "official-pinned",
       "version": "2.2.6.10",
+      "internalVersion": "2.2.6.10",
+      "baseVersion": null,
+      "notes": null,
+      "capabilities": [],
+      "recoveryTarget": "case-and-glasses-bundle",
+      "caseRecoveryEligible": true,
       "caseVersion": "1.2.57",
       "url": "/firmware-updates/source-files/2.2.6.10/e28738432d7b612d625331b00383149b.bin",
       "sourceUrl": "https://cdn.evenreal.co/firmware/e28738432d7b612d625331b00383149b.bin",
@@ -91,7 +100,15 @@
       "size": 4301227,
       "md5": "e28738432d7b612d625331b00383149b",
       "sha256": "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa",
+      "patchUrl": null,
+      "patchSha256": null,
       "archivedFrom": "Even Realities CDN",
+      "mainFirmware": {
+        "runBase": "0x00438000",
+        "installedImageSize": 3523364,
+        "installedImageEnd": "0x00794324",
+        "crc32": "c91081df"
+      },
       "components": [
         {
           "name": "firmware/codec.bin",
@@ -138,7 +155,16 @@
       ]
     },
     {
+      "id": "g2-official-2.2.4.34",
+      "channel": "official",
+      "trust": "official-pinned",
       "version": "2.2.4.34",
+      "internalVersion": "2.2.4.34",
+      "baseVersion": null,
+      "notes": null,
+      "capabilities": [],
+      "recoveryTarget": "case-and-glasses-bundle",
+      "caseRecoveryEligible": true,
       "caseVersion": "1.2.57",
       "url": "/firmware-updates/source-files/2.2.4.34/a6966d807634cc97aec641a0dcca358b.bin",
       "sourceUrl": "https://cdn.evenreal.co/firmware/a6966d807634cc97aec641a0dcca358b.bin",
@@ -146,7 +172,15 @@
       "size": 4131592,
       "md5": "a6966d807634cc97aec641a0dcca358b",
       "sha256": "f9a93621a7141e0ae54ca6371cd2f1b4afbffa61f302ace096e0656ba25b1754",
+      "patchUrl": null,
+      "patchSha256": null,
       "archivedFrom": "Even Realities CDN",
+      "mainFirmware": {
+        "runBase": "0x00438000",
+        "installedImageSize": 3502472,
+        "installedImageEnd": "0x0078f188",
+        "crc32": "baea8f7a"
+      },
       "components": [
         {
           "name": "firmware/codec.bin",
@@ -186,7 +220,16 @@
       ]
     },
     {
+      "id": "g2-official-2.2.0.24",
+      "channel": "official",
+      "trust": "official-pinned",
       "version": "2.2.0.24",
+      "internalVersion": "2.2.0.24",
+      "baseVersion": null,
+      "notes": null,
+      "capabilities": [],
+      "recoveryTarget": "case-and-glasses-bundle",
+      "caseRecoveryEligible": true,
       "caseVersion": "1.2.57",
       "url": "/firmware-updates/source-files/2.2.0.24/a0a293189243b71ca581bda1493da1da.bin",
       "sourceUrl": "https://cdn.evenreal.co/firmware/a0a293189243b71ca581bda1493da1da.bin",
@@ -194,7 +237,15 @@
       "size": 3997044,
       "md5": "a0a293189243b71ca581bda1493da1da",
       "sha256": "b3b0e213f7eb9568c97603a011b4a0261f9a4dbf9f7c933ff16b25aeb7efe0a6",
+      "patchUrl": null,
+      "patchSha256": null,
       "archivedFrom": "Even Realities CDN",
+      "mainFirmware": {
+        "runBase": "0x00438000",
+        "installedImageSize": 3367924,
+        "installedImageEnd": "0x0076e3f4",
+        "crc32": "2e2cd1b0"
+      },
       "components": [
         {
           "name": "firmware/codec.bin",
@@ -234,7 +285,16 @@
       ]
     },
     {
+      "id": "g2-official-2.1.1.12",
+      "channel": "official",
+      "trust": "official-pinned",
       "version": "2.1.1.12",
+      "internalVersion": "2.1.1.12",
+      "baseVersion": null,
+      "notes": null,
+      "capabilities": [],
+      "recoveryTarget": "case-and-glasses-bundle",
+      "caseRecoveryEligible": true,
       "caseVersion": "1.2.56",
       "url": "/firmware-updates/source-files/2.1.1.12/55c8b82d3d12a82f22453c7e9c8d8e05.bin",
       "sourceUrl": "https://cdn.evenreal.co/firmware/55c8b82d3d12a82f22453c7e9c8d8e05.bin",
@@ -242,7 +302,15 @@
       "size": 4082768,
       "md5": "55c8b82d3d12a82f22453c7e9c8d8e05",
       "sha256": "75ca2a401f813cf23f864106f4dedbc7e00c4c4b37cd50dcf17f7e9fe503c63e",
+      "patchUrl": null,
+      "patchSha256": null,
       "archivedFrom": "Even Realities CDN",
+      "mainFirmware": {
+        "runBase": "0x00438000",
+        "installedImageSize": 3306284,
+        "installedImageEnd": "0x0075f32c",
+        "crc32": "17fb9d97"
+      },
       "components": [
         {
           "name": "firmware/codec.bin",
@@ -289,7 +357,16 @@
       ]
     },
     {
+      "id": "g2-official-2.1.1.8",
+      "channel": "official",
+      "trust": "official-pinned",
       "version": "2.1.1.8",
+      "internalVersion": "2.1.1.8",
+      "baseVersion": null,
+      "notes": null,
+      "capabilities": [],
+      "recoveryTarget": "case-and-glasses-bundle",
+      "caseRecoveryEligible": true,
       "caseVersion": "1.2.54",
       "url": "/firmware-updates/source-files/2.1.1.8/51f4af4b287af7b4572b4b3e59cecb89.bin",
       "sourceUrl": "https://cdn.evenreal.co/firmware/51f4af4b287af7b4572b4b3e59cecb89.bin",
@@ -297,7 +374,15 @@
       "size": 4076732,
       "md5": "51f4af4b287af7b4572b4b3e59cecb89",
       "sha256": "1aa72ae9bd4e291866193e80f3f950eb35450d87bd3eab1ed017cb5c3875b3fa",
+      "patchUrl": null,
+      "patchSha256": null,
       "archivedFrom": "Even Realities CDN",
+      "mainFirmware": {
+        "runBase": "0x00438000",
+        "installedImageSize": 3300528,
+        "installedImageEnd": "0x0075dcb0",
+        "crc32": "227ee465"
+      },
       "components": [
         {
           "name": "firmware/codec.bin",
@@ -344,7 +429,16 @@
       ]
     },
     {
+      "id": "g2-official-2.0.9.20",
+      "channel": "official",
+      "trust": "official-pinned",
       "version": "2.0.9.20",
+      "internalVersion": "2.0.9.20",
+      "baseVersion": null,
+      "notes": null,
+      "capabilities": [],
+      "recoveryTarget": "case-and-glasses-bundle",
+      "caseRecoveryEligible": true,
       "caseVersion": "1.2.54",
       "url": "/firmware-updates/source-files/2.0.9.20/77de41924c3a7e0402921017140c7456.bin",
       "sourceUrl": "https://cdn.evenreal.co/firmware/77de41924c3a7e0402921017140c7456.bin",
@@ -352,7 +446,15 @@
       "size": 4068333,
       "md5": "77de41924c3a7e0402921017140c7456",
       "sha256": "4b0055531530b3206f7e3acf103e30edeba6c35ed746aba09e52083efb6a2592",
+      "patchUrl": null,
+      "patchSha256": null,
       "archivedFrom": "Even Realities CDN",
+      "mainFirmware": {
+        "runBase": "0x00438000",
+        "installedImageSize": 3292196,
+        "installedImageEnd": "0x0075bc24",
+        "crc32": "7ef468df"
+      },
       "components": [
         {
           "name": "firmware/codec.bin",
@@ -399,7 +501,16 @@
       ]
     },
     {
+      "id": "g2-official-2.0.8.20",
+      "channel": "official",
+      "trust": "official-pinned",
       "version": "2.0.8.20",
+      "internalVersion": "2.0.8.20",
+      "baseVersion": null,
+      "notes": null,
+      "capabilities": [],
+      "recoveryTarget": "case-and-glasses-bundle",
+      "caseRecoveryEligible": true,
       "caseVersion": "1.2.54",
       "url": "/firmware-updates/source-files/2.0.8.20/d2d778f1b3fd8dad8e12dfc000109657.bin",
       "sourceUrl": "https://cdn.evenreal.co/firmware/d2d778f1b3fd8dad8e12dfc000109657.bin",
@@ -407,7 +518,15 @@
       "size": 4051861,
       "md5": "d2d778f1b3fd8dad8e12dfc000109657",
       "sha256": "a5e74e6830f4d9f4b8d06e18f11fb7e8f57383e3204504c299c413ce44940c23",
+      "patchUrl": null,
+      "patchSha256": null,
       "archivedFrom": "Even Realities CDN",
+      "mainFirmware": {
+        "runBase": "0x00438000",
+        "installedImageSize": 3276580,
+        "installedImageEnd": "0x00757f24",
+        "crc32": "1e3ee39e"
+      },
       "components": [
         {
           "name": "firmware/codec.bin",
@@ -454,7 +573,16 @@
       ]
     },
     {
+      "id": "g2-official-2.0.7.16",
+      "channel": "official",
+      "trust": "official-pinned",
       "version": "2.0.7.16",
+      "internalVersion": "2.0.7.16",
+      "baseVersion": null,
+      "notes": null,
+      "capabilities": [],
+      "recoveryTarget": "case-and-glasses-bundle",
+      "caseRecoveryEligible": true,
       "caseVersion": "1.2.54",
       "url": "/firmware-updates/source-files/2.0.7.16/650176717d1f30ef684e5f812500903c.bin",
       "sourceUrl": "https://cdn.evenreal.co/firmware/650176717d1f30ef684e5f812500903c.bin",
@@ -462,7 +590,15 @@
       "size": 3958551,
       "md5": "650176717d1f30ef684e5f812500903c",
       "sha256": "47bdd17b9227d56566280fad42248dbecfe4fc70017ad9c74c3d949e27116b5e",
+      "patchUrl": null,
+      "patchSha256": null,
       "archivedFrom": "Even Realities CDN",
+      "mainFirmware": {
+        "runBase": "0x00438000",
+        "installedImageSize": 3189152,
+        "installedImageEnd": "0x007429a0",
+        "crc32": "7ba2383f"
+      },
       "components": [
         {
           "name": "firmware/codec.bin",
@@ -509,7 +645,16 @@
       ]
     },
     {
+      "id": "g2-official-2.0.6.14",
+      "channel": "official",
+      "trust": "official-pinned",
       "version": "2.0.6.14",
+      "internalVersion": "2.0.6.14",
+      "baseVersion": null,
+      "notes": null,
+      "capabilities": [],
+      "recoveryTarget": "case-and-glasses-bundle",
+      "caseRecoveryEligible": true,
       "caseVersion": "1.2.54",
       "url": "/firmware-updates/source-files/2.0.6.14/0c9f9ca58785547278a5103bc6ae7a09.bin",
       "sourceUrl": "https://cdn.evenreal.co/firmware/0c9f9ca58785547278a5103bc6ae7a09.bin",
@@ -517,7 +662,15 @@
       "size": 3954281,
       "md5": "0c9f9ca58785547278a5103bc6ae7a09",
       "sha256": "f3c4c40aa122f61e859b82ee5eaa296ac8fa3a96e7b9905fd8d112ded732c5da",
+      "patchUrl": null,
+      "patchSha256": null,
       "archivedFrom": "Even Realities CDN",
+      "mainFirmware": {
+        "runBase": "0x00438000",
+        "installedImageSize": 3184952,
+        "installedImageEnd": "0x00741938",
+        "crc32": "33a89446"
+      },
       "components": [
         {
           "name": "firmware/codec.bin",
@@ -564,7 +717,16 @@
       ]
     },
     {
+      "id": "g2-official-2.0.5.12",
+      "channel": "official",
+      "trust": "official-pinned",
       "version": "2.0.5.12",
+      "internalVersion": "2.0.5.12",
+      "baseVersion": null,
+      "notes": null,
+      "capabilities": [],
+      "recoveryTarget": "case-and-glasses-bundle",
+      "caseRecoveryEligible": true,
       "caseVersion": "1.2.51",
       "url": "/firmware-updates/source-files/2.0.5.12/53486f03b825cb22d13e769187b46656.bin",
       "sourceUrl": "https://cdn.evenreal.co/firmware/53486f03b825cb22d13e769187b46656.bin",
@@ -572,7 +734,15 @@
       "size": 3921853,
       "md5": "53486f03b825cb22d13e769187b46656",
       "sha256": "83e3cc196df2d7bd74f735f2ffbfd9f01c204da2cb73a1fb6fee5119f1125e21",
+      "patchUrl": null,
+      "patchSha256": null,
       "archivedFrom": "Even Realities CDN",
+      "mainFirmware": {
+        "runBase": "0x00438000",
+        "installedImageSize": 3158460,
+        "installedImageEnd": "0x0073b1bc",
+        "crc32": "bde9c048"
+      },
       "components": [
         {
           "name": "firmware/codec.bin",
@@ -619,7 +789,16 @@
       ]
     },
     {
+      "id": "g2-official-2.0.3.20",
+      "channel": "official",
+      "trust": "official-pinned",
       "version": "2.0.3.20",
+      "internalVersion": "2.0.3.20",
+      "baseVersion": null,
+      "notes": null,
+      "capabilities": [],
+      "recoveryTarget": "case-and-glasses-bundle",
+      "caseRecoveryEligible": true,
       "caseVersion": "1.2.51",
       "url": "/firmware-updates/source-files/2.0.3.20/57201a6e7cd6dadeee1bdb8f6ed98606.bin",
       "sourceUrl": "https://cdn.evenreal.co/firmware/57201a6e7cd6dadeee1bdb8f6ed98606.bin",
@@ -627,7 +806,15 @@
       "size": 3832044,
       "md5": "57201a6e7cd6dadeee1bdb8f6ed98606",
       "sha256": "84866f11895c34d15838736a373a50f06765232e2561fedd8ba1b62ba509c09c",
+      "patchUrl": null,
+      "patchSha256": null,
       "archivedFrom": "Even Realities CDN",
+      "mainFirmware": {
+        "runBase": "0x00438000",
+        "installedImageSize": 3069076,
+        "installedImageEnd": "0x00725494",
+        "crc32": "0d367398"
+      },
       "components": [
         {
           "name": "firmware/codec.bin",
@@ -674,7 +861,16 @@
       ]
     },
     {
+      "id": "g2-official-2.0.1.14",
+      "channel": "official",
+      "trust": "official-pinned",
       "version": "2.0.1.14",
+      "internalVersion": "2.0.1.14",
+      "baseVersion": null,
+      "notes": null,
+      "capabilities": [],
+      "recoveryTarget": "case-and-glasses-bundle",
+      "caseRecoveryEligible": true,
       "caseVersion": "1.2.40",
       "url": "/firmware-updates/source-files/2.0.1.14/09fe9c0df7b14385c023bc35a364b3a9.bin",
       "sourceUrl": "https://cdn.evenreal.co/firmware/09fe9c0df7b14385c023bc35a364b3a9.bin",
@@ -682,7 +878,15 @@
       "size": 3232068,
       "md5": "09fe9c0df7b14385c023bc35a364b3a9",
       "sha256": "d45005d5f75985339b234550b384899bb89fb37cfe4de4928abc9e882f0709e2",
+      "patchUrl": null,
+      "patchSha256": null,
       "archivedFrom": "Even Realities CDN",
+      "mainFirmware": {
+        "runBase": "0x00438000",
+        "installedImageSize": 2471304,
+        "installedImageEnd": "0x00693588",
+        "crc32": "bdc6cec9"
+      },
       "components": [
         {
           "name": "firmware/codec.bin",

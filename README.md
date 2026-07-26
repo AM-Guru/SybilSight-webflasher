@@ -151,16 +151,17 @@ The reviewed CFW is an exact, machine-described transformation of official
 - stock SHA-256:
   `f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa`
 - CFW SHA-256:
-  `5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0`
+  `d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86`
 - patch-manifest SHA-256:
-  `44f3a863dc2e7043cb65bcecd42ea9798c70752309ce21c56bdac5a29c1c476c`
-- 16 expected-byte-gated operations, including one appended code blob and
+  `47b33307da30d08480f226ee519a0c10d20288cbb411695e9a3fc45eaee5a0a2`
+- 23 expected-byte-gated operations, including one appended code blob,
+  three same-length `2.2.6.10` → `2.2.6.11` identity fields, and
   the required inner/outer size and checksum updates
 
-It adds 576×288 image containers, RLE and LZ4 payloads, 8bpp XOR-delta
-updates, per-lens stereo image pairs, a settings capability advertisement,
-and ring long-press/release events. These features remain capability-gated;
-structure alone is not proof that a file is the reviewed CFW.
+It reports numeric version `2.2.6.11` while retaining `2.2.6.10` as its Stock
+base, and advertises `EVENCFW/3 img576 imgz rle wakelease`. The version is a
+Stock/CFW routing gate; the marker and pinned hashes remain the authenticity
+gates.
 
 ### Application-alive pogo OTA
 
@@ -898,14 +899,16 @@ remain explicit choices.
    fresh volatile bridge session and complete cleanup.
 4. Choose **Complete pinned Apollo main** or **Flash differences · Stock ↔
    CFW**. Difference mode automatically loads and hashes the opposite image,
-   shows the five skipped components and one changed component, and requires
-   confirmation that the displayed source is currently installed.
+   shows the five skipped components and one changed component, and validates
+   the live source as Stock `2.2.6.10` or reviewed CFW `2.2.6.11` immediately
+   before START.
 5. Confirm the glasses are seated, accept the single-slot risk, and type
    `FLASH GLASSES FIRMWARE`.
 6. Keep the case powered, the lid and glasses still, and the browser awake
    until the audit reports success or `failed_or_uncertain`.
-7. Download the audit JSON. Do not treat a same-version postflight reply alone
-   as proof of CFW; stock and CFW both report 2.2.6.10.
+7. Download the audit JSON. Treat the numeric version as identity, not exact
+   byte provenance; successful audits still require pinned hashes, accepted
+   byte counts, FINISH, reset, and bilateral liveness.
 
 After every selected route and Case 1.2.57 return are verified, the web
 flasher sends `DEB0` as the final temple-mutating command. It waits for every
@@ -968,7 +971,7 @@ the browser. Offline inspection opens no hardware:
 
 ```bash
 python3 scripts/g2_case_pogo_flasher.py inspect \
-  /path/to/g2-2.2.6.10-cfw.bin
+  /path/to/g2-2.2.6.11.bin
 ```
 
 A read-only preflight loads the volatile bridge, queries one running route,
@@ -986,14 +989,14 @@ To flash the exact reviewed CFW main on both routes:
 
 ```bash
 python3 scripts/g2_case_pogo_flasher.py flash-reviewed-cfw \
-  /path/to/g2-2.2.6.10-cfw.bin \
+  /path/to/g2-2.2.6.11.bin \
   --device /dev/cu.usbserial-XXXX \
   --routes both \
   --glasses-seated-confirmed \
   --execute-main-ota \
   --accept-single-slot-risk \
   --confirm-image-sha256 \
-  5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0 \
+  d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86 \
   --log /path/to/g2-cfw-flash-audit.json
 ```
 
@@ -1031,13 +1034,14 @@ and both routes receive read-only liveness verification.
 ## Firmware archive
 
 The archive builder knows about all 12 official G2 releases evidenced by the
-SybilSight research plus the reviewed 2.2.6.10 CFW:
+SybilSight research plus the reviewed CFW `2.2.6.11` image built from Stock
+`2.2.6.10`:
 
 ```text
 2.0.1.14  2.0.3.20  2.0.5.12  2.0.6.14
 2.0.7.16  2.0.8.20  2.0.9.20  2.1.1.8
 2.1.1.12  2.2.0.24  2.2.4.34  2.2.6.10
-2.2.6.10-cfw
+2.2.6.11
 ```
 
 It retrieves each original bundle from the Even Realities CDN. If a known CDN
@@ -1067,9 +1071,9 @@ source-files/
     ota_s200_firmware_ota.bin
     metadata.json
     SHA256SUMS
-  2.2.6.10-cfw/
-    g2-2.2.6.10-cfw.bin
-    cfw_patches-2.2.6.10.json
+  2.2.6.11/
+    g2-2.2.6.11.bin
+    cfw_patches-2.2.6.11.json
     firmware_codec.bin
     firmware_ble_em9305.bin
     firmware_touch.bin

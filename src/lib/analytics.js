@@ -7,6 +7,7 @@ import {
 import {
   REVIEWED_CASE_VERSION,
   REVIEWED_CFW_BASE_VERSION,
+  REVIEWED_CFW_VERSION,
 } from "./pogoFlashBridge.js";
 
 export const DEVICE_ANALYTICS_SCHEMA_VERSION = 1;
@@ -52,7 +53,9 @@ function templeAnalytics(side, present, results) {
   const hardwareRevision = version?.decoded?.hardwareRevision ?? null;
   const applicationResponsive = Boolean(version || status);
   const reviewedWriterCompatible =
-    firmwareVersion === REVIEWED_CFW_BASE_VERSION && hardwareRevision === 5;
+    [REVIEWED_CFW_BASE_VERSION, REVIEWED_CFW_VERSION].includes(
+      firmwareVersion,
+    ) && hardwareRevision === 5;
   return {
     side,
     present: Boolean(present),
@@ -202,7 +205,10 @@ export function buildG2DeviceAnalytics({
       recoveryAssessment: {
         mode: "running-application Apollo-main reinstall through case USB",
         requiredCaseVersion: REVIEWED_CASE_VERSION,
-        requiredTempleVersion: REVIEWED_CFW_BASE_VERSION,
+        requiredTempleVersions: [
+          REVIEWED_CFW_BASE_VERSION,
+          REVIEWED_CFW_VERSION,
+        ],
         requiredHardwareRevision: 5,
         caseCompatible,
         bothTemplesResponsive,

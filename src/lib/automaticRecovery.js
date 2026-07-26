@@ -3,7 +3,8 @@ export const DEFAULT_AUTOMATIC_INSTALL_MODE = "update";
 export const AUTOMATIC_INSTALL_MODES = Object.freeze(["update", "restore"]);
 
 const ROUTES = Object.freeze(["right", "left"]);
-const REVIEWED_DIFFERENCE_VERSION = "2.2.6.10";
+const REVIEWED_STOCK_VERSION = "2.2.6.10";
+const REVIEWED_CFW_VERSION = "2.2.6.11";
 const MAIN_COMPONENT = "ota/s200_firmware_ota.bin";
 
 function auditVerificationComplete(audit) {
@@ -32,6 +33,9 @@ export function provenanceFromSuccessfulAudit(audit) {
         route,
         {
           imageSha256: audit.imageSha256.toLowerCase(),
+          channel: audit.installedIdentity?.channel ?? "unknown",
+          reportedVersion: audit.installedIdentity?.reportedVersion ?? null,
+          displayVersion: audit.installedIdentity?.displayVersion ?? null,
           provenAt: audit.finishedAt ?? new Date().toISOString(),
           proof: "verified-recovery-audit",
         },
@@ -85,8 +89,10 @@ function supportsLiveCompatiblePairProof(differencePlan) {
   return Boolean(
     differencePlan?.executable &&
       differencePlan?.changedMainOnly === true &&
-      source?.version === REVIEWED_DIFFERENCE_VERSION &&
-      target?.version === REVIEWED_DIFFERENCE_VERSION &&
+      new Set([source?.version, target?.version]).size === 2 &&
+      [source?.version, target?.version].every((version) =>
+        [REVIEWED_STOCK_VERSION, REVIEWED_CFW_VERSION].includes(version),
+      ) &&
       wireTransfer?.component === MAIN_COMPONENT &&
       Number.isInteger(wireTransfer?.bytes) &&
       wireTransfer.bytes > 0 &&
@@ -182,7 +188,7 @@ export function resolveAutomaticApplyPlan({
     return {
       executable: false,
       reason:
-        "Update stopped before writing: without portable source audits, live validation is allowed only for the exact reviewed Stock 2.2.6.10 ↔ CFW pair when the complete pinned target main is transferred.",
+        "Update stopped before writing: without portable source audits, live validation is allowed only for the exact reviewed Stock 2.2.6.10 ↔ CFW 2.2.6.11 pair when the complete pinned target main is transferred.",
     };
   }
 
@@ -198,7 +204,7 @@ export function resolveAutomaticApplyPlan({
     targetSha256,
     reason: exactSourceProven
       ? "Saved bilateral audits prove the exact source. Skip byte-identical bundle components and transfer the changed, CRC-gated Apollo main to both temples."
-      : "No portable source audit is available. The exact reviewed pair transfers the complete pinned target main, so each temple will instead require a just-in-time checksum-valid 2.2.6.10/hardware-5 reply before START.",
+      : `No portable source audit is available. The exact reviewed pair transfers the complete pinned target main, so each temple will instead require a just-in-time checksum-valid ${differencePlan.source.version}/hardware-5 reply before START.`,
   };
 }
 

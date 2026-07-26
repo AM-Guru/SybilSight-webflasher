@@ -454,6 +454,7 @@ class MainFirmwareFlasher:
         finish_timeout: float = 60.0,
         data_retries: int = 0,
         retry_backoff_seconds: float = 30.0,
+        deferred_batch_size: int = DEFERRED_BATCH_SIZE,
         batch_settle_seconds: float = 0.100,
         late_batch_settle_seconds: float | None = None,
         late_batch_threshold: float = 0.75,
@@ -465,6 +466,13 @@ class MainFirmwareFlasher:
             raise ValueError("data_retries must be 0 or 1")
         if retry_backoff_seconds < 0:
             raise ValueError("retry_backoff_seconds cannot be negative")
+        if (
+            deferred_batch_size < 1000
+            or deferred_batch_size % 1000 != 0
+        ):
+            raise ValueError(
+                "deferred_batch_size must be a positive multiple of 1000"
+            )
         if batch_settle_seconds < 0:
             raise ValueError("batch_settle_seconds cannot be negative")
         if late_batch_settle_seconds is None:
@@ -482,6 +490,7 @@ class MainFirmwareFlasher:
         self.finish_timeout = finish_timeout
         self.data_retries = data_retries
         self.retry_backoff_seconds = retry_backoff_seconds
+        self.deferred_batch_size = deferred_batch_size
         self.batch_settle_seconds = batch_settle_seconds
         self.late_batch_settle_seconds = late_batch_settle_seconds
         self.late_batch_threshold = late_batch_threshold
@@ -569,12 +578,12 @@ class MainFirmwareFlasher:
                 self.progress(index + 1, total_records)
 
             if (
-                payload_bytes_sent % DEFERRED_BATCH_SIZE == 0
+                payload_bytes_sent % self.deferred_batch_size == 0
                 or final
             ):
                 # The 0x54 reply precedes deferred C1 parsing/storage.  There
                 # is no second durable-write acknowledgement, so leave a
-                # conservative settling interval at every 6-KiB boundary and
+                # conservative settling interval at each configured boundary and
                 # increase it late in the image, where hardware runs have
                 # exposed receiver back-pressure.
                 settle_seconds = self.batch_settle_seconds
@@ -587,10 +596,10 @@ class MainFirmwareFlasher:
                     settle_seconds = self.late_batch_settle_seconds
                 self._settle_storage(settle_seconds)
 
-        # The reviewed stock and CFW images report the same public version, so
-        # postflight liveness alone cannot distinguish them.  Require the
-        # checksum-valid zero-status 0x55 response instead of accepting a
-        # reset-raced timeout as success.
+        # Current reviewed CFW reports 2.2.6.11 while its Stock base reports
+        # 2.2.6.10. Version remains only an identity gate, not byte provenance:
+        # require the checksum-valid zero-status 0x55 response instead of
+        # accepting a reset-raced timeout as success.
         self._send_non_idempotent(
             production_ota_finish_request(), self.finish_timeout, "FINISH"
         )
@@ -781,10 +790,29 @@ def build_argument_parser() -> argparse.ArgumentParser:
         ),
     )
     flash_parser.add_argument(
+        "--deferred-batch-bytes",
+        type=int,
+        default=DEFERRED_BATCH_SIZE,
+        help=(
+            "accepted bytes between storage-settle delays; must be a multiple "
+            f"of 1000 (default: {DEFERRED_BATCH_SIZE})"
+        ),
+    )
+    flash_parser.add_argument(
         "--batch-settle-ms",
         type=float,
         default=100.0,
         help="delay after each deferred 6-KiB batch (default: 100)",
+    )
+    flash_parser.add_argument(
+        "--late-batch-settle-ms",
+        type=float,
+        help="late-image storage delay (default: --batch-settle-ms)",
+    )
+    flash_parser.add_argument(
+        "--final-settle-ms",
+        type=float,
+        help="delay after the final DATA record (default: late delay)",
     )
     flash_parser.add_argument(
         "--finish-timeout",
@@ -889,6 +917,18 @@ def main() -> int:
     if args.batch_settle_ms < 0:
         parser.error("--batch-settle-ms cannot be negative")
     if (
+        args.deferred_batch_bytes < 1000
+        or args.deferred_batch_bytes % 1000 != 0
+    ):
+        parser.error("--deferred-batch-bytes must be a positive multiple of 1000")
+    if (
+        args.late_batch_settle_ms is not None
+        and args.late_batch_settle_ms < 0
+    ):
+        parser.error("--late-batch-settle-ms cannot be negative")
+    if args.final_settle_ms is not None and args.final_settle_ms < 0:
+        parser.error("--final-settle-ms cannot be negative")
+    if (
         args.finish_timeout <= 0
         or args.postflight_timeout <= 0
         or args.postflight_interval <= 0
@@ -917,7 +957,18 @@ def main() -> int:
             response_timeout=args.response_timeout,
             finish_timeout=args.finish_timeout,
             data_retries=args.data_retries,
+            deferred_batch_size=args.deferred_batch_bytes,
             batch_settle_seconds=args.batch_settle_ms / 1000.0,
+            late_batch_settle_seconds=(
+                args.late_batch_settle_ms / 1000.0
+                if args.late_batch_settle_ms is not None
+                else None
+            ),
+            final_settle_seconds=(
+                args.final_settle_ms / 1000.0
+                if args.final_settle_ms is not None
+                else None
+            ),
             progress=_progress_printer(args.progress_every),
         )
         current = flasher.read_version()

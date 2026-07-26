@@ -16,7 +16,7 @@ test("selects the newest official Stock release independent of catalog order", (
     {
       id: "cfw",
       channel: "custom",
-      version: "2.2.6.10-cfw",
+      version: "2.2.6.11",
       caseRecoveryEligible: false,
     },
     {

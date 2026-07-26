@@ -42,7 +42,7 @@ Offline package/bridge inspection:
 
 ```bash
 python3 scripts/g2_case_pogo_flasher.py inspect \
-  /path/to/g2-2.2.6.10-cfw.bin
+  /path/to/g2-2.2.6.11.bin
 ```
 
 Read-only preflight of a seated route:
@@ -58,14 +58,14 @@ Reviewed-CFW main reinstall, right route followed by left:
 
 ```bash
 python3 scripts/g2_case_pogo_flasher.py flash-reviewed-cfw \
-  /path/to/g2-2.2.6.10-cfw.bin \
+  /path/to/g2-2.2.6.11.bin \
   --device /dev/cu.usbserial-XXXX \
   --routes both \
   --glasses-seated-confirmed \
   --execute-main-ota \
   --accept-single-slot-risk \
   --confirm-image-sha256 \
-  5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0 \
+  d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86 \
   --log /path/to/g2-cfw-flash-audit.json
 ```
 
@@ -155,9 +155,10 @@ restrictive and accepts only the separately pinned reviewed CFW or official
 ## Recovery boundary
 
 This is a running-application, single-slot reinstall path. A `0x54` response
-acknowledges parser acceptance, not a separate durable flash commit. Stock and
-reviewed CFW both publicly report 2.2.6.10, so postflight version alone does
-not identify installed provenance.
+acknowledges parser acceptance, not a separate durable flash commit. Current
+reviewed CFW reports `2.2.6.11` while Stock reports `2.2.6.10`; use that as an
+identity gate, but retain the hash, FINISH, reset, and liveness proof for exact
+installed provenance.
 
 These tools cannot:
 

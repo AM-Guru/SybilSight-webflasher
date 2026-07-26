@@ -10,11 +10,13 @@ import { parseEvenOTA } from "../src/lib/firmware.js";
 
 const CDN_BASE = "https://cdn.evenreal.co/firmware";
 const REVIEWED_CFW_SHA256 =
-  "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0";
+  "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86";
 const REVIEWED_CFW_BASE_SHA256 =
   "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa";
+const LEGACY_HARDWARE_VALIDATED_CFW_SHA256 =
+  "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0";
 const HARDWARE_VALIDATED_TEMPLE_IMAGES = new Set([
-  REVIEWED_CFW_SHA256,
+  LEGACY_HARDWARE_VALIDATED_CFW_SHA256,
   REVIEWED_CFW_BASE_SHA256,
 ]);
 const RELEASES = [
@@ -99,23 +101,29 @@ const RELEASES = [
     ]],
   },
   {
-    id: "g2-custom-2.2.6.10",
-    version: "2.2.6.10-cfw",
-    internalVersion: "2.2.6.10",
+    id: "g2-custom-2.2.6.11",
+    version: "2.2.6.11",
+    internalVersion: "2.2.6.11",
     baseVersion: "2.2.6.10",
     channel: "custom",
     trust: "reviewed-custom",
-    hash: "969004ec56e49b9a0d9073eddf9030e4",
+    hash: "8a7d12c38c07e43469e266df3055e874",
     sha256: REVIEWED_CFW_SHA256,
-    size: 4317305,
-    fileName: "g2-2.2.6.10-cfw.bin",
+    size: 4320415,
+    fileName: "g2-2.2.6.11.bin",
     sourceUrl:
-      "https://sybilsight.com/firmware-updates/releases/g2-2.2.6.10-cfw.bin",
+      "https://sybilsight.com/firmware-updates/releases/g2-2.2.6.11.bin",
+    fallbacks: [[
+      "website",
+      "firmware-updates/releases/g2-2.2.6.11.bin",
+    ]],
     patchUrl:
-      "https://sybilsight.com/firmware-updates/patches/cfw_patches-2.2.6.10.json",
-    patchFileName: "cfw_patches-2.2.6.10.json",
+      "https://sybilsight.com/firmware-updates/patches/cfw_patches-2.2.6.11.json",
+    patchFallback:
+      "firmware-updates/patches/cfw_patches-2.2.6.11.json",
+    patchFileName: "cfw_patches-2.2.6.11.json",
     notes:
-      "Reviewed SybilSight CFW built as an exact, hash-pinned transformation of official G2 2.2.6.10.",
+      "Reviewed SybilSight CFW built from official G2 2.2.6.10. It reports 2.2.6.11 and EVENCFW/3 so Stock/CFW identity is available before OTA.",
     capabilities: [
       "576×288 image containers",
       "RLE and LZ4 image payloads",
@@ -258,13 +266,23 @@ async function saveRelease(root, release, fallbackRoots) {
   let patchFile = null;
   let patchSha256 = null;
   if (release.patchUrl) {
-    const patchBytes = await download(release.patchUrl);
+    let patchBytes;
+    try {
+      patchBytes = await download(release.patchUrl);
+    } catch (downloadError) {
+      if (!release.patchFallback) throw downloadError;
+      patchBytes = await readFile(
+        path.join(fallbackRoots.website, release.patchFallback),
+      );
+    }
     const patchSet = JSON.parse(patchBytes.toString("utf8"));
     if (
       patchSet.base_sha256 !== REVIEWED_CFW_BASE_SHA256 ||
       patchSet.output_sha256 !== REVIEWED_CFW_SHA256 ||
+      patchSet.version !== release.version ||
+      patchSet.base_version !== release.baseVersion ||
       !Array.isArray(patchSet.patches) ||
-      patchSet.patches.length !== 16
+      patchSet.patches.length !== 23
     ) {
       throw new Error("The reviewed CFW patch recipe does not match its pinned trust boundary");
     }
@@ -391,7 +409,17 @@ async function saveRelease(root, release, fallbackRoots) {
 // file rather than something read from index.json at runtime: the writer's final
 // trust gate must not be widenable by a tampered catalog.
 async function writeTempleFlashTargets(releases) {
-  const targets = [];
+  const targets = [
+    {
+      imageSha256: LEGACY_HARDWARE_VALIDATED_CFW_SHA256,
+      mainSha256:
+        "38dea7dc05e832e6f5aea8fa726454b2ec44055af5d456b323448ee6989e53d1",
+      mainBytes: 3539474,
+      version: "2.2.6.10",
+      label: "Legacy reviewed SybilSight CFW 2.2.6.10",
+      hardwareValidated: true,
+    },
+  ];
   for (const release of releases) {
     const main = (release.components ?? []).find(
       (component) =>
@@ -463,6 +491,12 @@ async function main() {
     ),
     current: path.resolve(
       argument("--sybilsight", path.join(os.homedir(), "Repo/SybilSight")),
+    ),
+    website: path.resolve(
+      argument(
+        "--sybilsight-website",
+        path.join(os.homedir(), "Repo/sybilsight-website"),
+      ),
     ),
   };
   await mkdir(output, { recursive: true });

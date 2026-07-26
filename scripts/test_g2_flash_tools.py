@@ -19,6 +19,7 @@ from g2_case_pogo_flasher import (  # noqa: E402
     BRIDGE_BYTES,
     BRIDGE_SHA256,
     FINAL_RESET_COMMAND,
+    PACING_PROFILES,
     REVIEWED_CFW_SHA256,
     REVIEWED_OFFICIAL_MAIN_BYTES,
     REVIEWED_OFFICIAL_MAIN_SHA256,
@@ -30,6 +31,7 @@ from g2_case_pogo_flasher import (  # noqa: E402
     classify_zero_byte_start_boundary,
     parse_case_restore_evidence,
     reset_both_temples_and_recheck,
+    resolve_pacing_profile,
     verify_route_stability,
 )
 import g2_case_pogo_flasher as case_flasher  # noqa: E402
@@ -274,6 +276,21 @@ class G2FlashToolTests(unittest.TestCase):
         ])
         self.assertEqual(args.command, "flash-reviewed-official")
         self.assertEqual(args.routes, "right")
+        self.assertEqual(args.pacing_profile, "conservative")
+
+    def test_unqualified_pacing_profile_requires_explicit_risk_acceptance(self) -> None:
+        with self.assertRaisesRegex(ValueError, "not hardware-qualified"):
+            resolve_pacing_profile(
+                "balanced-lab",
+                accept_experimental_risk=False,
+            )
+        profile = resolve_pacing_profile(
+            "balanced-lab",
+            accept_experimental_risk=True,
+        )
+        self.assertEqual(profile["deferred_batch_size"], 12_000)
+        self.assertFalse(profile["hardware_qualified"])
+        self.assertTrue(PACING_PROFILES["conservative"]["hardware_qualified"])
 
     def test_reset_only_command_is_bilateral_and_hardware_gated(self) -> None:
         args = build_parser().parse_args([
@@ -562,6 +579,33 @@ class G2FlashToolTests(unittest.TestCase):
             sleeper=sleeps.append,
         ).flash_main(make_main_component(12_000))
         self.assertEqual(sleeps, [1.0, 15.0])
+
+    def test_larger_deferred_batch_reduces_intermediate_settles(self) -> None:
+        conservative_sleeps: list[float] = []
+        balanced_sleeps: list[float] = []
+        component = make_main_component(24_000)
+        MainFirmwareFlasher(
+            FakeTransport(),
+            deferred_batch_size=6_000,
+            batch_settle_seconds=1.0,
+            late_batch_settle_seconds=2.0,
+            final_settle_seconds=15.0,
+            sleeper=conservative_sleeps.append,
+        ).flash_main(component)
+        MainFirmwareFlasher(
+            FakeTransport(),
+            deferred_batch_size=12_000,
+            batch_settle_seconds=0.75,
+            late_batch_settle_seconds=1.5,
+            final_settle_seconds=15.0,
+            sleeper=balanced_sleeps.append,
+        ).flash_main(component)
+        self.assertEqual(conservative_sleeps, [1.0, 1.0, 2.0, 15.0])
+        self.assertEqual(balanced_sleeps, [0.75, 15.0])
+
+    def test_deferred_batch_size_must_align_to_records(self) -> None:
+        with self.assertRaisesRegex(ValueError, "positive multiple of 1000"):
+            MainFirmwareFlasher(FakeTransport(), deferred_batch_size=6_500)
 
     def _assert_exact_retry(self, transport: FakeTransport) -> None:
         sleeps: list[float] = []

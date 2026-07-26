@@ -30,7 +30,7 @@ const differencePlan = {
   target: {
     imageSha256: CFW_SHA,
     mainSha256: "d".repeat(64),
-    version: "2.2.6.10",
+    version: "2.2.6.11",
   },
   wireTransfer: {
     component: "ota/s200_firmware_ota.bin",
@@ -140,6 +140,11 @@ test("only a fully verified successful audit records installed provenance", () =
   const audit = {
     outcome: "success",
     imageSha256: CFW_SHA,
+    installedIdentity: {
+      channel: "custom",
+      reportedVersion: "2.2.6.11",
+      displayVersion: "2.2.6.11 CFW",
+    },
     routes: ["right", "left"],
     finishedAt: "2026-07-26T00:00:00.000Z",
     verification: {
@@ -156,11 +161,17 @@ test("only a fully verified successful audit records installed provenance", () =
   assert.deepEqual(mergeInstalledProvenance({}, audit), {
     right: {
       imageSha256: CFW_SHA,
+      channel: "custom",
+      reportedVersion: "2.2.6.11",
+      displayVersion: "2.2.6.11 CFW",
       provenAt: "2026-07-26T00:00:00.000Z",
       proof: "verified-recovery-audit",
     },
     left: {
       imageSha256: CFW_SHA,
+      channel: "custom",
+      reportedVersion: "2.2.6.11",
+      displayVersion: "2.2.6.11 CFW",
       provenAt: "2026-07-26T00:00:00.000Z",
       proof: "verified-recovery-audit",
     },

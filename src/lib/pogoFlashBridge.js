@@ -17,11 +17,12 @@ export const POGO_FLASH_PROOF = new Uint8Array([
   0x47, 0x46, 0x52, 0x50, 0xde, 0xc0, 0xde, 0xc0,
 ]);
 export const REVIEWED_CFW_IMAGE_SHA256 =
-  "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0";
+  "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86";
 export const REVIEWED_CFW_MAIN_SHA256 =
-  "38dea7dc05e832e6f5aea8fa726454b2ec44055af5d456b323448ee6989e53d1";
-export const REVIEWED_CFW_MAIN_BYTES = 3539474;
+  "be8f5459e32065fbe3038accea49d418ba81884fc8ec4ed8927f37e219407dcf";
+export const REVIEWED_CFW_MAIN_BYTES = 3542584;
 export const REVIEWED_CFW_BASE_VERSION = "2.2.6.10";
+export const REVIEWED_CFW_VERSION = "2.2.6.11";
 export const REVIEWED_CASE_VERSION = "1.2.57";
 export const POGO_FLASH_STATUS = Object.freeze({
   0: "ok",
@@ -549,10 +550,10 @@ export async function assertReviewedCfwFlashCandidate(firmware) {
     firmware.fileSha256 !== REVIEWED_CFW_IMAGE_SHA256 ||
     mainComponent.payload.length !== REVIEWED_CFW_MAIN_BYTES ||
     mainComponent.payloadSha256 !== REVIEWED_CFW_MAIN_SHA256 ||
-    firmware.g2Version !== REVIEWED_CFW_BASE_VERSION
+    firmware.g2Version !== REVIEWED_CFW_VERSION
   ) {
     throw new PogoFlashSafetyError(
-      "Temple flashing accepts only the exact reviewed 2.2.6.10 CFW Apollo-main component.",
+      "Temple flashing accepts only the exact reviewed 2.2.6.11 CFW Apollo-main component.",
     );
   }
   return mainComponent;

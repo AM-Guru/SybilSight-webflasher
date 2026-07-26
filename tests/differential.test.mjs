@@ -9,12 +9,12 @@ import {
 import { operationProgress } from "../src/lib/operationProgress.js";
 import { TEMPLE_FLASH_TARGETS } from "../src/lib/templeFlashTargets.js";
 
-const cfwTarget = TEMPLE_FLASH_TARGETS.find((target) =>
-  target.label.includes("CFW"),
+const cfwTarget = TEMPLE_FLASH_TARGETS.find(
+  (target) => target.version === "2.2.6.11" && target.label.includes("CFW"),
 );
 const stockTarget = TEMPLE_FLASH_TARGETS.find(
   (target) =>
-    target.version === cfwTarget.version && target.label.startsWith("Stock"),
+    target.version === "2.2.6.10" && target.label.startsWith("Stock"),
 );
 
 function component(name, typeId, payload, sha256) {
@@ -48,7 +48,7 @@ function firmware(target, channel, mainPayload, mainDigest) {
     g2Version: target.version,
     provenance: {
       channel,
-      baseVersion: channel === "custom" ? target.version : null,
+      baseVersion: channel === "custom" ? "2.2.6.10" : null,
     },
     componentImages: [...shared, main],
     mainComponent: main,

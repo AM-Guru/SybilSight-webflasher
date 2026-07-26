@@ -1,0 +1,112 @@
+{
+  "bootloader_component_allowed": false,
+  "bridge_sha256": "a5c289f64b4db41abfde57f6ef32638f001ee67ad8134a778fe7314f008a649c",
+  "case_preflight": {
+    "case_version": "1.2.57",
+    "left_present": true,
+    "ota_glasses": null,
+    "reset_command": "DEB0",
+    "reset_confirmed": false,
+    "right_present": true
+  },
+  "device": "/dev/cu.usbserial-10",
+  "error": "no complete temple frame through case bridge",
+  "final_reset_and_liveness": {
+    "case": {
+      "case_version": "1.2.57",
+      "left_present": true,
+      "ota_glasses": null,
+      "post_reset_telemetry_attempt": 1,
+      "post_reset_telemetry_session": "reopened",
+      "reset_command": "DEB0",
+      "reset_confirmation_session": "pre-restart",
+      "reset_confirmed": true,
+      "right_present": true
+    },
+    "outcome": "success",
+    "temple_mutation": "traced stock DEB0 dual-temple reset",
+    "version_is_liveness_not_image_provenance": true,
+    "versions": {
+      "left": {
+        "firmware": "2.2.6.10",
+        "hardware": 5
+      },
+      "right": {
+        "firmware": "2.2.6.10",
+        "hardware": 5
+      }
+    }
+  },
+  "finished_at_utc": "2026-07-26T01:08:33.564793+00:00",
+  "operation": "g2_case_usb_reviewed_official_main_only",
+  "outcome": "failed_or_uncertain",
+  "package": {
+    "build_date": "2026-07-06",
+    "build_time": "21:39:36",
+    "expected_device_version": "2.2.6.10",
+    "image_bytes": 4301227,
+    "image_path": "/Users/kalani/Repo/evenRealities-webflasher/public/firmware-updates/source-files/2.2.6.10/e28738432d7b612d625331b00383149b.bin",
+    "image_sha256": "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa",
+    "main_installed_bytes": 3523364,
+    "main_installed_end": "0x00794324",
+    "main_payload_bytes": 3523396,
+    "main_payload_sha256": "36c5b0e499a68ac2493a497bdab9740fd3e7027730c26a9094eca47268a27863",
+    "main_record_count": 3524,
+    "package_version": "s200_v2.2.6.10"
+  },
+  "route_results": [
+    {
+      "case_application_version": "1.2.57",
+      "case_restore_verified": true,
+      "error": "no complete temple frame through case bridge",
+      "outcome": "failed_or_uncertain",
+      "preflight_version": {
+        "firmware": "2.2.6.10",
+        "hardware": 5
+      },
+      "retained_result": {
+        "accepted_size": 840000,
+        "baseline_mask": "0x3ff",
+        "declared_size": 3523396,
+        "expected_sequence": 840,
+        "host_chunk_offset": 1009,
+        "host_rx_errors": 0,
+        "host_rx_timeouts": 0,
+        "host_stage": 1,
+        "host_tc_timeouts": 0,
+        "host_tx_aborts": 0,
+        "host_tx_last_isr": "0x00000000",
+        "host_tx_recoveries": 0,
+        "magic": "0x57463247",
+        "ota_state": 127,
+        "progress": 3,
+        "proof": "47465250dec0dec0",
+        "restored_mask": "0x3ff",
+        "route": 1,
+        "selected_mask": "0x3ff",
+        "sequence": 78,
+        "status": 0,
+        "temple_rx_count": 10,
+        "temple_tx_count": 845,
+        "temple_uart_errors": "0x0",
+        "write_mask": "0xf"
+      },
+      "route": "right",
+      "route_phase_setup_attempts": 1,
+      "stability_preflight": {
+        "firmware": "2.2.6.10",
+        "hardware": 5,
+        "interval_ms": 25.0,
+        "outcome": "success",
+        "queries": 1
+      },
+      "yhm_baseline": "811104afaf03812022ff"
+    }
+  ],
+  "routes": [
+    "right",
+    "left"
+  ],
+  "schema_version": 2,
+  "started_at_utc": "2026-07-26T01:04:11.136624+00:00"
+}

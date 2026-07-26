@@ -61,7 +61,7 @@ export function describeByteDifferences(sourceInput, targetInput, maxRanges = 64
 
 export function findStockCfwCounterpartRelease(catalog, targetFirmware) {
   const target = targetFirmware?.templeFlashTarget;
-  if (!target || target.version !== "2.2.6.10") return null;
+  if (!target) return null;
   const targetChannel = targetFirmware.provenance?.channel;
 
   if (targetChannel === "custom") {
@@ -101,11 +101,13 @@ export function buildBundleDifferencePlan(sourceFirmware, targetFirmware) {
   }
   if (
     sourceTarget.imageSha256 === targetTarget.imageSha256 ||
-    sourceTarget.version !== targetTarget.version ||
-    sourceTarget.version !== "2.2.6.10"
+    new Set([sourceTarget.version, targetTarget.version]).size !== 2 ||
+    ![sourceTarget.version, targetTarget.version].every((version) =>
+      ["2.2.6.10", "2.2.6.11"].includes(version),
+    )
   ) {
     throw new Error(
-      "Flash differences is limited to the reviewed Stock 2.2.6.10 ↔ CFW pair.",
+      "Flash differences is limited to the reviewed Stock 2.2.6.10 ↔ CFW 2.2.6.11 pair.",
     );
   }
 
@@ -218,4 +220,3 @@ export function buildBundleDifferencePlan(sourceFirmware, targetFirmware) {
     ),
   };
 }
-

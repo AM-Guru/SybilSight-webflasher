@@ -8,6 +8,7 @@ import {
   POGO_FLASH_RESULT_LENGTH,
   PogoFlashSafetyError,
   REVIEWED_CFW_BASE_VERSION,
+  REVIEWED_CFW_VERSION,
   REVIEWED_CFW_IMAGE_SHA256,
   REVIEWED_CFW_MAIN_BYTES,
   REVIEWED_CFW_MAIN_SHA256,
@@ -591,7 +592,7 @@ test("rehashes the main payload at the final reviewed-CFW trust gate", async () 
   const candidate = {
     kind: "bundle",
     fileSha256: REVIEWED_CFW_IMAGE_SHA256,
-    g2Version: REVIEWED_CFW_BASE_VERSION,
+    g2Version: REVIEWED_CFW_VERSION,
     mainComponent: {
       name: "ota/s200_firmware_ota.bin",
       typeId: 0,
@@ -625,8 +626,18 @@ test("pins every temple-flash target to a distinct image and main digest", () =>
   const validated = TEMPLE_FLASH_TARGETS.filter((t) => t.hardwareValidated);
   assert.deepEqual(
     validated.map((t) => t.imageSha256),
-    [REVIEWED_CFW_IMAGE_SHA256, REVIEWED_STOCK_IMAGE_SHA256],
-    "the reviewed CFW and pinned Stock image have hardware-validated transfers",
+    [
+      "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0",
+      REVIEWED_STOCK_IMAGE_SHA256,
+    ],
+    "the legacy reviewed CFW and pinned Stock image retain hardware evidence",
+  );
+  assert.equal(
+    TEMPLE_FLASH_TARGETS.find(
+      (target) => target.imageSha256 === REVIEWED_CFW_IMAGE_SHA256,
+    )?.hardwareValidated,
+    false,
+    "the new numeric-version CFW remains unqualified until a hardware run succeeds",
   );
 });
 
@@ -640,7 +651,15 @@ test("keeps the generated pin table in sync with the firmware archive", async ()
       "utf8",
     ),
   );
-  const expected = index.releases
+  const expected = [{
+    imageSha256:
+      "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0",
+    mainSha256:
+      "38dea7dc05e832e6f5aea8fa726454b2ec44055af5d456b323448ee6989e53d1",
+    mainBytes: 3539474,
+    version: "2.2.6.10",
+    hardwareValidated: true,
+  }, ...index.releases
     .map((release) => ({
       release,
       main: (release.components ?? []).find(
@@ -653,10 +672,8 @@ test("keeps the generated pin table in sync with the firmware archive", async ()
       mainSha256: main.sha256,
       mainBytes: main.size,
       version: release.internalVersion ?? release.version,
-      hardwareValidated:
-        release.channel === "custom" ||
-        release.sha256 === REVIEWED_STOCK_IMAGE_SHA256,
-    }));
+      hardwareValidated: release.sha256 === REVIEWED_STOCK_IMAGE_SHA256,
+    }))];
   assert.deepEqual(
     TEMPLE_FLASH_TARGETS.map(({ label, ...rest }) => rest),
     expected,
@@ -665,7 +682,9 @@ test("keeps the generated pin table in sync with the firmware archive", async ()
 });
 
 test("accepts a pinned stock main but still rejects a mismatched payload", async () => {
-  const stock = TEMPLE_FLASH_TARGETS.find((t) => !t.hardwareValidated);
+  const stock = TEMPLE_FLASH_TARGETS.find(
+    (t) => !t.hardwareValidated && t.label.startsWith("Stock"),
+  );
   const make = (payload, payloadSha256) => ({
     kind: "bundle",
     fileSha256: stock.imageSha256,

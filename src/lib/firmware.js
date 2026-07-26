@@ -20,13 +20,14 @@ export const APOLLO_BOOTLOADER_BASE = 0x00410000;
 export const APOLLO_APPLICATION_BASE = 0x00438000;
 export const APOLLO_UPDATE_FLAG_ADDRESS = 0x007fe000;
 export const REVIEWED_CFW = Object.freeze({
-  version: "2.2.6.10-cfw",
+  version: "2.2.6.11",
   baseVersion: "2.2.6.10",
   baseSha256: "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa",
-  sha256: "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0",
-  mainPayloadBytes: 3539474,
+  sha256: "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86",
+  mainPayloadBytes: 3542584,
   mainPayloadSha256:
-    "38dea7dc05e832e6f5aea8fa726454b2ec44055af5d456b323448ee6989e53d1",
+    "be8f5459e32065fbe3038accea49d418ba81884fc8ec4ed8927f37e219407dcf",
+  capabilityMarker: "EVENCFW/3 img576 imgz rle wakelease",
   capabilities: [
     "576×288 image containers",
     "RLE and LZ4 image payloads",
@@ -35,6 +36,11 @@ export const REVIEWED_CFW = Object.freeze({
     "Settings capability field 100",
     "Ring long-press and release events",
   ],
+});
+const LEGACY_HARDWARE_TESTED_CFW = Object.freeze({
+  sha256: "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0",
+  mainPayloadSha256:
+    "38dea7dc05e832e6f5aea8fa726454b2ec44055af5d456b323448ee6989e53d1",
 });
 export const POGO_TRANSFER_RESEARCH = Object.freeze({
   asOf: "2026-07-26",
@@ -161,7 +167,7 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
     successfulTransfers: Object.freeze({
       right: Object.freeze({
         route: "right",
-        imageSha256: REVIEWED_CFW.sha256,
+        imageSha256: LEGACY_HARDWARE_TESTED_CFW.sha256,
         mainPayloadSha256:
           "38dea7dc05e832e6f5aea8fa726454b2ec44055af5d456b323448ee6989e53d1",
         payloadBytes: 3539474,
@@ -185,7 +191,7 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
       }),
       left: Object.freeze({
         route: "left",
-        imageSha256: REVIEWED_CFW.sha256,
+        imageSha256: LEGACY_HARDWARE_TESTED_CFW.sha256,
         mainPayloadSha256:
           "38dea7dc05e832e6f5aea8fa726454b2ec44055af5d456b323448ee6989e53d1",
         payloadBytes: 3539474,
@@ -235,8 +241,8 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
     }),
     browserDifferenceCfwTest: Object.freeze({
       mode: "Stock-to-reviewed-CFW component differences",
-      imageSha256: REVIEWED_CFW.sha256,
-      mainPayloadSha256: REVIEWED_CFW.mainPayloadSha256,
+      imageSha256: LEGACY_HARDWARE_TESTED_CFW.sha256,
+      mainPayloadSha256: LEGACY_HARDWARE_TESTED_CFW.mainPayloadSha256,
       identicalComponentsSkipped: 5,
       changedComponentsTransferred: 1,
       differingBytePositions: 16117,
