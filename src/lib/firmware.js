@@ -43,21 +43,22 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
     offlineTestsPassed: 8,
     component: "Apollo main only",
     startAndHeaderReplayAllowed: false,
-    dataRetryOnly: true,
+    dataRetryOnly: false,
     dataRetryReasons: Object.freeze([
-      "one delayed retry after an explicit record rejection without sequence advance",
+      "no DATA replay; exact cleanup, bilateral reset/liveness, then a fresh whole-component START",
     ]),
-    deferredBatchSettleMs: 250,
-    maximumDataRetries: 1,
-    retryBackoffMs: Object.freeze([6500]),
+    deferredBatchSettleMs: 1000,
+    maximumDataRetries: 0,
+    retryBackoffMs: Object.freeze([]),
+    maximumWholeComponentRestarts: 2,
     stabilityReadQueries: 1,
     preStartSettleMs: 250,
     postflightVersionRequired: true,
   }),
   caseUsbBridge: Object.freeze({
-    status: "mixed-right-cfw-left-official-stock",
-    attempts: 33,
-    completeWiredTransfers: 5,
+    status: "both-temples-reviewed-cfw",
+    attempts: 38,
+    completeWiredTransfers: 7,
     attemptedBridgeSha256: Object.freeze([
       "6780d7ba8bf9a6539719dda4111c4fbaab706c74c16cda1e41751616f69109b4",
       "82ad4f81ab3ad1ab4a27185e845811722417a19f546075e1f8d488a2ab3ee264",
@@ -72,9 +73,11 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
       "db61f28dd3fa100d85b1a0bd5653d71582c9292b6bfd362545b42b08cbd59149",
       "a5c289f64b4db41abfde57f6ef32638f001ee67ad8134a778fe7314f008a649c",
       "9ab41ffe1b906869b264c9ba3aa739f3bda0ee8bf0051cf67679c204dd86ac2c",
+      "dcf27971baa964902724fc9aa2f9d0369be6874a5a84231791622bb40bf486a6",
+      "eba56380f04bf00ad9d87dffbc40c3292ec5b3cee458d3607c8cffd0dcbe335b",
     ]),
     validationBoundary:
-      "Attempts 6 and 9 completed the reviewed CFW Apollo-main transfer on the right and left running temples. V4 then completed the pinned official Apollo-main transfer on the right after extending the bounded DATA-reply window. A later Chromium Stock-to-CFW difference run completed the V4 right transfer again; its left route stopped without FINISH after record 2800 was explicitly rejected and the one delayed exact-record retry returned no complete frame. Two later fresh left setups failed closed at status 3 before transmitting firmware. A 2026-07-26 repeat test exhausted four bounded left setup attempts at the same status before START, with no OTA mutation and incomplete retained restoration proof; Case 1.2.57 returned and the standalone bilateral reset verified both applications. A later default bilateral Stock test accepted 338 right-main records, explicitly rejected record 339, and received no complete response to the one delayed exact retry. It stopped without FINISH before attempting the left route, restored Case/YHM state, and completed bilateral reset/liveness. The right image is now failed-or-uncertain; the unattempted left retains official Stock provenance.",
+      "The 2026-07-26 hosted Easy Update accepted the exact Stock/CFW compatible-pair gate, recovered a V7 short host-response boundary without replaying DATA, and completed the left CFW main on a reset-gated fresh component attempt. A subsequent V7 right-only repair accepted all 3,540 CFW records and FINISH, proved postflight and exact YHM restoration, returned Case 1.2.57, then verified both temple applications after the final bilateral DEB0 reset.",
     officialRestore: Object.freeze({
       packageSha256:
         "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa",
@@ -324,14 +327,14 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
         "The browser writer referenced TempleRejectedError without importing it. The import and explicit-rejection classifier regression test were added before the successful right run.",
     }),
     currentSourceReviewGate:
-      "hardware-validated-route-phase-fail-closed-and-selected-version",
-    declaredBytes: 2920,
+      "v7-complete-target-main-live-compatible-pair-and-short-response-recovery",
+    declaredBytes: 2952,
     declaredSha256:
-      "9ab41ffe1b906869b264c9ba3aa739f3bda0ee8bf0051cf67679c204dd86ac2c",
-    observedBytes: 2920,
+      "eba56380f04bf00ad9d87dffbc40c3292ec5b3cee458d3607c8cffd0dcbe335b",
+    observedBytes: 2952,
     observedSha256:
-      "9ab41ffe1b906869b264c9ba3aa739f3bda0ee8bf0051cf67679c204dd86ac2c",
-    hardwareAttemptsWithCurrentSource: 13,
+      "eba56380f04bf00ad9d87dffbc40c3292ec5b3cee458d3607c8cffd0dcbe335b",
+    hardwareAttemptsWithCurrentSource: 5,
     successfulHardwareAttemptsWithCurrentSource: 2,
     postRestoreReset: Object.freeze({
       status: "hardware-validated-revived-left-temple",
@@ -506,12 +509,13 @@ export function describePogoOtaComponent(typeId, payloadSize) {
       acknowledgement:
         "Parser acceptance only; post-reset liveness and version verification remain mandatory.",
       startAndHeaderReplayAllowed: false,
-      dataRetryOnly: true,
+      dataRetryOnly: false,
       dataRetryReason:
-        "one delayed retry after an explicit record rejection without sequence advance",
-      deferredBatchSettleMs: 250,
-      maximumDataRetries: 1,
-      retryBackoffMs: [6500],
+        "no DATA replay; exact cleanup, bilateral reset/liveness, then a fresh whole-component START",
+      deferredBatchSettleMs: 1000,
+      maximumDataRetries: 0,
+      retryBackoffMs: [],
+      maximumWholeComponentRestarts: 2,
       stabilityReadQueries: 1,
       preStartSettleMs: 250,
       postflightVersionRequired: true,

@@ -3265,8 +3265,10 @@ function App() {
               left route at status 3 before any firmware transmission. Attempt 8 then
               accepted 2,733,000 left-temple bytes before an explicit 0x54 status-1
               rejection; all ten route registers and Case firmware 1.2.57 were restored.
-              The updated host safely retries that exact data record because a rejection
-              does not advance the expected sequence. Attempt 9 subsequently completed
+              That historical host retried the exact record because a rejection did not
+              advance the expected sequence. Current V7 policy replays no DATA record;
+              it requires exact cleanup, bilateral reset/liveness, and a fresh complete
+              component START. Attempt 9 subsequently completed
               the left transfer with all 3,540 records, zero retries, finish and
               postflight confirmation, full route restoration, and Case-app return. This
               browser port preserves those same gates. A later recovery session found
@@ -3284,7 +3286,12 @@ function App() {
               route restoration, and Case-app return. Its longer bounded DATA-reply
               window crossed the former 829,000/840,000-byte host timeout boundary. A
               left V4 retry stopped at 823,000 accepted bytes without FINISH, so it did
-              not replace the previously proven six-component Stock installation.
+              not replace the previously proven six-component Stock installation. The
+              hosted V7 cycle then completed the reviewed CFW main on left after bounded
+              reset-gated whole-component restarts. A right-only V7 repair accepted all
+              3,540 CFW records and FINISH, proved postflight and route restoration,
+              returned Case 1.2.57, and ended with bilateral DEB0 plus checksum-valid
+              replies from both temples.
               Retain every downloaded audit and treat any interrupted result as failed or
               uncertain.
             </small>

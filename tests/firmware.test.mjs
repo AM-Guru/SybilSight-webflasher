@@ -301,10 +301,11 @@ test("marks the Apollo bootloader as omitted from pogo OTA", () => {
   assert.equal(main.disposition, "capture-gated-main");
   assert.match(main.commitBoundary, /LittleFS/);
   assert.equal(main.startAndHeaderReplayAllowed, false);
-  assert.equal(main.dataRetryOnly, true);
-  assert.equal(main.deferredBatchSettleMs, 250);
-  assert.equal(main.maximumDataRetries, 1);
-  assert.deepEqual(main.retryBackoffMs, [6500]);
+  assert.equal(main.dataRetryOnly, false);
+  assert.equal(main.deferredBatchSettleMs, 1000);
+  assert.equal(main.maximumDataRetries, 0);
+  assert.deepEqual(main.retryBackoffMs, []);
+  assert.equal(main.maximumWholeComponentRestarts, 2);
   assert.equal(main.stabilityReadQueries, 1);
   assert.equal(main.preStartSettleMs, 250);
   assert.equal(main.postflightVersionRequired, true);
@@ -313,14 +314,14 @@ test("marks the Apollo bootloader as omitted from pogo OTA", () => {
 test("records successful case-pogo transfers and enables only the guarded browser writer", () => {
   assert.equal(POGO_TRANSFER_RESEARCH.directTempleHost.offlineTestsPassed, 8);
   assert.equal(POGO_TRANSFER_RESEARCH.directTempleHost.dataRetryReasons.length, 1);
-  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 33);
+  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 38);
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.status,
-    "mixed-right-cfw-left-official-stock",
+    "both-temples-reviewed-cfw",
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.currentSourceReviewGate,
-    "hardware-validated-route-phase-fail-closed-and-selected-version",
+    "v7-complete-target-main-live-compatible-pair-and-short-response-recovery",
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.declaredSha256,
@@ -440,14 +441,14 @@ test("records successful case-pogo transfers and enables only the guarded browse
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.hardwareAttemptsWithCurrentSource,
-    13,
+    5,
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulHardwareAttemptsWithCurrentSource,
     2,
   );
-  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 33);
-  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.completeWiredTransfers, 5);
+  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 38);
+  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.completeWiredTransfers, 7);
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.browserDifferenceCfwTest.right
       .finishAckReceived,
