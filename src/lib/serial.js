@@ -90,6 +90,7 @@ const POGO_DATA_LATE_SETTLE_NUMERATOR = 3;
 const POGO_DATA_LATE_SETTLE_DENOMINATOR = 4;
 const POGO_COMPONENT_RESTART_LIMIT = 2;
 const POGO_BILATERAL_ROUTE_ADAPTATION_LIMIT = 4;
+const POGO_INTERMEDIATE_RESET_ATTEMPTS = 2;
 export const WEB_SERIAL_ROM_READ_SIZE = 31;
 
 export function isExplicitTempleDataRejection(error) {
@@ -103,6 +104,11 @@ export function isPogoRoutePhaseMismatch(error) {
         "YHM baseline is not an allowlisted seated-idle state",
       ),
   );
+}
+
+export function isRetryablePostResetLivenessFailure(error) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return message.includes("no framed temple response");
 }
 
 export function templeDataSettleMilliseconds(acceptedBytes, totalBytes) {
@@ -1856,29 +1862,61 @@ export class G2CaseSession {
       "warn",
     );
     this.progress(progressBase, `${route}: recovery reset before full restart`);
-    const resetReport = await this.restartAndRecheck();
-    const { versions, finalCase } = await this.verifyPostResetTempleLiveness(
-      resetReport,
-      routes,
-      {
-        expectedVersion,
-        progressBase,
-        progressSpan: Math.min(0.04, 0.9 / routeCount),
-      },
+    const attempts = [];
+    for (
+      let attempt = 1;
+      attempt <= POGO_INTERMEDIATE_RESET_ATTEMPTS;
+      attempt += 1
+    ) {
+      const resetReport = await this.restartAndRecheck();
+      try {
+        const { versions, finalCase } =
+          await this.verifyPostResetTempleLiveness(
+            resetReport,
+            routes,
+            {
+              expectedVersion,
+              progressBase,
+              progressSpan: Math.min(0.04, 0.9 / routeCount),
+            },
+          );
+        attempts.push({ attempt, outcome: "success" });
+        this.log(
+          `${route}: intermediate reset, contacts, Case application, and temple liveness verified${attempt > 1 ? ` on bounded reset attempt ${attempt}` : ""}; restarting from START rather than replaying an ambiguous DATA record.`,
+          "success",
+        );
+        return {
+          outcome: "success",
+          command: "DEB0",
+          resetConfirmed: true,
+          resetAttempts: attempts,
+          caseFirmware: finalCase.caseVersion,
+          leftPresent: resetReport.telemetry.leftPresent,
+          rightPresent: resetReport.telemetry.rightPresent,
+          versions,
+        };
+      } catch (error) {
+        attempts.push({
+          attempt,
+          outcome: "failed",
+          error: error.message,
+        });
+        if (
+          attempt === POGO_INTERMEDIATE_RESET_ATTEMPTS ||
+          !isRetryablePostResetLivenessFailure(error)
+        ) {
+          error.intermediateResetAttempts = attempts;
+          throw error;
+        }
+        this.log(
+          `${route}: the first intermediate reset returned a transient no-frame liveness probe; sending one bounded second bilateral reset before deciding whether a fresh START is safe.`,
+          "warn",
+        );
+      }
+    }
+    throw new PogoFlashSafetyError(
+      "The bounded intermediate reset loop ended unexpectedly.",
     );
-    this.log(
-      `${route}: intermediate reset, contacts, Case application, and temple liveness verified; restarting from START rather than replaying an ambiguous DATA record.`,
-      "success",
-    );
-    return {
-      outcome: "success",
-      command: "DEB0",
-      resetConfirmed: true,
-      caseFirmware: finalCase.caseVersion,
-      leftPresent: resetReport.telemetry.leftPresent,
-      rightPresent: resetReport.telemetry.rightPresent,
-      versions,
-    };
   }
 
   async flashPinnedTempleRoute(

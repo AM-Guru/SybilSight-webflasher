@@ -95,6 +95,16 @@ RESULT_LENGTH = 128
 PROOF_ADDRESS = 0x20011B00
 PROOF = bytes.fromhex("47465250dec0dec0")
 ZERO_PROOF = bytes(len(PROOF))
+ALLOWED_YHM_BASELINES = {
+    bytes.fromhex(value)
+    for value in (
+        "811104afaf038d2022ff",
+        "810004aeae03812022ff",
+        "811104afaf03812022ff",
+        "810104afae03812022ff",
+        "811004aeaf03812022ff",
+    )
+}
 
 READY_STATUS = {
     0: "ok",
@@ -711,6 +721,7 @@ class CaseSramTempleTransport(TempleTransport):
                     and words[6] == 0x3FF
                     and words[7] == 0x3FF
                     and words[15] == 0
+                    and self.baseline in ALLOWED_YHM_BASELINES
                     and self.baseline == self.restored
                 )
                 if (

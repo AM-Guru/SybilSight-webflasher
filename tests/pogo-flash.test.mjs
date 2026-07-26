@@ -44,6 +44,7 @@ import {
   isExplicitTempleDataRejection,
   isPogoRoutePhaseMismatch,
   isG2CaseSerialPort,
+  isRetryablePostResetLivenessFailure,
   isWebSerialRomPacketBoundary,
   readPogoFlashResponseHeader,
   readRomBlockWithBoundaryRecovery,
@@ -904,4 +905,64 @@ test("allows one fresh component restart only after a DATA failure and exact cle
     ),
     false,
   );
+});
+
+test("retries one transient intermediate-reset no-frame before a fresh START", async () => {
+  assert.equal(
+    isRetryablePostResetLivenessFailure(
+      new Error("The pogo bridge stopped safely: no framed temple response."),
+    ),
+    true,
+  );
+  assert.equal(
+    isRetryablePostResetLivenessFailure(
+      new Error("left: contact did not return after the final B0 reset."),
+    ),
+    false,
+  );
+
+  const events = [];
+  const session = new G2CaseSession(null, {
+    log: (message) => events.push(`log:${message}`),
+    progress: () => {},
+  });
+  session.restartAndRecheck = async () => {
+    events.push("reset:DEB0");
+    return {
+      caseVersion: "1.2.57",
+      telemetry: { leftPresent: true, rightPresent: true },
+    };
+  };
+  let verificationAttempt = 0;
+  session.verifyPostResetTempleLiveness = async () => {
+    verificationAttempt += 1;
+    events.push(`verify:${verificationAttempt}`);
+    if (verificationAttempt === 1) {
+      throw new Error(
+        "The pogo bridge stopped safely: no framed temple response.",
+      );
+    }
+    return {
+      versions: {
+        left: { firmware: "2.2.6.10", hardware: 5 },
+        right: { firmware: "2.2.6.10", hardware: 5 },
+      },
+      finalCase: { caseVersion: "1.2.57" },
+    };
+  };
+
+  const report = await session.resetTempleOtaReceiverForComponentRestart(
+    ["left", "right"],
+    "2.2.6.10",
+    "right",
+    1,
+    2,
+  );
+  assert.deepEqual(
+    events.filter((event) => event === "reset:DEB0"),
+    ["reset:DEB0", "reset:DEB0"],
+  );
+  assert.equal(report.resetAttempts.length, 2);
+  assert.equal(report.resetAttempts[0].outcome, "failed");
+  assert.equal(report.resetAttempts[1].outcome, "success");
 });

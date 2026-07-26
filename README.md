@@ -657,6 +657,11 @@ fatal cleanup only when all route masks are complete and the ten restored YHM
 bytes exactly match the allowlisted baseline. That proof permits a fresh
 whole-component restart after the bilateral reset/liveness gate; it is not a
 transfer-success proof.
+If the first intermediate reset returns the exact transient no-frame liveness
+failure observed after a completed opposite-side update, Easy Mode sends one
+bounded second bilateral reset and repeats the read-only contact/application
+gate. Missing contacts, wrong versions, incomplete cleanup, and every other
+failure still stop immediately.
 Success additionally
 requires the exact `0x55` acknowledgement and a checksum-valid postflight
 version. It then exits the bridge, binds the retained proof to the route and
