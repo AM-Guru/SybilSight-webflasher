@@ -89,12 +89,27 @@ export const WIRED_START_NO_FRAME_RECOVERY = Object.freeze({
     "Do not replay START in this session or loop fresh wired attempts. After verified Case/YHM cleanup, issue the bilateral DEB0 reset. If the temple still advertises, use a fresh BLE connection to install the complete six-component hash-pinned package, then finish with DEB0 and read-only bilateral liveness.",
 });
 
+export const YHM_SETUP_NON_IDLE_RECOVERY = Object.freeze({
+  classification: "yhm_setup_non_idle_zero_byte_boundary",
+  firmwareBytesAccepted: 0,
+  otaMutationAttempted: false,
+  wiredRetryPolicy: "stop_after_bounded_setup_attempts",
+  recoveryRecommendation:
+    "Do not bypass the YHM allowlist or loop more wired setup attempts. Return the Case to firmware 1.2.57, issue the standalone bilateral DEB0 reset/recheck, and retain the existing Stock/CFW provenance because no OTA mutation began.",
+});
+
 export function classifyPogoFlashRecoveryBoundary(
   error,
   retainedResult,
   failureStage,
 ) {
   const message = error instanceof Error ? error.message : String(error ?? "");
+  if (
+    failureStage === "setup" &&
+    message.includes("YHM baseline is not an allowlisted seated-idle state")
+  ) {
+    return { ...YHM_SETUP_NON_IDLE_RECOVERY };
+  }
   if (
     failureStage !== "START" ||
     !message.includes("no complete temple frame") ||

@@ -632,9 +632,9 @@ class CasePogoFlashTransport {
 
   async open() {
     for (let attempt = 1; attempt <= 4; attempt += 1) {
+      this.routePhaseSetupAttempts = attempt;
       try {
         await this.openOnce();
-        this.routePhaseSetupAttempts = attempt;
         return;
       } catch (error) {
         const routePhaseMismatch =
@@ -1579,6 +1579,9 @@ export class G2CaseSession {
       caseRestoreVerified: false,
       caseApplicationVersion: null,
       retainedResult: null,
+      routePhaseSetupAttempts: 0,
+      otaMutationAttempted: false,
+      acceptedFirmwareBytes: 0,
     };
     let operationError = null;
     let cleanupError = null;
@@ -1640,6 +1643,7 @@ export class G2CaseSession {
       // Start and header mutate OTA state and are intentionally never replayed.
       failureStage = "START";
       const start = makeOtaStartRequest();
+      result.otaMutationAttempted = true;
       requireOtaAcknowledgement(await transport.transact(start, 8000), start[0]);
       failureStage = "HEADER";
       const header = makeOtaHeaderRequest(component.header);
@@ -1671,6 +1675,7 @@ export class G2CaseSession {
           requireOtaAcknowledgement(response, 0x54);
         }
         acceptedBytes += data.length;
+        result.acceptedFirmwareBytes = acceptedBytes;
         transport.reportProgress(
           0.08 + ((index + 1) / totalRecords) * 0.78,
           `${route}: ${index + 1}/${totalRecords} main records`,
@@ -1742,6 +1747,7 @@ export class G2CaseSession {
       }
       result.caseRestoreVerified = transport.restoreVerified;
       result.caseApplicationVersion = transport.caseReport?.caseVersion ?? null;
+      result.routePhaseSetupAttempts = transport.routePhaseSetupAttempts;
       if (transport.retainedResult) {
         result.retainedResult = {
           ...transport.retainedResult,

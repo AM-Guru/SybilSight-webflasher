@@ -37,7 +37,7 @@ export const REVIEWED_CFW = Object.freeze({
   ],
 });
 export const POGO_TRANSFER_RESEARCH = Object.freeze({
-  asOf: "2026-07-25",
+  asOf: "2026-07-26",
   directTempleHost: Object.freeze({
     status: "offline-validated",
     offlineTestsPassed: 8,
@@ -56,7 +56,7 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
   }),
   caseUsbBridge: Object.freeze({
     status: "mixed-right-cfw-left-official-stock",
-    attempts: 28,
+    attempts: 33,
     completeWiredTransfers: 5,
     attemptedBridgeSha256: Object.freeze([
       "6780d7ba8bf9a6539719dda4111c4fbaab706c74c16cda1e41751616f69109b4",
@@ -74,7 +74,7 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
       "9ab41ffe1b906869b264c9ba3aa739f3bda0ee8bf0051cf67679c204dd86ac2c",
     ]),
     validationBoundary:
-      "Attempts 6 and 9 completed the reviewed CFW Apollo-main transfer on the right and left running temples. V4 then completed the pinned official Apollo-main transfer on the right after extending the bounded DATA-reply window. A later Chromium Stock-to-CFW difference run completed the V4 right transfer again; its left route stopped without FINISH after record 2800 was explicitly rejected and the one delayed exact-record retry returned no complete frame. Two later fresh left setups failed closed at status 3 before transmitting firmware. The final bilateral reset verified both applications, leaving the freshly proven CFW on the right and the previously proven official Stock installation on the left.",
+      "Attempts 6 and 9 completed the reviewed CFW Apollo-main transfer on the right and left running temples. V4 then completed the pinned official Apollo-main transfer on the right after extending the bounded DATA-reply window. A later Chromium Stock-to-CFW difference run completed the V4 right transfer again; its left route stopped without FINISH after record 2800 was explicitly rejected and the one delayed exact-record retry returned no complete frame. Two later fresh left setups failed closed at status 3 before transmitting firmware. A 2026-07-26 repeat test exhausted four bounded left setup attempts at the same status before START, with no OTA mutation and incomplete retained restoration proof; Case 1.2.57 returned and the standalone bilateral reset verified both applications. A later default bilateral Stock test accepted 338 right-main records, explicitly rejected record 339, and received no complete response to the one delayed exact retry. It stopped without FINISH before attempting the left route, restored Case/YHM state, and completed bilateral reset/liveness. The right image is now failed-or-uncertain; the unattempted left retains official Stock provenance.",
     officialRestore: Object.freeze({
       packageSha256:
         "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa",
@@ -269,6 +269,57 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
         rightPresent: true,
         bothApplicationsVerified: true,
       }),
+      repeatLeftSetupGuard: Object.freeze({
+        observedAt: "2026-07-26",
+        outcome: "failed_or_uncertain",
+        routePhaseSetupAttempts: 4,
+        status: 3,
+        otaMutationAttempted: false,
+        firmwareBytesAccepted: 0,
+        finishAckReceived: false,
+        retainedRouteRestorationProofComplete: false,
+        caseApplicationVersion: "1.2.57",
+        finalStandaloneReset: Object.freeze({
+          command: "DEB0",
+          leftPresent: true,
+          rightPresent: true,
+          bothApplicationsVerified: true,
+        }),
+      }),
+      defaultBilateralStockTest: Object.freeze({
+        observedAt: "2026-07-26",
+        defaults: Object.freeze({
+          target: "latest official Stock",
+          route: "both",
+          transferMode: "complete",
+        }),
+        targetImageSha256:
+          "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa",
+        targetMainSha256:
+          "36c5b0e499a68ac2493a497bdab9740fd3e7027730c26a9094eca47268a27863",
+        right: Object.freeze({
+          outcome: "failed_or_uncertain",
+          acceptedBytes: 338000,
+          acceptedRecords: 338,
+          rejectedRecord: 339,
+          exactRecordRetries: 1,
+          retryOutcome: "no complete temple response",
+          finishAckReceived: false,
+          caseRestoreVerified: true,
+          installedProvenance: "failed_or_uncertain",
+        }),
+        left: Object.freeze({
+          transferAttempted: false,
+          installedProvenance: "previously verified official Stock",
+        }),
+        finalReset: Object.freeze({
+          command: "DEB0",
+          caseApplicationVersion: "1.2.57",
+          leftPresent: true,
+          rightPresent: true,
+          bothApplicationsVerified: true,
+        }),
+      }),
       codeDefectFoundAndFixed:
         "The browser writer referenced TempleRejectedError without importing it. The import and explicit-rejection classifier regression test were added before the successful right run.",
     }),
@@ -280,7 +331,7 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
     observedBytes: 2920,
     observedSha256:
       "9ab41ffe1b906869b264c9ba3aa739f3bda0ee8bf0051cf67679c204dd86ac2c",
-    hardwareAttemptsWithCurrentSource: 8,
+    hardwareAttemptsWithCurrentSource: 13,
     successfulHardwareAttemptsWithCurrentSource: 2,
     postRestoreReset: Object.freeze({
       status: "hardware-validated-revived-left-temple",

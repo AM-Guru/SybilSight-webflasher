@@ -26,6 +26,18 @@ import {
   OPERATION_TOTALS,
   operationProgress,
 } from "./lib/operationProgress.js";
+import {
+  DEFAULT_TEMPLE_FLASH_MODE,
+  DEFAULT_TEMPLE_FLASH_ROUTE,
+  findLatestOfficialStockRelease,
+} from "./lib/recoveryDefaults.js";
+import {
+  DEFAULT_AUTOMATIC_INSTALL_MODE,
+  DEFAULT_INTERFACE_MODE,
+  executeAutomaticApply,
+  installedProvenanceStorageKey,
+  mergeInstalledProvenance,
+} from "./lib/automaticRecovery.js";
 
 const EMPTY_PROGRESS = {
   fraction: 0,
@@ -46,6 +58,7 @@ const OPERATION_LABELS = Object.freeze({
   pogo: "Query temple",
   recheck: "Reset and recheck",
   "temple-flash": "Restore Smart Glasses",
+  "automatic-apply": "Apply Smart Glasses firmware",
   stage: "Stage Case bank",
   activate: "Activate Case bank",
 });
@@ -197,6 +210,48 @@ function SectionHeading({ eyebrow, title, copy, action }) {
 
 function StatusPill({ children, tone = "neutral" }) {
   return <span className={cx("status-pill", `status-pill-${tone}`)}>{children}</span>;
+}
+
+function InstallModeSelector({ value, onChange, disabled = false, idPrefix }) {
+  return (
+    <fieldset className="install-mode-selector">
+      <legend>Install method</legend>
+      <div className="install-mode-options">
+        {[
+          [
+            "update",
+            "Update",
+            "Apply only the reviewed Stock ↔ CFW component difference.",
+          ],
+          [
+            "restore",
+            "Restore",
+            "Rewrite the complete pinned main firmware on both sides.",
+          ],
+        ].map(([mode, label, detail]) => (
+          <label
+            className={cx(value === mode && "is-selected")}
+            htmlFor={`${idPrefix}-${mode}`}
+            key={mode}
+          >
+            <input
+              id={`${idPrefix}-${mode}`}
+              type="radio"
+              name={`${idPrefix}-install-mode`}
+              value={mode}
+              checked={value === mode}
+              onChange={() => onChange(mode)}
+              disabled={disabled}
+            />
+            <span>
+              <strong>{label}</strong>
+              <small>{detail}</small>
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
 }
 
 function TempleProbeResult({ side, results }) {
@@ -594,6 +649,14 @@ function App() {
   const [error, setError] = useState("");
   const [logs, setLogs] = useState([]);
   const [consoleOpen, setConsoleOpen] = useState(false);
+  const [interfaceMode, setInterfaceMode] = useState(DEFAULT_INTERFACE_MODE);
+  const [automaticInstallMode, setAutomaticInstallMode] = useState(
+    DEFAULT_AUTOMATIC_INSTALL_MODE,
+  );
+  const [automaticStatus, setAutomaticStatus] = useState(
+    "Select a Case, choose firmware, and Apply.",
+  );
+  const [installedProvenance, setInstalledProvenance] = useState({});
   const [activeSection, setActiveSection] = useState(SECTION_KEYS[0]);
   const pendingAnchorRef = useRef(null);
   const [confirmText, setConfirmText] = useState("");
@@ -605,11 +668,15 @@ function App() {
   const [pogoRoute, setPogoRoute] = useState("left");
   const [pogoOperation, setPogoOperation] = useState("version");
   const [pogoConfirm, setPogoConfirm] = useState(false);
-  const [templeFlashRoute, setTempleFlashRoute] = useState("both");
+  const [templeFlashRoute, setTempleFlashRoute] = useState(
+    DEFAULT_TEMPLE_FLASH_ROUTE,
+  );
   const [templeFlashSeated, setTempleFlashSeated] = useState(false);
   const [templeFlashRisk, setTempleFlashRisk] = useState(false);
   const [templeFlashText, setTempleFlashText] = useState("");
-  const [templeFlashMode, setTempleFlashMode] = useState("complete");
+  const [templeFlashMode, setTempleFlashMode] = useState(
+    DEFAULT_TEMPLE_FLASH_MODE,
+  );
   const [differenceSourceFirmware, setDifferenceSourceFirmware] = useState(null);
   const [differencePlan, setDifferencePlan] = useState(null);
   const [differenceState, setDifferenceState] = useState("idle");
@@ -680,7 +747,13 @@ function App() {
     const applyHash = () => {
       const id = window.location.hash.slice(1);
       if (!id) return;
+      if (id === "easy") {
+        pendingAnchorRef.current = null;
+        setInterfaceMode("easy");
+        return;
+      }
       if (SECTION_KEYS.includes(id)) {
+        setInterfaceMode("advanced");
         pendingAnchorRef.current = null;
         setActiveSection((current) => {
           // Re-selecting the open pane produces no re-render, so reset here.
@@ -713,6 +786,24 @@ function App() {
     return () => window.removeEventListener("hashchange", applyHash);
   }, []);
 
+  useEffect(() => {
+    const key = installedProvenanceStorageKey(report?.console?.serialNumber);
+    if (!key) {
+      setInstalledProvenance({});
+      return;
+    }
+    try {
+      const stored = window.localStorage.getItem(key);
+      setInstalledProvenance(stored ? JSON.parse(stored) : {});
+    } catch {
+      setInstalledProvenance({});
+      addLog(
+        "Saved installed-firmware proof could not be read; Update will fail closed.",
+        "warn",
+      );
+    }
+  }, [addLog, report?.console?.serialNumber]);
+
   // Each pane is its own scroll context; entering one starts at its top unless
   // the navigation targeted an anchor inside it.
   useEffect(() => {
@@ -729,7 +820,7 @@ function App() {
       return;
     }
     viewport.scrollTo({ top: 0, behavior: "instant" });
-  }, [activeSection]);
+  }, [activeSection, interfaceMode]);
 
   useEffect(() => {
     let active = true;
@@ -749,10 +840,8 @@ function App() {
             }))
           : [];
         setCatalog(releases);
-        const latestCaseRelease = releases.find(
-          (release) => release.caseRecoveryEligible,
-        );
-        setSelectedReleaseId((latestCaseRelease ?? releases[0])?.id ?? "");
+        const latestStockRelease = findLatestOfficialStockRelease(releases);
+        setSelectedReleaseId((latestStockRelease ?? releases[0])?.id ?? "");
         setCatalogState("ready");
       })
       .catch(() => {
@@ -1055,7 +1144,7 @@ function App() {
     });
   };
 
-  const acceptFirmware = async (bytes, fileName, expected) => {
+  const prepareFirmware = async (bytes, fileName, expected) => {
     const parsed = await parseFirmwareInput(bytes, fileName);
     if (expected) {
       if (parsed.fileSize !== expected.size) {
@@ -1065,7 +1154,7 @@ function App() {
         throw new Error("The mirrored firmware SHA-256 does not match its catalog.");
       }
     }
-    const accepted = expected
+    return expected
       ? {
           ...parsed,
           provenance: {
@@ -1084,6 +1173,9 @@ function App() {
           catalogRelease: expected,
         }
       : parsed;
+  };
+
+  const acceptPreparedFirmware = (accepted) => {
     setFirmware(accepted);
     setStaged(null);
     setTempleFlashAudit(null);
@@ -1096,8 +1188,27 @@ function App() {
     setDifferenceError("");
     setDifferenceSourceConfirmed(false);
     addLog(
-      `Validated ${fileName} · ${accepted.provenance.label} · ${accepted.fileSha256.slice(0, 16)}…`,
+      `Validated ${accepted.fileName} · ${accepted.provenance.label} · ${accepted.fileSha256.slice(0, 16)}…`,
       "success",
+    );
+    return accepted;
+  };
+
+  const acceptFirmware = async (bytes, fileName, expected) => {
+    return acceptPreparedFirmware(
+      await prepareFirmware(bytes, fileName, expected),
+    );
+  };
+
+  const fetchCatalogFirmware = async (release) => {
+    const response = await fetch(release.url, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(`Firmware archive returned HTTP ${response.status}.`);
+    }
+    return prepareFirmware(
+      new Uint8Array(await response.arrayBuffer()),
+      release.fileName,
+      release,
     );
   };
 
@@ -1111,13 +1222,7 @@ function App() {
       addLog(
         `Loading verified ${release.caseRecoveryEligible ? "Charging Case" : "Smart Glasses"} image ${release.version}.`,
       );
-      const response = await fetch(release.url, { cache: "no-store" });
-      if (!response.ok) throw new Error(`Firmware archive returned HTTP ${response.status}.`);
-      await acceptFirmware(
-        new Uint8Array(await response.arrayBuffer()),
-        release.fileName,
-        release,
-      );
+      acceptPreparedFirmware(await fetchCatalogFirmware(release));
       setSessionProgress(1, "Firmware validated");
     });
   };
@@ -1256,6 +1361,26 @@ function App() {
     });
   };
 
+  const recordInstalledProvenance = (audit, caseSerial) => {
+    setInstalledProvenance((current) => {
+      const next = mergeInstalledProvenance(current, audit);
+      const key = installedProvenanceStorageKey(
+        caseSerial ?? report?.console?.serialNumber,
+      );
+      if (key) {
+        try {
+          window.localStorage.setItem(key, JSON.stringify(next));
+        } catch {
+          addLog(
+            "Installed-firmware proof could not be saved; a later Update may require Restore first.",
+            "warn",
+          );
+        }
+      }
+      return next;
+    });
+  };
+
   const flashTempleFirmware = async () => {
     if (
       !firmware?.templeFlashEligible ||
@@ -1280,6 +1405,7 @@ function App() {
           },
         );
         setTempleFlashAudit(audit);
+        recordInstalledProvenance(audit);
         setTempleFlashText("");
         setTempleFlashSeated(false);
         setTempleFlashRisk(false);
@@ -1288,12 +1414,158 @@ function App() {
           "success",
         );
       } catch (caught) {
-        if (caught?.audit) setTempleFlashAudit(caught.audit);
+        if (caught?.audit) {
+          setTempleFlashAudit(caught.audit);
+          recordInstalledProvenance(caught.audit);
+        }
         throw caught;
       }
     }, {
       total: templeFlashRoute === "both" ? 14 : 9,
     });
+  };
+
+  const automaticApply = async () => {
+    const release = catalog.find((item) => item.id === selectedReleaseId);
+    if (!report) {
+      setError("Select and analyze the G2 Case before applying firmware.");
+      setAutomaticStatus("Waiting for a selected and analyzed Case.");
+      return;
+    }
+    if (!release) {
+      setError("Choose a firmware release before applying it.");
+      return;
+    }
+
+    setAutomaticStatus("Running automatic preflight…");
+    await run(
+      "automatic-apply",
+      async () => {
+        try {
+          const session = getSession();
+          setSessionProgress(0.03, "Refreshing Case and contact telemetry");
+          const fresh = await session.analyze();
+          setReport(fresh);
+          const freshTelemetry = fresh.console?.telemetry;
+          if (fresh.console?.caseVersion !== "1.2.57") {
+            throw new Error(
+              `Automatic Smart Glasses recovery requires Case 1.2.57; found ${fresh.console?.caseVersion ?? "unknown"}.`,
+            );
+          }
+          if (!freshTelemetry?.leftPresent || !freshTelemetry?.rightPresent) {
+            throw new Error(
+              "Automatic Apply stopped before writing: seat both temples in the Case, then refresh the connection.",
+            );
+          }
+
+          setSessionProgress(0.09, "Loading and validating selected firmware");
+          const targetFirmware = acceptPreparedFirmware(
+            await fetchCatalogFirmware(release),
+          );
+          let sourceFirmware = null;
+          let plan = null;
+
+          if (automaticInstallMode === "update") {
+            setSessionProgress(
+              0.13,
+              "Preparing the reviewed component-difference pair",
+            );
+            const counterpart = findStockCfwCounterpartRelease(
+              catalog,
+              targetFirmware,
+            );
+            if (counterpart) {
+              sourceFirmware = await fetchCatalogFirmware(counterpart);
+              plan = buildBundleDifferencePlan(
+                sourceFirmware,
+                targetFirmware,
+              );
+              setDifferenceSourceFirmware(sourceFirmware);
+              setDifferencePlan(plan);
+              setDifferenceState(plan.executable ? "ready" : "blocked");
+              setDifferenceError(
+                plan.executable
+                  ? ""
+                  : "The selected pair is not an executable component difference.",
+              );
+            }
+          }
+
+          const planInputs = {
+            installMode: automaticInstallMode,
+            targetFirmware,
+            installedProvenance,
+            differenceSourceFirmware: sourceFirmware,
+            differencePlan: plan,
+          };
+          const execution = await executeAutomaticApply({
+            session,
+            ...planInputs,
+            onPlan: (applyPlan) => {
+              addLog(
+                `Automatic ${automaticInstallMode} plan accepted · ${applyPlan.reason}`,
+                "success",
+              );
+              if (applyPlan.action === "verify-only") {
+                setSessionProgress(
+                  0.72,
+                  "Target already proven; resetting both temples",
+                );
+              } else {
+                setAutomaticStatus(
+                  `${automaticInstallMode === "update" ? "Updating" : "Restoring"} both temples automatically…`,
+                );
+              }
+            },
+          });
+
+          if (execution.action === "verify-only") {
+            const result = execution.result;
+            setRecheckReport(result);
+            setReport({
+              ...fresh,
+              console: {
+                ...fresh.console,
+                ...result,
+                telemetry: result.telemetry,
+              },
+            });
+            setSessionProgress(1, "Reset and bilateral liveness verified");
+            setAutomaticStatus(
+              "Already up to date · both temples reset and verified.",
+            );
+            return;
+          }
+
+          const audit = execution.audit;
+          setTempleFlashAudit(audit);
+          recordInstalledProvenance(
+            audit,
+            fresh.console?.serialNumber,
+          );
+          setAutomaticStatus(
+            `${automaticInstallMode === "update" ? "Update" : "Restore"} complete · both temples reset and verified.`,
+          );
+          addLog(
+            `Automatic ${automaticInstallMode} completed on right + left with FINISH, route restoration, final DEB0 reset, contacts, and application liveness verified.`,
+            "success",
+          );
+        } catch (caught) {
+          if (caught?.audit) {
+            setTempleFlashAudit(caught.audit);
+            recordInstalledProvenance(
+              caught.audit,
+              report?.console?.serialNumber,
+            );
+          }
+          setAutomaticStatus(
+            `Stopped safely · ${caught?.message || String(caught)}`,
+          );
+          throw caught;
+        }
+      },
+      { total: 16 },
+    );
   };
 
   const stageFirmware = async () => {
@@ -1381,7 +1653,7 @@ function App() {
     confirmBackup &&
     confirmText.trim().toUpperCase() === "ACTIVATE CASE BANK";
   const caseReleases = catalog.filter((item) => item.caseRecoveryEligible);
-  const latestCaseRelease = caseReleases[0];
+  const latestCaseRelease = findLatestOfficialStockRelease(caseReleases);
   const selectedRelease = catalog.find((item) => item.id === selectedReleaseId);
   const serialSupported = webSerialSupported();
   const deviceAnalytics = useMemo(
@@ -1408,9 +1680,13 @@ function App() {
   );
 
   return (
-    <div className="app-shell">
+    <div className={cx("app-shell", `is-${interfaceMode}`)}>
       <aside className="sidebar">
-        <a className="brand" href="#connect" aria-label="SybilSight G2 Recovery Console">
+        <a
+          className="brand"
+          href={interfaceMode === "easy" ? "#easy" : "#connect"}
+          aria-label="SybilSight G2 Recovery Console"
+        >
           <span className="brand-wordmark" aria-hidden="true">
             <strong>SYBIL</strong>
             <strong>SIGHT</strong>
@@ -1425,10 +1701,27 @@ function App() {
             and Smart Glasses.
           </p>
         </div>
-        <StepRail
-          complete={complete}
-          active={activeSection}
-        />
+        {interfaceMode === "advanced" ? (
+          <StepRail
+            complete={complete}
+            active={activeSection}
+          />
+        ) : (
+          <div className="easy-sidebar-guide" aria-label="Easy Mode workflow">
+            <div className={cx(report && "is-complete")}>
+              <span>01</span>
+              <strong>Select your Case</strong>
+            </div>
+            <div className={cx(selectedRelease && "is-complete")}>
+              <span>02</span>
+              <strong>Choose firmware</strong>
+            </div>
+            <div className={cx(templeFlashAudit?.outcome === "success" && "is-complete")}>
+              <span>03</span>
+              <strong>Apply automatically</strong>
+            </div>
+          </div>
+        )}
         <div className="sidebar-foot">
           <span className={cx("support-dot", serialSupported && "is-supported")} />
           <span>
@@ -1444,18 +1737,192 @@ function App() {
             <span>{report ? "Case analyzed" : "No Case connected"}</span>
             {operation ? <strong>{progress.detail}</strong> : null}
           </div>
-          <button className="console-trigger" onClick={() => setConsoleOpen(true)}>
-            <Icon name="terminal" />
-            Console Log
-            <span>{logs.length}</span>
-          </button>
+          <div className="topbar-actions">
+            <div className="interface-mode-switch" aria-label="Interface mode">
+              <button
+                type="button"
+                className={cx(interfaceMode === "easy" && "is-active")}
+                aria-pressed={interfaceMode === "easy"}
+                onClick={() => {
+                  setInterfaceMode("easy");
+                  window.history.replaceState(null, "", "#easy");
+                }}
+                disabled={Boolean(operation)}
+              >
+                Easy Mode
+              </button>
+              <button
+                type="button"
+                className={cx(interfaceMode === "advanced" && "is-active")}
+                aria-pressed={interfaceMode === "advanced"}
+                onClick={() => {
+                  setInterfaceMode("advanced");
+                  window.history.replaceState(null, "", `#${activeSection}`);
+                }}
+                disabled={Boolean(operation)}
+              >
+                Advanced Mode
+              </button>
+            </div>
+            <button className="console-trigger" onClick={() => setConsoleOpen(true)}>
+              <Icon name="terminal" />
+              Console Log
+              <span>{logs.length}</span>
+            </button>
+          </div>
         </header>
 
         <div className="pane-viewport">
           <OperationError error={error} onDismiss={() => setError("")} />
 
         <section
-          className={cx("hero pane", activeSection === "connect" && "is-active")}
+          className={cx("easy-mode-pane pane", interfaceMode === "easy" && "is-active")}
+          id="easy"
+          data-pane="easy"
+        >
+          <div className="easy-mode-heading">
+            <div>
+              <div className="eyebrow">Easy Mode · Automatic bilateral recovery</div>
+              <h2>Choose it. Apply it. We handle the rest.</h2>
+              <p>
+                The WebFlasher validates the Case and image, handles both temples
+                right then left, verifies every transfer, restores the Case route,
+                and finishes with the required bilateral reset and liveness check.
+              </p>
+            </div>
+            <StatusPill tone={report ? "success" : "quiet"}>
+              {report ? `Case ${report.console?.caseVersion} ready` : "Case required"}
+            </StatusPill>
+          </div>
+
+          <div className="easy-mode-grid">
+            <article className="easy-action-card">
+              <div className="easy-step-heading">
+                <span>01</span>
+                <div>
+                  <strong>Select your G2 Case</strong>
+                  <small>USB Serial stays local to this browser.</small>
+                </div>
+              </div>
+              <Button
+                onClick={connectAndAnalyze}
+                busy={operation === "analyze"}
+                disabled={!serialSupported || Boolean(operation)}
+              >
+                <Icon name="usb" />
+                {report ? "Choose another Case" : "Select Case"}
+              </Button>
+              <div className={cx("easy-case-result", report && "is-ready")}>
+                <span>{report ? report.console?.serialNumber : "No Case selected"}</span>
+                <strong>
+                  {report
+                    ? `${telemetry?.leftPresent ? "L ready" : "L absent"} · ${telemetry?.rightPresent ? "R ready" : "R absent"}`
+                    : "Both temples must be seated"}
+                </strong>
+              </div>
+            </article>
+
+            <article className="easy-action-card easy-firmware-card">
+              <div className="easy-step-heading">
+                <span>02</span>
+                <div>
+                  <strong>Choose firmware</strong>
+                  <small>Every library image is size- and SHA-256-pinned.</small>
+                </div>
+              </div>
+              <label className="select-label" htmlFor="easy-firmware-version">
+                Firmware to install
+              </label>
+              <select
+                id="easy-firmware-version"
+                value={selectedReleaseId}
+                onChange={(event) => setSelectedReleaseId(event.target.value)}
+                disabled={catalogState !== "ready" || Boolean(operation)}
+              >
+                {catalog.map((release) => (
+                  <option value={release.id} key={release.id}>
+                    {release.channel === "custom"
+                      ? `CFW · G2 ${release.baseVersion}`
+                      : `Stock · G2 ${release.version}`}
+                  </option>
+                ))}
+              </select>
+              {selectedRelease ? (
+                <div className="easy-release-summary">
+                  <strong>
+                    {selectedRelease.channel === "custom"
+                      ? "Reviewed SybilSight CFW"
+                      : "Official Stock firmware"}
+                  </strong>
+                  <span>{formatBytes(selectedRelease.size)}</span>
+                  <code>{selectedRelease.sha256.slice(0, 16)}…</code>
+                </div>
+              ) : null}
+              <InstallModeSelector
+                idPrefix="easy"
+                value={automaticInstallMode}
+                onChange={setAutomaticInstallMode}
+                disabled={Boolean(operation)}
+              />
+            </article>
+
+            <article className="easy-action-card easy-apply-card">
+              <div className="easy-step-heading">
+                <span>03</span>
+                <div>
+                  <strong>Apply automatically</strong>
+                  <small>No confirmation phrases or mid-process prompts.</small>
+                </div>
+              </div>
+              <div className="automatic-task-list">
+                <span><Icon name="check" /> Fresh Case + contact preflight</span>
+                <span><Icon name="check" /> Hash and component validation</span>
+                <span><Icon name="check" /> Right, then left, with bounded recovery</span>
+                <span><Icon name="check" /> Final DEB0 reset + liveness proof</span>
+              </div>
+              <Button
+                className="automatic-apply-button"
+                onClick={automaticApply}
+                busy={operation === "automatic-apply"}
+                disabled={
+                  !report ||
+                  !selectedRelease ||
+                  !telemetry?.leftPresent ||
+                  !telemetry?.rightPresent ||
+                  Boolean(operation)
+                }
+              >
+                Apply {automaticInstallMode === "update" ? "Update" : "Restore"}
+              </Button>
+              <div className="automatic-status" role="status">
+                <span
+                  className={cx(
+                    "tiny-dot",
+                    templeFlashAudit?.outcome === "success"
+                      ? "tiny-dot-success"
+                      : "",
+                  )}
+                />
+                <span>{automaticStatus}</span>
+              </div>
+              {automaticInstallMode === "update" ? (
+                <small className="automatic-boundary">
+                  Update never guesses Stock vs CFW. It proceeds only when saved,
+                  successful audits prove the exact source on both temples; otherwise
+                  it stops before writing and asks you to use Restore.
+                </small>
+              ) : null}
+            </article>
+          </div>
+        </section>
+
+        <section
+          className={cx(
+            "hero pane",
+            interfaceMode === "advanced" &&
+              activeSection === "connect" &&
+              "is-active",
+          )}
           id="connect"
           data-pane="connect"
         >
@@ -1521,7 +1988,12 @@ function App() {
         </section>
 
         <section
-          className={cx("content-section pane", activeSection === "analyze" && "is-active")}
+          className={cx(
+            "content-section pane",
+            interfaceMode === "advanced" &&
+              activeSection === "analyze" &&
+              "is-active",
+          )}
           id="analyze"
           data-pane="analyze"
         >
@@ -1792,7 +2264,12 @@ function App() {
         </section>
 
         <section
-          className={cx("content-section pane", activeSection === "backup" && "is-active")}
+          className={cx(
+            "content-section pane",
+            interfaceMode === "advanced" &&
+              activeSection === "backup" &&
+              "is-active",
+          )}
           id="backup"
           data-pane="backup"
         >
@@ -1861,7 +2338,12 @@ function App() {
         </section>
 
         <section
-          className={cx("content-section pane", activeSection === "firmware" && "is-active")}
+          className={cx(
+            "content-section pane",
+            interfaceMode === "advanced" &&
+              activeSection === "firmware" &&
+              "is-active",
+          )}
           id="firmware"
           data-pane="firmware"
         >
@@ -1916,7 +2398,7 @@ function App() {
                     {!selectedRelease.caseRecoveryEligible
                       ? "Smart Glasses CFW · pinned temple target"
                       : selectedRelease === latestCaseRelease
-                        ? "Latest Case image"
+                        ? "Latest official Stock · default Easy Mode target"
                         : "Earlier Case image"}
                   </span>
                   <span>{formatBytes(selectedRelease.size)}</span>
@@ -1931,6 +2413,35 @@ function App() {
                   ) : null}
                 </div>
               ) : null}
+              <div className="advanced-automatic-apply">
+                <InstallModeSelector
+                  idPrefix="advanced"
+                  value={automaticInstallMode}
+                  onChange={setAutomaticInstallMode}
+                  disabled={Boolean(operation)}
+                />
+                <Button
+                  onClick={automaticApply}
+                  busy={operation === "automatic-apply"}
+                  disabled={
+                    !report ||
+                    !selectedRelease ||
+                    !telemetry?.leftPresent ||
+                    !telemetry?.rightPresent ||
+                    Boolean(operation)
+                  }
+                >
+                  Apply {automaticInstallMode === "update" ? "Update" : "Restore"} automatically
+                </Button>
+                <small>
+                  Applies to both temples, right then left, and always ends with
+                  route cleanup, a bilateral DEB0 reset, contact checks, and
+                  application-liveness verification.
+                </small>
+                <div className="automatic-status" role="status">
+                  {automaticStatus}
+                </div>
+              </div>
               <div className="or-divider"><span>or</span></div>
               <label className="upload-zone">
                 <input
@@ -2061,7 +2572,12 @@ function App() {
         </section>
 
         <section
-          className={cx("content-section recovery-section pane", activeSection === "recover" && "is-active")}
+          className={cx(
+            "content-section recovery-section pane",
+            interfaceMode === "advanced" &&
+              activeSection === "recover" &&
+              "is-active",
+          )}
           id="recover"
           data-pane="recover"
         >
@@ -2398,11 +2914,18 @@ function App() {
                   <strong>{POGO_TRANSFER_RESEARCH.directTempleHost.component}</strong>
                 </div>
                 <div>
-                  <span>VERIFIED PER ROUTE</span>
+                  <span>SELECTED PINNED MAIN</span>
                   <strong>
-                    {POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulTransfers.right.payloadBytes.toLocaleString()}
+                    {(firmware?.templeFlashTarget?.mainBytes ??
+                      POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulTransfers.right
+                        .payloadBytes
+                    ).toLocaleString()}
                     {" B · "}
-                    {POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulTransfers.right.recordsSent.toLocaleString()}
+                    {Math.ceil(
+                      (firmware?.templeFlashTarget?.mainBytes ??
+                        POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulTransfers.right
+                          .payloadBytes) / 1000,
+                    ).toLocaleString()}
                     {" records"}
                   </strong>
                 </div>

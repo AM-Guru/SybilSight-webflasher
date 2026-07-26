@@ -313,7 +313,7 @@ test("marks the Apollo bootloader as omitted from pogo OTA", () => {
 test("records successful case-pogo transfers and enables only the guarded browser writer", () => {
   assert.equal(POGO_TRANSFER_RESEARCH.directTempleHost.offlineTestsPassed, 8);
   assert.equal(POGO_TRANSFER_RESEARCH.directTempleHost.dataRetryReasons.length, 1);
-  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 28);
+  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 33);
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.status,
     "mixed-right-cfw-left-official-stock",
@@ -440,13 +440,13 @@ test("records successful case-pogo transfers and enables only the guarded browse
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.hardwareAttemptsWithCurrentSource,
-    8,
+    13,
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulHardwareAttemptsWithCurrentSource,
     2,
   );
-  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 28);
+  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 33);
   assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.completeWiredTransfers, 5);
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.browserDifferenceCfwTest.right
@@ -462,6 +462,41 @@ test("records successful case-pogo transfers and enables only the guarded browse
     POGO_TRANSFER_RESEARCH.caseUsbBridge.browserDifferenceCfwTest.left
       .finishAckReceived,
     false,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.browserDifferenceCfwTest
+      .repeatLeftSetupGuard.routePhaseSetupAttempts,
+    4,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.browserDifferenceCfwTest
+      .repeatLeftSetupGuard.otaMutationAttempted,
+    false,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.browserDifferenceCfwTest
+      .repeatLeftSetupGuard.finalStandaloneReset.bothApplicationsVerified,
+    true,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.browserDifferenceCfwTest
+      .defaultBilateralStockTest.right.acceptedBytes,
+    338000,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.browserDifferenceCfwTest
+      .defaultBilateralStockTest.right.finishAckReceived,
+    false,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.browserDifferenceCfwTest
+      .defaultBilateralStockTest.left.transferAttempted,
+    false,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.browserDifferenceCfwTest
+      .defaultBilateralStockTest.finalReset.bothApplicationsVerified,
+    true,
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.postRestoreReset.command,

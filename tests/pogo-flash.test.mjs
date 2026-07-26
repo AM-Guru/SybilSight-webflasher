@@ -354,6 +354,34 @@ test("classifies zero-byte no-frame START as the BLE fallback boundary", () => {
   );
 });
 
+test("classifies a bounded non-idle YHM setup as a zero-byte stop", () => {
+  const recovery = classifyPogoFlashRecoveryBoundary(
+    new Error(
+      "The Case bridge stopped during setup: YHM baseline is not an allowlisted seated-idle state.",
+    ),
+    null,
+    "setup",
+  );
+  assert.equal(
+    recovery.classification,
+    "yhm_setup_non_idle_zero_byte_boundary",
+  );
+  assert.equal(recovery.firmwareBytesAccepted, 0);
+  assert.equal(recovery.otaMutationAttempted, false);
+  assert.equal(recovery.wiredRetryPolicy, "stop_after_bounded_setup_attempts");
+  assert.match(recovery.recoveryRecommendation, /standalone bilateral DEB0/);
+  assert.equal(
+    classifyPogoFlashRecoveryBoundary(
+      new Error(
+        "The Case bridge stopped during setup: YHM baseline is not an allowlisted seated-idle state.",
+      ),
+      null,
+      "PREFLIGHT",
+    ),
+    null,
+  );
+});
+
 test("rehashes the main payload at the final reviewed-CFW trust gate", async () => {
   const payload = new Uint8Array(REVIEWED_CFW_MAIN_BYTES);
   const candidate = {

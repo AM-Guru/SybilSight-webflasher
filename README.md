@@ -60,6 +60,15 @@ Production deployment:
   five byte-identical components, and transfers the one changed Apollo-main
   component with the same complete CRC/finish/reset verification as a normal
   reinstall.
+- Opens in **Easy Mode** at the site root: select the Case, choose Stock or
+  CFW, leave the default **Update** mode selected (or choose **Restore**), and
+  click **Apply**. One shared automation pipeline performs the fresh
+  preflight, catalog/image validation, bilateral right-then-left operation,
+  bounded cleanup/recovery, final `DEB0` reset, contact checks, and
+  checksum-valid liveness verification without mid-process prompts.
+- Keeps the existing multi-pane console as **Advanced Mode**, including all
+  manual analysis/recovery controls, and adds the same Update/Restore selector
+  and automatic **Apply** action beneath its firmware menu.
 - Presents both recovery targets under Recover: three-step inactive-bank
   staging/activation for the charging case and a separately gated left,
   right, or both-temple reinstall for responsive Smart Glasses.
@@ -101,7 +110,8 @@ The case write and bank-activation path is research-derived and experimental.
 It has not been physically validated by this repository on sacrificial
 hardware. Read the safety section before using any write operation.
 
-“Flash differences” does not mean sparse arbitrary-address programming. The G2
+“Update” / “Flash differences” does not mean sparse arbitrary-address
+programming. The G2
 OTA receiver has no block index, destination offset, or installed-MRAM readback:
 it accepts one contiguous component stream and validates the complete
 component CRC at finish. Skipping changed ranges within
@@ -345,6 +355,36 @@ firmware. The final standalone `DEB0` reset reported both contacts and
 checksum-valid application replies. The tested device therefore ended with
 hash-proven reviewed CFW on the right and its previously proven official Stock
 installation on the left.
+
+A 2026-07-26 repeat selected only the still-Stock left route. Case 1.2.57,
+left-route presence, the pinned CFW hashes, and the five-skipped/one-changed
+difference plan all passed. The volatile writer then exhausted four bounded
+setup attempts because every YHM baseline was outside the reviewed
+mutation-compatible seated-idle allowlist. The stop occurred before START:
+zero firmware bytes were accepted and no OTA mutation began. The retained
+result did not prove a complete route restoration, so the browser correctly
+withheld automatic continuation and did not loop another flash. Case 1.2.57
+returned, and the standalone `DEB0` reset/recheck subsequently confirmed both
+contacts and checksum-valid application liveness.
+
+This result does not justify widening the YHM allowlist. `GLS_L=1` proves
+presence, not a safe router phase. Audits now retain the bounded setup-attempt
+count, `otaMutationAttempted=false`, zero accepted firmware bytes, and a
+specific `yhm_setup_non_idle_zero_byte_boundary` recommendation. After this
+signature, keep the current Stock/CFW provenance, stop wired setup retries,
+and make the standalone bilateral reset/recheck the final hardware mutation.
+
+A later default-behavior test selected the newest official Stock bundle,
+**Both temples**, and **Complete pinned Apollo main** without changing any
+recovery selector. The right route accepted records 1–338, explicitly rejected
+record 339, then returned no complete response to the one permitted exact retry
+after 6.5 seconds. The host stopped without FINISH and did not begin the left
+route. Case/YHM cleanup was verified, so the automatic final `DEB0` ran and
+checksum-valid liveness passed on both sides. The result is not a Stock
+installation proof: the right image provenance is failed/uncertain, while the
+unattempted left retains its previously verified official Stock provenance.
+The recovery proof card now displays the selected target's own byte and record
+count rather than the historical reviewed-CFW count.
 
 Local Vite development now proxies versioned, immutable
 `/firmware-updates/source-files/2…` artifacts to the production WebFlasher
@@ -756,7 +796,42 @@ the tool reports a non-idle YHM baseline, let stock charging activity settle
 and retry. This control cannot emit arbitrary bytes or install official or CFW
 firmware.
 
+### Easy Mode and automatic Apply
+
+The bare application URL opens in **Easy Mode**. **Advanced Mode** preserves
+the original Connect, Analyze, Preserve, Choose image, and Recovery Console
+panes. Both interfaces call the same automatic Apply implementation.
+
+1. Click **Select Case** and choose the G2 Case USB Serial device.
+2. Choose official Stock or reviewed CFW.
+3. Leave **Update** selected, or choose **Restore**.
+4. Click **Apply** and keep the Case, glasses, and cable still.
+
+Restore revalidates the selected bundle and rewrites the complete pinned
+Apollo main on the right and then the left. Update compares the exact reviewed
+Stock/CFW pair, omits every byte-identical component, and transfers the one
+changed, complete CRC-gated Apollo main. The receiver has no safe sparse-write
+offset, so Update cannot transmit arbitrary changed byte ranges inside that
+component.
+
+Stock and CFW both report version 2.2.6.10, and installed Apollo MRAM readback
+is unavailable. Automatic Update therefore proceeds only when successful
+saved recovery audits for this Case prove the exact source image on **both**
+temples. If both already prove the selected target, Apply performs only the
+required bilateral reset and liveness verification. Unknown, mixed, or failed
+provenance stops before any firmware write and directs the user to Restore;
+Update never silently becomes a full rewrite. A successful Restore or Update
+saves fresh per-route proof locally, keyed by Case serial, for later
+fail-closed updates.
+
 ### Restore a pinned main image on running temples
+
+The default firmware selection is the numerically latest official Stock
+release, independent of catalog order. Automatic Apply defaults to **Update**
+and always targets **Both temples**, right then left. The Advanced Mode manual
+recovery console retains its explicit **Both temples** and **Complete pinned
+Apollo main** defaults; CFW, single-route, and manual difference operations
+remain explicit choices.
 
 1. Analyze case firmware 1.2.57 with the glasses seated and both desired
    routes reported present.
