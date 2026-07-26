@@ -41,6 +41,7 @@ import {
   canRestartFailedTempleComponent,
   canRunFinalResetAfterFailure,
   isExplicitTempleDataRejection,
+  isPogoRoutePhaseMismatch,
   isG2CaseSerialPort,
   isWebSerialRomPacketBoundary,
   readRomBlockWithBoundaryRecovery,
@@ -217,6 +218,33 @@ test("retries only a fail-closed read-only YHM idle-phase mismatch", async () =>
   assert.equal(attempts, 3);
   assert.deepEqual(waits, [500, 1000]);
   assert.equal(logs.length, 2);
+});
+
+test("classifies only the exact writer route-phase setup stop for a Case settle retry", () => {
+  assert.equal(
+    isPogoRoutePhaseMismatch(
+      new PogoFlashSafetyError(
+        "The Case bridge stopped during setup: YHM baseline is not an allowlisted seated-idle state.",
+      ),
+    ),
+    true,
+  );
+  assert.equal(
+    isPogoRoutePhaseMismatch(
+      new PogoFlashSafetyError(
+        "The Case bridge stopped during setup: selected route failed.",
+      ),
+    ),
+    false,
+  );
+  assert.equal(
+    isPogoRoutePhaseMismatch(
+      new Error(
+        "The Case bridge stopped during setup: YHM baseline is not an allowlisted seated-idle state.",
+      ),
+    ),
+    false,
+  );
 });
 
 test("classifies only an explicit temple DATA rejection for exact replay", () => {

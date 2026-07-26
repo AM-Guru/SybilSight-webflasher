@@ -94,6 +94,15 @@ export function isExplicitTempleDataRejection(error) {
   return error instanceof TempleRejectedError;
 }
 
+export function isPogoRoutePhaseMismatch(error) {
+  return Boolean(
+    error instanceof PogoFlashSafetyError &&
+      error.message.includes(
+        "YHM baseline is not an allowlisted seated-idle state",
+      ),
+  );
+}
+
 export function templeDataSettleMilliseconds(acceptedBytes, totalBytes) {
   if (
     !Number.isInteger(acceptedBytes) ||
@@ -729,18 +738,18 @@ class CasePogoFlashTransport {
         await this.openOnce();
         return;
       } catch (error) {
-        const routePhaseMismatch =
-          error instanceof PogoFlashSafetyError &&
-          error.message.includes(
-            "YHM baseline is not an allowlisted seated-idle state",
-          );
+        const routePhaseMismatch = isPogoRoutePhaseMismatch(error);
         if (!routePhaseMismatch || attempt === 4) throw error;
         this.session.log(
-          `${this.route}: Case idle phase does not match the selected mutation route; retrying before any temple transmission.`,
+          `${this.route}: Case idle phase does not match the selected mutation route; returning fully to Case 1.2.57 before retrying the same route with zero temple transmissions.`,
           "warn",
         );
         this.active = false;
         this.bridgeLaunched = false;
+        await this.session.restoreNormal({
+          requireVersion: true,
+          expectedVersion: REVIEWED_CASE_VERSION,
+        });
         await delay(500 * attempt);
       }
     }

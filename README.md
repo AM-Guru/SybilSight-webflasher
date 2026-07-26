@@ -853,6 +853,15 @@ the reviewed pair still stops before writing. A successful Restore or Update
 saves fresh per-route proof locally, keyed by Case serial, for later
 fail-closed updates.
 
+The first hosted retest also exposed a pre-write phase-oscillation edge case.
+A status-3 bridge setup reset can leave the Case charging task in the opposite
+seated-idle phase. Changing the requested route after the following full Case
+return chases that phase back and forth. The writer now keeps the requested
+route fixed, waits for a verified Case 1.2.57 application return between
+bounded setup retries, and only then samples the YHM baseline again. This
+preserves the zero-temple-transmission boundary and lets the Case charging task
+settle before any START.
+
 ### Restore a pinned main image on running temples
 
 The default firmware selection is the numerically latest official Stock
