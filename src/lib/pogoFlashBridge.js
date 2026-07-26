@@ -6,9 +6,9 @@ export { TEMPLE_FLASH_TARGETS, findTempleFlashTarget } from "./templeFlashTarget
 export const POGO_FLASH_BRIDGE_ADDRESS = 0x20010000;
 export const POGO_FLASH_BRIDGE_BYTES = 2920;
 export const POGO_FLASH_BRIDGE_SHA256 =
-  "9ab41ffe1b906869b264c9ba3aa739f3bda0ee8bf0051cf67679c204dd86ac2c";
+  "dcf27971baa964902724fc9aa2f9d0369be6874a5a84231791622bb40bf486a6";
 export const POGO_FLASH_BRIDGE_BANNER = new TextEncoder().encode(
-  "G2_POGO_FLASH_BRIDGE_V4\n",
+  "G2_POGO_FLASH_BRIDGE_V6\n",
 );
 export const POGO_FLASH_RESULT_ADDRESS = 0x20011a00;
 export const POGO_FLASH_RESULT_LENGTH = 128;
@@ -35,7 +35,7 @@ export const POGO_FLASH_STATUS = Object.freeze({
   16: "host request timeout",
 });
 
-const POGO_FLASH_BRIDGE_BASE64 = "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";
+const POGO_FLASH_BRIDGE_BASE64 = "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";
 
 function asBytes(input) {
   return input instanceof Uint8Array ? input : new Uint8Array(input);
@@ -97,6 +97,14 @@ export const YHM_SETUP_NON_IDLE_RECOVERY = Object.freeze({
   recoveryRecommendation:
     "Do not bypass the YHM allowlist or loop more wired setup attempts. Return the Case to firmware 1.2.57, issue the standalone bilateral DEB0 reset/recheck, and retain the existing Stock/CFW provenance because no OTA mutation began.",
 });
+
+const POGO_FLASH_ALLOWED_BASELINES = Object.freeze([
+  "811104afaf038d2022ff",
+  "810004aeae03812022ff",
+  "811104afaf03812022ff",
+  "810104afae03812022ff",
+  "811004aeaf03812022ff",
+]);
 
 export function classifyPogoFlashRecoveryBoundary(
   error,
@@ -292,11 +300,19 @@ export function parsePogoFlashReady(response, setup) {
 }
 
 export function makePogoFlashTransactionHeader(sequence, payloadLength) {
+  return makePogoFlashHostHeader("G2TX", sequence, payloadLength);
+}
+
+export function makePogoFlashHostStressHeader(sequence, payloadLength) {
+  return makePogoFlashHostHeader("G2TS", sequence, payloadLength);
+}
+
+function makePogoFlashHostHeader(magic, sequence, payloadLength) {
   if (!Number.isInteger(payloadLength) || payloadLength < 0 || payloadLength > 1009) {
     throw new PogoFlashSafetyError("The bridge transaction length is outside 0–1,009.");
   }
   const header = new Uint8Array(10);
-  header.set(new TextEncoder().encode("G2TX"));
+  header.set(new TextEncoder().encode(magic));
   header.set([1, sequence, payloadLength & 0xff, payloadLength >>> 8, 0], 4);
   header[9] = sum8(header.subarray(0, 9));
   return header;
@@ -328,29 +344,21 @@ export function parsePogoFlashResponse(header, tail, expectedSequence) {
   };
 }
 
-export function parsePogoFlashRetainedResult(
-  result,
-  proof,
-  route,
-  finalSequence,
-  { expectedAcceptedSize = null, expectedOtaSequence = null } = {},
-) {
+export function decodePogoFlashRetainedResult(result) {
   const bytes = asBytes(result);
-  const proofBytes = asBytes(proof);
   if (bytes.length !== POGO_FLASH_RESULT_LENGTH) {
     throw new PogoFlashSafetyError("The retained flash result length is invalid.");
-  }
-  if (!equalBytes(proofBytes, POGO_FLASH_PROOF)) {
-    throw new PogoFlashSafetyError("The volatile flash bridge proof is invalid.");
   }
   const words = Array.from(
     { length: POGO_FLASH_RESULT_LENGTH / 4 },
     (_, index) => readU32LE(bytes, index * 4),
   );
-  const report = {
+  return {
     magic: words[0],
     progress: words[1],
+    routeValue: words[2],
     route: words[2] === 0 ? "left" : "right",
+    sequenceValue: words[3],
     sequence: words[3] & 0xff,
     status: words[4],
     baselineMask: words[5],
@@ -376,12 +384,76 @@ export function parsePogoFlashRetainedResult(
     hostStage: words[30],
     hostChunkOffset: words[31],
   };
+}
+
+export function verifyPogoFlashOppositePhaseStop(result, proof, attemptedRoute) {
+  const proofBytes = asBytes(proof);
+  if (
+    !["left", "right"].includes(attemptedRoute) ||
+    !equalBytes(proofBytes, POGO_FLASH_PROOF)
+  ) {
+    return null;
+  }
+  let report;
+  try {
+    report = decodePogoFlashRetainedResult(result);
+  } catch {
+    return null;
+  }
+  const baselineHex = [...report.baseline]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+  const zeroBytes = (bytes) => bytes.every((value) => value === 0);
+  const phaseCompatibleRoute = report.baseline[1] & 1 ? "right" : "left";
   if (
     report.magic !== 0x57463247 ||
     report.progress !== 3 ||
-    words[2] !== (route === "left" ? 0 : 1) ||
+    report.routeValue !== (attemptedRoute === "left" ? 0 : 1) ||
+    report.sequenceValue !== 0x42 ||
+    report.status !== 3 ||
+    report.baselineMask !== 0x3ff ||
+    report.selectedMask !== 0 ||
+    report.restoredMask !== 0 ||
+    report.writeMask !== 0 ||
+    report.otaState !== 0 ||
+    report.expectedSequence !== 0 ||
+    report.declaredSize !== 0 ||
+    report.acceptedSize !== 0 ||
+    report.templeTxCount !== 0 ||
+    report.templeRxCount !== 0 ||
+    report.templeUartErrors !== 0 ||
+    !POGO_FLASH_ALLOWED_BASELINES.includes(baselineHex) ||
+    !zeroBytes(report.selected) ||
+    !zeroBytes(report.restored) ||
+    phaseCompatibleRoute === attemptedRoute
+  ) {
+    return null;
+  }
+  return {
+    ...report,
+    phaseCompatibleRoute,
+    noMutationPhaseStopVerified: true,
+  };
+}
+
+export function parsePogoFlashRetainedResult(
+  result,
+  proof,
+  route,
+  finalSequence,
+  { expectedAcceptedSize = null, expectedOtaSequence = null } = {},
+) {
+  const proofBytes = asBytes(proof);
+  if (!equalBytes(proofBytes, POGO_FLASH_PROOF)) {
+    throw new PogoFlashSafetyError("The volatile flash bridge proof is invalid.");
+  }
+  const report = decodePogoFlashRetainedResult(result);
+  if (
+    report.magic !== 0x57463247 ||
+    report.progress !== 3 ||
+    report.routeValue !== (route === "left" ? 0 : 1) ||
     report.route !== route ||
-    words[3] !== finalSequence ||
+    report.sequenceValue !== finalSequence ||
     report.sequence !== finalSequence ||
     report.status !== 0 ||
     report.baselineMask !== 0x3ff ||

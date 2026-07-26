@@ -213,7 +213,9 @@ stock case firmware 1.2.57 resumed normally. A non-idle charging-route image
 was also physically observed to fail closed before transmission.
 
 The webflasher keeps this fixed read bridge for diagnostics and separately
-embeds the exact reviewed 2,920-byte V4 write bridge. Neither path is an
+embeds the exact reviewed 2,920-byte V6 write bridge
+(`dcf27971baa964902724fc9aa2f9d0369be6874a5a84231791622bb40bf486a6`).
+Neither path is an
 arbitrary USB-to-pogo sender. The writer's SRAM code permits only the version
 query and Apollo-main `0x52...0x55` state machine, while the browser
 independently permits only the pinned Stock 2.2.6.10 and reviewed CFW bundles
@@ -221,23 +223,23 @@ and their exact main payloads.
 
 The shared fail-closed host validates the complete bundle, permits only the
 Apollo main component, never blindly replays `0x52` start or `0x53` header,
-and never replays `0x54` DATA after a missing or malformed reply. A 2026-07-25 Chromium run
-received status `1` at CFW record 109 after 108 accepted records; five former
-same-record retries at 250–1,250 ms then received no frame. A subsequent
-official-Stock run received an explicit status `1` with the retained
-`expected_sequence` and `accepted_size` unchanged and zero UART errors. That
-is the only response which proves the record was not accepted, so the host
-permits exactly one retry of the identical CRC-protected record after a
-6.5-second deferred-storage settle. Missing, malformed, or timed-out replies
-remain uncertain and stop immediately. Together with the upstream
-`g2flash.py` observation that this grammar carries no destination block index,
-this keeps DATA replay fail-closed. The host also requires one fresh
+and never replays `0x54` DATA after any failure. Hardware returned explicit,
+unadvanced DATA rejections at records 349, 753, 874, and 1,663; same-record
+retries after 15, 30, and 60 seconds all produced no complete frame. The Case
+path now ends that component attempt, proves Case/YHM cleanup, issues the
+bilateral reset, verifies both contacts and applications, and begins a fresh
+component from START. It permits three total component attempts. Missing,
+malformed, or timed-out replies are also never replayed. Together with the
+upstream `g2flash.py` observation that this grammar carries no destination
+block index, this keeps DATA recovery fail-closed. The host also requires one fresh
 checksum-valid read-only version reply immediately before the first OTA
-command, waits 250 ms before the non-idempotent start and at each 6-KiB
-handoff, and requires both the checksum-valid zero-status `0x55` reply and
-postflight liveness. A terminal failure preserves a failed/uncertain audit,
-restores Case/YHM state, performs the final bilateral reset when cleanup is
-proven, and requires a fresh full-component session.
+command, waits 1 second at each 6-KiB handoff, increases that to 2 seconds
+after 75%, and doubles both values for a restarted component. The final DATA
+record gets a 15-second settle, or 30 seconds on a restarted component, with
+host-only keepalives. Success requires both the checksum-valid zero-status
+`0x55` reply and postflight liveness. A terminal failure preserves a
+failed/uncertain audit, restores Case/YHM state, and performs the final
+bilateral reset when cleanup is proven.
 
 The first 100-query gate was retired after a fresh hardware comparison showed
 the live left route fail at query 52 and the already verified-stock right
@@ -445,15 +447,32 @@ The final `DEB0` reset was confirmed after all attempts; fresh Chromium probes
 then returned the same checksum-valid 2.2.6.10/hardware-5 frame from both
 temples.
 
+V6 extends the bounded START/HEADER/DATA/FINISH receive loop to
+`0x04000000`, retains the 2,920-byte SRAM layout, and supports exact
+bidirectional phase adaptation between the five allowlisted seated-idle YHM
+baselines. An integrated Chromium Easy Mode run completed the official Stock
+main on both temples. The right accepted all 3,524 records on its first V6
+attempt. The left explicitly rejected its first attempt, so the host performed
+verified cleanup, bilateral reset and liveness, then restarted the whole left
+component with doubled pacing; all 3,524 records, FINISH, postflight, YHM
+restoration, and Case 1.2.57 return passed. The final `DEB0`, both contacts,
+and both checksum-valid 2.2.6.10/hardware-5 replies passed. A following
+default Easy Mode Stock Update transmitted zero firmware bytes because the
+saved bilateral audit already proved the selected target; its reset/liveness
+verification also passed.
+
 For offline analysis, selected `EVENOTA` bundles show the exact number of
 1,000-byte `0x54` records and final sequence value for each component. The
 recovered writer grammar uses an exact 128-byte component header for `0x53`,
 CRC-16/CCITT-FALSE over each `0x54` data payload, a modulo-256 sequence, and
-6,000-byte deferred batches. The expected sequence starts at zero. Only an
-explicit rejection proves that the current sequence did not advance; the host
-permits one delayed retry in that case. Missing or malformed replies remain
-ambiguous and abort without replay. Start and header are not treated as
-replay-safe. Offline calculation never contacts a temple. During a real
+6,000-byte deferred batches. The expected sequence starts at zero. An explicit
+rejection proves that the current sequence did not advance, but Case-path
+hardware showed that the receiver does not recover reliably from an
+in-session retry. The current host therefore replays no DATA record: after
+exact cleanup and reset/liveness proof, it restarts the complete component
+from START. Missing or malformed replies remain ambiguous and also abort the
+component without replay. Start and header are not treated as replay-safe.
+Offline calculation never contacts a temple. During a real
 transfer, each acknowledgement is
 parser acceptance rather than independent proof of a durable write. The final
 acknowledgement, post-reset version, route restore, retained-proof cleanup, and
@@ -615,19 +634,20 @@ that failed closed before FINISH; retain the audit for every browser write.
 ### 4. Guarded running-temple CFW writer
 
 For the exact reviewed CFW or official recovery package, the webflasher loads
-the separately pinned 2,920-byte V4 bridge at `0x20010000`. It first requires
+the separately pinned 2,920-byte V6 bridge at `0x20010000`. It first requires
 case firmware 1.2.57,
 fresh seated-route telemetry, the complete CFW bundle SHA-256, the Apollo-main
 payload SHA-256, hardware revision 5, and explicit user confirmations.
 
-The host uses 32-byte stop-and-wait USB chunks, never retries start or header,
-retries an identical CRC-protected DATA record only once, after a 6.5-second
-settle and only when an explicit rejection proves the sequence did not
-advance. Missing or malformed replies abort without replay. The host also
-settles for 250 ms at every 6-KiB parser handoff. V4
-rejects a mutating setup before temple transmission when the Case idle-route
-phase does not match the selected side; only that pre-transmission setup may
-be retried with a fresh volatile bridge. Success additionally
+The host uses 32-byte stop-and-wait USB chunks and replays no START, HEADER,
+DATA, or FINISH transaction. An explicit DATA rejection or ambiguous reply
+ends that component attempt. After exact cleanup, bilateral reset, contact and
+liveness proof, Easy Mode may begin a fresh full component, with three total
+attempts and doubled pacing on restarts. V6 rejects a mutating setup before
+temple transmission when the Case idle-route phase does not match the selected
+side. A bilateral run may reorder left/right in either direction only from an
+exact allowlisted zero-write opposite-phase proof, capped at four adaptations.
+Success additionally
 requires the exact `0x55` acknowledgement and a checksum-valid postflight
 version. It then exits the bridge, binds the retained proof to the route and
 final host sequence, verifies all ten YHM registers were restored
@@ -808,7 +828,9 @@ panes. Both interfaces call the same automatic Apply implementation.
 4. Click **Apply** and keep the Case, glasses, and cable still.
 
 Restore revalidates the selected bundle and rewrites the complete pinned
-Apollo main on the right and then the left. Update compares the exact reviewed
+Apollo main on both temples. It starts right then left, but may reverse that
+order only when the retained zero-write setup proof identifies the opposite
+allowlisted Case phase. Update compares the exact reviewed
 Stock/CFW pair, omits every byte-identical component, and transfers the one
 changed, complete CRC-gated Apollo main. The receiver has no safe sparse-write
 offset, so Update cannot transmit arbitrary changed byte ranges inside that
@@ -828,7 +850,8 @@ fail-closed updates.
 
 The default firmware selection is the numerically latest official Stock
 release, independent of catalog order. Automatic Apply defaults to **Update**
-and always targets **Both temples**, right then left. The Advanced Mode manual
+and always targets **Both temples**, using the proof-gated phase-compatible
+order. The Advanced Mode manual
 recovery console retains its explicit **Both temples** and **Complete pinned
 Apollo main** defaults; CFW, single-route, and manual difference operations
 remain explicit choices.

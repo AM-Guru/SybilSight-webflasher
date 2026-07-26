@@ -18,11 +18,13 @@ import {
   classifyPogoFlashRecoveryBoundary,
   assertReviewedCfwFlashCandidate,
   crc16CcittFalse,
+  decodePogoFlashRetainedResult,
   decodeTempleVersion,
   getVerifiedPogoFlashBridgePayload,
   makeOtaDataRequest,
   makeOtaFinishRequest,
   makeOtaStartRequest,
+  makePogoFlashHostStressHeader,
   makePogoFlashSetup,
   makePogoFlashTransactionHeader,
   makeTempleVersionRequest,
@@ -30,16 +32,20 @@ import {
   parsePogoFlashResponse,
   parsePogoFlashRetainedResult,
   requireOtaAcknowledgement,
+  verifyPogoFlashOppositePhaseStop,
 } from "../src/lib/pogoFlashBridge.js";
 import { sha256Hex, writeU32LE } from "../src/lib/firmware.js";
 import {
   G2CaseSession,
   WEB_SERIAL_ROM_READ_SIZE,
+  canRestartFailedTempleComponent,
   canRunFinalResetAfterFailure,
   isExplicitTempleDataRejection,
   isG2CaseSerialPort,
   isWebSerialRomPacketBoundary,
+  readRomBlockWithBoundaryRecovery,
   retryReadOnlyBlock,
+  templeDataSettleMilliseconds,
   writePogoFlashTransactionHeader,
 } from "../src/lib/serial.js";
 
@@ -137,6 +143,42 @@ test("recognizes the deterministic CH340 Web Serial packet boundary", () => {
   );
 });
 
+test("detects a CH340 packet boundary reached on a later ROM retry", async () => {
+  let reads = 0;
+  let resynchronizations = 0;
+  const retries = [];
+  const boundaries = [];
+  const result = await readRomBlockWithBoundaryRecovery(
+    async () => {
+      reads += 1;
+      if (reads === 1) throw new Error("Transient Read Memory address ACK timeout.");
+      throw new Error(
+        "Timed out reading memory at 0x20011a00: received 31 of 128 bytes.",
+      );
+    },
+    async () => {
+      resynchronizations += 1;
+    },
+    {
+      requestedSize: 128,
+      onRetry: (error, nextAttempt, attempts) =>
+        retries.push([error.message, nextAttempt, attempts]),
+      onPacketBoundary: (error, attempt) =>
+        boundaries.push([error.message, attempt]),
+    },
+  );
+  assert.equal(result.block, null);
+  assert.equal(result.packetBoundaryDetected, true);
+  assert.equal(reads, 2);
+  assert.equal(resynchronizations, 2);
+  assert.deepEqual(
+    retries,
+    [["Transient Read Memory address ACK timeout.", 2, 5]],
+  );
+  assert.equal(boundaries.length, 1);
+  assert.equal(boundaries[0][1], 2);
+});
+
 test("recognizes only the reviewed G2 Case USB serial identity", () => {
   assert.equal(
     isG2CaseSerialPort({
@@ -192,6 +234,19 @@ test("classifies only an explicit temple DATA rejection for exact replay", () =>
   );
 });
 
+test("paces deferred DATA batches more conservatively late in the image", () => {
+  const totalBytes = 3_523_396;
+  assert.equal(templeDataSettleMilliseconds(1_000, totalBytes), 0);
+  assert.equal(templeDataSettleMilliseconds(6_000, totalBytes), 1000);
+  assert.equal(templeDataSettleMilliseconds(2_640_000, totalBytes), 1000);
+  assert.equal(templeDataSettleMilliseconds(2_646_000, totalBytes), 2000);
+  assert.equal(templeDataSettleMilliseconds(totalBytes, totalBytes), 15000);
+  assert.throws(
+    () => templeDataSettleMilliseconds(totalBytes + 1, totalBytes),
+    /valid accepted and total byte counts/,
+  );
+});
+
 test("pins the hardware-validated volatile flash bridge", async () => {
   const payload = await getVerifiedPogoFlashBridgePayload();
   assert.equal(payload.length, POGO_FLASH_BRIDGE_BYTES);
@@ -210,6 +265,10 @@ test("matches recovered temple request and CRC vectors", () => {
   assert.equal(
     Buffer.from(makeOtaDataRequest(new Uint8Array(), true, 0)).toString("hex"),
     "54000004000100ffff",
+  );
+  assert.equal(
+    Buffer.from(makePogoFlashHostStressHeader(7, 1)).toString("hex"),
+    "47325453010701000029",
   );
 });
 
@@ -321,6 +380,39 @@ test("binds retained restoration proof to route and final host sequence", () => 
         },
       ),
     PogoFlashSafetyError,
+  );
+});
+
+test("retains zero-byte setup diagnostics without treating them as cleanup proof", () => {
+  const result = new Uint8Array(POGO_FLASH_RESULT_LENGTH);
+  writeU32LE(result, 0, 0x57463247);
+  writeU32LE(result, 4, 3);
+  writeU32LE(result, 8, 1);
+  writeU32LE(result, 12, 0x42);
+  writeU32LE(result, 16, 3);
+  writeU32LE(result, 20, 0x3ff);
+  result.set(
+    Uint8Array.from([0x81, 0x10, 0x04, 0xae, 0xaf, 0x03, 0x81, 0x20, 0x22, 0xff]),
+    64,
+  );
+  const report = decodePogoFlashRetainedResult(result);
+  assert.equal(report.status, 3);
+  assert.equal(report.acceptedSize, 0);
+  assert.equal(Buffer.from(report.baseline).toString("hex"), "811004aeaf03812022ff");
+  const phaseStop = verifyPogoFlashOppositePhaseStop(
+    result,
+    POGO_FLASH_PROOF,
+    "right",
+  );
+  assert.equal(phaseStop.phaseCompatibleRoute, "left");
+  assert.equal(phaseStop.noMutationPhaseStopVerified, true);
+  assert.equal(
+    verifyPogoFlashOppositePhaseStop(result, POGO_FLASH_PROOF, "left"),
+    null,
+  );
+  assert.throws(
+    () => parsePogoFlashRetainedResult(result, POGO_FLASH_PROOF, "left", 0),
+    /does not prove a complete byte-for-byte route restoration/,
   );
 });
 
@@ -656,6 +748,49 @@ test("attempts failure recovery only after every route has verified cleanup", ()
       verified,
       { caseRestoreVerified: false, caseApplicationVersion: "1.2.57" },
     ]),
+    false,
+  );
+});
+
+test("allows one fresh component restart only after a DATA failure and exact cleanup proof", () => {
+  const verifiedDataFailure = {
+    outcome: "failed_or_uncertain",
+    otaMutationAttempted: true,
+    failureStage: "DATA:348",
+    transfer: null,
+    caseRestoreVerified: true,
+    caseApplicationVersion: "1.2.57",
+    retainedResult: {
+      baselineMask: 0x3ff,
+      selectedMask: 0x3ff,
+      restoredMask: 0x3ff,
+      templeUartErrors: 0,
+    },
+  };
+  assert.equal(
+    canRestartFailedTempleComponent(verifiedDataFailure, 0),
+    true,
+  );
+  assert.equal(
+    canRestartFailedTempleComponent(verifiedDataFailure, 1),
+    true,
+  );
+  assert.equal(
+    canRestartFailedTempleComponent(verifiedDataFailure, 2),
+    false,
+  );
+  assert.equal(
+    canRestartFailedTempleComponent(
+      { ...verifiedDataFailure, failureStage: "HEADER" },
+      0,
+    ),
+    false,
+  );
+  assert.equal(
+    canRestartFailedTempleComponent(
+      { ...verifiedDataFailure, caseRestoreVerified: false },
+      0,
+    ),
     false,
   );
 });

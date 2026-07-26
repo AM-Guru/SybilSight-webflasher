@@ -551,6 +551,18 @@ class G2FlashToolTests(unittest.TestCase):
     def test_explicit_data_rejection_retries_the_exact_record(self) -> None:
         self._assert_exact_retry(FakeTransport(reject_once_sequence=1))
 
+    def test_deferred_batch_settle_increases_late_in_image(self) -> None:
+        sleeps: list[float] = []
+        MainFirmwareFlasher(
+            FakeTransport(),
+            batch_settle_seconds=1.0,
+            late_batch_settle_seconds=2.0,
+            late_batch_threshold=0.75,
+            final_settle_seconds=15.0,
+            sleeper=sleeps.append,
+        ).flash_main(make_main_component(12_000))
+        self.assertEqual(sleeps, [1.0, 15.0])
+
     def _assert_exact_retry(self, transport: FakeTransport) -> None:
         sleeps: list[float] = []
         result = MainFirmwareFlasher(

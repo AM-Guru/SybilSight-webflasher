@@ -452,9 +452,12 @@ class MainFirmwareFlasher:
         *,
         response_timeout: float = 5.0,
         finish_timeout: float = 60.0,
-        data_retries: int = 1,
-        retry_backoff_seconds: float = 6.5,
+        data_retries: int = 0,
+        retry_backoff_seconds: float = 30.0,
         batch_settle_seconds: float = 0.100,
+        late_batch_settle_seconds: float | None = None,
+        late_batch_threshold: float = 0.75,
+        final_settle_seconds: float | None = None,
         sleeper: Callable[[float], None] = time.sleep,
         progress: Callable[[int, int], None] | None = None,
     ) -> None:
@@ -464,12 +467,25 @@ class MainFirmwareFlasher:
             raise ValueError("retry_backoff_seconds cannot be negative")
         if batch_settle_seconds < 0:
             raise ValueError("batch_settle_seconds cannot be negative")
+        if late_batch_settle_seconds is None:
+            late_batch_settle_seconds = batch_settle_seconds
+        if late_batch_settle_seconds < 0:
+            raise ValueError("late_batch_settle_seconds cannot be negative")
+        if not 0 < late_batch_threshold <= 1:
+            raise ValueError("late_batch_threshold must be in (0, 1]")
+        if final_settle_seconds is None:
+            final_settle_seconds = late_batch_settle_seconds
+        if final_settle_seconds < 0:
+            raise ValueError("final_settle_seconds cannot be negative")
         self.transport = transport
         self.response_timeout = response_timeout
         self.finish_timeout = finish_timeout
         self.data_retries = data_retries
         self.retry_backoff_seconds = retry_backoff_seconds
         self.batch_settle_seconds = batch_settle_seconds
+        self.late_batch_settle_seconds = late_batch_settle_seconds
+        self.late_batch_threshold = late_batch_threshold
+        self.final_settle_seconds = final_settle_seconds
         self.sleeper = sleeper
         self.progress = progress
 
@@ -493,6 +509,21 @@ class MainFirmwareFlasher:
             self._send_acknowledged(request, timeout)
         except (TransportTimeout, ProtocolError, DeviceRejected) as error:
             raise NonIdempotentOtaError(stage, request[0], error) from error
+
+    def _settle_storage(self, seconds: float) -> None:
+        stress_host_receive = getattr(
+            self.transport, "stress_host_receive", None
+        )
+        if stress_host_receive is None or seconds <= 5.0:
+            self.sleeper(seconds)
+            return
+        remaining = seconds
+        while remaining > 5.0:
+            self.sleeper(5.0)
+            remaining -= 5.0
+            stress_host_receive(1)
+        if remaining:
+            self.sleeper(remaining)
 
     def flash_main(self, component: Component) -> FlashResult:
         validate_main_component(component)
@@ -530,7 +561,9 @@ class MainFirmwareFlasher:
                     # remain uncertain and are never replayed. The temple can
                     # remain busy after deferred C1 storage, so permit one
                     # delayed retry of this exact CRC-protected record.
-                    self.sleeper(self.retry_backoff_seconds * (attempt + 1))
+                    self._settle_storage(
+                        self.retry_backoff_seconds * (attempt + 1)
+                    )
             payload_bytes_sent += data_length
             if self.progress is not None:
                 self.progress(index + 1, total_records)
@@ -541,8 +574,18 @@ class MainFirmwareFlasher:
             ):
                 # The 0x54 reply precedes deferred C1 parsing/storage.  There
                 # is no second durable-write acknowledgement, so leave a
-                # conservative settling interval at every 6-KiB boundary.
-                self.sleeper(self.batch_settle_seconds)
+                # conservative settling interval at every 6-KiB boundary and
+                # increase it late in the image, where hardware runs have
+                # exposed receiver back-pressure.
+                settle_seconds = self.batch_settle_seconds
+                if final:
+                    settle_seconds = self.final_settle_seconds
+                elif (
+                    payload_bytes_sent / len(component.payload)
+                    >= self.late_batch_threshold
+                ):
+                    settle_seconds = self.late_batch_settle_seconds
+                self._settle_storage(settle_seconds)
 
         # The reviewed stock and CFW images report the same public version, so
         # postflight liveness alone cannot distinguish them.  Require the
@@ -730,10 +773,11 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--data-retries",
         type=int,
         choices=(0, 1),
-        default=1,
+        default=0,
         help=(
             "exact 0x54 retry after an explicit rejection only "
-            "(default: 1 after 6.5 seconds; missing replies are never replayed)"
+            "(default: 0; Case-path hardware tests require a fresh component "
+            "after reset instead)"
         ),
     )
     flash_parser.add_argument(

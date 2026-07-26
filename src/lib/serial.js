@@ -42,12 +42,14 @@ import {
   PogoFlashSafetyError,
   assertPinnedTempleFlashCandidate,
   classifyPogoFlashRecoveryBoundary,
+  decodePogoFlashRetainedResult,
   decodeTempleVersion,
   getVerifiedPogoFlashBridgePayload,
   makeOtaDataRequest,
   makeOtaFinishRequest,
   makeOtaHeaderRequest,
   makeOtaStartRequest,
+  makePogoFlashHostStressHeader,
   makePogoFlashSetup,
   makePogoFlashTransactionHeader,
   makeTempleVersionRequest,
@@ -55,6 +57,7 @@ import {
   parsePogoFlashResponse,
   parsePogoFlashRetainedResult,
   requireOtaAcknowledgement,
+  verifyPogoFlashOppositePhaseStop,
 } from "./pogoFlashBridge.js";
 import { buildBundleDifferencePlan } from "./differential.js";
 
@@ -77,10 +80,39 @@ const REVIEWED_CASE_ROM_COMMANDS = Object.freeze([
 // liveness gate; it is not a multi-query stability claim.
 const POGO_STABILITY_READ_QUERIES = 1;
 const POGO_STABILITY_INTERVAL_MS = 25;
+const POGO_DEFERRED_BATCH_BYTES = 6000;
+const POGO_DATA_BATCH_SETTLE_MS = 1000;
+const POGO_DATA_LATE_BATCH_SETTLE_MS = 2000;
+const POGO_DATA_FINAL_SETTLE_MS = 15000;
+const POGO_DATA_LATE_SETTLE_NUMERATOR = 3;
+const POGO_DATA_LATE_SETTLE_DENOMINATOR = 4;
+const POGO_COMPONENT_RESTART_LIMIT = 2;
+const POGO_BILATERAL_ROUTE_ADAPTATION_LIMIT = 4;
 export const WEB_SERIAL_ROM_READ_SIZE = 31;
 
 export function isExplicitTempleDataRejection(error) {
   return error instanceof TempleRejectedError;
+}
+
+export function templeDataSettleMilliseconds(acceptedBytes, totalBytes) {
+  if (
+    !Number.isInteger(acceptedBytes) ||
+    !Number.isInteger(totalBytes) ||
+    acceptedBytes < 0 ||
+    totalBytes < 1 ||
+    acceptedBytes > totalBytes
+  ) {
+    throw new Error("Temple DATA pacing requires valid accepted and total byte counts.");
+  }
+  const final = acceptedBytes === totalBytes;
+  if (!final && acceptedBytes % POGO_DEFERRED_BATCH_BYTES !== 0) return 0;
+  if (final) return POGO_DATA_FINAL_SETTLE_MS;
+  const lateTransfer =
+    acceptedBytes * POGO_DATA_LATE_SETTLE_DENOMINATOR >=
+    totalBytes * POGO_DATA_LATE_SETTLE_NUMERATOR;
+  return lateTransfer
+    ? POGO_DATA_LATE_BATCH_SETTLE_MS
+    : POGO_DATA_BATCH_SETTLE_MS;
 }
 
 export function delay(milliseconds) {
@@ -119,6 +151,47 @@ export function isWebSerialRomPacketBoundary(error, requestedSize) {
   );
 }
 
+export async function readRomBlockWithBoundaryRecovery(
+  read,
+  resynchronize,
+  {
+    requestedSize,
+    attempts = 5,
+    onRetry = () => {},
+    onPacketBoundary = () => {},
+  } = {},
+) {
+  if (!Number.isInteger(requestedSize) || requestedSize < 1) {
+    throw new Error("A positive ROM read size is required.");
+  }
+  if (!Number.isInteger(attempts) || attempts < 1) {
+    throw new Error("ROM read attempts must be a positive integer.");
+  }
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return {
+        block: await read(attempt),
+        packetBoundaryDetected: false,
+      };
+    } catch (error) {
+      lastError = error;
+      if (isWebSerialRomPacketBoundary(error, requestedSize)) {
+        onPacketBoundary(error, attempt);
+        await resynchronize(attempt);
+        return {
+          block: null,
+          packetBoundaryDetected: true,
+        };
+      }
+      if (attempt === attempts) break;
+      onRetry(error, attempt + 1, attempts);
+      await resynchronize(attempt);
+    }
+  }
+  throw lastError;
+}
+
 export async function writePogoFlashTransactionHeader(
   bridge,
   header,
@@ -147,6 +220,27 @@ export function canRunFinalResetAfterFailure(routeResults) {
         result?.caseRestoreVerified === true &&
         result?.caseApplicationVersion === REVIEWED_CASE_VERSION,
     )
+  );
+}
+
+export function canRestartFailedTempleComponent(
+  routeResult,
+  restartCount = 0,
+) {
+  return (
+    Number.isInteger(restartCount) &&
+    restartCount >= 0 &&
+    restartCount < POGO_COMPONENT_RESTART_LIMIT &&
+    routeResult?.outcome === "failed_or_uncertain" &&
+    routeResult?.otaMutationAttempted === true &&
+    /^DATA:\d+$/.test(routeResult?.failureStage ?? "") &&
+    routeResult?.transfer === null &&
+    routeResult?.caseRestoreVerified === true &&
+    routeResult?.caseApplicationVersion === REVIEWED_CASE_VERSION &&
+    routeResult?.retainedResult?.baselineMask === 0x3ff &&
+    routeResult?.retainedResult?.selectedMask === 0x3ff &&
+    routeResult?.retainedResult?.restoredMask === 0x3ff &&
+    routeResult?.retainedResult?.templeUartErrors === 0
   );
 }
 
@@ -465,33 +559,29 @@ class Stm32Bootloader {
         await delay(120);
         await this.connect();
       };
-      let block;
-      try {
-        block = await this.readMemory(blockAddress, length);
-      } catch (error) {
-        if (isWebSerialRomPacketBoundary(error, length)) {
-          this.log(
-            `Detected the CH340 Web Serial packet boundary at 0x${blockAddress.toString(16)}; discarding the partial reply and switching to ${WEB_SERIAL_ROM_READ_SIZE}-byte ROM reads.`,
-            "warn",
-          );
-          await resynchronize();
-          this.maximumReadSize = WEB_SERIAL_ROM_READ_SIZE;
-          continue;
-        }
-        await resynchronize();
-        block = await retryReadOnlyBlock(
-          () => this.readMemory(blockAddress, length),
-          resynchronize,
-          {
-            attempts: 4,
-            onRetry: (retryError, attempt, retryCount) =>
-              this.log(
-                `ROM read retry ${attempt + 1}/${retryCount + 1} at 0x${blockAddress.toString(16)} after ${retryError.message}`,
-                "warn",
-              ),
-          },
-        );
+      const readResult = await readRomBlockWithBoundaryRecovery(
+        () => this.readMemory(blockAddress, length),
+        resynchronize,
+        {
+          requestedSize: length,
+          attempts: 5,
+          onPacketBoundary: () =>
+            this.log(
+              `Detected the CH340 Web Serial packet boundary at 0x${blockAddress.toString(16)}; discarding the partial reply and switching to ${WEB_SERIAL_ROM_READ_SIZE}-byte ROM reads.`,
+              "warn",
+            ),
+          onRetry: (retryError, nextAttempt, attemptCount) =>
+            this.log(
+              `ROM read retry ${nextAttempt}/${attemptCount} at 0x${blockAddress.toString(16)} after ${retryError.message}`,
+              "warn",
+            ),
+        },
+      );
+      if (readResult.packetBoundaryDetected) {
+        this.maximumReadSize = WEB_SERIAL_ROM_READ_SIZE;
+        continue;
       }
+      const block = readResult.block;
       output.set(block, offset);
       offset += length;
       onProgress?.(offset / size);
@@ -611,8 +701,10 @@ class CasePogoFlashTransport {
     this.closed = false;
     this.restoreVerified = false;
     this.retainedResult = null;
+    this.setupPhaseStopVerified = false;
     this.caseReport = null;
     this.completedTransfer = null;
+    this.hostOnlyKeepalives = 0;
     this.routePhaseSetupAttempts = 0;
   }
 
@@ -817,6 +909,75 @@ class CasePogoFlashTransport {
     this.bridge?.clear();
   }
 
+  async stressHostReceive(payloadSize = 1) {
+    if (
+      !this.active ||
+      !this.bridge ||
+      !Number.isInteger(payloadSize) ||
+      payloadSize < 1 ||
+      payloadSize > 1009
+    ) {
+      throw new PogoFlashSafetyError(
+        "The Case host-only keepalive requires an active bridge and 1–1,009 bytes.",
+      );
+    }
+    this.sequence = (this.sequence + 1) & 0xff;
+    const payload = new Uint8Array(payloadSize);
+    await writePogoFlashTransactionHeader(
+      this.bridge,
+      makePogoFlashHostStressHeader(this.sequence, payload.length),
+    );
+    const headerToken = await this.bridge.readExact(
+      1,
+      8000,
+      "host-only keepalive header token",
+    );
+    if (headerToken[0] !== 0xc3) {
+      throw new RetryablePogoFlashError(
+        "The flash bridge rejected the host-only keepalive header.",
+      );
+    }
+    for (let offset = 0; offset < payload.length; offset += 32) {
+      const chunk = payload.subarray(offset, Math.min(offset + 32, payload.length));
+      await this.bridge.write(chunk);
+      const token = await this.bridge.readExact(
+        1,
+        8000,
+        "host-only keepalive payload token",
+      );
+      if (token[0] !== 0xc3) {
+        throw new RetryablePogoFlashError(
+          "The flash bridge did not consume the host-only keepalive payload.",
+        );
+      }
+    }
+    await this.bridge.write(new Uint8Array([0]));
+    const response = await this.readBridgeResponse(8000);
+    if (
+      response.status !== 0 ||
+      response.uartErrors !== 0 ||
+      response.captured.length !== 0
+    ) {
+      throw new RetryablePogoFlashError(
+        "The host-only keepalive response was not empty and checksum-valid.",
+      );
+    }
+    this.hostOnlyKeepalives += 1;
+  }
+
+  async settleTempleStorage(milliseconds) {
+    if (!Number.isFinite(milliseconds) || milliseconds < 0) {
+      throw new PogoFlashSafetyError("Temple storage settle time is invalid.");
+    }
+    let remaining = milliseconds;
+    while (remaining > 5000) {
+      await delay(5000);
+      remaining -= 5000;
+      await this.stressHostReceive(1);
+    }
+    if (remaining > 0) await delay(remaining);
+  }
+
   async requestExit() {
     if (!this.active || !this.bridge) return null;
     this.sequence = (this.sequence + 1) & 0xff;
@@ -855,6 +1016,7 @@ class CasePogoFlashTransport {
         POGO_FLASH_RESULT_LENGTH,
       );
       try {
+        this.retainedResult = decodePogoFlashRetainedResult(result);
         const retainedResult = parsePogoFlashRetainedResult(
           result,
           proof,
@@ -867,7 +1029,28 @@ class CasePogoFlashTransport {
         );
         this.retainedResult = retainedResult;
       } catch (error) {
-        validationError = error;
+        const phaseStop = verifyPogoFlashOppositePhaseStop(
+          result,
+          proof,
+          this.route,
+        );
+        if (phaseStop) {
+          this.retainedResult = phaseStop;
+          this.setupPhaseStopVerified = true;
+          this.restoreVerified = true;
+          this.session.log(
+            `${this.route}: verified a zero-write setup stop in the ${phaseStop.phaseCompatibleRoute}-compatible allowlisted Case phase.`,
+            "warn",
+          );
+        } else {
+          validationError = error;
+        }
+        if (this.retainedResult) {
+          this.session.log(
+            `${this.route}: retained setup/result diagnostics · status=${this.retainedResult.status}, progress=${this.retainedResult.progress}, baseline=${compactHex(this.retainedResult.baseline)}, selected=${compactHex(this.retainedResult.selected)}, restored=${compactHex(this.retainedResult.restored)}, accepted=${this.retainedResult.acceptedSize}.`,
+            "warn",
+          );
+        }
       }
 
       await this.loader.writeMemory(POGO_FLASH_PROOF_ADDRESS, zeroProof);
@@ -1557,13 +1740,61 @@ export class G2CaseSession {
     };
   }
 
+  async resetTempleOtaReceiverForComponentRestart(
+    routes,
+    expectedVersion,
+    route,
+    routeIndex,
+    routeCount,
+  ) {
+    const progressBase = (routeIndex / routeCount) * 0.9;
+    this.log(
+      `${route}: cleanup is fully proven; sending an intermediate bilateral reset before one fresh full-component restart.`,
+      "warn",
+    );
+    this.progress(progressBase, `${route}: recovery reset before full restart`);
+    const resetReport = await this.restartAndRecheck();
+    const { versions, finalCase } = await this.verifyPostResetTempleLiveness(
+      resetReport,
+      routes,
+      {
+        expectedVersion,
+        progressBase,
+        progressSpan: Math.min(0.04, 0.9 / routeCount),
+      },
+    );
+    this.log(
+      `${route}: intermediate reset, contacts, Case application, and temple liveness verified; restarting from START rather than replaying an ambiguous DATA record.`,
+      "success",
+    );
+    return {
+      outcome: "success",
+      command: "DEB0",
+      resetConfirmed: true,
+      caseFirmware: finalCase.caseVersion,
+      leftPresent: resetReport.telemetry.leftPresent,
+      rightPresent: resetReport.telemetry.rightPresent,
+      versions,
+    };
+  }
+
   async flashPinnedTempleRoute(
     component,
     expectedTargetVersion,
     route,
     routeIndex,
     routeCount,
+    dataPacingMultiplier = 1,
   ) {
+    if (
+      !Number.isInteger(dataPacingMultiplier) ||
+      dataPacingMultiplier < 1 ||
+      dataPacingMultiplier > 2
+    ) {
+      throw new PogoFlashSafetyError(
+        "Temple DATA pacing multiplier must be one or two.",
+      );
+    }
     const progressBase = (routeIndex / routeCount) * 0.9;
     const progressSpan = 0.9 / routeCount;
     const transport = new CasePogoFlashTransport(this, route, {
@@ -1582,6 +1813,24 @@ export class G2CaseSession {
       routePhaseSetupAttempts: 0,
       otaMutationAttempted: false,
       acceptedFirmwareBytes: 0,
+      dataPacingPolicy: {
+        deferredBatchBytes: POGO_DEFERRED_BATCH_BYTES,
+        multiplier: dataPacingMultiplier,
+        batchSettleMs:
+          POGO_DATA_BATCH_SETTLE_MS * dataPacingMultiplier,
+        lateBatchSettleMs:
+          POGO_DATA_LATE_BATCH_SETTLE_MS * dataPacingMultiplier,
+        finalSettleMs:
+          POGO_DATA_FINAL_SETTLE_MS * dataPacingMultiplier,
+        lateThresholdPercent:
+          (POGO_DATA_LATE_SETTLE_NUMERATOR /
+            POGO_DATA_LATE_SETTLE_DENOMINATOR) *
+          100,
+        explicitRejectionRetryAllowed: false,
+        explicitRejectionAction:
+          "cleanup_reset_and_fresh_component_restart",
+        hostOnlyKeepaliveIntervalMs: 5000,
+      },
     };
     let operationError = null;
     let cleanupError = null;
@@ -1660,19 +1909,15 @@ export class G2CaseSession {
         const final = index + 1 === totalRecords;
         const request = makeOtaDataRequest(data, final, index & 0xff);
         try {
-          const response = await transport.transact(request, 8000);
+          const response = await transport.transact(request, 15000);
           requireOtaAcknowledgement(response, 0x54);
         } catch (error) {
           if (!isExplicitTempleDataRejection(error)) throw error;
-          retries += 1;
-          transport.drainInput();
           this.log(
-            `${route}: explicit rejection left DATA record ${index + 1} unadvanced; waiting 6.5 seconds for deferred storage before one exact retry.`,
+            `${route}: explicit rejection left DATA record ${index + 1} unadvanced; ending this component attempt so cleanup, reset, and a fresh START can occur without replaying the record.`,
             "warn",
           );
-          await delay(6500);
-          const response = await transport.transact(request, 8000);
-          requireOtaAcknowledgement(response, 0x54);
+          throw error;
         }
         acceptedBytes += data.length;
         result.acceptedFirmwareBytes = acceptedBytes;
@@ -1680,8 +1925,11 @@ export class G2CaseSession {
           0.08 + ((index + 1) / totalRecords) * 0.78,
           `${route}: ${index + 1}/${totalRecords} main records`,
         );
-        if (acceptedBytes % 6000 === 0 || final) {
-          await delay(250);
+        const settleMilliseconds =
+          templeDataSettleMilliseconds(acceptedBytes, payload.length) *
+          dataPacingMultiplier;
+        if (settleMilliseconds > 0) {
+          await transport.settleTempleStorage(settleMilliseconds);
         }
       }
 
@@ -1696,6 +1944,7 @@ export class G2CaseSession {
         recordsSent: totalRecords,
         payloadBytesSent: acceptedBytes,
         dataRetries: retries,
+        hostOnlyKeepalives: transport.hostOnlyKeepalives,
         finishAckReceived: true,
       };
       this.log(
@@ -1833,8 +2082,14 @@ export class G2CaseSession {
       imageHardwareValidated: target.hardwareValidated,
       mainPayloadSha256: component.payloadSha256,
       bridgeSha256:
-        "9ab41ffe1b906869b264c9ba3aa739f3bda0ee8bf0051cf67679c204dd86ac2c",
+        "dcf27971baa964902724fc9aa2f9d0369be6874a5a84231791622bb40bf486a6",
       routes,
+      routeOrderSetupStops: [],
+      supersededSuccessfulRouteResults: [],
+      routeComponentRestartAttempts: [],
+      routeComponentRestartResets: [],
+      componentRestartLimit: POGO_COMPONENT_RESTART_LIMIT,
+      bilateralRouteAdaptationLimit: POGO_BILATERAL_ROUTE_ADAPTATION_LIMIT,
       bootloaderAllowed: false,
       preflightCase: null,
       routeResults: [],
@@ -1850,8 +2105,11 @@ export class G2CaseSession {
         leftPresent: preflightCase.telemetry?.leftPresent ?? null,
         rightPresent: preflightCase.telemetry?.rightPresent ?? null,
       };
+      const componentRestartCounts = new Map();
       for (let index = 0; index < routes.length; index += 1) {
         const route = routes[index];
+        const componentRestartCount =
+          componentRestartCounts.get(route) ?? 0;
         try {
           audit.routeResults.push(
             await this.flashPinnedTempleRoute(
@@ -1860,9 +2118,68 @@ export class G2CaseSession {
               route,
               index,
               routes.length,
+              componentRestartCount > 0 ? 2 : 1,
             ),
           );
         } catch (error) {
+          const phaseCompatibleRoute =
+            error.routeResult?.retainedResult?.phaseCompatibleRoute;
+          const canAdaptBilateralOrder =
+            routeSelection === "both" &&
+            index === 0 &&
+            ["left", "right"].includes(phaseCompatibleRoute) &&
+            phaseCompatibleRoute !== route &&
+            audit.routeOrderSetupStops.length <
+              POGO_BILATERAL_ROUTE_ADAPTATION_LIMIT &&
+            error.routeResult?.retainedResult?.noMutationPhaseStopVerified ===
+              true &&
+            error.routeResult?.acceptedFirmwareBytes === 0 &&
+            error.routeResult?.otaMutationAttempted === false &&
+            error.routeResult?.caseRestoreVerified === true &&
+            error.routeResult?.caseApplicationVersion === REVIEWED_CASE_VERSION;
+          if (canAdaptBilateralOrder) {
+            audit.routeOrderSetupStops.push(error.routeResult);
+            if (audit.routeResults.length) {
+              audit.supersededSuccessfulRouteResults.push(
+                ...audit.routeResults,
+              );
+              audit.routeResults.length = 0;
+            }
+            const secondRoute =
+              phaseCompatibleRoute === "left" ? "right" : "left";
+            routes.splice(
+              0,
+              routes.length,
+              phaseCompatibleRoute,
+              secondRoute,
+            );
+            this.log(
+              `Bilateral route order adapted to ${phaseCompatibleRoute} then ${secondRoute} from an exact allowlisted, zero-write Case phase proof.`,
+              "warn",
+            );
+            index = -1;
+            continue;
+          }
+          if (
+            canRestartFailedTempleComponent(
+              error.routeResult,
+              componentRestartCount,
+            )
+          ) {
+            audit.routeComponentRestartAttempts.push(error.routeResult);
+            audit.routeComponentRestartResets.push(
+              await this.resetTempleOtaReceiverForComponentRestart(
+                routes,
+                target.version,
+                route,
+                index,
+                routes.length,
+              ),
+            );
+            componentRestartCounts.set(route, componentRestartCount + 1);
+            index -= 1;
+            continue;
+          }
           if (error.routeResult) audit.routeResults.push(error.routeResult);
           throw error;
         }
