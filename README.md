@@ -55,12 +55,21 @@ Production deployment:
   bridge trust pins, explicit risk confirmations, exact per-record replies,
   postflight liveness, retained route-restoration proof, volatile-data
   cleanup, and normal case 1.2.57 return.
+- Offers a hash-pinned **Flash differences** mode for the exact Stock
+  2.2.6.10 ↔ reviewed-CFW pair. It compares every bundle component, omits the
+  five byte-identical components, and transfers the one changed Apollo-main
+  component with the same complete CRC/finish/reset verification as a normal
+  reinstall.
 - Presents both recovery targets under Recover: three-step inactive-bank
   staging/activation for the charging case and a separately gated left,
   right, or both-temple reinstall for responsive Smart Glasses.
 - Decodes read-only Apollo510 INFOC and active INFO0 debugger dumps locally,
   then fails closed unless every known SBL UART field matches the pogo route.
-- Provides a session console with downloadable logs.
+- Provides a floating, downloadable **Show Console Log** under Recovery,
+  including operation lifecycle, bounded progress milestones, device transport
+  messages, and browser failures.
+- Shows operation-count progress and the current task in the right-hand footer
+  for every analysis, backup, probe, staging, activation, reset, and restore.
 
 ## Important limitation
 
@@ -91,6 +100,14 @@ This path cannot run if the temple application or its UART task is dead.
 The case write and bank-activation path is research-derived and experimental.
 It has not been physically validated by this repository on sacrificial
 hardware. Read the safety section before using any write operation.
+
+“Flash differences” does not mean sparse arbitrary-address programming. The G2
+OTA receiver has no block index, destination offset, or installed-MRAM readback:
+it accepts one contiguous component stream and validates the complete
+component CRC at finish. Skipping changed ranges within
+`ota/s200_firmware_ota.bin` would shift or truncate the staged image. The safe
+difference unit is therefore a complete changed component; byte-identical
+components are the only data omitted from the wire operation.
 
 ## Current firmware model
 
@@ -177,8 +194,8 @@ frames with zero USART errors:
 | Status `0x13` through the host bridge | Left 4,497 mV / 99%; right 4,487 mV / 99% |
 | Version `0x24` | Both temples report firmware 2.2.6.10 and hardware revision 5 |
 
-The reviewed bridge is exactly 1,712 bytes with SHA-256
-`742f4652f2ce7a46fd6d0e7ab9500906ff2402198b74790fddf44ebf80006c12`.
+The reviewed browser-safe bridge is exactly 1,720 bytes with SHA-256
+`e30e143d522e5a5d0b10a92a15610badcc6aef014333716a94eae183b14dc258`.
 It accepts only status, version, or a no-contact exit self-test. All successful
 route reads/writes and transmit counts matched, the starting YHM image was
 restored byte-for-byte, the retained proof/result regions were cleared, and
@@ -186,23 +203,31 @@ stock case firmware 1.2.57 resumed normally. A non-idle charging-route image
 was also physically observed to fail closed before transmission.
 
 The webflasher keeps this fixed read bridge for diagnostics and separately
-embeds the exact reviewed 2,912-byte V3 write bridge. Neither path is an
+embeds the exact reviewed 2,920-byte V4 write bridge. Neither path is an
 arbitrary USB-to-pogo sender. The writer's SRAM code permits only the version
 query and Apollo-main `0x52...0x55` state machine, while the browser
-independently permits only the complete reviewed CFW and its pinned main
-payload.
+independently permits only the pinned Stock 2.2.6.10 and reviewed CFW bundles
+and their exact main payloads.
 
 The shared fail-closed host validates the complete bundle, permits only the
 Apollo main component, never blindly replays `0x52` start or `0x53` header,
-and retries only the exact current `0x54` record. That retry is safe both when
-an accepted record's reply was lost—the previous sequence is idempotent—and
-when an explicit rejection left the expected sequence unchanged. The host
-now requires one fresh checksum-valid read-only version reply immediately
-before the first OTA command, waits 250 ms before the non-idempotent start,
-retries a data record at most five times with 250-ms linear backoff, waits
-250 ms at each 6-KiB handoff, and requires both the checksum-valid zero-status
-`0x55` reply and postflight liveness. The stock case console
-cannot do this without the temporary SRAM bridge.
+and never replays `0x54` DATA after a missing or malformed reply. A 2026-07-25 Chromium run
+received status `1` at CFW record 109 after 108 accepted records; five former
+same-record retries at 250–1,250 ms then received no frame. A subsequent
+official-Stock run received an explicit status `1` with the retained
+`expected_sequence` and `accepted_size` unchanged and zero UART errors. That
+is the only response which proves the record was not accepted, so the host
+permits exactly one retry of the identical CRC-protected record after a
+6.5-second deferred-storage settle. Missing, malformed, or timed-out replies
+remain uncertain and stop immediately. Together with the upstream
+`g2flash.py` observation that this grammar carries no destination block index,
+this keeps DATA replay fail-closed. The host also requires one fresh
+checksum-valid read-only version reply immediately before the first OTA
+command, waits 250 ms before the non-idempotent start and at each 6-KiB
+handoff, and requires both the checksum-valid zero-status `0x55` reply and
+postflight liveness. A terminal failure preserves a failed/uncertain audit,
+restores Case/YHM state, performs the final bilateral reset when cleanup is
+proven, and requires a fresh full-component session.
 
 The first 100-query gate was retired after a fresh hardware comparison showed
 the live left route fail at query 52 and the already verified-stock right
@@ -252,14 +277,14 @@ evidence, but the runner correctly did not mark cleanup verified because the
 retained terminal status was `16` (host request timeout).
 
 The reviewed case-write bridge source now lives alongside the SybilSight host.
-Its V3 build gives the allowlisted START, HEADER, and FINISH controls a longer
-bounded temple-response capture window, retaining the short window for DATA
-and read-only requests, and rejects a mutating setup when the Case idle-route
-phase does not match the selected temple. It assembles to the declared 2,912
+Its V4 build gives allowlisted START, HEADER, DATA, and FINISH requests a
+longer bounded temple-response capture window while retaining the short window
+for read-only requests, and rejects a mutating setup when the Case idle-route
+phase does not match the selected temple. It assembles to the declared 2,920
 bytes with
 SHA-256
-`db61f28dd3fa100d85b1a0bd5653d71582c9292b6bfd362545b42b08cbd59149`.
-Attempt 6 used those exact bytes and completed the right-temple transfer:
+`9ab41ffe1b906869b264c9ba3aa739f3bda0ee8bf0051cf67679c204dd86ac2c`.
+The earlier V3 bridge completed CFW attempt 6 on the right:
 
 - the reviewed CFW bundle SHA-256 and main-payload SHA-256 were pinned;
 - preflight reported firmware 2.2.6.10 and hardware 5;
@@ -284,11 +309,12 @@ masks, byte-for-byte YHM restoration, and normal case firmware 1.2.57 return.
 The run remains `failed_or_uncertain` because there was no finish
 acknowledgement or postflight version.
 
-That explicit rejection exposed a safe retry case missing from the original
-host policy: a rejected record does not advance the temple's expected
-sequence, so the exact CRC-protected record can be retried. SybilSight now
-tests and permits that data-only retry alongside the existing lost-reply
-retry; start and component-header transactions remain non-replayable.
+That explicit rejection exposed one narrowly safe retry case missing from the
+original host policy: a rejected record does not advance the temple's expected
+sequence, so the exact CRC-protected record can be retried once after the
+6.5-second deferred-storage window. A lost, malformed, or timed-out reply is
+ambiguous and is never replayed. Start, component-header, and finish
+transactions also remain non-replayable.
 
 Attempt 9 then completed the left-temple transfer using the same pinned bridge
 and reviewed CFW. All 3,539,474 bytes were accepted in 3,540 records with zero
@@ -332,15 +358,34 @@ temples. Application-dead recovery remains unproven.
 Both continue to mark the Apollo bootloader component **OMIT FROM POGO** until
 an independent SBL, MRAM-recovery, or SWD route is proven.
 
+A later Chromium/Python recovery cycle isolated the remaining Case-path
+timeout. Production Web Serial first failed because a CH340 packet contained
+one ROM ACK plus only 31 data bytes; the local host now abandons that partial
+transaction, re-enters the loader, and completes all option, flash, and SRAM
+reads in 31-byte requests. With that correction, integrated Chromium completed
+Case analysis, a full 512-KiB Case backup, and checksum-valid left/right
+2.2.6.10/hardware-5 probes.
+
+The V4 DATA capture window then crossed the former Stock failures at 829,000
+and 840,000 accepted bytes and completed the right Stock main: 3,523,396
+bytes, 3,524 records, zero retries, FINISH acknowledgement, postflight
+liveness, YHM restoration, and Case 1.2.57 return. The left V4 session accepted
+823,000 bytes before an ambiguous no-frame result and therefore did not send
+FINISH or replace the previously proven six-component Stock installation.
+The final `DEB0` reset was confirmed after all attempts; fresh Chromium probes
+then returned the same checksum-valid 2.2.6.10/hardware-5 frame from both
+temples.
+
 For offline analysis, selected `EVENOTA` bundles show the exact number of
 1,000-byte `0x54` records and final sequence value for each component. The
 recovered writer grammar uses an exact 128-byte component header for `0x53`,
 CRC-16/CCITT-FALSE over each `0x54` data payload, a modulo-256 sequence, and
-6,000-byte deferred batches. The expected sequence starts at zero and accepts
-the immediately previous value as an idempotent `0x54` retry; an explicitly
-rejected current record can also be retried because the sequence did not
-advance. Start and header are not treated as replay-safe. Offline calculation
-never contacts a temple. During a real transfer, each acknowledgement is
+6,000-byte deferred batches. The expected sequence starts at zero. Only an
+explicit rejection proves that the current sequence did not advance; the host
+permits one delayed retry in that case. Missing or malformed replies remain
+ambiguous and abort without replay. Start and header are not treated as
+replay-safe. Offline calculation never contacts a temple. During a real
+transfer, each acknowledgement is
 parser acceptance rather than independent proof of a durable write. The final
 acknowledgement, post-reset version, route restore, retained-proof cleanup, and
 case-application return are all mandatory for a successful audit.
@@ -439,6 +484,38 @@ STM32 ROM loader at 115,200 baud, 8 data bits, even parity, and 1 stop bit. It
 then verifies the expected product ID, reads the 128-byte option block, and
 inspects both 256 KiB flash banks.
 
+After the browser grants access to exactly one matching `1A86:7523` Case, later
+analysis and recovery operations reuse that authorized port. A chooser remains
+mandatory when no matching Case is authorized or more than one is available.
+
+CH340 reads can end after one 32-byte USB packet even though the STM32 already
+returned to command mode. That packet contains the one-byte ROM ACK followed by
+exactly 31 payload bytes. A timed-out block is never appended to a backup. When
+the browser detects this exact boundary, it discards the prefix, closes the ROM
+session, re-enters and re-identifies the immutable loader, and switches all
+remaining reads to complete 31-byte requests. Other transient short reads get
+bounded whole-block retries after the same fresh-session synchronization. This
+prevents stale partial bytes from being mistaken for the next command
+acknowledgement. On 2026-07-25 the hosted browser reproduced the deterministic
+boundary repeatedly at option-memory `0x1FFF7800`, receiving 31 of 128 bytes.
+The corrected live backup then found the same boundary while verifying the
+volatile pogo bridge at SRAM `0x20010000` (31 of 256 bytes), so the adaptive
+reader is used for flash, option memory, retained proof, and bridge readback.
+Read-only temple probes also use bounded fresh-loader synchronization retries;
+the first retry run showed that a Case can still be returning from the backup
+console when the immediately following probe first asserts the loader signals.
+After the verified SRAM jump, both read-only and writer bridges release BOOT0
+before Web Serial changes framing. The Python flasher and the browser writer
+already did this; the 2026-07-25 browser backup exposed and corrected the
+missing release in the read-only probe.
+
+The browser bridge now keeps the ROM loader's `115200 8E1` framing and one
+continuous Web Serial session through the SRAM `GO`, banner, and host request.
+This avoids a CH340 close/reopen reset boundary. Read-only route-phase status
+`3` remains fail-closed, but the session may wait for charging activity to
+settle and retry up to three times with a fresh fixed bridge; no temple request
+is transmitted until the YHM baseline matches the allowlist.
+
 The option bytes determine which physical bank is mapped as the running bank.
 The UI reports the active and inactive physical-bank numbers rather than
 assuming that a fixed address always means the same physical bank.
@@ -451,7 +528,7 @@ is seated, the webflasher:
 1. enters the immutable case ROM loader;
 2. verifies the pinned bridge SHA-256;
 3. clears the retained proof/result regions;
-4. writes and reads back all 1,712 bridge bytes at `0x20010000`;
+4. writes and reads back all 1,720 bridge bytes at `0x20010000`;
 5. executes one embedded status or version request;
 6. validates the USB reply and the temple frame;
 7. re-enters the ROM loader and verifies retained operation, route, byte
@@ -463,20 +540,22 @@ The bridge writes case SRAM, not flash or option bytes. It writes no persistent
 temple state. If the YHM baseline represents an active or non-allowlisted
 charging route, it returns status 3 before selecting a route or transmitting.
 SybilSight physically validated the payload and host protocol with its Python
-runner; this Web Serial port follows the same gates but has not yet been
-exercised by this repository on connected G2 hardware.
+runner. Integrated Chromium has exercised the read-only path and a CFW write
+that failed closed before FINISH; retain the audit for every browser write.
 
 ### 4. Guarded running-temple CFW writer
 
 For the exact reviewed CFW or official recovery package, the webflasher loads
-the separately pinned 2,912-byte V3 bridge at `0x20010000`. It first requires
+the separately pinned 2,920-byte V4 bridge at `0x20010000`. It first requires
 case firmware 1.2.57,
 fresh seated-route telemetry, the complete CFW bundle SHA-256, the Apollo-main
 payload SHA-256, hardware revision 5, and explicit user confirmations.
 
 The host uses 32-byte stop-and-wait USB chunks, never retries start or header,
-retries only the identical CRC-protected data record up to five times with
-linear backoff, and settles for 250 ms at every 6-KiB parser handoff. V3 also
+retries an identical CRC-protected DATA record only once, after a 6.5-second
+settle and only when an explicit rejection proves the sequence did not
+advance. Missing or malformed replies abort without replay. The host also
+settles for 250 ms at every 6-KiB parser handoff. V4
 rejects a mutating setup before temple transmission when the Case idle-route
 phase does not match the selected side; only that pre-transmission setup may
 be retried with a fresh volatile bridge. Success additionally
@@ -500,6 +579,28 @@ Any missing transaction or cleanup proof is reported as
 `failed_or_uncertain`. The next selected route is not attempted. No bridge
 operation erases or writes case flash, case option bytes, the Apollo
 bootloader, or peripheral firmware.
+
+#### Stock ↔ CFW component differences
+
+The browser loads and independently hashes both sides of the exact reviewed
+pair. It requires one official and one custom bundle, the same internal
+2.2.6.10 version, matching component topology, and exactly one changed
+component. The offline plan reports:
+
+- source and target bundle/main SHA-256 values;
+- identical and changed component counts;
+- exact byte-position difference ranges for inspection;
+- the contiguous main payload size and record count that must cross the wire;
+  and
+- the required finish acknowledgement, accepted-byte proof, postflight
+  response, final `DEB0` reset, contact return, and checksum-valid liveness.
+
+Because stock and CFW report the same firmware version, the operator must
+confirm which side of the pair is currently installed. Version replies are
+liveness evidence, not CFW provenance. The target is instead bound by its
+compiled-in bundle/main hashes, component CRC, exact accepted byte count, and
+finish acknowledgement. Installed Apollo MRAM cannot be reread through the
+stock Case route.
 
 ### 5. Combined Case + Smart Glasses preservation backup
 
@@ -634,11 +735,15 @@ firmware.
 3. Under **Guarded running-temple reinstall**, select both routes or one
    explicit route. Both runs right first and then left; each route gets a
    fresh volatile bridge session and complete cleanup.
-4. Confirm the glasses are seated, accept the single-slot risk, and type
+4. Choose **Complete pinned Apollo main** or **Flash differences · Stock ↔
+   CFW**. Difference mode automatically loads and hashes the opposite image,
+   shows the five skipped components and one changed component, and requires
+   confirmation that the displayed source is currently installed.
+5. Confirm the glasses are seated, accept the single-slot risk, and type
    `FLASH GLASSES FIRMWARE`.
-5. Keep the case powered, the lid and glasses still, and the browser awake
+6. Keep the case powered, the lid and glasses still, and the browser awake
    until the audit reports success or `failed_or_uncertain`.
-6. Download the audit JSON. Do not treat a same-version postflight reply alone
+7. Download the audit JSON. Do not treat a same-version postflight reply alone
    as proof of CFW; stock and CFW both report 2.2.6.10.
 
 After every selected route and Case 1.2.57 return are verified, the web
@@ -922,6 +1027,16 @@ hub, and confirm that the operating system recognizes the CH340/CH341 device.
 Reconnect the cable, close other applications that may own the serial port,
 choose the device again, and rerun analysis. Do not proceed with recovery from
 a partial report.
+
+**The log reports a short ROM read, such as 31 of 128 bytes**
+
+The Web Serial CH340 path may expose only the first USB packet: one ROM ACK and
+31 payload bytes. The current flasher rejects that partial block, opens a new
+identified ROM-loader session, and switches to complete 31-byte requests for
+the remainder of the capture. Other short-read patterns still receive bounded
+fresh-session retries. If analysis still fails, reconnect the Case directly,
+close every other serial client, and rerun analysis; never use or restore from
+the partial result.
 
 **The case disconnects during activation**
 

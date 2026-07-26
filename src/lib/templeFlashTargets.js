@@ -25,7 +25,7 @@ export const TEMPLE_FLASH_TARGETS = Object.freeze([
     mainBytes: 3523396,
     version: "2.2.6.10",
     label: "Stock Even Realities G2 2.2.6.10",
-    hardwareValidated: false,
+    hardwareValidated: true,
   }),
   Object.freeze({
     imageSha256: "f9a93621a7141e0ae54ca6371cd2f1b4afbffa61f302ace096e0656ba25b1754",

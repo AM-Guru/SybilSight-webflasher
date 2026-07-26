@@ -53,11 +53,11 @@ from g2_pogo_flasher import (
 )
 
 
-BRIDGE_BYTES = 2912
+BRIDGE_BYTES = 2920
 BRIDGE_SHA256 = (
-    "db61f28dd3fa100d85b1a0bd5653d71582c9292b6bfd362545b42b08cbd59149"
+    "9ab41ffe1b906869b264c9ba3aa739f3bda0ee8bf0051cf67679c204dd86ac2c"
 )
-BRIDGE_BANNER = b"G2_POGO_FLASH_BRIDGE_V3\n"
+BRIDGE_BANNER = b"G2_POGO_FLASH_BRIDGE_V4\n"
 REVIEWED_CFW_SHA256 = (
     "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0"
 )
@@ -274,45 +274,45 @@ def reset_both_temples_and_recheck(device: str) -> dict[str, object]:
 
 
 BRIDGE_BASE64 = (
-    "APABIAkAASBytk9LmEdytk5LmEdytk5LmEdytk1LmEdytk1IACEBYExIyUMBYExIAWAA8D38S0hLSQFgAPAa/QDwQftJT0pIOGAA"
-    "IAQheFAEMYAp+9EBIHhgRkgA8P38RUgYIQDwtftESAohAPCB+wooAtAQIDhhYuBATCBoPEmIQlPRIHkBKFDRZXkBLU3YpnkBLkrY"
-    "IHoAKEfRIEYJIQDwT/pheohCQNHgefhgvWA4RkAwAPAY/HhhMUmIQjjROEZAMADwJvwBKDLRAC4G0DhGQDBAeAEhCECoQinRKUuY"
-    "R3K2ASAA8Kz8ACYALQLRAPA4/AHgAPBJ/DhqDyEIQA8oGdE4RkowAPDu+7hhHEmIQhHRHEgA8KD8ACA4YQIgeGAA8Kf8APAu+i/g"
-    "ASA4YQbgAyA4YQPgBCA4YQDwtvoA8CH6APCb/O1OAAg5hAAIQWoACIkoAAgQ4ADggOEA4IDiAOAAMABAqqoAAAAaASBHMkZXAAAg"
-    "AJwKASAAGAEg/wMAAPlsAAgAgAAAASC4Z3FMIEYKIQDw7PoKKALQECA4YdDgIGhtSYhCAtBsSYhCFdEgeQEoEtEgegAoD9EgRgkh"
-    "APC++WF6iEII0WB5+GDliAAtBNBjSIVCANgC4IrgmeCO4GBIwyEBcAEhAPDx+gEo9tFdTAIguGcAJv5nrkIb0ClGiRsgKQDZICEg"
-    "RoAZAPCv+gJGKUaJGyApANkgIYpC3NF2GP5nT0jDIQFwASEA8M/6ASjU0eHnIEZAGQEhAPCX+gEoytEgRilGAPB5+WFdiELD0UBI"
-    "AGhBSYhCCtEAIDhhuGP4YwYguGcA8AL8APCj+YrnIEYpRgDwgfgAKDzRAyC4ZzpLmEdytjdIKUZkIgDwvvuoQjPReGsBMHhjBCC4"
+    "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"
-    "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"
+    "xvsA8GP5SucBIDhhJOACIDhhIeAFIDhhHuAGIDhhAPC2+wDwU/k65wDwy/kBKALQByA4YQHgACA4YX8geGIKILhjACD4YxFIEEkK"
+    "IgDwG/kA8Dz5APCg+wDws/kAILhjAPA0+QDwmPsAAAAcASBHMlRYRzJUU/EDAAAAHQEgACABIPlsAAiBbAAIACgBIFQaASBwtQRG"
     "DUYmeCQuCNBSLg7QUy4S0FQuL9BVLmfQc+AFLXHReGoAKGbQBChk0GvgBS1p0XhqAChm0V3ghS1j0XhqAShg0aBqAChd0eBqAyha"
     "0eBoIChX2UxJiEJU2EtJIEY0MBkiAPC4+AEoTNEgRk0wAHgAKEfRPuB4agIoAdADKEHRCS0/00JIhUI82GB4oXgIQzjR4HgheQkC"
     "CENBHalCMdEEKC/TBDhheQEpK9gAKQLROEqQQibRonm7atuymkIJ0AE727KaQh3RemoDKgvRASkY0QjgOmsSGPtqmkIS2AApAdCa"
     "Qg7RACBwvQUtCtF4agMoB9EgRilGAPBR+AEoAdEAIHC9ASBwvXC1IkwjTSZ4JC430Oh4BSg00Sh5sEIx0Wh5ASgu0ah5Aygr0eh5"
     "ASgo0Sh6ACgl0VIuAtEBIHhiIOBTLgfR4Gj4YgAgOGO4YgIgeGIW4FQuFNGgeblqybKIQg/R4HgheQkCCEMEODlrCRg5Y7hqATC4"
-    "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"
+    "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"
-    "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"
-    "MUj/9+T/crYwSDFJAWD+50cyX1BPR09fRkxBU0hfQlJJREdFX1YzCm90YS9zMjAwX2Zpcm13YXJlX290YS5iaW4AwEaBEQSvrwON"
-    "ICL/gQAErq4DgSAi/4ERBK+vA4EgIv+BAQSvrgOBICL/gRAErq8DgSAi/wAANBACQKAAACAUAQAgfAAAIL8AACBBkAAI0AoBIAmR"
-    "AAj/AwAAsTsACABIAEAABABQAAAPACgAAFAYAABQIE4AALksAAgAGwEgR0ZSUN7A3sAAAAgADO0A4AQA+gU="
+    "cThpYHG4aKBx+GjgcXhpIIG4aWCBIEYMIf/3yv8gcyBGDSEA8A/5cL1wtRNMFUggYAEgIHH4aGBxOGmgcfhr4HG+a0AuANlAJiZy"
+    "eGpgcgAgoHIMSCFGCzEyRv/3wv8gRgshiRn/96T/CyGJGWBUATEgRgDw5/hwvQAAAB0BIEcyUkRHMlJYACgBIPy1BEYNRgAmACce"
+    "Sx5KEnhSKgXQUyoD0FQqAdBVKgDRGksbSMFpDyIKQBdDICIRQiHQQWrJsq5CHdIALgLRWikZ0Q7gAS4F0aUpCtAAJlopEdEG4AIu"
+    "BNH/KQLQACZaKQnRoVUBNgQuBdPheAUxqUIE2I5CA9IBO9TRAOAAJjBGOUb8vQAAgAAAIAEgAAAAAgBIAEBwtQDwvfkA8IH5OEZU"
+    "MADwF/n4YQDwlPlwvfC1YEgBaGBKEUMBYGBKAWgRQvzQX0gBaAMikUMCIhFDAWBcSAFoASIRQwFgW0gBaFtKEUMBYFpIAWgRQwFg"
+    "kUMBYFhMIGhYSQhAWEkIQyBgYGhXSQhAYGCgaFNJCEBTSQhDoGDgaFBJCEDgYGBqUUkIQFFJCENgYlFMACAgYGBgoGAYIKBhTkjg"
+    "YE5IIGJOSCBgTkpPS+BpAUYRQJFCAdABO/jRTEgA8Hf58L3wtQRGDUYAJq5CBtAA8Af4ASkC0aBVATb25zBG8L0ctUNKQ0gQYDpK"
+    "Q0vQaQ8hCEIG0Ae0QUgCbwEyAmcHvBFiICEIQgjRATvv0TtK024BM9NmACAAIRy9UGrAsgEhHL3wtYGwBEYNRjFIMUkBYAAmKE8A"
+    "IACQrkIY0DBL+GmAIQhCD9EBO/nRLEqQZhFuATERZgCYATAAkAMoFtj/91r/HE/o56BduGIBNuTnJEv4aUAhCEIG0QE7+dEfSpBm"
+    "UW8BMVFnMEYBsPC9G0lKbgEySmYwRgGw8L0AAAAQAkAAAQAAAAQAAFQQAkA0EAJAQBACQABAAAAwEAJAAAAAUP//w/8AACgA//n/"
+    "/w/w//8QAQAAADgBQIsAAAD/OxIADRQAAAAAYAAAAAABAAAgAAAwAECqqgAAAAAAAgAaASAAABAA8LWUSAFoAyIRQwFgkkgIIQFg"
+    "ACFBYIFgAiHBYAAhAWGOSAFwjkgFIgFgBDABOvvRjEgBIQFw8L1wtQRGACUAJgotDdAoRgEhIkZSGYZLmEdytgAoAtABIalADkMB"
+    "Ne/nMEZwvfC1BEaATQUmACfgXeldiEIE0QE3Ci/40QEg8L0KNQE+8tEAIPC9MLWCsARGDUZqRhVwIEYBIXVLmEdytgAoBNABIbFA"
+    "OGoIQzhiArABNjC9ELUFIAMh//fm/wYgwSH/9+L/AyCmIf/33v8A8HH4ByADIf/32P8QvRC1BSADIf/30v8GIMEh//fO/wQgpiH/"
+    "98r/APBd+AcgBSH/98T/EL0QtTxGQDTheQcg//e8/6F5BiD/97j/YXkFIP/3tP/heAMg//ew/yF5BCD/96z///eq/xC9cLX4aU1J"
+    "iEIN0TxGQDQ9RlQ1ACagXaldiEIE0QE2Ci740QEgcL0AIHC9ELUMRkRLmEdytgAoAdEgRhC9ACAQvRC1QEgAIQFgP0gBaD9KkUMB"
+    "YD9ICCEBYBC9ELU9TAAoA9EBIMAEIGAQvQEgwAAgYBC9ACgB0AE4/dFwRxC1HiA1SQE5/dEBOPrREL0AtTNLmEdytgC9AyB4YDFI"
+    "MUkBYDFJQWAxSP/35P9ytjBIMUkBYP7nRzJfUE9HT19GTEFTSF9CUklER0VfVjQKb3RhL3MyMDBfZmlybXdhcmVfb3RhLmJpbgDA"
+    "RoERBK+vA40gIv+BAASurgOBICL/gREEr68DgSAi/4EBBK+uA4EgIv+BEASurwOBICL/AAA0EAJAoAAAIBQBACB8AAAgvwAAIEGQ"
+    "AAjYCgEgCZEACP8DAACxOwAIAEgAQAAEAFAAAA8AKAAAUBgAAFAgTgAAuSwACAAbASBHRlJQ3sDewAAACAAM7QDgBAD6BQ=="
 )
 
 
@@ -410,12 +410,9 @@ class CaseSramTempleTransport(TempleTransport):
             # matches the normal case-application control-line state and makes
             # any subsequent reset return to the case app, not the ROM loader.
             port.dtr = True
-            # Keep the case/CH340 leg conservative; the independent USART3
-            # pogo leg remains at the temple protocol's 1 Mbaud.
-            port.baudrate = 115_200
-            port.bytesize = serial.EIGHTBITS
-            port.parity = serial.PARITY_NONE
-            port.stopbits = serial.STOPBITS_ONE
+            # The bridge retains the ROM loader's 115,200 8E1 framing so
+            # Web Serial never needs a close/reopen transition after GO.
+            port.parity = serial.PARITY_EVEN
             port.timeout = 8.0
             banner = read_exact(port, len(BRIDGE_BANNER), "bridge banner")
             if banner != BRIDGE_BANNER:
@@ -828,19 +825,33 @@ def final_reset_and_verify_liveness(
 
     versions: dict[str, object] = {}
     for route in routes:
-        transport: CaseSramTempleTransport | None = None
-        try:
-            transport = CaseSramTempleTransport(device, route)
-            version = MainFirmwareFlasher(transport).read_version()
-            if version.firmware != expected_version or version.hardware != 5:
-                raise SafetyError(
-                    f"{route}: post-reset expected {expected_version}/hardware 5, "
-                    f"observed {version.firmware}/hardware {version.hardware}"
-                )
-            versions[route] = asdict(version)
-        finally:
-            if transport is not None:
-                _close_checked(transport)
+        version = None
+        for phase_attempt in range(1, 5):
+            transport: CaseSramTempleTransport | None = None
+            try:
+                transport = CaseSramTempleTransport(device, route)
+                version = MainFirmwareFlasher(transport).read_version()
+                break
+            except SafetyError as error:
+                if (
+                    "bridge setup status 3:" not in str(error)
+                    or phase_attempt == 4
+                ):
+                    raise
+                time.sleep(0.5 * phase_attempt)
+            finally:
+                if transport is not None:
+                    _close_checked(transport)
+        if version is None:
+            raise SafetyError(
+                f"{route}: post-reset version retry ended without a result"
+            )
+        if version.firmware != expected_version or version.hardware != 5:
+            raise SafetyError(
+                f"{route}: post-reset expected {expected_version}/hardware 5, "
+                f"observed {version.firmware}/hardware {version.hardware}"
+            )
+        versions[route] = asdict(version)
     return {
         "outcome": "success",
         "temple_mutation": "traced stock DEB0 dual-temple reset",
@@ -1311,8 +1322,8 @@ def main() -> int:
                     transport,
                     response_timeout=8.0,
                     finish_timeout=60.0,
-                    data_retries=5,
-                    retry_backoff_seconds=0.250,
+                    data_retries=1,
+                    retry_backoff_seconds=6.5,
                     batch_settle_seconds=0.250,
                     progress=_progress(route),
                 )

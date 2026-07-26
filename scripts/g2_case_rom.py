@@ -139,7 +139,7 @@ def require_expected_identity(port: serial.Serial) -> None:
         )
 
 
-def read_memory(port: serial.Serial, address: int, size: int) -> bytes:
+def _read_memory_once(port: serial.Serial, address: int, size: int) -> bytes:
     if not 1 <= size <= 256:
         raise ValueError("STM32 ROM reads must be between 1 and 256 bytes")
     send_command(port, READ_MEMORY, "Read Memory")
@@ -158,6 +158,56 @@ def read_memory(port: serial.Serial, address: int, size: int) -> bytes:
     port.flush()
     expect_ack(port, "Read Memory length ACK")
     return read_exact(port, size, f"memory at 0x{address:08x}")
+
+
+def _resynchronize_rom_loader(port: serial.Serial) -> None:
+    """Re-enter and re-identify ROM after a truncated CH340 response."""
+
+    if port.is_open:
+        port.close()
+    port.dtr = False
+    port.rts = True
+    port.open()
+    time.sleep(0.05)
+    port.rts = False
+    time.sleep(0.15)
+    port.reset_input_buffer()
+    port.write(bytes((SYNC,)))
+    port.flush()
+    expect_ack(port, "bootloader resynchronization ACK")
+    require_expected_identity(port)
+
+
+def read_memory(
+    port: serial.Serial,
+    address: int,
+    size: int,
+    *,
+    attempts: int = 5,
+) -> bytes:
+    """Read one exact block, restarting the ROM session after a short reply.
+
+    The STM32 has already completed the command when a CH340 USB transfer is
+    truncated. Continuing the partial prefix would desynchronize the next ACK,
+    so discard it and reread the complete address in a newly identified loader
+    session. Only read-only commands are repeated.
+    """
+
+    if attempts < 1:
+        raise ValueError("read attempts must be positive")
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return _read_memory_once(port, address, size)
+        except (BootloaderError, OSError, serial.SerialException) as error:
+            last_error = error
+            if attempt == attempts:
+                break
+            _resynchronize_rom_loader(port)
+    raise BootloaderError(
+        f"{attempts} read-only ROM sessions failed at 0x{address:08x}: "
+        f"{last_error}"
+    ) from last_error
 
 
 def write_sram(port: serial.Serial, address: int, data: bytes) -> None:

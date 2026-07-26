@@ -207,7 +207,7 @@ GLS_L:1, GLS_R:0 temp:335, chEn:1, aging:0, otaGls:0
 
 test("pins the physically reviewed read-only pogo bridge payload", async () => {
   const payload = await getVerifiedPogoBridgePayload();
-  assert.equal(payload.length, 1712);
+  assert.equal(payload.length, 1720);
   assert.equal(
     await globalThis.crypto.subtle
       .digest("SHA-256", payload)
@@ -303,7 +303,8 @@ test("marks the Apollo bootloader as omitted from pogo OTA", () => {
   assert.equal(main.startAndHeaderReplayAllowed, false);
   assert.equal(main.dataRetryOnly, true);
   assert.equal(main.deferredBatchSettleMs, 250);
-  assert.equal(main.maximumDataRetries, 5);
+  assert.equal(main.maximumDataRetries, 1);
+  assert.deepEqual(main.retryBackoffMs, [6500]);
   assert.equal(main.stabilityReadQueries, 1);
   assert.equal(main.preStartSettleMs, 250);
   assert.equal(main.postflightVersionRequired, true);
@@ -311,11 +312,11 @@ test("marks the Apollo bootloader as omitted from pogo OTA", () => {
 
 test("records successful case-pogo transfers and enables only the guarded browser writer", () => {
   assert.equal(POGO_TRANSFER_RESEARCH.directTempleHost.offlineTestsPassed, 8);
-  assert.equal(POGO_TRANSFER_RESEARCH.directTempleHost.dataRetryReasons.length, 2);
-  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 20);
+  assert.equal(POGO_TRANSFER_RESEARCH.directTempleHost.dataRetryReasons.length, 1);
+  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 23);
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.status,
-    "official-both-case-usb-right-ble-left",
+    "official-stock-v4-right-case-usb-left-ble",
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.currentSourceReviewGate,
@@ -439,11 +440,11 @@ test("records successful case-pogo transfers and enables only the guarded browse
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.hardwareAttemptsWithCurrentSource,
-    5,
+    3,
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulHardwareAttemptsWithCurrentSource,
-    2,
+    1,
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.postRestoreReset.command,

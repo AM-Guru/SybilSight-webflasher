@@ -33,6 +33,7 @@ from g2_case_pogo_flasher import (  # noqa: E402
     verify_route_stability,
 )
 import g2_case_pogo_flasher as case_flasher  # noqa: E402
+import g2_case_rom as case_rom  # noqa: E402
 from g2_pogo_flasher import (  # noqa: E402
     DeviceRejected,
     MainFirmwareFlasher,
@@ -189,6 +190,32 @@ class FakeTransport:
 
     def close(self) -> None:
         return None
+
+
+class CaseRomRetryTests(unittest.TestCase):
+    def test_short_read_reenters_rom_and_retries_exact_address(self) -> None:
+        expected = bytes([0xA5]) * 128
+        port = object()
+        with (
+            patch.object(
+                case_rom,
+                "_read_memory_once",
+                side_effect=[
+                    case_rom.BootloaderError("got 31 of 128 bytes"),
+                    expected,
+                ],
+            ) as read_once,
+            patch.object(
+                case_rom,
+                "_resynchronize_rom_loader",
+            ) as resynchronize,
+        ):
+            actual = case_rom.read_memory(port, 0x1FFF7800, 128)
+
+        self.assertEqual(actual, expected)
+        self.assertEqual(read_once.call_count, 2)
+        read_once.assert_called_with(port, 0x1FFF7800, 128)
+        resynchronize.assert_called_once_with(port)
 
 
 class G2FlashToolTests(unittest.TestCase):
@@ -504,8 +531,22 @@ class G2FlashToolTests(unittest.TestCase):
         with self.assertRaises(SafetyError):
             validate_main_component(bootloader)
 
-    def test_lost_data_reply_retries_the_exact_record(self) -> None:
-        self._assert_exact_retry(FakeTransport(timeout_once_sequence=1))
+    def test_lost_data_reply_is_never_replayed(self) -> None:
+        transport = FakeTransport(timeout_once_sequence=1)
+        with self.assertRaises(TransportTimeout):
+            MainFirmwareFlasher(
+                transport,
+                data_retries=1,
+                retry_backoff_seconds=6.5,
+                batch_settle_seconds=0,
+                sleeper=lambda _: None,
+            ).flash_main(make_main_component())
+        sequence_one = [
+            item
+            for item in transport.requests
+            if item[0] == 0x54 and item[6] == 1
+        ]
+        self.assertEqual(len(sequence_one), 1)
 
     def test_explicit_data_rejection_retries_the_exact_record(self) -> None:
         self._assert_exact_retry(FakeTransport(reject_once_sequence=1))
@@ -514,7 +555,8 @@ class G2FlashToolTests(unittest.TestCase):
         sleeps: list[float] = []
         result = MainFirmwareFlasher(
             transport,
-            data_retries=2,
+            data_retries=1,
+            retry_backoff_seconds=6.5,
             batch_settle_seconds=0,
             sleeper=sleeps.append,
         ).flash_main(make_main_component())
@@ -522,7 +564,7 @@ class G2FlashToolTests(unittest.TestCase):
         self.assertEqual(result.records_sent, 3)
         self.assertEqual(result.data_retries, 1)
         self.assertEqual(data_requests[1], data_requests[2])
-        self.assertIn(0.250, sleeps)
+        self.assertIn(6.5, sleeps)
 
     def test_missing_finish_ack_is_failed_or_uncertain(self) -> None:
         with self.assertRaises(NonIdempotentOtaError) as caught:

@@ -45,19 +45,18 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
     startAndHeaderReplayAllowed: false,
     dataRetryOnly: true,
     dataRetryReasons: Object.freeze([
-      "lost reply after an accepted record",
-      "explicit record rejection without sequence advance",
+      "one delayed retry after an explicit record rejection without sequence advance",
     ]),
     deferredBatchSettleMs: 250,
-    maximumDataRetries: 5,
-    retryBackoffMs: Object.freeze([250, 500, 750, 1000, 1250]),
+    maximumDataRetries: 1,
+    retryBackoffMs: Object.freeze([6500]),
     stabilityReadQueries: 1,
     preStartSettleMs: 250,
     postflightVersionRequired: true,
   }),
   caseUsbBridge: Object.freeze({
-    status: "official-both-case-usb-right-ble-left",
-    attempts: 20,
+    status: "official-stock-v4-right-case-usb-left-ble",
+    attempts: 23,
     attemptedBridgeSha256: Object.freeze([
       "6780d7ba8bf9a6539719dda4111c4fbaab706c74c16cda1e41751616f69109b4",
       "82ad4f81ab3ad1ab4a27185e845811722417a19f546075e1f8d488a2ab3ee264",
@@ -70,9 +69,11 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
       "08a08f45ac125a1dba6469234e56cacd32147d9e79203327987276d2fb182b02",
       "050c8116a1e074ec1763989174cbc109c4ffe57996de9ba0b9ecf4ced8cb5a5a",
       "db61f28dd3fa100d85b1a0bd5653d71582c9292b6bfd362545b42b08cbd59149",
+      "a5c289f64b4db41abfde57f6ef32638f001ee67ad8134a778fe7314f008a649c",
+      "9ab41ffe1b906869b264c9ba3aa739f3bda0ee8bf0051cf67679c204dd86ac2c",
     ]),
     validationBoundary:
-      "Attempts 6 and 9 completed the reviewed CFW Apollo-main transfer on the right and left running temples. Case USB completed the pinned official Apollo-main transfer on the right. After an interrupted 85,000-byte wired left transfer left product-test START unreliable, a fresh upstream BLE session completed all six pinned official left components with 1,053 status-zero block ACKs, six verified END results, and zero resends.",
+      "Attempts 6 and 9 completed the reviewed CFW Apollo-main transfer on the right and left running temples. V4 then completed the pinned official Apollo-main transfer on the right after extending the bounded DATA-reply window. Left V4 attempts remained staged-only and never reached FINISH; the previously completed fresh upstream BLE session remains the installed six-component official-left provenance with 1,053 status-zero block ACKs, six verified END results, and zero resends.",
     officialRestore: Object.freeze({
       packageSha256:
         "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa",
@@ -230,14 +231,14 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
     }),
     currentSourceReviewGate:
       "hardware-validated-route-phase-fail-closed-and-selected-version",
-    declaredBytes: 2912,
+    declaredBytes: 2920,
     declaredSha256:
-      "db61f28dd3fa100d85b1a0bd5653d71582c9292b6bfd362545b42b08cbd59149",
-    observedBytes: 2912,
+      "9ab41ffe1b906869b264c9ba3aa739f3bda0ee8bf0051cf67679c204dd86ac2c",
+    observedBytes: 2920,
     observedSha256:
-      "db61f28dd3fa100d85b1a0bd5653d71582c9292b6bfd362545b42b08cbd59149",
-    hardwareAttemptsWithCurrentSource: 5,
-    successfulHardwareAttemptsWithCurrentSource: 2,
+      "9ab41ffe1b906869b264c9ba3aa739f3bda0ee8bf0051cf67679c204dd86ac2c",
+    hardwareAttemptsWithCurrentSource: 3,
+    successfulHardwareAttemptsWithCurrentSource: 1,
     postRestoreReset: Object.freeze({
       status: "hardware-validated-revived-left-temple",
       caseApplicationVersion: "1.2.57",
@@ -412,9 +413,11 @@ export function describePogoOtaComponent(typeId, payloadSize) {
         "Parser acceptance only; post-reset liveness and version verification remain mandatory.",
       startAndHeaderReplayAllowed: false,
       dataRetryOnly: true,
+      dataRetryReason:
+        "one delayed retry after an explicit record rejection without sequence advance",
       deferredBatchSettleMs: 250,
-      maximumDataRetries: 5,
-      retryBackoffMs: [250, 500, 750, 1000, 1250],
+      maximumDataRetries: 1,
+      retryBackoffMs: [6500],
       stabilityReadQueries: 1,
       preStartSettleMs: 250,
       postflightVersionRequired: true,
@@ -774,10 +777,19 @@ export async function parseFirmwareInput(input, fileName = "firmware.bin") {
   if (hasMagic(bytes, EVENOTA_MAGIC)) {
     const bundle = parseEvenOTA(bytes);
     const provenance = classifyG2Firmware(fileSha256);
-    const mainEntry = bundle.components.find((component) => component.typeId === 0);
-    const mainPayloadSha256 = mainEntry
-      ? await sha256Hex(mainEntry.payload)
-      : null;
+    const componentImages = await Promise.all(
+      bundle.components.map(async (component) => ({
+        name: component.name,
+        typeId: component.typeId,
+        header: component.header,
+        payload: component.payload,
+        payloadSize: component.payloadSize,
+        payloadSha256: await sha256Hex(component.payload),
+        crc32c: component.crc32c,
+      })),
+    );
+    const mainEntry = componentImages.find((component) => component.typeId === 0);
+    const mainPayloadSha256 = mainEntry?.payloadSha256 ?? null;
     const mainComponent = mainEntry
       ? {
           name: mainEntry.name,
@@ -815,10 +827,12 @@ export async function parseFirmwareInput(input, fileName = "firmware.bin") {
       caseRecoveryEligible: provenance.channel !== "custom",
       templeFlashEligible,
       templeFlashTarget: templeFlashEligible ? templeFlashTarget : null,
-      components: bundle.components.map(({ name, typeId, payloadSize, crc32c: crc }) => ({
+      componentImages,
+      components: componentImages.map(({ name, typeId, payloadSize, payloadSha256, crc32c: crc }) => ({
         name,
         typeId,
         payloadSize,
+        payloadSha256,
         crc32c: hex(crc),
         pogoOta: describePogoOtaComponent(typeId, payloadSize),
       })),

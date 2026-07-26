@@ -34,9 +34,16 @@ import {
 import { sha256Hex, writeU32LE } from "../src/lib/firmware.js";
 import {
   G2CaseSession,
+  WEB_SERIAL_ROM_READ_SIZE,
   canRunFinalResetAfterFailure,
+  isG2CaseSerialPort,
+  isWebSerialRomPacketBoundary,
+  retryReadOnlyBlock,
   writePogoFlashTransactionHeader,
 } from "../src/lib/serial.js";
+
+const REVIEWED_STOCK_IMAGE_SHA256 =
+  "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa";
 
 function makeTempleFrame(payload) {
   const frame = new Uint8Array(payload.length + 5);
@@ -77,6 +84,96 @@ test("paces the fixed transaction header across the CH340 idle boundary", async 
     [5, 6, 7, 8, 9],
   ]);
   assert.deepEqual(sleeps, [5]);
+});
+
+test("re-synchronizes and rereads the exact block after a CH340 short read", async () => {
+  let reads = 0;
+  let resynchronizations = 0;
+  const retries = [];
+  const block = await retryReadOnlyBlock(
+    async () => {
+      reads += 1;
+      if (reads < 3) {
+        throw new Error(`received 31 of 128 bytes on attempt ${reads}`);
+      }
+      return new Uint8Array(128).fill(0xa5);
+    },
+    async () => {
+      resynchronizations += 1;
+    },
+    {
+      onRetry: (error, attempt) => retries.push([error.message, attempt]),
+    },
+  );
+  assert.equal(block.length, 128);
+  assert.equal(reads, 3);
+  assert.equal(resynchronizations, 2);
+  assert.equal(retries.length, 2);
+});
+
+test("recognizes the deterministic CH340 Web Serial packet boundary", () => {
+  assert.equal(WEB_SERIAL_ROM_READ_SIZE, 31);
+  assert.equal(
+    isWebSerialRomPacketBoundary(
+      new Error("Timed out reading memory at 0x1fff7800: received 31 of 128 bytes."),
+      128,
+    ),
+    true,
+  );
+  assert.equal(
+    isWebSerialRomPacketBoundary(
+      new Error("Timed out reading memory at 0x1fff7800: received 30 of 128 bytes."),
+      128,
+    ),
+    false,
+  );
+  assert.equal(
+    isWebSerialRomPacketBoundary(
+      new Error("Timed out reading memory at 0x1fff7800: received 31 of 31 bytes."),
+      31,
+    ),
+    false,
+  );
+});
+
+test("recognizes only the reviewed G2 Case USB serial identity", () => {
+  assert.equal(
+    isG2CaseSerialPort({
+      getInfo: () => ({ usbVendorId: 0x1a86, usbProductId: 0x7523 }),
+    }),
+    true,
+  );
+  assert.equal(
+    isG2CaseSerialPort({
+      getInfo: () => ({ usbVendorId: 0x1a86, usbProductId: 0x7522 }),
+    }),
+    false,
+  );
+  assert.equal(isG2CaseSerialPort({ getInfo: () => { throw new Error("gone"); } }), false);
+});
+
+test("retries only a fail-closed read-only YHM idle-phase mismatch", async () => {
+  const waits = [];
+  const logs = [];
+  const session = new G2CaseSession(null, {
+    wait: async (milliseconds) => waits.push(milliseconds),
+    log: (message, level) => logs.push([message, level]),
+  });
+  let attempts = 0;
+  session.probeRunningTempleOnce = async () => {
+    attempts += 1;
+    if (attempts < 3) {
+      throw new Error(
+        "The pogo bridge stopped safely: YHM baseline was not an allowlisted seated-idle state.",
+      );
+    }
+    return { route: "right", operation: "version" };
+  };
+  const result = await session.probeRunningTemple("version", "right");
+  assert.deepEqual(result, { route: "right", operation: "version" });
+  assert.equal(attempts, 3);
+  assert.deepEqual(waits, [500, 1000]);
+  assert.equal(logs.length, 2);
 });
 
 test("pins the hardware-validated volatile flash bridge", async () => {
@@ -280,8 +377,8 @@ test("pins every temple-flash target to a distinct image and main digest", () =>
   const validated = TEMPLE_FLASH_TARGETS.filter((t) => t.hardwareValidated);
   assert.deepEqual(
     validated.map((t) => t.imageSha256),
-    [REVIEWED_CFW_IMAGE_SHA256],
-    "only the reviewed CFW has hardware-validated temple transfers",
+    [REVIEWED_CFW_IMAGE_SHA256, REVIEWED_STOCK_IMAGE_SHA256],
+    "the reviewed CFW and pinned Stock image have hardware-validated transfers",
   );
 });
 
@@ -308,7 +405,9 @@ test("keeps the generated pin table in sync with the firmware archive", async ()
       mainSha256: main.sha256,
       mainBytes: main.size,
       version: release.internalVersion ?? release.version,
-      hardwareValidated: release.channel === "custom",
+      hardwareValidated:
+        release.channel === "custom" ||
+        release.sha256 === REVIEWED_STOCK_IMAGE_SHA256,
     }));
   assert.deepEqual(
     TEMPLE_FLASH_TARGETS.map(({ label, ...rest }) => rest),

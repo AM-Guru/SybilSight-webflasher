@@ -55,6 +55,7 @@ import {
   parsePogoFlashRetainedResult,
   requireOtaAcknowledgement,
 } from "./pogoFlashBridge.js";
+import { buildBundleDifferencePlan } from "./differential.js";
 
 const ACK = 0x79;
 const NACK = 0x1f;
@@ -75,9 +76,42 @@ const REVIEWED_CASE_ROM_COMMANDS = Object.freeze([
 // liveness gate; it is not a multi-query stability claim.
 const POGO_STABILITY_READ_QUERIES = 1;
 const POGO_STABILITY_INTERVAL_MS = 25;
+export const WEB_SERIAL_ROM_READ_SIZE = 31;
 
 export function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+export async function retryReadOnlyBlock(
+  read,
+  resynchronize,
+  { attempts = 5, onRetry = () => {} } = {},
+) {
+  if (!Number.isInteger(attempts) || attempts < 1) {
+    throw new Error("Read-only retry attempts must be a positive integer.");
+  }
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await read(attempt);
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts) break;
+      onRetry(error, attempt, attempts - 1);
+      await resynchronize(attempt);
+    }
+  }
+  throw lastError;
+}
+
+export function isWebSerialRomPacketBoundary(error, requestedSize) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return (
+    requestedSize > WEB_SERIAL_ROM_READ_SIZE &&
+    message.includes(
+      `received ${WEB_SERIAL_ROM_READ_SIZE} of ${requestedSize} bytes`,
+    )
+  );
 }
 
 export async function writePogoFlashTransactionHeader(
@@ -311,6 +345,7 @@ class Stm32Bootloader {
     this.commands = [];
     this.version = null;
     this.productId = null;
+    this.maximumReadSize = 256;
   }
 
   async connect() {
@@ -344,6 +379,15 @@ class Stm32Bootloader {
   async close() {
     await this.transport?.close();
     this.transport = null;
+  }
+
+  takeTransport() {
+    if (!this.transport) {
+      throw new Error("The STM32 ROM transport is not open.");
+    }
+    const transport = this.transport;
+    this.transport = null;
+    return transport;
   }
 
   requireCommand(command, label) {
@@ -407,10 +451,45 @@ class Stm32Bootloader {
 
   async readRange(address, size, onProgress) {
     const output = new Uint8Array(size);
-    for (let offset = 0; offset < size; offset += 256) {
-      const length = Math.min(256, size - offset);
-      output.set(await this.readMemory(address + offset, length), offset);
-      onProgress?.((offset + length) / size);
+    let offset = 0;
+    while (offset < size) {
+      const length = Math.min(this.maximumReadSize, size - offset);
+      const blockAddress = address + offset;
+      const resynchronize = async () => {
+        await this.close();
+        await delay(120);
+        await this.connect();
+      };
+      let block;
+      try {
+        block = await this.readMemory(blockAddress, length);
+      } catch (error) {
+        if (isWebSerialRomPacketBoundary(error, length)) {
+          this.log(
+            `Detected the CH340 Web Serial packet boundary at 0x${blockAddress.toString(16)}; discarding the partial reply and switching to ${WEB_SERIAL_ROM_READ_SIZE}-byte ROM reads.`,
+            "warn",
+          );
+          await resynchronize();
+          this.maximumReadSize = WEB_SERIAL_ROM_READ_SIZE;
+          continue;
+        }
+        await resynchronize();
+        block = await retryReadOnlyBlock(
+          () => this.readMemory(blockAddress, length),
+          resynchronize,
+          {
+            attempts: 4,
+            onRetry: (retryError, attempt, retryCount) =>
+              this.log(
+                `ROM read retry ${attempt + 1}/${retryCount + 1} at 0x${blockAddress.toString(16)} after ${retryError.message}`,
+                "warn",
+              ),
+          },
+        );
+      }
+      output.set(block, offset);
+      offset += length;
+      onProgress?.(offset / size);
     }
     return output;
   }
@@ -484,32 +563,6 @@ async function openNormalConsole(port) {
   await transport.setSignals(true, true);
   await delay(60);
   await transport.setSignals(true, false);
-  return transport;
-}
-
-async function openPogoBridgeHost(port) {
-  const transport = new SerialTransport(port);
-  await transport.open({
-    baudRate: 1_000_000,
-    dataBits: 8,
-    stopBits: 1,
-    parity: "none",
-    flowControl: "none",
-    bufferSize: 4096,
-  });
-  return transport;
-}
-
-async function openPogoFlashBridgeHost(port) {
-  const transport = new SerialTransport(port);
-  await transport.open({
-    baudRate: 115200,
-    dataBits: 8,
-    stopBits: 1,
-    parity: "none",
-    flowControl: "none",
-    bufferSize: 65536,
-  });
   return transport;
 }
 
@@ -627,7 +680,7 @@ class CasePogoFlashTransport {
         const chunk = payload.subarray(offset, Math.min(offset + 256, payload.length));
         const address = POGO_FLASH_BRIDGE_ADDRESS + offset;
         await this.loader.writeMemory(address, chunk);
-        const readback = await this.loader.readMemory(address, chunk.length);
+        const readback = await this.loader.readRange(address, chunk.length);
         if (!equalBytes(readback, chunk)) {
           throw new PogoFlashSafetyError(
             `The volatile flash bridge readback differs at 0x${address.toString(16)}.`,
@@ -641,19 +694,16 @@ class CasePogoFlashTransport {
       await this.loader.go(POGO_FLASH_BRIDGE_ADDRESS);
       await this.loader.releaseBootSelection();
       this.bridgeLaunched = true;
-      await this.closeTransport("loader");
+      this.bridge = this.loader.takeTransport();
+      this.loader = null;
 
-      this.bridge = await openPogoFlashBridgeHost(this.port);
-      await delay(120);
-      if (this.bridge.queuedBytes > 0) {
-        const banner = await this.bridge.readExact(
-          POGO_FLASH_BRIDGE_BANNER.length,
-          800,
-          "flash bridge banner",
-        );
-        if (!equalBytes(banner, POGO_FLASH_BRIDGE_BANNER)) {
-          throw new PogoFlashSafetyError("The volatile flash bridge banner is invalid.");
-        }
+      const banner = await this.bridge.readExact(
+        POGO_FLASH_BRIDGE_BANNER.length,
+        3000,
+        "flash bridge banner",
+      );
+      if (!equalBytes(banner, POGO_FLASH_BRIDGE_BANNER)) {
+        throw new PogoFlashSafetyError("The volatile flash bridge banner is invalid.");
       }
 
       const setup = makePogoFlashSetup(this.route);
@@ -662,7 +712,7 @@ class CasePogoFlashTransport {
       parsePogoFlashReady(ready, setup);
       this.active = true;
       this.session.log(
-        `${this.route}: verified the 2,912-byte volatile writer and selected the mutation-compatible Case phase.`,
+        `${this.route}: verified the ${payload.length.toLocaleString("en-US")}-byte volatile writer and selected the mutation-compatible Case phase.`,
       );
     } catch (error) {
       await this.closeTransport("loader");
@@ -1101,6 +1151,29 @@ export class G2CaseSession {
   async probeRunningTemple(
     operation,
     route,
+    options = {},
+  ) {
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      try {
+        return await this.probeRunningTempleOnce(operation, route, options);
+      } catch (error) {
+        const routePhaseMismatch = error?.message?.includes(
+          "YHM baseline was not an allowlisted seated-idle state",
+        );
+        if (!routePhaseMismatch || attempt === 4) throw error;
+        this.log(
+          `${route} ${operation}: Case charging phase is between allowlisted idle states; waiting before read-only retry ${attempt}/3.`,
+          "warn",
+        );
+        await this.wait(500 * attempt);
+      }
+    }
+    throw new Error("The bounded read-only temple retry loop ended unexpectedly.");
+  }
+
+  async probeRunningTempleOnce(
+    operation,
+    route,
     { progressBase = 0, progressSpan = 1 } = {},
   ) {
     const reportProgress = (fraction, detail) =>
@@ -1119,6 +1192,29 @@ export class G2CaseSession {
     let bridge = null;
     let bridgeLoaded = false;
     let residueCleared = false;
+
+    const openProbeLoader = async (purpose) =>
+      retryReadOnlyBlock(
+        async () => {
+          const candidate = new Stm32Bootloader(this.port, this.log);
+          try {
+            await candidate.connect();
+            return candidate;
+          } catch (error) {
+            await candidate.close();
+            throw error;
+          }
+        },
+        async () => this.wait(400),
+        {
+          attempts: 3,
+          onRetry: (error, attempt) =>
+            this.log(
+              `${purpose} loader synchronization retry ${attempt}/2 after ${error.message}`,
+              "warn",
+            ),
+        },
+      );
 
     const closeOpenTransports = async () => {
       if (bridge) {
@@ -1142,9 +1238,8 @@ export class G2CaseSession {
     };
 
     const clearRetainedBridgeData = async () => {
-      const cleanupLoader = new Stm32Bootloader(this.port, this.log);
+      const cleanupLoader = await openProbeLoader("Pogo cleanup");
       try {
-        await cleanupLoader.connect();
         await cleanupLoader.writeMemory(POGO_BRIDGE_PROOF_ADDRESS, zeroProof);
         await cleanupLoader.writeMemory(POGO_BRIDGE_RESULT_ADDRESS, zeroResult);
         const proofCheck = await cleanupLoader.readRange(
@@ -1168,8 +1263,7 @@ export class G2CaseSession {
       this.log(
         `Loading the pinned read-only pogo bridge for ${route} ${operation}.`,
       );
-      loader = new Stm32Bootloader(this.port, this.log);
-      await loader.connect();
+      loader = await openProbeLoader(`${route} ${operation}`);
       if (loader.version !== 0x31) {
         throw new Error(
           `Unexpected STM32 ROM protocol 0x${loader.version.toString(16)} for the reviewed bridge.`,
@@ -1189,7 +1283,7 @@ export class G2CaseSession {
         const chunk = payload.subarray(offset, Math.min(offset + 256, payload.length));
         const address = POGO_BRIDGE_ADDRESS + offset;
         await loader.writeMemory(address, chunk);
-        const readback = await loader.readMemory(address, chunk.length);
+        const readback = await loader.readRange(address, chunk.length);
         if (!equalBytes(readback, chunk)) {
           throw new Error(
             `The volatile bridge readback differs at 0x${address.toString(16)}.`,
@@ -1204,23 +1298,20 @@ export class G2CaseSession {
       this.log(`Verified all ${payload.length} pinned SRAM bridge bytes.`);
 
       await loader.go(POGO_BRIDGE_ADDRESS);
-      await loader.close();
+      // Both pinned bridges deliberately retain the ROM loader's 115200 8E1
+      // host framing. Keep one Web Serial session so CH340 close/open control
+      // transitions cannot reset the Case between GO and the bridge banner.
+      await loader.releaseBootSelection();
+      bridge = loader.takeTransport();
       loader = null;
 
-      bridge = await openPogoBridgeHost(this.port);
-      // Web Serial changes framing by closing and reopening the port. The CH340
-      // may discard the short banner during that transition, so it is optional;
-      // when any banner bytes survive, require the complete pinned value.
-      await delay(120);
-      if (bridge.queuedBytes > 0) {
-        const banner = await bridge.readExact(
-          POGO_BRIDGE_BANNER.length,
-          600,
-          "pogo bridge banner",
-        );
-        if (!equalBytes(banner, POGO_BRIDGE_BANNER)) {
-          throw new Error("The volatile pogo bridge banner is invalid.");
-        }
+      const banner = await bridge.readExact(
+        POGO_BRIDGE_BANNER.length,
+        3000,
+        "pogo bridge banner",
+      );
+      if (!equalBytes(banner, POGO_BRIDGE_BANNER)) {
+        throw new Error("The volatile pogo bridge banner is invalid.");
       }
       const request = makePogoBridgeRequest(operation, route);
       await bridge.write(request);
@@ -1240,8 +1331,7 @@ export class G2CaseSession {
       reportProgress(0.66, "Temple response captured");
 
       await delay(300);
-      loader = new Stm32Bootloader(this.port, this.log);
-      await loader.connect();
+      loader = await openProbeLoader(`${route} restoration proof`);
       const proof = await loader.readRange(
         POGO_BRIDGE_PROOF_ADDRESS,
         POGO_BRIDGE_PROOF.length,
@@ -1560,23 +1650,20 @@ export class G2CaseSession {
         const data = payload.subarray(offset, Math.min(offset + 1000, payload.length));
         const final = index + 1 === totalRecords;
         const request = makeOtaDataRequest(data, final, index & 0xff);
-        for (let attempt = 0; ; attempt += 1) {
-          try {
-            const response = await transport.transact(request, 8000);
-            requireOtaAcknowledgement(response, 0x54);
-            break;
-          } catch (error) {
-            if (!(error instanceof RetryablePogoFlashError) || attempt >= 5) {
-              throw error;
-            }
-            retries += 1;
-            transport.drainInput();
-            this.log(
-              `${route}: retrying exact 0x54 record ${index + 1} after ${error.message}`,
-              "warn",
-            );
-            await delay(250 * (attempt + 1));
-          }
+        try {
+          const response = await transport.transact(request, 8000);
+          requireOtaAcknowledgement(response, 0x54);
+        } catch (error) {
+          if (!(error instanceof TempleRejectedError)) throw error;
+          retries += 1;
+          transport.drainInput();
+          this.log(
+            `${route}: explicit rejection left DATA record ${index + 1} unadvanced; waiting 6.5 seconds for deferred storage before one exact retry.`,
+            "warn",
+          );
+          await delay(6500);
+          const response = await transport.transact(request, 8000);
+          requireOtaAcknowledgement(response, 0x54);
         }
         acceptedBytes += data.length;
         transport.reportProgress(
@@ -1686,9 +1773,33 @@ export class G2CaseSession {
     return result;
   }
 
-  async flashPinnedTempleMain(firmware, routeSelection = "both") {
+  async flashPinnedTempleMain(
+    firmware,
+    routeSelection = "both",
+    { mode = "complete", differenceSourceFirmware = null } = {},
+  ) {
     const { mainComponent: component, target } =
       await assertPinnedTempleFlashCandidate(firmware);
+    if (!["complete", "differences"].includes(mode)) {
+      throw new PogoFlashSafetyError("Choose complete or differences flashing.");
+    }
+    let differencePlan = null;
+    if (mode === "differences") {
+      await assertPinnedTempleFlashCandidate(differenceSourceFirmware);
+      differencePlan = buildBundleDifferencePlan(
+        differenceSourceFirmware,
+        firmware,
+      );
+      if (!differencePlan.executable) {
+        throw new PogoFlashSafetyError(
+          "The Stock/CFW difference plan is not an exact one-component transition.",
+        );
+      }
+      this.log(
+        `Difference plan verified: ${differencePlan.unchangedComponentCount} identical components omitted; transmitting the one changed, CRC-gated Apollo main.`,
+        "success",
+      );
+    }
     const routes =
       routeSelection === "both"
         ? ["right", "left"]
@@ -1698,15 +1809,20 @@ export class G2CaseSession {
     }
 
     const audit = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       startedAt: new Date().toISOString(),
-      operation: "g2_case_usb_pinned_main_only",
+      operation:
+        mode === "differences"
+          ? "g2_case_usb_bundle_component_differences"
+          : "g2_case_usb_pinned_main_only",
+      flashMode: mode,
+      differencePlan,
       imageSha256: firmware.fileSha256,
       imageLabel: target.label,
       imageHardwareValidated: target.hardwareValidated,
       mainPayloadSha256: component.payloadSha256,
       bridgeSha256:
-        "db61f28dd3fa100d85b1a0bd5653d71582c9292b6bfd362545b42b08cbd59149",
+        "9ab41ffe1b906869b264c9ba3aa739f3bda0ee8bf0051cf67679c204dd86ac2c",
       routes,
       bootloaderAllowed: false,
       preflightCase: null,
@@ -1744,6 +1860,43 @@ export class G2CaseSession {
         routes,
         target.version,
       );
+      audit.verification = {
+        targetBundleSha256: firmware.fileSha256,
+        targetMainSha256: component.payloadSha256,
+        targetMainBytes: component.payload.length,
+        everyRouteAcceptedExactTargetBytes: audit.routeResults.every(
+          (result) =>
+            result.transfer?.finishAckReceived &&
+            result.transfer.payloadBytesSent === component.payload.length &&
+            result.retainedResult?.acceptedSize === component.payload.length,
+        ),
+        everyRoutePostflightVersionValid: audit.routeResults.every(
+          (result) =>
+            result.postflightVersion?.firmware === target.version &&
+            result.postflightVersion?.hardware === 5,
+        ),
+        finalDualTempleResetVerified:
+          audit.finalResetAndLiveness?.resetConfirmed === true,
+        postResetLivenessVerified: routes.every(
+          (route) =>
+            audit.finalResetAndLiveness?.versions?.[route]?.firmware ===
+              target.version &&
+            audit.finalResetAndLiveness?.versions?.[route]?.hardware === 5,
+        ),
+        installedByteReadbackAvailable: false,
+        installedByteReadbackBoundary:
+          "The stock Case route exposes the OTA receiver, not installed Apollo MRAM readback; the target is proven by its pinned header/CRC, exact accepted byte count, finish acknowledgement, reboot, and post-reset liveness.",
+      };
+      if (
+        !audit.verification.everyRouteAcceptedExactTargetBytes ||
+        !audit.verification.everyRoutePostflightVersionValid ||
+        !audit.verification.finalDualTempleResetVerified ||
+        !audit.verification.postResetLivenessVerified
+      ) {
+        throw new PogoFlashSafetyError(
+          "The transfer completed but the consolidated verification proof is incomplete.",
+        );
+      }
       audit.outcome = "success";
       this.progress(1, "Pinned transfer, final reset, and liveness verified");
       return audit;
@@ -1868,9 +2021,23 @@ export function webSerialSupported() {
   return typeof navigator !== "undefined" && "serial" in navigator;
 }
 
+export function isG2CaseSerialPort(port) {
+  try {
+    const { usbVendorId, usbProductId } = port?.getInfo?.() ?? {};
+    return usbVendorId === 0x1a86 && usbProductId === 0x7523;
+  } catch {
+    return false;
+  }
+}
+
 export async function requestG2CasePort() {
   if (!webSerialSupported()) {
     throw new Error("Web Serial is not available. Use current Chrome or Edge on desktop.");
+  }
+  const grantedPorts = await navigator.serial.getPorts();
+  const grantedCases = grantedPorts.filter(isG2CaseSerialPort);
+  if (grantedCases.length === 1) {
+    return grantedCases[0];
   }
   return navigator.serial.requestPort({
     filters: [{ usbVendorId: 0x1a86, usbProductId: 0x7523 }],

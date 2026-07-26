@@ -362,6 +362,16 @@ code {
   font-size: 9px;
 }
 
+.icon-tools svg {
+  width: 17px;
+  height: 17px;
+  overflow: visible;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .error-banner {
   display: grid;
   margin: 22px clamp(24px, 5vw, 72px) -4px;
@@ -4483,4 +4493,201 @@ body {
 #recover .transfer-facts strong,
 #recover .sbl-facts strong {
   font-size: 10px;
+}
+
+/* ==========================================================================
+   Recovery operation console, differential plan, and footer progress
+   ========================================================================== */
+
+.smart-glasses-recovery-controls .flash-select-label {
+  display: grid;
+  color: #888d8a;
+  font-family: var(--mono);
+  font-size: 7px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  gap: 7px;
+}
+
+.difference-plan {
+  display: grid;
+  padding: 15px;
+  color: #858a87;
+  border: 1px solid #343936;
+  border-radius: 10px;
+  background: #0b0d0c;
+  gap: 12px;
+}
+
+.difference-plan.is-ready {
+  border-color: rgba(0, 255, 136, 0.34);
+  background:
+    linear-gradient(140deg, rgba(0, 255, 136, 0.06), transparent 52%),
+    #0b0d0c;
+}
+
+.difference-plan.is-blocked {
+  color: #ffabb4;
+  border-color: rgba(255, 91, 106, 0.35);
+  background: rgba(255, 91, 106, 0.05);
+}
+
+.difference-plan-heading,
+.difference-plan-route {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.difference-plan-heading span {
+  font-family: var(--mono);
+  font-size: 7px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.difference-plan-heading strong {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 8px;
+}
+
+.difference-plan-route {
+  justify-content: flex-start;
+}
+
+.difference-plan-route code {
+  overflow: hidden;
+  color: #d9ddda;
+  font-size: 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.difference-plan-route span {
+  color: var(--accent);
+}
+
+.difference-plan-facts {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid #272c29;
+  border-radius: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.difference-plan-facts span {
+  display: grid;
+  padding: 10px;
+  border-right: 1px solid #272c29;
+  border-bottom: 1px solid #272c29;
+  font-family: var(--sans);
+  font-size: 8px;
+  line-height: 1.4;
+  gap: 3px;
+}
+
+.difference-plan-facts span:nth-child(even) {
+  border-right: 0;
+}
+
+.difference-plan-facts span:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.difference-plan-facts strong {
+  color: #f1f3f2;
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.difference-plan > small {
+  color: #767c78;
+  font-size: 8px;
+  line-height: 1.65;
+}
+
+.difference-plan .difference-source-confirm {
+  margin: 0;
+  padding-top: 11px;
+  border-top: 1px solid #272c29;
+}
+
+.footer {
+  display: grid;
+  padding: 12px clamp(24px, 5vw, 72px);
+  gap: 10px;
+}
+
+.footer-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.footer-task-progress {
+  display: grid;
+  gap: 7px;
+}
+
+.footer-task-progress-heading {
+  display: flex;
+  color: #9da29f;
+  font-family: var(--mono);
+  font-size: 8px;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.footer-task-progress-heading strong {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.footer-progress-track {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #202522;
+}
+
+.footer-progress-track span {
+  display: block;
+  min-width: 1.5%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  box-shadow: 0 0 16px rgba(0, 255, 136, 0.55);
+  transition: width 180ms ease;
+}
+
+.footer-current-task {
+  color: #d5dad7;
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+@media (max-width: 600px) {
+  .difference-plan-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .difference-plan-facts span,
+  .difference-plan-facts span:nth-child(even),
+  .difference-plan-facts span:nth-last-child(-n + 2) {
+    border-right: 0;
+    border-bottom: 1px solid #272c29;
+  }
+
+  .difference-plan-facts span:last-child {
+    border-bottom: 0;
+  }
+
+  .footer-meta,
+  .footer-task-progress-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
 }

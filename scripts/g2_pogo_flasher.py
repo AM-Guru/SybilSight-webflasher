@@ -452,14 +452,14 @@ class MainFirmwareFlasher:
         *,
         response_timeout: float = 5.0,
         finish_timeout: float = 60.0,
-        data_retries: int = 2,
-        retry_backoff_seconds: float = 0.250,
+        data_retries: int = 1,
+        retry_backoff_seconds: float = 6.5,
         batch_settle_seconds: float = 0.100,
         sleeper: Callable[[float], None] = time.sleep,
         progress: Callable[[int, int], None] | None = None,
     ) -> None:
-        if data_retries < 0:
-            raise ValueError("data_retries cannot be negative")
+        if data_retries not in (0, 1):
+            raise ValueError("data_retries must be 0 or 1")
         if retry_backoff_seconds < 0:
             raise ValueError("retry_backoff_seconds cannot be negative")
         if batch_settle_seconds < 0:
@@ -521,17 +521,15 @@ class MainFirmwareFlasher:
                         request, self.response_timeout
                     )
                     break
-                except (TransportTimeout, ProtocolError, DeviceRejected):
+                except DeviceRejected:
                     if attempt >= self.data_retries:
                         raise
                     retries_used += 1
-                    # A rejected record does not advance the expected
-                    # sequence, while an accepted record whose reply was lost
-                    # accepts the immediately previous sequence again.  The
-                    # exact CRC-protected 0x54 record is safe in both cases.
-                    # The temple can remain busy after deferred C1 storage.
-                    # Retrying the same sequence is idempotent, but an
-                    # immediate retry only repeats the same busy window.
+                    # Only an explicit rejection proves that the expected
+                    # sequence did not advance. Missing or malformed replies
+                    # remain uncertain and are never replayed. The temple can
+                    # remain busy after deferred C1 storage, so permit one
+                    # delayed retry of this exact CRC-protected record.
                     self.sleeper(self.retry_backoff_seconds * (attempt + 1))
             payload_bytes_sent += data_length
             if self.progress is not None:
@@ -731,8 +729,12 @@ def build_argument_parser() -> argparse.ArgumentParser:
     flash_parser.add_argument(
         "--data-retries",
         type=int,
-        default=2,
-        help="0x54 timeout/corrupt-response retries (default: 2)",
+        choices=(0, 1),
+        default=1,
+        help=(
+            "exact 0x54 retry after an explicit rejection only "
+            "(default: 1 after 6.5 seconds; missing replies are never replayed)"
+        ),
     )
     flash_parser.add_argument(
         "--batch-settle-ms",
@@ -838,8 +840,8 @@ def main() -> int:
             "--confirm-image-sha256 must equal the complete image SHA-256: "
             + plan.image_sha256
         )
-    if args.data_retries < 0:
-        parser.error("--data-retries cannot be negative")
+    if args.data_retries not in (0, 1):
+        parser.error("--data-retries must be 0 or 1")
     if args.batch_settle_ms < 0:
         parser.error("--batch-settle-ms cannot be negative")
     if (

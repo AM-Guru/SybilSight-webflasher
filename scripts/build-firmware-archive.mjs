@@ -13,6 +13,10 @@ const REVIEWED_CFW_SHA256 =
   "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0";
 const REVIEWED_CFW_BASE_SHA256 =
   "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa";
+const HARDWARE_VALIDATED_TEMPLE_IMAGES = new Set([
+  REVIEWED_CFW_SHA256,
+  REVIEWED_CFW_BASE_SHA256,
+]);
 const RELEASES = [
   {
     version: "2.0.1.14",
@@ -404,7 +408,7 @@ async function writeTempleFlashTargets(releases) {
         ? `Reviewed SybilSight CFW ${release.version}`
         : `Stock Even Realities G2 ${release.version}`,
       // Only images with a recorded successful hardware transfer may claim this.
-      hardwareValidated: custom,
+      hardwareValidated: HARDWARE_VALIDATED_TEMPLE_IMAGES.has(release.sha256),
     });
   }
   const entries = targets

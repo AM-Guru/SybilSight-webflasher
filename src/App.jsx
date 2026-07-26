@@ -18,14 +18,55 @@ import {
 } from "./lib/backup.js";
 import { buildG2DeviceAnalytics } from "./lib/analytics.js";
 import { decodeApollo510RecoveryConfig } from "./lib/recoveryConfig.js";
+import {
+  buildBundleDifferencePlan,
+  findStockCfwCounterpartRelease,
+} from "./lib/differential.js";
+import {
+  OPERATION_TOTALS,
+  operationProgress,
+} from "./lib/operationProgress.js";
 
-const EMPTY_PROGRESS = { fraction: 0, detail: "Ready", visible: false };
+const EMPTY_PROGRESS = {
+  fraction: 0,
+  detail: "Ready",
+  visible: false,
+  name: null,
+  total: 1,
+  completed: 0,
+  current: 1,
+  percent: 0,
+};
+
+const OPERATION_LABELS = Object.freeze({
+  analyze: "Analyze Case",
+  backup: "Preserve recovery backup",
+  firmware: "Validate firmware",
+  "glasses-analyze": "Analyze Smart Glasses",
+  pogo: "Query temple",
+  recheck: "Reset and recheck",
+  "temple-flash": "Restore Smart Glasses",
+  stage: "Stage Case bank",
+  activate: "Activate Case bank",
+});
 
 function cx(...values) {
   return values.filter(Boolean).join(" ");
 }
 
 function Icon({ name }) {
+  if (name === "tools") {
+    return (
+      <span className="icon icon-tools" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M8.7 8.7a4 4 0 0 1-5.5-5.5l2.4 2.4 2-2-2.4-2.4a4 4 0 0 1 5.5 5.5L19 15a2.5 2.5 0 1 1-4 4l-8.3-8.3" />
+          <path d="m4 20 3.2-.8L18.4 8l-2.4-2.4L4.8 16.8 4 20Z" />
+          <path d="m16 5.6 1.2-1.2 2.4 2.4L18.4 8" />
+        </svg>
+      </span>
+    );
+  }
+
   const glyphs = {
     usb: "⌁",
     scan: "◎",
@@ -117,6 +158,8 @@ function StepRail({ complete, active }) {
         <span className="step-number">
           {complete[key] ? (
             <Icon name="check" />
+          ) : key === "recover" ? (
+            <Icon name="tools" />
           ) : (
             String(index + offset + 1).padStart(2, "0")
           )}
@@ -469,7 +512,7 @@ function Console({ open, entries, onClose, onClear, onDownload }) {
         <div className="console-header">
           <div>
             <div className="eyebrow">Live session</div>
-            <h2 id="console-title">Recovery console</h2>
+            <h2 id="console-title">Recovery console log</h2>
           </div>
           <button className="console-close" onClick={onClose} aria-label="Close console">
             ×
@@ -496,6 +539,33 @@ function Console({ open, entries, onClose, onClear, onDownload }) {
           </Button>
         </div>
       </section>
+    </div>
+  );
+}
+
+function TaskProgress({ progress }) {
+  if (!progress.visible) return null;
+  return (
+    <div className="footer-task-progress" role="status" aria-live="polite">
+      <div className="footer-task-progress-heading">
+        <span>
+          {OPERATION_LABELS[progress.name] ?? "Recovery operation"}
+        </span>
+        <strong>
+          Operation {progress.current} of {progress.total} · {progress.percent}%
+        </strong>
+      </div>
+      <div
+        className="footer-progress-track"
+        role="progressbar"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow={progress.percent}
+        aria-label={OPERATION_LABELS[progress.name] ?? "Recovery progress"}
+      >
+        <span style={{ width: `${progress.percent}%` }} />
+      </div>
+      <div className="footer-current-task">{progress.detail}</div>
     </div>
   );
 }
@@ -539,12 +609,23 @@ function App() {
   const [templeFlashSeated, setTempleFlashSeated] = useState(false);
   const [templeFlashRisk, setTempleFlashRisk] = useState(false);
   const [templeFlashText, setTempleFlashText] = useState("");
+  const [templeFlashMode, setTempleFlashMode] = useState("complete");
+  const [differenceSourceFirmware, setDifferenceSourceFirmware] = useState(null);
+  const [differencePlan, setDifferencePlan] = useState(null);
+  const [differenceState, setDifferenceState] = useState("idle");
+  const [differenceError, setDifferenceError] = useState("");
+  const [differenceSourceConfirmed, setDifferenceSourceConfirmed] =
+    useState(false);
   const [templeFlashAudit, setTempleFlashAudit] = useState(null);
   const [recoveryDumps, setRecoveryDumps] = useState({});
   const [recoveryConfig, setRecoveryConfig] = useState(null);
   const [recoveryConfigError, setRecoveryConfigError] = useState("");
   const portRef = useRef(null);
   const sessionRef = useRef(null);
+  const activeOperationRef = useRef(null);
+  const activeOperationTotalRef = useRef(null);
+  const progressLogRef = useRef({ name: null, bucket: -1 });
+  const progressHideTimerRef = useRef(null);
 
   const addLog = useCallback((message, tone = "info") => {
     const time = new Date().toLocaleTimeString([], {
@@ -556,8 +637,28 @@ function App() {
   }, []);
 
   const setSessionProgress = useCallback((fraction, detail) => {
-    setProgress({ fraction: Math.max(0, Math.min(1, fraction)), detail, visible: true });
-  }, []);
+    const name = activeOperationRef.current;
+    const normalized = operationProgress(
+      name,
+      fraction,
+      activeOperationTotalRef.current,
+    );
+    setProgress({
+      ...normalized,
+      name,
+      detail,
+      visible: true,
+    });
+    const bucket = Math.min(20, Math.floor(normalized.fraction * 20));
+    if (
+      name &&
+      (progressLogRef.current.name !== name ||
+        progressLogRef.current.bucket !== bucket)
+    ) {
+      progressLogRef.current = { name, bucket };
+      addLog(`[${normalized.percent}%] ${detail}`);
+    }
+  }, [addLog]);
 
   const getSession = useCallback(
     (port = portRef.current) => {
@@ -662,12 +763,60 @@ function App() {
     };
   }, []);
 
-  const run = useCallback(async (name, task) => {
+  useEffect(
+    () => () => {
+      if (progressHideTimerRef.current) {
+        clearTimeout(progressHideTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const handleError = (event) => {
+      addLog(`Browser error: ${event.message || "unknown script error"}`, "error");
+    };
+    const handleRejection = (event) => {
+      const message =
+        event.reason instanceof Error
+          ? event.reason.message
+          : String(event.reason ?? "unknown rejected promise");
+      addLog(`Unhandled browser rejection: ${message}`, "error");
+    };
+    window.addEventListener("error", handleError);
+    window.addEventListener("unhandledrejection", handleRejection);
+    return () => {
+      window.removeEventListener("error", handleError);
+      window.removeEventListener("unhandledrejection", handleRejection);
+    };
+  }, [addLog]);
+
+  const run = useCallback(async (name, task, { total = null } = {}) => {
+    if (progressHideTimerRef.current) {
+      clearTimeout(progressHideTimerRef.current);
+      progressHideTimerRef.current = null;
+    }
+    activeOperationRef.current = name;
+    activeOperationTotalRef.current = total ?? OPERATION_TOTALS[name] ?? 1;
+    progressLogRef.current = { name, bucket: -1 };
     setOperation(name);
     setError("");
-    setProgress({ fraction: 0, detail: "Starting…", visible: true });
+    const starting = operationProgress(
+      name,
+      0,
+      activeOperationTotalRef.current,
+    );
+    setProgress({
+      ...starting,
+      name,
+      detail: "Starting…",
+      visible: true,
+    });
+    addLog(`${OPERATION_LABELS[name] ?? name} started.`);
     try {
-      return await task();
+      const result = await task();
+      addLog(`${OPERATION_LABELS[name] ?? name} finished.`, "success");
+      return result;
     } catch (caught) {
       const message = caught?.message || String(caught);
       setError(message);
@@ -675,9 +824,106 @@ function App() {
       return null;
     } finally {
       setOperation(null);
-      setTimeout(() => setProgress((value) => ({ ...value, visible: false })), 1400);
+      activeOperationRef.current = null;
+      activeOperationTotalRef.current = null;
+      progressHideTimerRef.current = setTimeout(
+        () => setProgress((value) => ({ ...value, visible: false })),
+        2200,
+      );
     }
   }, [addLog]);
+
+  useEffect(() => {
+    let active = true;
+    if (templeFlashMode !== "differences") {
+      setDifferenceSourceFirmware(null);
+      setDifferencePlan(null);
+      setDifferenceState("idle");
+      setDifferenceError("");
+      setDifferenceSourceConfirmed(false);
+      return () => {
+        active = false;
+      };
+    }
+    if (!firmware?.templeFlashEligible || catalogState !== "ready") {
+      setDifferenceSourceFirmware(null);
+      setDifferencePlan(null);
+      setDifferenceState("blocked");
+      setDifferenceError(
+        "Load the reviewed Stock 2.2.6.10 or CFW bundle before preparing differences.",
+      );
+      return () => {
+        active = false;
+      };
+    }
+
+    const counterpart = findStockCfwCounterpartRelease(catalog, firmware);
+    if (!counterpart) {
+      setDifferenceSourceFirmware(null);
+      setDifferencePlan(null);
+      setDifferenceState("blocked");
+      setDifferenceError(
+        "Flash differences is available only for the reviewed Stock 2.2.6.10 ↔ CFW pair.",
+      );
+      return () => {
+        active = false;
+      };
+    }
+
+    setDifferenceSourceConfirmed(false);
+    setDifferenceSourceFirmware(null);
+    setDifferencePlan(null);
+    setDifferenceState("loading");
+    setDifferenceError("");
+    (async () => {
+      const response = await fetch(counterpart.url, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(
+          `Difference source archive returned HTTP ${response.status}.`,
+        );
+      }
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (bytes.length !== counterpart.size) {
+        throw new Error("The difference source size does not match its catalog.");
+      }
+      const source = await parseFirmwareInput(bytes, counterpart.fileName);
+      if (source.fileSha256 !== counterpart.sha256) {
+        throw new Error(
+          "The difference source SHA-256 does not match its catalog.",
+        );
+      }
+      const plan = buildBundleDifferencePlan(source, firmware);
+      if (!plan.executable) {
+        throw new Error(
+          "The Stock/CFW comparison is not an executable one-component difference.",
+        );
+      }
+      if (!active) return;
+      setDifferenceSourceFirmware(source);
+      setDifferencePlan(plan);
+      setDifferenceState("ready");
+      addLog(
+        `Difference plan ready · ${plan.unchangedComponentCount} identical components skipped · ${plan.changedComponentCount} changed component transferred.`,
+        "success",
+      );
+    })().catch((caught) => {
+      if (!active) return;
+      setDifferenceSourceFirmware(null);
+      setDifferencePlan(null);
+      setDifferenceState("blocked");
+      setDifferenceError(caught.message);
+      addLog(`Difference plan stopped: ${caught.message}`, "error");
+    });
+    return () => {
+      active = false;
+    };
+  }, [
+    addLog,
+    catalog,
+    catalogState,
+    firmware,
+    templeFlashMode,
+  ]);
 
   const connectAndAnalyze = async () => {
     await run("analyze", async () => {
@@ -844,6 +1090,11 @@ function App() {
     setTempleFlashText("");
     setTempleFlashSeated(false);
     setTempleFlashRisk(false);
+    setDifferenceSourceFirmware(null);
+    setDifferencePlan(null);
+    setDifferenceState("idle");
+    setDifferenceError("");
+    setDifferenceSourceConfirmed(false);
     addLog(
       `Validated ${fileName} · ${accepted.provenance.label} · ${accepted.fileSha256.slice(0, 16)}…`,
       "success",
@@ -1010,6 +1261,10 @@ function App() {
       !firmware?.templeFlashEligible ||
       !templeFlashSeated ||
       !templeFlashRisk ||
+      (templeFlashMode === "differences" &&
+        (!differencePlan ||
+          !differenceSourceFirmware ||
+          !differenceSourceConfirmed)) ||
       templeFlashText.trim().toUpperCase() !== "FLASH GLASSES FIRMWARE"
     ) {
       return;
@@ -1019,19 +1274,25 @@ function App() {
         const audit = await getSession().flashPinnedTempleMain(
           firmware,
           templeFlashRoute,
+          {
+            mode: templeFlashMode,
+            differenceSourceFirmware,
+          },
         );
         setTempleFlashAudit(audit);
         setTempleFlashText("");
         setTempleFlashSeated(false);
         setTempleFlashRisk(false);
         addLog(
-          `${audit.imageLabel} completed on ${audit.routes.join(" + ")}; route restoration, final dual reset, contacts, and post-reset liveness verified.`,
+          `${audit.imageLabel} ${templeFlashMode === "differences" ? "bundle-difference restore" : "complete-main restore"} completed on ${audit.routes.join(" + ")}; finish CRC, route restoration, final dual reset, contacts, and post-reset liveness verified.`,
           "success",
         );
       } catch (caught) {
         if (caught?.audit) setTempleFlashAudit(caught.audit);
         throw caught;
       }
+    }, {
+      total: templeFlashRoute === "both" ? 14 : 9,
     });
   };
 
@@ -1104,6 +1365,11 @@ function App() {
     flashRoutesPresent &&
     templeFlashSeated &&
     templeFlashRisk &&
+    (templeFlashMode !== "differences" ||
+      (differenceState === "ready" &&
+        differencePlan?.executable &&
+        differenceSourceFirmware &&
+        differenceSourceConfirmed)) &&
     templeFlashText.trim().toUpperCase() === "FLASH GLASSES FIRMWARE" &&
     !operation
   );
@@ -1143,13 +1409,6 @@ function App() {
 
   return (
     <div className="app-shell">
-      <div
-        className={cx("global-progress", progress.visible && "is-visible")}
-        aria-hidden={!progress.visible}
-      >
-        <span style={{ width: `${progress.fraction * 100}%` }} />
-      </div>
-
       <aside className="sidebar">
         <a className="brand" href="#connect" aria-label="SybilSight G2 Recovery Console">
           <span className="brand-wordmark" aria-hidden="true">
@@ -1166,7 +1425,10 @@ function App() {
             and Smart Glasses.
           </p>
         </div>
-        <StepRail complete={complete} active={activeSection} />
+        <StepRail
+          complete={complete}
+          active={activeSection}
+        />
         <div className="sidebar-foot">
           <span className={cx("support-dot", serialSupported && "is-supported")} />
           <span>
@@ -1184,7 +1446,7 @@ function App() {
           </div>
           <button className="console-trigger" onClick={() => setConsoleOpen(true)}>
             <Icon name="terminal" />
-            Console
+            Console Log
             <span>{logs.length}</span>
           </button>
         </header>
@@ -1959,7 +2221,7 @@ function App() {
             </div>
             <div className="smart-glasses-recovery-grid">
               <div className="smart-glasses-recovery-controls">
-                <label>
+                <label className="flash-select-label">
                   Temple recovery target
                   <select
                     value={templeFlashRoute}
@@ -1975,6 +2237,96 @@ function App() {
                     <option value="left">Left temple only</option>
                   </select>
                 </label>
+                <label className="flash-select-label">
+                  Transfer mode
+                  <select
+                    value={templeFlashMode}
+                    onChange={(event) => {
+                      setTempleFlashMode(event.target.value);
+                      setDifferenceSourceConfirmed(false);
+                      setTempleFlashSeated(false);
+                      setTempleFlashText("");
+                    }}
+                    disabled={Boolean(operation)}
+                  >
+                    <option value="complete">Complete pinned Apollo main</option>
+                    <option value="differences">
+                      Flash differences · Stock ↔ CFW
+                    </option>
+                  </select>
+                </label>
+                {templeFlashMode === "differences" ? (
+                  <div
+                    className={cx(
+                      "difference-plan",
+                      differenceState === "ready" && "is-ready",
+                      differenceState === "blocked" && "is-blocked",
+                    )}
+                  >
+                    <div className="difference-plan-heading">
+                      <span>Bundle difference plan</span>
+                      <strong>
+                        {differenceState === "loading"
+                          ? "Comparing pinned images…"
+                          : differenceState === "ready"
+                            ? "Ready"
+                            : "Blocked"}
+                      </strong>
+                    </div>
+                    {differencePlan ? (
+                      <>
+                        <div className="difference-plan-route">
+                          <code>{differencePlan.source.label}</code>
+                          <span>→</span>
+                          <code>{differencePlan.target.label}</code>
+                        </div>
+                        <div className="difference-plan-facts">
+                          <span>
+                            <strong>{differencePlan.unchangedComponentCount}</strong>
+                            identical components skipped
+                          </span>
+                          <span>
+                            <strong>{differencePlan.changedComponentCount}</strong>
+                            changed component transferred
+                          </span>
+                          <span>
+                            <strong>
+                              {differencePlan.mainDifferences.changedBytes.toLocaleString()}
+                            </strong>
+                            byte positions differ offline
+                          </span>
+                          <span>
+                            <strong>
+                              {formatBytes(differencePlan.wireTransfer.bytes)}
+                            </strong>
+                            contiguous CRC-gated wire payload
+                          </span>
+                        </div>
+                        <small>
+                          The G2 receiver exposes no write offset, so arbitrary sparse
+                          byte ranges cannot be skipped safely. This mode omits every
+                          byte-identical bundle component and transfers the complete
+                          changed Apollo main.
+                        </small>
+                        <label className="pogo-confirm difference-source-confirm">
+                          <input
+                            type="checkbox"
+                            checked={differenceSourceConfirmed}
+                            onChange={(event) =>
+                              setDifferenceSourceConfirmed(event.target.checked)
+                            }
+                            disabled={Boolean(operation)}
+                          />
+                          <span>
+                            I confirm the source shown above is currently installed.
+                          </span>
+                        </label>
+                      </>
+                    ) : (
+                      <small>{differenceError || "Preparing the comparison…"}</small>
+                    )}
+                  </div>
+                ) : null}
                 <label className="pogo-confirm">
                   <input
                     type="checkbox"
@@ -2020,7 +2372,9 @@ function App() {
                   busy={operation === "temple-flash"}
                   disabled={!templeFlashReady}
                 >
-                  Recover selected Smart Glasses
+                  {templeFlashMode === "differences"
+                    ? "Flash bundle differences"
+                    : "Recover selected Smart Glasses"}
                 </Button>
                 {!firmware?.templeFlashEligible ? (
                   <small className="pogo-presence-warning">
@@ -2030,9 +2384,7 @@ function App() {
                 ) : !firmware.templeFlashTarget?.hardwareValidated ? (
                   <small className="pogo-presence-warning">
                     {firmware.templeFlashTarget.label} is hash-pinned, but its
-                    temple transfer has not been exercised on hardware. Only the
-                    reviewed CFW main has confirmed left- and right-temple
-                    transfers.
+                    temple transfer has not completed on Case USB hardware.
                   </small>
                 ) : report && !flashRoutesPresent ? (
                   <small className="pogo-presence-warning">
@@ -2099,6 +2451,26 @@ function App() {
                       ? " · B0 reset: confirmed"
                       : ""}
                   </span>
+                  {templeFlashAudit.verification ? (
+                    <span>
+                      Target SHA/byte count + finish acknowledgement:{" "}
+                      {templeFlashAudit.verification
+                        .everyRouteAcceptedExactTargetBytes
+                        ? "verified"
+                        : "incomplete"}
+                      {" · "}postflight:{" "}
+                      {templeFlashAudit.verification
+                        .everyRoutePostflightVersionValid
+                        ? "verified"
+                        : "incomplete"}
+                      {" · "}final reset/liveness:{" "}
+                      {templeFlashAudit.verification
+                        .finalDualTempleResetVerified &&
+                      templeFlashAudit.verification.postResetLivenessVerified
+                        ? "verified"
+                        : "incomplete"}
+                    </span>
+                  ) : null}
                   {templeFlashAudit.routeResults
                     .find((item) => item.recoveryBoundary)
                     ?.recoveryBoundary?.recoveryRecommendation ? (
@@ -2198,7 +2570,7 @@ function App() {
               <StatusPill tone="success">Pinned SHA-256 · SRAM only</StatusPill>
             </div>
             <p>
-              Loads the physically reviewed 1,712-byte bridge into high Case SRAM,
+              Loads the physically reviewed 1,720-byte bridge into high Case SRAM,
               emits one embedded status or version request, verifies exact YHM route
               restoration, clears the retained proof/result, and returns to stock Case
               firmware. Arbitrary bytes and OTA commands are absent from the payload.
@@ -2311,7 +2683,7 @@ function App() {
               <div>
                 <span>CASE-USB ATTEMPTS</span>
                 <strong>
-                  {POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts} · 3 complete wired
+                  {POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts} · 4 complete wired
                 </strong>
               </div>
               <div>
@@ -2370,9 +2742,14 @@ function App() {
               then installed all six pinned stock components with 1,053 block ACKs, six
               END status-8 verifications, zero resends, and all 861 main blocks before the
               final bilateral reset verified both temples. Restore audits therefore
-              require that reset and liveness phase last. Until the Web Serial write path
-              receives an independent hardware run, retain the downloaded audit and treat
-              any interrupted result as failed or uncertain.
+              require that reset and liveness phase last. The V4 bridge then completed
+              all 3,523,396 pinned Stock bytes on the right with FINISH, postflight,
+              route restoration, and Case-app return. Its longer bounded DATA-reply
+              window crossed the former 829,000/840,000-byte host timeout boundary. A
+              left V4 retry stopped at 823,000 accepted bytes without FINISH, so it did
+              not replace the previously proven six-component Stock installation.
+              Retain every downloaded audit and treat any interrupted result as failed or
+              uncertain.
             </small>
           </div>
           <div className="sbl-audit">
@@ -2429,9 +2806,12 @@ function App() {
 
 
         </div>
-        <footer className="footer">
-          <span>Sybil Sight™ · G2 WebFlasher · local Web Serial</span>
-          <span>No device data is uploaded by this app.</span>
+        <footer className={cx("footer", progress.visible && "has-task")}>
+          <div className="footer-meta">
+            <span>Sybil Sight™ · G2 WebFlasher · local Web Serial</span>
+            <span>No device data is uploaded by this app.</span>
+          </div>
+          <TaskProgress progress={progress} />
         </footer>
       </main>
 
