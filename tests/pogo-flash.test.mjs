@@ -32,6 +32,7 @@ import {
   parsePogoFlashResponse,
   parsePogoFlashRetainedResult,
   requireOtaAcknowledgement,
+  verifyPogoFlashHostTimeoutRestoration,
   verifyPogoFlashOppositePhaseStop,
 } from "../src/lib/pogoFlashBridge.js";
 import { sha256Hex, writeU32LE } from "../src/lib/firmware.js";
@@ -44,6 +45,7 @@ import {
   isPogoRoutePhaseMismatch,
   isG2CaseSerialPort,
   isWebSerialRomPacketBoundary,
+  readPogoFlashResponseHeader,
   readRomBlockWithBoundaryRecovery,
   retryReadOnlyBlock,
   templeDataSettleMilliseconds,
@@ -335,6 +337,32 @@ test("validates setup, stop-and-wait framing, and bridge response checksums", ()
   );
 });
 
+test("resynchronizes to a complete retransmitted response without replaying a request", async () => {
+  const captured = makeTempleFrame(new Uint8Array([0x54, 1, 3, 1, 0]));
+  const response = makeBridgeResponse(7, captured);
+  const queued = new Uint8Array(2 + response.header.length);
+  queued.set(response.header.subarray(0, 2));
+  queued.set(response.header, 2);
+  let offset = 0;
+  let discardedBytes = 0;
+  const header = await readPogoFlashResponseHeader(
+    {
+      async readExact(count) {
+        const result = queued.slice(offset, offset + count);
+        offset += result.length;
+        if (result.length !== count) throw new Error("synthetic short read");
+        return result;
+      },
+    },
+    1000,
+    (discarded) => {
+      discardedBytes = discarded;
+    },
+  );
+  assert.deepEqual(header, response.header);
+  assert.equal(discardedBytes, 2);
+});
+
 test("requires exact temple reply shapes and zero status", () => {
   const version = decodeTempleVersion(
     makeTempleFrame(new Uint8Array([0x24, 1, 3, 5, 2, 2, 6, 10, 5])),
@@ -441,6 +469,61 @@ test("retains zero-byte setup diagnostics without treating them as cleanup proof
   assert.throws(
     () => parsePogoFlashRetainedResult(result, POGO_FLASH_PROOF, "left", 0),
     /does not prove a complete byte-for-byte route restoration/,
+  );
+});
+
+test("accepts an exact retained restoration after a host-only response timeout", () => {
+  const result = new Uint8Array(POGO_FLASH_RESULT_LENGTH);
+  for (const [offset, value] of [
+    [0, 0x57463247],
+    [4, 3],
+    [8, 1],
+    [12, 0x88],
+    [16, 16],
+    [20, 0x3ff],
+    [24, 0x3ff],
+    [28, 0x3ff],
+    [44, REVIEWED_CFW_MAIN_BYTES],
+    [48, 904000],
+    [60, 0],
+    [120, 1],
+  ]) {
+    writeU32LE(result, offset, value);
+  }
+  const baseline = Uint8Array.from([
+    0x81, 0x11, 0x04, 0xaf, 0xaf, 0x03, 0x81, 0x20, 0x22, 0xff,
+  ]);
+  result.set(baseline, 64);
+  result.set(
+    Uint8Array.from([
+      0x81, 0x01, 0x0c, 0xaf, 0xa6, 0x03, 0xc1, 0x05, 0x22, 0xff,
+    ]),
+    74,
+  );
+  result.set(baseline, 84);
+  const report = verifyPogoFlashHostTimeoutRestoration(
+    result,
+    POGO_FLASH_PROOF,
+    "right",
+  );
+  assert.equal(report.hostTimeoutRestorationVerified, true);
+  assert.equal(report.acceptedSize, 904000);
+  assert.equal(
+    verifyPogoFlashHostTimeoutRestoration(
+      result,
+      POGO_FLASH_PROOF,
+      "left",
+    ),
+    null,
+  );
+  result[84] ^= 1;
+  assert.equal(
+    verifyPogoFlashHostTimeoutRestoration(
+      result,
+      POGO_FLASH_PROOF,
+      "right",
+    ),
+    null,
   );
 });
 

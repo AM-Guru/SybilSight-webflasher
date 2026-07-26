@@ -213,8 +213,8 @@ stock case firmware 1.2.57 resumed normally. A non-idle charging-route image
 was also physically observed to fail closed before transmission.
 
 The webflasher keeps this fixed read bridge for diagnostics and separately
-embeds the exact reviewed 2,920-byte V6 write bridge
-(`dcf27971baa964902724fc9aa2f9d0369be6874a5a84231791622bb40bf486a6`).
+embeds the exact reviewed 2,952-byte V7 write bridge
+(`eba56380f04bf00ad9d87dffbc40c3292ec5b3cee458d3607c8cffd0dcbe335b`).
 Neither path is an
 arbitrary USB-to-pogo sender. The writer's SRAM code permits only the version
 query and Apollo-main `0x52...0x55` state machine, while the browser
@@ -634,7 +634,7 @@ that failed closed before FINISH; retain the audit for every browser write.
 ### 4. Guarded running-temple CFW writer
 
 For the exact reviewed CFW or official recovery package, the webflasher loads
-the separately pinned 2,920-byte V6 bridge at `0x20010000`. It first requires
+the separately pinned 2,952-byte V7 bridge at `0x20010000`. It first requires
 case firmware 1.2.57,
 fresh seated-route telemetry, the complete CFW bundle SHA-256, the Apollo-main
 payload SHA-256, hardware revision 5, and explicit user confirmations.
@@ -647,6 +647,16 @@ attempts and doubled pacing on restarts. V6 rejects a mutating setup before
 temple transmission when the Case idle-route phase does not match the selected
 side. A bilateral run may reorder left/right in either direction only from an
 exact allowlisted zero-write opposite-phase proof, capped at four adaptations.
+V7 also handles an observed CH340/USART1 failure in which the Case emitted
+only two bytes of a response after accepting DATA. The SRAM bridge
+reinitializes USART1 and retransmits only its cached checksum-framed `G2RX`
+response; the browser discards the short prefix and synchronizes to that
+complete frame. It never retransmits the temple DATA request. If every
+host-response attempt fails, immutable-ROM readback may prove a status-16
+fatal cleanup only when all route masks are complete and the ten restored YHM
+bytes exactly match the allowlisted baseline. That proof permits a fresh
+whole-component restart after the bilateral reset/liveness gate; it is not a
+transfer-success proof.
 Success additionally
 requires the exact `0x55` acknowledgement and a checksum-valid postflight
 version. It then exits the bridge, binds the retained proof to the route and

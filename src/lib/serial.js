@@ -30,6 +30,7 @@ import {
 import {
   POGO_FLASH_BRIDGE_ADDRESS,
   POGO_FLASH_BRIDGE_BANNER,
+  POGO_FLASH_BRIDGE_SHA256,
   POGO_FLASH_PROOF,
   POGO_FLASH_PROOF_ADDRESS,
   POGO_FLASH_RESULT_ADDRESS,
@@ -57,6 +58,7 @@ import {
   parsePogoFlashResponse,
   parsePogoFlashRetainedResult,
   requireOtaAcknowledgement,
+  verifyPogoFlashHostTimeoutRestoration,
   verifyPogoFlashOppositePhaseStop,
 } from "./pogoFlashBridge.js";
 import { buildBundleDifferencePlan } from "./differential.js";
@@ -218,6 +220,66 @@ export async function writePogoFlashTransactionHeader(
   await bridge.write(header.subarray(0, 5));
   await sleeper(5);
   await bridge.write(header.subarray(5));
+}
+
+const POGO_FLASH_RESPONSE_MAGIC = new TextEncoder().encode("G2RX");
+
+export async function readPogoFlashResponseHeader(
+  bridge,
+  timeoutMs,
+  onResynchronized = () => {},
+) {
+  if (
+    !bridge?.readExact ||
+    !Number.isFinite(timeoutMs) ||
+    timeoutMs < 1
+  ) {
+    throw new PogoFlashSafetyError(
+      "A readable Case bridge and positive response deadline are required.",
+    );
+  }
+  const deadline = Date.now() + timeoutMs;
+  const window = [];
+  let inspected = 0;
+  while (inspected < 128) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      throw new RetryablePogoFlashError(
+        `Timed out locating a complete flash bridge response after ${inspected} bytes.`,
+      );
+    }
+    const byte = (
+      await bridge.readExact(
+        1,
+        remaining,
+        "flash bridge response synchronization byte",
+      )
+    )[0];
+    inspected += 1;
+    window.push(byte);
+    if (window.length > POGO_FLASH_RESPONSE_MAGIC.length) window.shift();
+    if (
+      window.length === POGO_FLASH_RESPONSE_MAGIC.length &&
+      window.every(
+        (value, index) => value === POGO_FLASH_RESPONSE_MAGIC[index],
+      )
+    ) {
+      const discardedBytes = inspected - POGO_FLASH_RESPONSE_MAGIC.length;
+      if (discardedBytes > 0) onResynchronized(discardedBytes);
+      const suffix = await bridge.readExact(
+        7,
+        Math.max(1, deadline - Date.now()),
+        "flash bridge response header suffix",
+      );
+      const header = new Uint8Array(11);
+      header.set(POGO_FLASH_RESPONSE_MAGIC);
+      header.set(suffix, POGO_FLASH_RESPONSE_MAGIC.length);
+      return header;
+    }
+  }
+  throw new RetryablePogoFlashError(
+    "The Case bridge emitted 128 bytes without a complete G2RX response marker.",
+  );
 }
 
 export function canRunFinalResetAfterFailure(routeResults) {
@@ -828,10 +890,15 @@ class CasePogoFlashTransport {
   }
 
   async readBridgeResponse(timeoutMs) {
-    const header = await this.bridge.readExact(
-      11,
-      Math.max(10000, timeoutMs + 10000),
-      "flash bridge response header",
+    const responseTimeout = Math.max(10000, timeoutMs + 10000);
+    const header = await readPogoFlashResponseHeader(
+      this.bridge,
+      responseTimeout,
+      (discardedBytes) =>
+        this.session.log(
+          `${this.route}: discarded ${discardedBytes} byte${discardedBytes === 1 ? "" : "s"} from a short Case response prefix and synchronized to the retransmitted G2RX frame.`,
+          "warn",
+        ),
     );
     const length = header[8];
     if (length > 64) {
@@ -1038,12 +1105,28 @@ class CasePogoFlashTransport {
         );
         this.retainedResult = retainedResult;
       } catch (error) {
-        const phaseStop = verifyPogoFlashOppositePhaseStop(
-          result,
-          proof,
-          this.route,
-        );
-        if (phaseStop) {
+        const hostTimeoutRestoration =
+          verifyPogoFlashHostTimeoutRestoration(
+            result,
+            proof,
+            this.route,
+          );
+        const phaseStop =
+          hostTimeoutRestoration === null
+            ? verifyPogoFlashOppositePhaseStop(
+                result,
+                proof,
+                this.route,
+              )
+            : null;
+        if (hostTimeoutRestoration) {
+          this.retainedResult = hostTimeoutRestoration;
+          this.restoreVerified = true;
+          this.session.log(
+            `${this.route}: the retained host-timeout record proves exact byte-for-byte route restoration after ${hostTimeoutRestoration.acceptedSize.toLocaleString("en-US")} accepted firmware bytes; no temple record will be replayed.`,
+            "warn",
+          );
+        } else if (phaseStop) {
           this.retainedResult = phaseStop;
           this.setupPhaseStopVerified = true;
           this.restoreVerified = true;
@@ -1095,11 +1178,12 @@ class CasePogoFlashTransport {
     }
     this.closed = true;
     const errors = [];
+    let bridgeExitError = null;
     if (this.bridge) {
       try {
         await this.requestExit();
       } catch (error) {
-        errors.push(`bridge exit: ${error.message}`);
+        bridgeExitError = error;
       }
       await this.closeTransport("bridge");
     }
@@ -1111,6 +1195,16 @@ class CasePogoFlashTransport {
         await this.verifyAndClearRetainedResult();
       } catch (error) {
         errors.push(`retained route-restoration proof: ${error.message}`);
+      }
+    }
+    if (bridgeExitError) {
+      if (this.restoreVerified) {
+        this.session.log(
+          `${this.route}: ignored the incomplete live EXIT reply because immutable-ROM readback proved the route was already restored byte-for-byte.`,
+          "warn",
+        );
+      } else {
+        errors.push(`bridge exit: ${bridgeExitError.message}`);
       }
     }
     try {
@@ -2108,7 +2202,7 @@ export class G2CaseSession {
             }
           : null,
       bridgeSha256:
-        "dcf27971baa964902724fc9aa2f9d0369be6874a5a84231791622bb40bf486a6",
+        POGO_FLASH_BRIDGE_SHA256,
       routes,
       routeOrderSetupStops: [],
       supersededSuccessfulRouteResults: [],

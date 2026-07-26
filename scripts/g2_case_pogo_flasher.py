@@ -53,11 +53,11 @@ from g2_pogo_flasher import (
 )
 
 
-BRIDGE_BYTES = 2920
+BRIDGE_BYTES = 2952
 BRIDGE_SHA256 = (
-    "dcf27971baa964902724fc9aa2f9d0369be6874a5a84231791622bb40bf486a6"
+    "eba56380f04bf00ad9d87dffbc40c3292ec5b3cee458d3607c8cffd0dcbe335b"
 )
-BRIDGE_BANNER = b"G2_POGO_FLASH_BRIDGE_V6\n"
+BRIDGE_BANNER = b"G2_POGO_FLASH_BRIDGE_V7\n"
 REVIEWED_CFW_SHA256 = (
     "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0"
 )
@@ -274,43 +274,39 @@ def reset_both_temples_and_recheck(device: str) -> dict[str, object]:
 
 
 BRIDGE_BASE64 = (
-    "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"
-    "BAD6BQ=="
+    "APABIAkAASBytk9LmEdytk5LmEdytk5LmEdytk1LmEdytk1IACEBYExIyUMBYExIAWAA8FH8S0hLSQFgAPAu/QDwU/tJT0pIOGAAIAQheFAEMYAp+9EBIHhg"
+    "RkgA8BH9RUgYIQDwx/tESAohAPCT+wooAtAQIDhhYuBATCBoPEmIQlPRIHkBKFDRZXkBLU3YpnkBLkrYIHoAKEfRIEYJIQDwT/pheohCQNHgefhgvWA4RkAw"
+    "APAs/HhhMUmIQjjROEZAMADwOvwBKDLRAC4G0DhGQDBAeAEhCECoQinRKUuYR3K2ASAA8MD8ACYALQLRAPBM/AHgAPBd/DhqDyEIQA8oGdE4RkowAPAC/Lhh"
+    "HEmIQhHRHEgA8LT8ACA4YQIgeGAA8Lv8APAu+i/gASA4YQbgAyA4YQPgBCA4YQDwyPoA8CH6APCv/O1OAAg5hAAIQWoACIkoAAgQ4ADggOEA4IDiAOAAMABA"
+    "qqoAAAAaASBHMkZXAAAgAMQKASAAGAEg/wMAAPlsAAgAgAAAASC4Z3FMIEYKIQDw/voKKALQECA4YdDgIGhtSYhCAtBsSYhCFdEgeQEoEtEgegAoD9EgRgkh"
+    "APC++WF6iEII0WB5+GDliAAtBNBjSIVCANgC4IrgmeCO4GBIwyEBcAEhAPAD+wEo9tFdTAIguGcAJv5nrkIb0ClGiRsgKQDZICEgRoAZAPDB+gJGKUaJGyAp"
+    "ANkgIYpC3NF2GP5nT0jDIQFwASEA8OH6ASjU0eHnIEZAGQEhAPCp+gEoytEgRilGAPB5+WFdiELD0UBIAGhBSYhCCtEAIDhhuGP4YwYguGcA8Bb8APCj+Yrn"
+    "IEYpRgDwgfgAKDzRAyC4ZzpLmEdytjdIKUZkIgDw0vuoQjPReGsBMHhjBCC4ZzFMIHhVKAHRBCB4YjBLmEdytjBIQCEA8L/5uGP5YwUguGe4awUoHdMqTCB4"
+    "WigZ0WB4pSgW0aB4/ygT0QAgOGEA8NH4BiC4ZwDw1vsA8GP5SucBIDhhJOACIDhhIeAFIDhhHuAGIDhhAPDG+wDwU/k65wDw2/kBKALQByA4YQHgACA4YX8g"
+    "eGIKILhjACD4YxFIEEkKIgDwG/kA8Dz5APCw+wDww/kAILhjAPA0+QDwqPsAAAAcASBHMlRYRzJUU/EDAAAAHQEgACABIPlsAAiBbAAIACgBIFQaASBwtQRG"
+    "DUYmeCQuCNBSLg7QUy4S0FQuL9BVLmfQc+AFLXHReGoAKGbQBChk0GvgBS1p0XhqAChm0V3ghS1j0XhqAShg0aBqAChd0eBqAyha0eBoIChX2UxJiEJU2EtJ"
+    "IEY0MBkiAPC4+AEoTNEgRk0wAHgAKEfRPuB4agIoAdADKEHRCS0/00JIhUI82GB4oXgIQzjR4HgheQkCCENBHalCMdEEKC/TBDhheQEpK9gAKQLROEqQQibR"
+    "onm7atuymkIJ0AE727KaQh3RemoDKgvRASkY0QjgOmsSGPtqmkIS2AApAdCaQg7RACBwvQUtCtF4agMoB9EgRilGAPBR+AEoAdEAIHC9ASBwvXC1IkwjTSZ4"
+    "JC430Oh4BSg00Sh5sEIx0Wh5ASgu0ah5Aygr0eh5ASgo0Sh6ACgl0VIuAtEBIHhiIOBTLgfR4Gj4YgAgOGO4YgIgeGIW4FQuFNGgeblqybKIQg/R4HgheQkC"
+    "CEMEODlrCRg5Y7hqATC4YmB5ASgB0QMgeGJwvSBgPADcCgEg8QMAAOgDAAAAIAEgACgBIHC1BEYNRgE5APAL+EAZfTDAsgE9YV2IQgHRASBwvQAgcL0ctQAi"
+    "ACOLQgPQxFwSGQEz+efQshy9OLUAI5NCBdDEXM1crEID0QEz9+cBIDi9ACA4vTi1ACOTQgPQxFzMVAEz+ec4vXC1J0woSCBgASAgcThpYHG4aKBx+GjgcXhp"
+    "IIG4aWCBIEYMIf/3yv8gcyBGDSEA8B/5cL1wtRpMHEggYAEgIHH4aGBxOGmgcfhr4HG+a0AuANlAJiZyeGpgcgAgoHITSCFGCzEyRv/3wv8gRgshiRn/96T/"
+    "CyGJGWBUATENRgAmIEYpRgDw9PioQgjQATYDLgXYAPBn+AZIAPAw+vDncL0AAAAdASBHMlJERzJSWAAoASAAAAQA/LUERg1GACYAJx5LHkoSeFIqBdBTKgPQ"
+    "VCoB0FUqANEaSxtIwWkPIgpAF0MgIhFCIdBBasmyrkId0gAuAtFaKRnRDuABLgXRpSkK0AAmWikR0QbgAi4E0f8pAtAAJlopCdGhVQE2BC4F0+F4BTGpQgTY"
+    "jkID0gE71NEA4AAmMEY5Rvy9AACAAAAgASAAAAAEAEgAQHC1APC9+QDwgfk4RlQwAPAX+fhhAPCU+XC98LVgSAFoYEoRQwFgYEoBaBFC/NBfSAFoAyKRQwIi"
+    "EUMBYFxIAWgBIhFDAWBbSAFoW0oRQwFgWkgBaBFDAWCRQwFgWEwgaFhJCEBYSQhDIGBgaFdJCEBgYKBoU0kIQFNJCEOgYOBoUEkIQOBgYGpRSQhAUUkIQ2Bi"
+    "UUwAICBgYGCgYBggoGFOSOBgTkggYk5IIGBOSk9L4GkBRhFAkUIB0AE7+NFMSADwd/nwvfC1BEYNRgAmrkIG0ADwB/gBKQLRoFUBNvbnMEbwvRy1Q0pDSBBg"
+    "OkpDS9BpDyEIQgbQB7RBSAJvATICZwe8EWIgIQhCCNEBO+/RO0rTbgEz02YAIAAhHL1QasCyASEcvfC1gbAERg1GMUgxSQFgACYoTwAgAJCuQhjQMEv4aYAh"
+    "CEIP0QE7+dEsSpBmEW4BMRFmAJgBMACQAygW2P/3Wv8cT+jnoF24YgE25OckS/hpQCEIQgbRATv50R9KkGZRbwExUWcwRgGw8L0bSUpuATJKZjBGAbDwvQAA"
+    "ABACQAABAAAABAAAVBACQDQQAkBAEAJAAEAAADAQAkAAAABQ///D/wAAKAD/+f//D/D//xABAAAAOAFAiwAAAP87EgANFAAAAABgAAAAAAEAACAAADAAQKqq"
+    "AAAAAAACABoBIAAAEADwtZRIAWgDIhFDAWCSSAghAWAAIUFggWACIcFgACEBYY5IAXCOSAUiAWAEMAE6+9GMSAEhAXDwvXC1BEYAJQAmCi0N0ChGASEiRlIZ"
+    "hkuYR3K2ACgC0AEhqUAOQwE17+cwRnC98LUERoBNBSYAJ+Bd6V2IQgTRATcKL/jRASDwvQo1AT7y0QAg8L0wtYKwBEYNRmpGFXAgRgEhdUuYR3K2ACgE0AEh"
+    "sUA4aghDOGICsAE2ML0QtQUgAyH/9+b/BiDBIf/34v8DIKYh//fe/wDwcfgHIAMh//fY/xC9ELUFIAMh//fS/wYgwSH/987/BCCmIf/3yv8A8F34ByAFIf/3"
+    "xP8QvRC1PEZANOF5ByD/97z/oXkGIP/3uP9heQUg//e0/+F4AyD/97D/IXkEIP/3rP//96r/EL1wtfhpTUmIQg3RPEZAND1GVDUAJqBdqV2IQgTRATYKLvjR"
+    "ASBwvQAgcL0QtQxGREuYR3K2ACgB0SBGEL0AIBC9ELVASAAhAWA/SAFoP0qRQwFgP0gIIQFgEL0QtT1MACgD0QEgwAQgYBC9ASDAACBgEL0AKAHQATj90XBH"
+    "ELUeIDVJATn90QE4+tEQvQC1M0uYR3K2AL0DIHhgMUgxSQFgMUlBYDFI//fk/3K2MEgxSQFg/udHMl9QT0dPX0ZMQVNIX0JSSURHRV9WNwpvdGEvczIwMF9m"
+    "aXJtd2FyZV9vdGEuYmluAMBGgREEr68DjSAi/4EABK6uA4EgIv+BEQSvrwOBICL/gQEEr64DgSAi/4EQBK6vA4EgIv8AADQQAkCgAAAgFAEAIHwAACC/AAAg"
+    "QZAACPgKASAJkQAI/wMAALE7AAgASABAAAQAUAAADwAoAABQGAAAUCBOAAC5LAAIABsBIEdGUlDewN7AAAAIAAztAOAEAPoF"
 )
 
 
@@ -524,9 +520,33 @@ class CaseSramTempleTransport(TempleTransport):
         if self.port is None:
             raise ProtocolError("case bridge is not open")
         deadline = time.monotonic() + max(10.0, timeout + 10.0)
-        header = self._read_exact_until(
-            11, deadline, "case bridge response header"
+        window = bytearray()
+        inspected = 0
+        while inspected < 128:
+            window.extend(
+                self._read_exact_until(
+                    1, deadline, "case bridge response synchronization byte"
+                )
+            )
+            inspected += 1
+            if len(window) > 4:
+                del window[0]
+            if window == b"G2RX":
+                break
+        else:
+            raise ProtocolError(
+                "case bridge emitted 128 bytes without a complete G2RX marker"
+            )
+        header = b"G2RX" + self._read_exact_until(
+            7, deadline, "case bridge response header suffix"
         )
+        if inspected > 4:
+            print(
+                "case bridge: discarded "
+                f"{inspected - 4} short-response prefix bytes and "
+                "synchronized to the retransmitted G2RX frame",
+                flush=True,
+            )
         if header[:5] != b"G2RX\x01":
             raise ProtocolError(
                 f"invalid case bridge response header: {header.hex()}"
@@ -684,18 +704,32 @@ class CaseSramTempleTransport(TempleTransport):
                 self.baseline = result[64:74]
                 self.restored = result[84:94]
                 expected_route = 0 if self.route == "left" else 1
+                host_timeout_restored = (
+                    words[4] == 16
+                    and words[1] == 3
+                    and words[5] == 0x3FF
+                    and words[6] == 0x3FF
+                    and words[7] == 0x3FF
+                    and words[15] == 0
+                    and self.baseline == self.restored
+                )
                 if (
                     proof != PROOF
                     or words[0] != 0x57463247
                     or words[1] != 3
                     or words[2] != expected_route
-                    or words[3] != self.sequence
-                    or words[4] != 0
+                    or (
+                        not host_timeout_restored
+                        and words[3] != self.sequence
+                    )
+                    or words[4] not in (0, 16)
                     or words[5] != 0x3FF
                     or words[6] != 0x3FF
                     or words[7] != 0x3FF
                     or words[15] != 0
                     or (
+                        not host_timeout_restored
+                        and
                         self.completed_transfer is not None
                         and (
                             words[11] != self.completed_transfer[0]
@@ -712,6 +746,10 @@ class CaseSramTempleTransport(TempleTransport):
                         f"baseline={self.baseline.hex()}, "
                         f"restored={self.restored.hex()}"
                     )
+                if host_timeout_restored:
+                    self.retained_result[
+                        "host_timeout_restoration_verified"
+                    ] = True
             except Exception as error:
                 verification_error = error
 
@@ -751,11 +789,12 @@ class CaseSramTempleTransport(TempleTransport):
         if self.restore_verified and self.application_version is not None:
             return
         errors: list[str] = []
+        exit_error: Exception | None = None
         if self.active and self.port is not None and self.port.is_open:
             try:
                 self.restored = self._request_exit()
             except Exception as error:
-                errors.append(f"exit request: {error}")
+                exit_error = error
             finally:
                 self.active = False
                 self.port.close()
@@ -765,6 +804,8 @@ class CaseSramTempleTransport(TempleTransport):
             self._verify_retained_restore()
         except Exception as error:
             errors.append(f"retained restore proof: {error}")
+        if exit_error is not None and not self.restore_verified:
+            errors.append(f"exit request: {exit_error}")
         try:
             self.application_version = restore_application(
                 self.device, expected_version=REVIEWED_CASE_VERSION
