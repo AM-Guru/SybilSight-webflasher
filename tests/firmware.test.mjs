@@ -23,6 +23,7 @@ import {
   writeU32LE,
 } from "../src/lib/firmware.js";
 import {
+  POGO_BRIDGE_OBSERVED_33_SHA256,
   POGO_BRIDGE_SHA256,
   getVerifiedPogoBridgePayload,
   makePogoBridgeRequest,
@@ -30,6 +31,12 @@ import {
   parseTempleFrame,
   validatePogoBridgeRetainedResult,
 } from "../src/lib/pogoBridge.js";
+import {
+  POGO_FLASH_BRIDGE_OBSERVED_33_SHA256,
+} from "../src/lib/pogoFlashBridge.js";
+import {
+  YHM_PROFILE_OBSERVED_33,
+} from "../src/lib/yhmProfiles.js";
 import {
   decodeApollo510RecoveryConfig,
 } from "../src/lib/recoveryConfig.js";
@@ -243,6 +250,9 @@ test("captures a query-only factory identifier with trailing whitespace", () => 
 
 test("pins the physically reviewed read-only pogo bridge payload", async () => {
   const payload = await getVerifiedPogoBridgePayload();
+  const observed33Payload = await getVerifiedPogoBridgePayload(
+    YHM_PROFILE_OBSERVED_33,
+  );
   assert.equal(payload.length, 1720);
   assert.equal(
     await globalThis.crypto.subtle
@@ -253,6 +263,26 @@ test("pins the physically reviewed read-only pogo bridge payload", async () => {
           .join(""),
       ),
     POGO_BRIDGE_SHA256,
+  );
+  assert.equal(
+    await globalThis.crypto.subtle
+      .digest("SHA-256", observed33Payload)
+      .then((digest) =>
+        [...new Uint8Array(digest)]
+          .map((value) => value.toString(16).padStart(2, "0"))
+          .join(""),
+      ),
+    POGO_BRIDGE_OBSERVED_33_SHA256,
+  );
+  assert.deepEqual(
+    [...observed33Payload]
+      .map((value, index) => [index, payload[index], value])
+      .filter(([, reviewed, observed]) => reviewed !== observed),
+    [
+      [1670, 0x22, 0x33],
+      [1690, 0x22, 0x33],
+      [1700, 0x22, 0x33],
+    ],
   );
   assert.deepEqual(
     [...makePogoBridgeRequest("version", "left")],
@@ -408,7 +438,7 @@ test("records successful case-pogo transfers and enables only the guarded browse
       .persistentDataRejectionWindowRecords,
     64,
   );
-  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 38);
+  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 39);
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.status,
     "both-temples-reviewed-cfw",
@@ -471,6 +501,34 @@ test("records successful case-pogo transfers and enables only the guarded browse
     POGO_TRANSFER_RESEARCH.caseUsbBridge.persistentDataRejectionBoundary
       .recordDistance,
     35,
+  );
+  assert.deepEqual(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.cachedResponseHeaderTruncation
+      .acceptedBytesByAttempt,
+    [2_467_000, 1_350_000, 1_648_000],
+  );
+  assert.deepEqual(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.observed33YhmProfile.baselines,
+    [
+      "811004aeaf03812033ff",
+      "810104afae03812033ff",
+      "810004aeae03812033ff",
+    ],
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.observed33YhmProfile
+      .firmwareBytesAccepted,
+    0,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.observed33YhmProfile
+      .readOnlyBridgeSha256,
+    POGO_BRIDGE_OBSERVED_33_SHA256,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.observed33YhmProfile
+      .writerBridgeSha256,
+    POGO_FLASH_BRIDGE_OBSERVED_33_SHA256,
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.failClosedAttempt.hostChunkOffset,
@@ -546,7 +604,7 @@ test("records successful case-pogo transfers and enables only the guarded browse
     POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulHardwareAttemptsWithCurrentSource,
     2,
   );
-  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 38);
+  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 39);
   assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.completeWiredTransfers, 7);
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.browserDifferenceCfwTest.right

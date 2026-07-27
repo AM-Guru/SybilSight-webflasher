@@ -1,5 +1,11 @@
 import { equalBytes, readU32LE, sha256Hex } from "./firmware.js";
 import { findTempleFlashTarget } from "./templeFlashTargets.js";
+import {
+  YHM_PROFILE_REVIEWED_22,
+  identifyYhmBaselineProfile,
+  isYhmBaselineAllowed,
+  requireYhmProfile,
+} from "./yhmProfiles.js";
 
 export { TEMPLE_FLASH_TARGETS, findTempleFlashTarget } from "./templeFlashTargets.js";
 
@@ -7,6 +13,8 @@ export const POGO_FLASH_BRIDGE_ADDRESS = 0x20010000;
 export const POGO_FLASH_BRIDGE_BYTES = 2952;
 export const POGO_FLASH_BRIDGE_SHA256 =
   "eba56380f04bf00ad9d87dffbc40c3292ec5b3cee458d3607c8cffd0dcbe335b";
+export const POGO_FLASH_BRIDGE_OBSERVED_33_SHA256 =
+  "a14bfa58c4240fda30b924649aaa410f69255dbb210150a3f6fd9aa31b3e3fab";
 export const POGO_FLASH_BRIDGE_BANNER = new TextEncoder().encode(
   "G2_POGO_FLASH_BRIDGE_V7\n",
 );
@@ -37,6 +45,9 @@ export const POGO_FLASH_STATUS = Object.freeze({
 });
 
 const POGO_FLASH_BRIDGE_BASE64 = "APABIAkAASBytk9LmEdytk5LmEdytk5LmEdytk1LmEdytk1IACEBYExIyUMBYExIAWAA8FH8S0hLSQFgAPAu/QDwU/tJT0pIOGAAIAQheFAEMYAp+9EBIHhgRkgA8BH9RUgYIQDwx/tESAohAPCT+wooAtAQIDhhYuBATCBoPEmIQlPRIHkBKFDRZXkBLU3YpnkBLkrYIHoAKEfRIEYJIQDwT/pheohCQNHgefhgvWA4RkAwAPAs/HhhMUmIQjjROEZAMADwOvwBKDLRAC4G0DhGQDBAeAEhCECoQinRKUuYR3K2ASAA8MD8ACYALQLRAPBM/AHgAPBd/DhqDyEIQA8oGdE4RkowAPAC/LhhHEmIQhHRHEgA8LT8ACA4YQIgeGAA8Lv8APAu+i/gASA4YQbgAyA4YQPgBCA4YQDwyPoA8CH6APCv/O1OAAg5hAAIQWoACIkoAAgQ4ADggOEA4IDiAOAAMABAqqoAAAAaASBHMkZXAAAgAMQKASAAGAEg/wMAAPlsAAgAgAAAASC4Z3FMIEYKIQDw/voKKALQECA4YdDgIGhtSYhCAtBsSYhCFdEgeQEoEtEgegAoD9EgRgkhAPC++WF6iEII0WB5+GDliAAtBNBjSIVCANgC4IrgmeCO4GBIwyEBcAEhAPAD+wEo9tFdTAIguGcAJv5nrkIb0ClGiRsgKQDZICEgRoAZAPDB+gJGKUaJGyApANkgIYpC3NF2GP5nT0jDIQFwASEA8OH6ASjU0eHnIEZAGQEhAPCp+gEoytEgRilGAPB5+WFdiELD0UBIAGhBSYhCCtEAIDhhuGP4YwYguGcA8Bb8APCj+YrnIEYpRgDwgfgAKDzRAyC4ZzpLmEdytjdIKUZkIgDw0vuoQjPReGsBMHhjBCC4ZzFMIHhVKAHRBCB4YjBLmEdytjBIQCEA8L/5uGP5YwUguGe4awUoHdMqTCB4WigZ0WB4pSgW0aB4/ygT0QAgOGEA8NH4BiC4ZwDw1vsA8GP5SucBIDhhJOACIDhhIeAFIDhhHuAGIDhhAPDG+wDwU/k65wDw2/kBKALQByA4YQHgACA4YX8geGIKILhjACD4YxFIEEkKIgDwG/kA8Dz5APCw+wDww/kAILhjAPA0+QDwqPsAAAAcASBHMlRYRzJUU/EDAAAAHQEgACABIPlsAAiBbAAIACgBIFQaASBwtQRGDUYmeCQuCNBSLg7QUy4S0FQuL9BVLmfQc+AFLXHReGoAKGbQBChk0GvgBS1p0XhqAChm0V3ghS1j0XhqAShg0aBqAChd0eBqAyha0eBoIChX2UxJiEJU2EtJIEY0MBkiAPC4+AEoTNEgRk0wAHgAKEfRPuB4agIoAdADKEHRCS0/00JIhUI82GB4oXgIQzjR4HgheQkCCENBHalCMdEEKC/TBDhheQEpK9gAKQLROEqQQibRonm7atuymkIJ0AE727KaQh3RemoDKgvRASkY0QjgOmsSGPtqmkIS2AApAdCaQg7RACBwvQUtCtF4agMoB9EgRilGAPBR+AEoAdEAIHC9ASBwvXC1IkwjTSZ4JC430Oh4BSg00Sh5sEIx0Wh5ASgu0ah5Aygr0eh5ASgo0Sh6ACgl0VIuAtEBIHhiIOBTLgfR4Gj4YgAgOGO4YgIgeGIW4FQuFNGgeblqybKIQg/R4HgheQkCCEMEODlrCRg5Y7hqATC4YmB5ASgB0QMgeGJwvSBgPADcCgEg8QMAAOgDAAAAIAEgACgBIHC1BEYNRgE5APAL+EAZfTDAsgE9YV2IQgHRASBwvQAgcL0ctQAiACOLQgPQxFwSGQEz+efQshy9OLUAI5NCBdDEXM1crEID0QEz9+cBIDi9ACA4vTi1ACOTQgPQxFzMVAEz+ec4vXC1J0woSCBgASAgcThpYHG4aKBx+GjgcXhpIIG4aWCBIEYMIf/3yv8gcyBGDSEA8B/5cL1wtRpMHEggYAEgIHH4aGBxOGmgcfhr4HG+a0AuANlAJiZyeGpgcgAgoHITSCFGCzEyRv/3wv8gRgshiRn/96T/CyGJGWBUATENRgAmIEYpRgDw9PioQgjQATYDLgXYAPBn+AZIAPAw+vDncL0AAAAdASBHMlJERzJSWAAoASAAAAQA/LUERg1GACYAJx5LHkoSeFIqBdBTKgPQVCoB0FUqANEaSxtIwWkPIgpAF0MgIhFCIdBBasmyrkId0gAuAtFaKRnRDuABLgXRpSkK0AAmWikR0QbgAi4E0f8pAtAAJlopCdGhVQE2BC4F0+F4BTGpQgTYjkID0gE71NEA4AAmMEY5Rvy9AACAAAAgASAAAAAEAEgAQHC1APC9+QDwgfk4RlQwAPAX+fhhAPCU+XC98LVgSAFoYEoRQwFgYEoBaBFC/NBfSAFoAyKRQwIiEUMBYFxIAWgBIhFDAWBbSAFoW0oRQwFgWkgBaBFDAWCRQwFgWEwgaFhJCEBYSQhDIGBgaFdJCEBgYKBoU0kIQFNJCEOgYOBoUEkIQOBgYGpRSQhAUUkIQ2BiUUwAICBgYGCgYBggoGFOSOBgTkggYk5IIGBOSk9L4GkBRhFAkUIB0AE7+NFMSADwd/nwvfC1BEYNRgAmrkIG0ADwB/gBKQLRoFUBNvbnMEbwvRy1Q0pDSBBgOkpDS9BpDyEIQgbQB7RBSAJvATICZwe8EWIgIQhCCNEBO+/RO0rTbgEz02YAIAAhHL1QasCyASEcvfC1gbAERg1GMUgxSQFgACYoTwAgAJCuQhjQMEv4aYAhCEIP0QE7+dEsSpBmEW4BMRFmAJgBMACQAygW2P/3Wv8cT+jnoF24YgE25OckS/hpQCEIQgbRATv50R9KkGZRbwExUWcwRgGw8L0bSUpuATJKZjBGAbDwvQAAABACQAABAAAABAAAVBACQDQQAkBAEAJAAEAAADAQAkAAAABQ///D/wAAKAD/+f//D/D//xABAAAAOAFAiwAAAP87EgANFAAAAABgAAAAAAEAACAAADAAQKqqAAAAAAACABoBIAAAEADwtZRIAWgDIhFDAWCSSAghAWAAIUFggWACIcFgACEBYY5IAXCOSAUiAWAEMAE6+9GMSAEhAXDwvXC1BEYAJQAmCi0N0ChGASEiRlIZhkuYR3K2ACgC0AEhqUAOQwE17+cwRnC98LUERoBNBSYAJ+Bd6V2IQgTRATcKL/jRASDwvQo1AT7y0QAg8L0wtYKwBEYNRmpGFXAgRgEhdUuYR3K2ACgE0AEhsUA4aghDOGICsAE2ML0QtQUgAyH/9+b/BiDBIf/34v8DIKYh//fe/wDwcfgHIAMh//fY/xC9ELUFIAMh//fS/wYgwSH/987/BCCmIf/3yv8A8F34ByAFIf/3xP8QvRC1PEZANOF5ByD/97z/oXkGIP/3uP9heQUg//e0/+F4AyD/97D/IXkEIP/3rP//96r/EL1wtfhpTUmIQg3RPEZAND1GVDUAJqBdqV2IQgTRATYKLvjRASBwvQAgcL0QtQxGREuYR3K2ACgB0SBGEL0AIBC9ELVASAAhAWA/SAFoP0qRQwFgP0gIIQFgEL0QtT1MACgD0QEgwAQgYBC9ASDAACBgEL0AKAHQATj90XBHELUeIDVJATn90QE4+tEQvQC1M0uYR3K2AL0DIHhgMUgxSQFgMUlBYDFI//fk/3K2MEgxSQFg/udHMl9QT0dPX0ZMQVNIX0JSSURHRV9WNwpvdGEvczIwMF9maXJtd2FyZV9vdGEuYmluAMBGgREEr68DjSAi/4EABK6uA4EgIv+BEQSvrwOBICL/gQEEr64DgSAi/4EQBK6vA4EgIv8AADQQAkCgAAAgFAEAIHwAACC/AAAgQZAACPgKASAJkQAI/wMAALE7AAgASABAAAQAUAAADwAoAABQGAAAUCBOAAC5LAAIABsBIEdGUlDewN7AAAAIAAztAOAEAPoF";
+const POGO_FLASH_BRIDGE_PROFILE_PATCH_OFFSETS = Object.freeze([
+  2826, 2846, 2856,
+]);
 
 function asBytes(input) {
   return input instanceof Uint8Array ? input : new Uint8Array(input);
@@ -105,14 +116,6 @@ export const YHM_SETUP_NON_IDLE_RECOVERY = Object.freeze({
     "Do not bypass the YHM allowlist. After exact retained proof that setup stopped before route selection or OTA bytes, clear the volatile record, return the Case to firmware 1.2.57, issue a bounded bilateral DEB0 reset/liveness check, and retry only from a fresh setup. Retain the existing Stock/CFW provenance because no OTA mutation began.",
 });
 
-const POGO_FLASH_ALLOWED_BASELINES = Object.freeze([
-  "811104afaf038d2022ff",
-  "810004aeae03812022ff",
-  "811104afaf03812022ff",
-  "810104afae03812022ff",
-  "811004aeaf03812022ff",
-]);
-
 export function classifyPogoFlashRecoveryBoundary(
   error,
   retainedResult,
@@ -136,16 +139,37 @@ export function classifyPogoFlashRecoveryBoundary(
   return { ...WIRED_START_NO_FRAME_RECOVERY };
 }
 
-export async function getVerifiedPogoFlashBridgePayload() {
-  const payload = bytesFromBase64(POGO_FLASH_BRIDGE_BASE64);
-  const digest = await sha256Hex(payload);
+export async function getVerifiedPogoFlashBridgePayload(
+  profile = YHM_PROFILE_REVIEWED_22,
+) {
+  requireYhmProfile(profile);
+  const reviewedPayload = bytesFromBase64(POGO_FLASH_BRIDGE_BASE64);
+  const reviewedDigest = await sha256Hex(reviewedPayload);
   if (
-    payload.length !== POGO_FLASH_BRIDGE_BYTES ||
-    digest !== POGO_FLASH_BRIDGE_SHA256
+    reviewedPayload.length !== POGO_FLASH_BRIDGE_BYTES ||
+    reviewedDigest !== POGO_FLASH_BRIDGE_SHA256
   ) {
     throw new PogoFlashSafetyError(
-      `The volatile flash bridge differs from the reviewed build (${payload.length} bytes, ${digest}).`,
+      `The volatile flash bridge differs from the reviewed build (${reviewedPayload.length} bytes, ${reviewedDigest}).`,
     );
+  }
+  let payload = reviewedPayload;
+  if (profile !== YHM_PROFILE_REVIEWED_22) {
+    payload = reviewedPayload.slice();
+    for (const offset of POGO_FLASH_BRIDGE_PROFILE_PATCH_OFFSETS) {
+      if (payload[offset] !== 0x22) {
+        throw new PogoFlashSafetyError(
+          "The volatile flash bridge YHM profile table differs from the reviewed layout.",
+        );
+      }
+      payload[offset] = 0x33;
+    }
+    const digest = await sha256Hex(payload);
+    if (digest !== POGO_FLASH_BRIDGE_OBSERVED_33_SHA256) {
+      throw new PogoFlashSafetyError(
+        `The observed-33 volatile flash bridge differs from its trust pin (${digest}).`,
+      );
+    }
   }
   if (
     readU32LE(payload, 0) !== 0x2001f000 ||
@@ -398,7 +422,9 @@ export function verifyPogoFlashZeroWriteSetupStop(
   result,
   proof,
   attemptedRoute,
+  yhmProfile = YHM_PROFILE_REVIEWED_22,
 ) {
+  requireYhmProfile(yhmProfile);
   const proofBytes = asBytes(proof);
   if (
     !["left", "right"].includes(attemptedRoute) ||
@@ -438,8 +464,11 @@ export function verifyPogoFlashZeroWriteSetupStop(
   ) {
     return null;
   }
-  const baselineAllowlisted =
-    POGO_FLASH_ALLOWED_BASELINES.includes(baselineHex);
+  const baselineProfile = identifyYhmBaselineProfile(baselineHex);
+  const baselineAllowlisted = isYhmBaselineAllowed(
+    yhmProfile,
+    baselineHex,
+  );
   const phaseCompatibleRoute = baselineAllowlisted
     ? report.baseline[1] & 1
       ? "right"
@@ -448,17 +477,25 @@ export function verifyPogoFlashZeroWriteSetupStop(
   return {
     ...report,
     baselineHex,
+    baselineProfile,
     baselineAllowlisted,
+    yhmProfile,
     phaseCompatibleRoute,
     noMutationSetupStopVerified: true,
   };
 }
 
-export function verifyPogoFlashOppositePhaseStop(result, proof, attemptedRoute) {
+export function verifyPogoFlashOppositePhaseStop(
+  result,
+  proof,
+  attemptedRoute,
+  yhmProfile = YHM_PROFILE_REVIEWED_22,
+) {
   const report = verifyPogoFlashZeroWriteSetupStop(
     result,
     proof,
     attemptedRoute,
+    yhmProfile,
   );
   if (
     !report?.baselineAllowlisted ||
@@ -476,7 +513,9 @@ export function verifyPogoFlashHostTimeoutRestoration(
   result,
   proof,
   attemptedRoute,
+  yhmProfile = YHM_PROFILE_REVIEWED_22,
 ) {
+  requireYhmProfile(yhmProfile);
   const proofBytes = asBytes(proof);
   if (
     !["left", "right"].includes(attemptedRoute) ||
@@ -503,13 +542,14 @@ export function verifyPogoFlashHostTimeoutRestoration(
     report.selectedMask !== 0x3ff ||
     report.restoredMask !== 0x3ff ||
     report.templeUartErrors !== 0 ||
-    !POGO_FLASH_ALLOWED_BASELINES.includes(baselineHex) ||
+    !isYhmBaselineAllowed(yhmProfile, baselineHex) ||
     !equalBytes(report.baseline, report.restored)
   ) {
     return null;
   }
   return {
     ...report,
+    yhmProfile,
     hostTimeoutRestorationVerified: true,
   };
 }
@@ -519,13 +559,21 @@ export function parsePogoFlashRetainedResult(
   proof,
   route,
   finalSequence,
-  { expectedAcceptedSize = null, expectedOtaSequence = null } = {},
+  {
+    expectedAcceptedSize = null,
+    expectedOtaSequence = null,
+    yhmProfile = YHM_PROFILE_REVIEWED_22,
+  } = {},
 ) {
+  requireYhmProfile(yhmProfile);
   const proofBytes = asBytes(proof);
   if (!equalBytes(proofBytes, POGO_FLASH_PROOF)) {
     throw new PogoFlashSafetyError("The volatile flash bridge proof is invalid.");
   }
   const report = decodePogoFlashRetainedResult(result);
+  const baselineHex = [...report.baseline]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
   if (
     report.magic !== 0x57463247 ||
     report.progress !== 3 ||
@@ -538,6 +586,7 @@ export function parsePogoFlashRetainedResult(
     report.selectedMask !== 0x3ff ||
     report.restoredMask !== 0x3ff ||
     report.templeUartErrors !== 0 ||
+    !isYhmBaselineAllowed(yhmProfile, baselineHex) ||
     (expectedAcceptedSize !== null &&
       (report.declaredSize !== expectedAcceptedSize ||
         report.acceptedSize !== expectedAcceptedSize)) ||
@@ -549,7 +598,7 @@ export function parsePogoFlashRetainedResult(
       "The retained bridge result does not prove a complete byte-for-byte route restoration.",
     );
   }
-  return report;
+  return { ...report, yhmProfile };
 }
 
 export async function assertPinnedTempleFlashCandidate(firmware) {

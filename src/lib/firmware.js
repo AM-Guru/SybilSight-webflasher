@@ -64,7 +64,7 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
   }),
   caseUsbBridge: Object.freeze({
     status: "both-temples-reviewed-cfw",
-    attempts: 38,
+    attempts: 39,
     completeWiredTransfers: 7,
     attemptedBridgeSha256: Object.freeze([
       "6780d7ba8bf9a6539719dda4111c4fbaab706c74c16cda1e41751616f69109b4",
@@ -84,7 +84,7 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
       "eba56380f04bf00ad9d87dffbc40c3292ec5b3cee458d3607c8cffd0dcbe335b",
     ]),
     validationBoundary:
-      "The hosted Easy Update accepted the exact Stock/CFW compatible-pair gate, recovered a V7 short host-response boundary without replaying DATA, and completed both CFW mains through bounded fresh-component attempts. A later Stock speed test explicitly rejected a 12 KiB deferred batch at 691,000 accepted bytes; the 6 KiB conservative profile then completed all 3,524 right-Stock records, FINISH, postflight, exact YHM restoration, Case 1.2.57 return, and final bilateral DEB0/liveness in 1,571 seconds. A 2.0.7.16 to 2.2.6.10 complete-main update then produced explicit DATA 0x54/status 1 rejections at records 2,184 and 2,219 after exact cleanup and conservative restart pacing. Because those failures were only 35 records apart, the browser now treats the pair as a persistent receiver/storage boundary and does not start a third full-component attempt. Keep only the exact proven pair component-differential, use the complete pinned main for cross-version Update/Restore, keep the Case boundary at 6 KiB, and stop clustered explicit DATA rejections within 64 records.",
+      "The hosted Easy Update accepted the exact Stock/CFW compatible-pair gate, recovered a V7 short host-response boundary without replaying DATA, and completed both CFW mains through bounded fresh-component attempts. A later Stock speed test explicitly rejected a 12 KiB deferred batch at 691,000 accepted bytes; the 6 KiB conservative profile then completed all 3,524 right-Stock records, FINISH, postflight, exact YHM restoration, Case 1.2.57 return, and final bilateral DEB0/liveness in 1,571 seconds. A 2.0.7.16 to 2.2.6.10 complete-main update then produced explicit DATA 0x54/status 1 rejections at records 2,184 and 2,219 after exact cleanup and conservative restart pacing. Because those failures were only 35 records apart, the browser now treats the pair as a persistent receiver/storage boundary and does not start a third full-component attempt. A later Case produced six zero-write/zero-transmission probes across three exact register-8 0x33 counterparts; those states now select a separately pinned exact bridge profile while all unobserved baselines remain fail-closed. Keep only the exact proven pair component-differential, use the complete pinned main for cross-version Update/Restore, keep the Case boundary at 6 KiB, and stop clustered explicit DATA rejections within 64 records.",
     officialRestore: Object.freeze({
       packageSha256:
         "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa",
@@ -260,6 +260,51 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
       finishAcknowledged: false,
       policy:
         "After one fresh conservative whole-component restart, stop when the same route and target explicitly reject DATA command 0x54/status 1 within 64 records of the prior rejection.",
+    }),
+    cachedResponseHeaderTruncation: Object.freeze({
+      observedAt: "2026-07-27",
+      route: "right",
+      sourceFirmware: "2.2.6.10",
+      targetFirmware: "2.2.6.10",
+      acceptedBytesByAttempt: Object.freeze([
+        2467000,
+        1350000,
+        1648000,
+      ]),
+      status: 16,
+      progress: 3,
+      finalHeaderSuffixBytes: 3,
+      expectedHeaderSuffixBytes: 7,
+      finishAcknowledged: false,
+      exactCleanupVerifiedAfterEveryAttempt: true,
+      finalBilateralLivenessVerified: true,
+      policy:
+        "After a partial cached G2RX header, passively scan a bounded 256-byte/extended-deadline window for another cached Case retransmission. Never replay the temple request; preserve the existing immutable cleanup and reset path if no complete frame arrives.",
+    }),
+    observed33YhmProfile: Object.freeze({
+      observedAt: "2026-07-27",
+      webFlasherBuild: "2825fce",
+      caseFirmware: "1.2.57",
+      rightChargingPercent: 99,
+      leftChargingPercent: 99,
+      baselines: Object.freeze([
+        "811004aeaf03812033ff",
+        "810104afae03812033ff",
+        "810004aeae03812033ff",
+      ]),
+      differsFromReviewed22ProfileOnlyAtRegister: 8,
+      zeroWriteProofs: 6,
+      bilateralResetAttempts: 2,
+      templeBytesTransmitted: 0,
+      firmwareBytesAccepted: 0,
+      readOnlyBridgeSha256:
+        "ce0b6825912d7006e8ddd7da70792bec1418bec03c28f6e6aa5bb928461dae53",
+      writerBridgeSha256:
+        "a14bfa58c4240fda30b924649aaa410f69255dbb210150a3f6fd9aa31b3e3fab",
+      offlineValidationPassed: true,
+      hardwareValidation: "pending first observed-33 profile run",
+      policy:
+        "Select the exact observed-33 profile only from immutable retained zero-write/zero-transmission proof. Use separately SHA-256-pinned read-only and writer bridges whose only three byte changes are the three observed baseline-table register-8 values 0x22 to 0x33; retain fail-closed behavior for every unobserved baseline.",
     }),
     browserDifferenceCfwTest: Object.freeze({
       mode: "Stock-to-reviewed-CFW component differences",

@@ -140,6 +140,16 @@ function recoveryEvidence() {
       persistentDataRejectionBoundary: {
         ...bridge.persistentDataRejectionBoundary,
       },
+      cachedResponseHeaderTruncation: {
+        ...bridge.cachedResponseHeaderTruncation,
+        acceptedBytesByAttempt: [
+          ...bridge.cachedResponseHeaderTruncation.acceptedBytesByAttempt,
+        ],
+      },
+      observed33YhmProfile: {
+        ...bridge.observed33YhmProfile,
+        baselines: [...bridge.observed33YhmProfile.baselines],
+      },
     },
     allowlist: {
       component: POGO_TRANSFER_RESEARCH.directTempleHost.component,

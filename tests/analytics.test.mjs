@@ -130,6 +130,20 @@ test("separates case shell data from left/right glasses analytics", () => {
       .persistentDataRejectionBoundary.recordDistance,
     35,
   );
+  assert.deepEqual(
+    analytics.validatedRecoveryEvidence.failureEvidence
+      .cachedResponseHeaderTruncation.acceptedBytesByAttempt,
+    [2_467_000, 1_350_000, 1_648_000],
+  );
+  assert.deepEqual(
+    analytics.validatedRecoveryEvidence.failureEvidence
+      .observed33YhmProfile.baselines,
+    [
+      "811004aeaf03812033ff",
+      "810104afae03812033ff",
+      "810004aeae03812033ff",
+    ],
+  );
   assert.equal(
     analytics.validatedRecoveryEvidence.allowlist
       .persistentDataRejectionWindowRecords,

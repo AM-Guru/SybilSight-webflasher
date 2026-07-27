@@ -18,8 +18,10 @@ import {
   POGO_BRIDGE_BANNER,
   POGO_BRIDGE_PROOF,
   POGO_BRIDGE_PROOF_ADDRESS,
+  POGO_BRIDGE_OBSERVED_33_SHA256,
   POGO_BRIDGE_RESULT_ADDRESS,
   POGO_BRIDGE_RESULT_LENGTH,
+  POGO_BRIDGE_SHA256,
   POGO_BRIDGE_STATUS,
   getVerifiedPogoBridgePayload,
   makePogoBridgeRequest,
@@ -30,6 +32,7 @@ import {
 import {
   POGO_FLASH_BRIDGE_ADDRESS,
   POGO_FLASH_BRIDGE_BANNER,
+  POGO_FLASH_BRIDGE_OBSERVED_33_SHA256,
   POGO_FLASH_BRIDGE_SHA256,
   POGO_FLASH_PROOF,
   POGO_FLASH_PROOF_ADDRESS,
@@ -62,6 +65,12 @@ import {
   verifyPogoFlashZeroWriteSetupStop,
 } from "./pogoFlashBridge.js";
 import { buildBundleDifferencePlan } from "./differential.js";
+import {
+  YHM_PROFILE_OBSERVED_33,
+  YHM_PROFILE_REVIEWED_22,
+  identifyYhmBaselineProfile,
+  requireYhmProfile,
+} from "./yhmProfiles.js";
 
 const ACK = 0x79;
 const NACK = 0x1f;
@@ -243,11 +252,20 @@ export async function writePogoFlashTransactionHeader(
 }
 
 const POGO_FLASH_RESPONSE_MAGIC = new TextEncoder().encode("G2RX");
+const POGO_FLASH_RESPONSE_SCAN_LIMIT = 256;
+const POGO_FLASH_HEADER_BYTE_GAP_MS = 2000;
+
+function isSerialReadTimeout(error) {
+  return /^Timed out reading .+: received \d+ of \d+ bytes\.$/.test(
+    error instanceof Error ? error.message : String(error ?? ""),
+  );
+}
 
 export async function readPogoFlashResponseHeader(
   bridge,
   timeoutMs,
   onResynchronized = () => {},
+  onIncompleteCandidate = () => {},
 ) {
   if (
     !bridge?.readExact ||
@@ -260,22 +278,68 @@ export async function readPogoFlashResponseHeader(
   }
   const deadline = Date.now() + timeoutMs;
   const window = [];
+  let candidate = null;
   let inspected = 0;
-  while (inspected < 128) {
+  while (inspected < POGO_FLASH_RESPONSE_SCAN_LIMIT) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
       throw new RetryablePogoFlashError(
         `Timed out locating a complete flash bridge response after ${inspected} bytes.`,
       );
     }
-    const byte = (
-      await bridge.readExact(
-        1,
-        remaining,
-        "flash bridge response synchronization byte",
-      )
-    )[0];
+    let byte;
+    try {
+      byte = (
+        await bridge.readExact(
+          1,
+          candidate
+            ? Math.min(POGO_FLASH_HEADER_BYTE_GAP_MS, remaining)
+            : remaining,
+          candidate
+            ? "flash bridge response header byte"
+            : "flash bridge response synchronization byte",
+        )
+      )[0];
+    } catch (error) {
+      if (candidate && isSerialReadTimeout(error)) {
+        onIncompleteCandidate(candidate.length - POGO_FLASH_RESPONSE_MAGIC.length);
+        window.splice(
+          0,
+          window.length,
+          ...candidate.slice(
+            Math.max(
+              0,
+              candidate.length - (POGO_FLASH_RESPONSE_MAGIC.length - 1),
+            ),
+          ),
+        );
+        candidate = null;
+        continue;
+      }
+      throw error;
+    }
     inspected += 1;
+    if (candidate) {
+      candidate.push(byte);
+      const nestedMagic =
+        candidate.length > POGO_FLASH_RESPONSE_MAGIC.length &&
+        candidate
+          .slice(-POGO_FLASH_RESPONSE_MAGIC.length)
+          .every(
+            (value, index) => value === POGO_FLASH_RESPONSE_MAGIC[index],
+          );
+      if (nestedMagic) {
+        onIncompleteCandidate(
+          candidate.length - POGO_FLASH_RESPONSE_MAGIC.length * 2,
+        );
+        candidate = [...POGO_FLASH_RESPONSE_MAGIC];
+        continue;
+      }
+      if (candidate.length === 11) {
+        return Uint8Array.from(candidate);
+      }
+      continue;
+    }
     window.push(byte);
     if (window.length > POGO_FLASH_RESPONSE_MAGIC.length) window.shift();
     if (
@@ -286,19 +350,11 @@ export async function readPogoFlashResponseHeader(
     ) {
       const discardedBytes = inspected - POGO_FLASH_RESPONSE_MAGIC.length;
       if (discardedBytes > 0) onResynchronized(discardedBytes);
-      const suffix = await bridge.readExact(
-        7,
-        Math.max(1, deadline - Date.now()),
-        "flash bridge response header suffix",
-      );
-      const header = new Uint8Array(11);
-      header.set(POGO_FLASH_RESPONSE_MAGIC);
-      header.set(suffix, POGO_FLASH_RESPONSE_MAGIC.length);
-      return header;
+      candidate = [...POGO_FLASH_RESPONSE_MAGIC];
     }
   }
   throw new RetryablePogoFlashError(
-    "The Case bridge emitted 128 bytes without a complete G2RX response marker.",
+    `The Case bridge emitted ${POGO_FLASH_RESPONSE_SCAN_LIMIT} bytes without a complete G2RX response header.`,
   );
 }
 
@@ -873,13 +929,24 @@ async function resetTemples(transport) {
 }
 
 class CasePogoFlashTransport {
-  constructor(session, route, { progressBase = 0, progressSpan = 1 } = {}) {
+  constructor(
+    session,
+    route,
+    {
+      progressBase = 0,
+      progressSpan = 1,
+      yhmProfile =
+        session.routeYhmProfiles?.get(route) ?? YHM_PROFILE_REVIEWED_22,
+    } = {},
+  ) {
     if (!["left", "right"].includes(route)) {
       throw new PogoFlashSafetyError("The Case bridge route must be left or right.");
     }
+    requireYhmProfile(yhmProfile);
     this.session = session;
     this.port = session.port;
     this.route = route;
+    this.yhmProfile = yhmProfile;
     this.reportProgress = (fraction, detail) =>
       session.progress(progressBase + fraction * progressSpan, detail);
     this.loader = null;
@@ -917,7 +984,14 @@ class CasePogoFlashTransport {
   }
 
   async openOnce() {
-    const payload = await getVerifiedPogoFlashBridgePayload();
+    const payload = await getVerifiedPogoFlashBridgePayload(this.yhmProfile);
+    const bridgeSha256 =
+      this.yhmProfile === YHM_PROFILE_OBSERVED_33
+        ? POGO_FLASH_BRIDGE_OBSERVED_33_SHA256
+        : POGO_FLASH_BRIDGE_SHA256;
+    this.session.log(
+      `${this.route}: loading the separately pinned ${this.yhmProfile} writer bridge · ${bridgeSha256.slice(0, 16)}….`,
+    );
     const zeroProof = new Uint8Array(POGO_FLASH_PROOF.length);
     const zeroResult = new Uint8Array(POGO_FLASH_RESULT_LENGTH);
     try {
@@ -989,13 +1063,18 @@ class CasePogoFlashTransport {
   }
 
   async readBridgeResponse(timeoutMs) {
-    const responseTimeout = Math.max(10000, timeoutMs + 10000);
+    const responseTimeout = Math.max(20000, timeoutMs + 30000);
     const header = await readPogoFlashResponseHeader(
       this.bridge,
       responseTimeout,
       (discardedBytes) =>
         this.session.log(
           `${this.route}: discarded ${discardedBytes} byte${discardedBytes === 1 ? "" : "s"} from a short Case response prefix and synchronized to the retransmitted G2RX frame.`,
+          "warn",
+        ),
+      (receivedSuffixBytes) =>
+        this.session.log(
+          `${this.route}: cached G2RX response header stopped after ${receivedSuffixBytes}/7 suffix bytes; continuing to wait for another cached Case retransmission without replaying the temple request.`,
           "warn",
         ),
     );
@@ -1200,6 +1279,7 @@ class CasePogoFlashTransport {
           {
             expectedAcceptedSize: this.completedTransfer?.payloadBytes ?? null,
             expectedOtaSequence: this.completedTransfer?.records ?? null,
+            yhmProfile: this.yhmProfile,
           },
         );
         this.retainedResult = retainedResult;
@@ -1209,6 +1289,7 @@ class CasePogoFlashTransport {
             result,
             proof,
             this.route,
+            this.yhmProfile,
           );
         const phaseStop =
           hostTimeoutRestoration === null
@@ -1216,6 +1297,7 @@ class CasePogoFlashTransport {
                 result,
                 proof,
                 this.route,
+                this.yhmProfile,
               )
             : null;
         const setupStop =
@@ -1224,6 +1306,7 @@ class CasePogoFlashTransport {
                 result,
                 proof,
                 this.route,
+                this.yhmProfile,
               )
             : null;
         if (hostTimeoutRestoration) {
@@ -1245,6 +1328,19 @@ class CasePogoFlashTransport {
           this.retainedResult = setupStop;
           this.setupPhaseStopVerified = true;
           this.restoreVerified = true;
+          if (
+            setupStop.baselineProfile &&
+            setupStop.baselineProfile !== this.yhmProfile
+          ) {
+            this.session.routeYhmProfiles.set(
+              this.route,
+              setupStop.baselineProfile,
+            );
+            this.session.log(
+              `${this.route}: exact zero-write evidence identified YHM profile ${setupStop.baselineProfile}; the next bounded fresh setup will use its separately hash-pinned bridge.`,
+              "warn",
+            );
+          }
           this.session.log(
             `${this.route}: verified an exact zero-write setup stop before YHM route selection; baseline ${setupStop.baselineHex} remains outside the mutation allowlist.`,
             "warn",
@@ -1351,6 +1447,7 @@ export class G2CaseSession {
     this.progress = progress;
     this.openNormal = openNormal;
     this.wait = wait;
+    this.routeYhmProfiles = new Map();
   }
 
   async analyze({ progressBase = 0, progressSpan = 1 } = {}) {
@@ -1625,10 +1722,23 @@ export class G2CaseSession {
     options = {},
   ) {
     const attempts = [];
-    const maximumAttempts = POGO_READ_ONLY_PHASE_SETTLE_MS.length + 1;
+    const maximumAttempts = POGO_READ_ONLY_PHASE_SETTLE_MS.length + 2;
+    let settleIndex = 0;
+    let yhmProfile =
+      options.yhmProfile ??
+      this.routeYhmProfiles.get(route) ??
+      YHM_PROFILE_REVIEWED_22;
+    requireYhmProfile(yhmProfile);
+    const attemptedProfiles = new Set();
     for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
+      attemptedProfiles.add(yhmProfile);
       try {
-        return await this.probeRunningTempleOnce(operation, route, options);
+        const result = await this.probeRunningTempleOnce(operation, route, {
+          ...options,
+          yhmProfile,
+        });
+        this.routeYhmProfiles.set(route, yhmProfile);
+        return result;
       } catch (error) {
         const evidence = error?.pogoBridgeEvidence;
         const verifiedZeroWriteStop =
@@ -1638,6 +1748,7 @@ export class G2CaseSession {
           outcome: "failed",
           error: error instanceof Error ? error.message : String(error),
           baseline: evidence?.baselineHex ?? null,
+          yhmProfile,
           zeroYhmWritesVerified: verifiedZeroWriteStop,
           templeBytesTransmitted: evidence?.transmitted ?? null,
         });
@@ -1647,23 +1758,41 @@ export class G2CaseSession {
           }
           throw error;
         }
-        if (attempt === maximumAttempts) {
+        const observedProfile = identifyYhmBaselineProfile(
+          evidence.baselineHex,
+        );
+        if (
+          observedProfile &&
+          observedProfile !== yhmProfile &&
+          !attemptedProfiles.has(observedProfile)
+        ) {
+          const readiness = await this.readTempleFlashPreflight([route]);
+          this.log(
+            `${route} ${operation}: exact retained zero-write evidence maps baseline ${evidence.baselineHex} to YHM profile ${observedProfile}; Case ${readiness.caseVersion} and seated contact were re-confirmed before retrying read-only liveness with its separately hash-pinned bridge.`,
+            "warn",
+          );
+          yhmProfile = observedProfile;
+          this.routeYhmProfiles.set(route, yhmProfile);
+          continue;
+        }
+        if (settleIndex === POGO_READ_ONLY_PHASE_SETTLE_MS.length) {
           const baselines = attempts
             .map(({ baseline }) => baseline)
             .filter(Boolean)
             .join(", ");
           const finalError = new PogoFlashSafetyError(
-            `The pogo bridge stopped safely: YHM baseline was not an allowlisted seated-idle state after ${maximumAttempts} verified zero-write probes${baselines ? ` (${baselines})` : ""}. No YHM writes or temple transmissions occurred.`,
+            `The pogo bridge stopped safely: YHM baseline was not an allowlisted seated-idle state after ${attempts.length} verified zero-write probes${baselines ? ` (${baselines})` : ""}. No YHM writes or temple transmissions occurred.`,
           );
           finalError.pogoBridgeEvidence = evidence;
           finalError.readOnlyPhaseAttempts = attempts;
           throw finalError;
         }
         const settleMilliseconds =
-          POGO_READ_ONLY_PHASE_SETTLE_MS[attempt - 1];
+          POGO_READ_ONLY_PHASE_SETTLE_MS[settleIndex];
+        settleIndex += 1;
         const settleSeconds = settleMilliseconds / 1000;
         this.log(
-          `${route} ${operation}: YHM baseline ${evidence.baselineHex} is outside the reviewed seated-idle allowlist; retained SRAM proves zero YHM writes and zero temple bytes. Leaving the normal Case app undisturbed for ${settleSeconds} seconds before read-only retry ${attempt}/${maximumAttempts - 1}.`,
+          `${route} ${operation}: YHM baseline ${evidence.baselineHex} is outside the active seated-idle profile; retained SRAM proves zero YHM writes and zero temple bytes. Leaving the normal Case app undisturbed for ${settleSeconds} seconds before bounded stock-app settle ${settleIndex}/${POGO_READ_ONLY_PHASE_SETTLE_MS.length}.`,
           "warn",
         );
         await this.wait(settleMilliseconds);
@@ -1679,7 +1808,11 @@ export class G2CaseSession {
   async probeRunningTempleOnce(
     operation,
     route,
-    { progressBase = 0, progressSpan = 1 } = {},
+    {
+      progressBase = 0,
+      progressSpan = 1,
+      yhmProfile = YHM_PROFILE_REVIEWED_22,
+    } = {},
   ) {
     const reportProgress = (fraction, detail) =>
       this.progress(progressBase + fraction * progressSpan, detail);
@@ -1690,7 +1823,12 @@ export class G2CaseSession {
       throw new Error("Select the left or right temple route.");
     }
 
-    const payload = await getVerifiedPogoBridgePayload();
+    requireYhmProfile(yhmProfile);
+    const payload = await getVerifiedPogoBridgePayload(yhmProfile);
+    const bridgeSha256 =
+      yhmProfile === YHM_PROFILE_OBSERVED_33
+        ? POGO_BRIDGE_OBSERVED_33_SHA256
+        : POGO_BRIDGE_SHA256;
     const zeroProof = new Uint8Array(POGO_BRIDGE_PROOF.length);
     const zeroResult = new Uint8Array(POGO_BRIDGE_RESULT_LENGTH);
     let loader = null;
@@ -1766,7 +1904,7 @@ export class G2CaseSession {
 
     try {
       this.log(
-        `Loading the pinned read-only pogo bridge for ${route} ${operation}.`,
+        `Loading the pinned read-only pogo bridge for ${route} ${operation} · YHM profile ${yhmProfile} · ${bridgeSha256.slice(0, 16)}….`,
       );
       loader = await openProbeLoader(`${route} ${operation}`);
       if (loader.version !== 0x31) {
@@ -1895,6 +2033,7 @@ export class G2CaseSession {
         decoded,
         captured: response.captured,
         transportProof,
+        yhmProfile,
       };
     } finally {
       await closeOpenTransports();
@@ -2245,8 +2384,14 @@ export class G2CaseSession {
       progressBase,
       progressSpan,
     });
+    const bridgeSha256 =
+      transport.yhmProfile === YHM_PROFILE_OBSERVED_33
+        ? POGO_FLASH_BRIDGE_OBSERVED_33_SHA256
+        : POGO_FLASH_BRIDGE_SHA256;
     const result = {
       route,
+      yhmProfile: transport.yhmProfile,
+      bridgeSha256,
       outcome: "started",
       preflightVersion: null,
       transfer: null,
@@ -2571,6 +2716,11 @@ export class G2CaseSession {
           : null,
       bridgeSha256:
         POGO_FLASH_BRIDGE_SHA256,
+      bridgeSha256ByYhmProfile: {
+        [YHM_PROFILE_REVIEWED_22]: POGO_FLASH_BRIDGE_SHA256,
+        [YHM_PROFILE_OBSERVED_33]:
+          POGO_FLASH_BRIDGE_OBSERVED_33_SHA256,
+      },
       routes,
       routeOrderSetupStops: [],
       supersededSuccessfulRouteResults: [],

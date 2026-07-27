@@ -1,4 +1,8 @@
 import { equalBytes, hexBytes, readU32LE, sha256Hex } from "./firmware.js";
+import {
+  YHM_PROFILE_REVIEWED_22,
+  requireYhmProfile,
+} from "./yhmProfiles.js";
 
 export const POGO_BRIDGE_ADDRESS = 0x20010000;
 export const POGO_BRIDGE_RESULT_ADDRESS = 0x20011a00;
@@ -6,6 +10,8 @@ export const POGO_BRIDGE_RESULT_LENGTH = 160;
 export const POGO_BRIDGE_PROOF_ADDRESS = 0x20011b00;
 export const POGO_BRIDGE_SHA256 =
   "e30e143d522e5a5d0b10a92a15610badcc6aef014333716a94eae183b14dc258";
+export const POGO_BRIDGE_OBSERVED_33_SHA256 =
+  "ce0b6825912d7006e8ddd7da70792bec1418bec03c28f6e6aa5bb928461dae53";
 export const POGO_BRIDGE_BANNER = new TextEncoder().encode("G2_POGO_BRIDGE_V1\n");
 export const POGO_BRIDGE_PROOF = new Uint8Array([
   0x47, 0x42, 0x52, 0x50, 0xde, 0xc0, 0xde, 0xc0,
@@ -43,6 +49,10 @@ R0VfVjEKwEYTAAAB5AF9ABMAAQHkAX4AJAABAKfARgCBEQSvrwONICL/gQAErq4DgSAi/4ERBK+vA4Eg
 Iv+BAQSvrgOBICL/gRAErq8DgSAi/wAAGAAAUCBOAAAM7QDgBAD6BQ==
 `;
 
+const POGO_BRIDGE_PROFILE_PATCH_OFFSETS = Object.freeze([
+  1670, 1690, 1700,
+]);
+
 export const POGO_BRIDGE_STATUS = Object.freeze({
   0: "ok",
   1: "bad host request",
@@ -60,14 +70,34 @@ function decodeBase64(value) {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
-export async function getVerifiedPogoBridgePayload() {
-  const payload = decodeBase64(POGO_BRIDGE_BASE64);
-  if (payload.length !== 1720 || payload.length % 4 !== 0) {
+export async function getVerifiedPogoBridgePayload(
+  profile = YHM_PROFILE_REVIEWED_22,
+) {
+  requireYhmProfile(profile);
+  const reviewedPayload = decodeBase64(POGO_BRIDGE_BASE64);
+  if (reviewedPayload.length !== 1720 || reviewedPayload.length % 4 !== 0) {
     throw new Error("The pinned pogo bridge payload has an unexpected size.");
   }
-  const digest = await sha256Hex(payload);
-  if (digest !== POGO_BRIDGE_SHA256) {
+  const reviewedDigest = await sha256Hex(reviewedPayload);
+  if (reviewedDigest !== POGO_BRIDGE_SHA256) {
     throw new Error("The pinned pogo bridge payload failed its SHA-256 check.");
+  }
+  if (profile === YHM_PROFILE_REVIEWED_22) return reviewedPayload;
+
+  const payload = reviewedPayload.slice();
+  for (const offset of POGO_BRIDGE_PROFILE_PATCH_OFFSETS) {
+    if (payload[offset] !== 0x22) {
+      throw new Error(
+        "The pinned pogo bridge YHM profile table differs from the reviewed layout.",
+      );
+    }
+    payload[offset] = 0x33;
+  }
+  const digest = await sha256Hex(payload);
+  if (digest !== POGO_BRIDGE_OBSERVED_33_SHA256) {
+    throw new Error(
+      "The pinned observed-33 pogo bridge failed its SHA-256 check.",
+    );
   }
   return payload;
 }

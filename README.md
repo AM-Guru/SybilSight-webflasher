@@ -500,12 +500,24 @@ verification also passed.
 One later Case reported the previously unseen YHM baseline
 `811004aeaf03812033ff`. The mutation bridge correctly rejected it before route
 selection with status 3, zero selected/restored/write masks, zero temple
-transactions, and zero accepted firmware bytes. The host does not add that
-state to the mutation allowlist. It now verifies and clears that exact
-zero-write retained record, returns to Case 1.2.57, performs a bounded
-bilateral `DEB0` reset and liveness check, and retries only from a fresh route
-setup. If the baseline remains outside the five reviewed states after the
-bounded resets, flashing still stops with no OTA mutation.
+transactions, and zero accepted firmware bytes. A later WebFlasher `2825fce`
+run produced six verified zero-write probes around two bilateral resets and
+settled through `811004aeaf03812033ff`, `810104afae03812033ff`, and
+`810004aeae03812033ff`. Each is the exact counterpart of a reviewed seated
+state with only YHM register 8 changing from `0x22` to `0x33`.
+
+The browser now keeps the original five-state `reviewed-22` bridge byte-for-byte
+and adds a separate `observed-33` profile. Both the 1,720-byte read-only bridge
+and 2,952-byte writer are independently SHA-256 pinned; the profile binaries
+differ from their reviewed originals at exactly three table bytes, each
+`0x22 → 0x33`. The browser may select `observed-33` only after immutable
+retained SRAM proves an exact recognized baseline, zero YHM writes, and zero
+temple transmissions, followed by fresh Case 1.2.57 and seated-contact
+confirmation. The two unobserved table states remain byte-identical to the
+reviewed profile. The selected writer still requires complete selected and
+restored masks plus byte-for-byte restoration. Every other baseline remains
+fail-closed. This electronic profile is not labeled Frame A or Frame B because
+the Case does not expose its mechanical fit variant.
 
 For offline analysis, selected `EVENOTA` bundles show the exact number of
 1,000-byte `0x54` records and final sequence value for each component. The
@@ -705,8 +717,12 @@ V7 also handles an observed CH340/USART1 failure in which the Case emitted
 only two bytes of a response after accepting DATA. The SRAM bridge
 reinitializes USART1 and retransmits only its cached checksum-framed `G2RX`
 response; the browser discards the short prefix and synchronizes to that
-complete frame. It never retransmits the temple DATA request. If every
-host-response attempt fails, immutable-ROM readback may prove a status-16
+complete frame. A later run reached cached `G2RX` markers but received only
+three of the seven header-suffix bytes on the final candidate. The browser now
+uses a bounded 256-byte scan and a two-second inter-byte candidate gap inside
+an extended response deadline, allowing another cached retransmission to
+replace an incomplete header. It never retransmits the temple DATA request.
+If every host-response attempt fails, immutable-ROM readback may prove a status-16
 fatal cleanup only when all route masks are complete and the ten restored YHM
 bytes exactly match the allowlisted baseline. That proof permits a fresh
 whole-component restart after the bilateral reset/liveness gate; it is not a
@@ -971,7 +987,7 @@ Automatic Apply handles the reviewed failure boundaries as follows:
 | Responsive hardware-5 temples run an older version such as 2.1.1.12 | Transfer the complete pinned target main; never select Stock ↔ CFW differential mode |
 | Saved proof disagrees with fresh bilateral identity | Discard the saved plan and transfer the complete pinned target main |
 | Just-in-time differential preflight changes before `START` | Retry complete only with proof of zero accepted firmware bytes, exact cleanup, Case 1.2.57 return, and bilateral reset/liveness |
-| Read-only YHM baseline is outside the seated-idle allowlist | Retry only from exact retained zero-write/zero-transmission proof; let the stock app settle for 15 then 45 seconds and re-confirm Case/contact before each probe |
+| Read-only YHM baseline is outside the active seated-idle profile | Retry only from exact retained zero-write/zero-transmission proof; switch once to a separately pinned exact profile when recognized, otherwise let the stock app settle for 15 then 45 seconds and re-confirm Case/contact before each probe |
 | Allowlisted zero-write YHM setup stop | Perform the existing bounded setup reset/recheck and retry the same route |
 | Two restored explicit DATA rejections recur within 64 records on the same route and target | Classify a persistent receiver/storage boundary, skip the third full-component attempt, restore the Case, and finish with bilateral liveness |
 | First final-reset contact, telemetry, banner, YHM, or no-frame check is transient | Wait, issue one bounded second `DEB0`, and repeat the full liveness gate |

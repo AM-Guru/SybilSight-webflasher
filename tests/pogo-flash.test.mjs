@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   POGO_FLASH_BRIDGE_BYTES,
+  POGO_FLASH_BRIDGE_OBSERVED_33_SHA256,
   POGO_FLASH_BRIDGE_SHA256,
   POGO_FLASH_PROOF,
   POGO_FLASH_RESULT_LENGTH,
@@ -56,6 +57,11 @@ import {
   templeDataSettleMilliseconds,
   writePogoFlashTransactionHeader,
 } from "../src/lib/serial.js";
+import {
+  YHM_PROFILE_OBSERVED_33,
+  YHM_PROFILE_REVIEWED_22,
+  identifyYhmBaselineProfile,
+} from "../src/lib/yhmProfiles.js";
 
 const REVIEWED_STOCK_IMAGE_SHA256 =
   "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa";
@@ -219,7 +225,7 @@ test("retries only a fail-closed read-only YHM idle-phase mismatch", async () =>
         "The pogo bridge stopped safely: YHM baseline was not an allowlisted seated-idle state.",
       );
       error.pogoBridgeEvidence = {
-        baselineHex: "811004aeaf03812033ff",
+        baselineHex: "811004aeaf03812044ff",
         transmitted: 0,
         zeroWriteBaselineStopVerified: true,
       };
@@ -237,8 +243,62 @@ test("retries only a fail-closed read-only YHM idle-phase mismatch", async () =>
   assert.deepEqual(waits, [15_000, 45_000]);
   assert.deepEqual(preflights, [["right"], ["right"]]);
   assert.equal(logs.length, 4);
-  assert.match(logs[0][0], /811004aeaf03812033ff/);
+  assert.match(logs[0][0], /811004aeaf03812044ff/);
   assert.match(logs[0][0], /zero YHM writes and zero temple bytes/);
+});
+
+test("switches to the exact observed-33 bridge only from retained zero-write proof", async () => {
+  const profiles = [];
+  const waits = [];
+  const logs = [];
+  const session = new G2CaseSession(null, {
+    wait: async (milliseconds) => waits.push(milliseconds),
+    log: (message, level) => logs.push([message, level]),
+  });
+  session.probeRunningTempleOnce = async (_operation, _route, options) => {
+    profiles.push(options.yhmProfile);
+    if (profiles.length === 1) {
+      const error = new Error(
+        "The pogo bridge stopped safely: YHM baseline was not an allowlisted seated-idle state.",
+      );
+      error.pogoBridgeEvidence = {
+        baselineHex: "810004aeae03812033ff",
+        transmitted: 0,
+        zeroWriteBaselineStopVerified: true,
+      };
+      throw error;
+    }
+    return {
+      route: "right",
+      operation: "version",
+      yhmProfile: options.yhmProfile,
+    };
+  };
+  session.readTempleFlashPreflight = async () => ({
+    caseVersion: "1.2.57",
+  });
+
+  const result = await session.probeRunningTemple("version", "right");
+
+  assert.deepEqual(profiles, [
+    YHM_PROFILE_REVIEWED_22,
+    YHM_PROFILE_OBSERVED_33,
+  ]);
+  assert.equal(result.yhmProfile, YHM_PROFILE_OBSERVED_33);
+  assert.equal(
+    session.routeYhmProfiles.get("right"),
+    YHM_PROFILE_OBSERVED_33,
+  );
+  assert.deepEqual(waits, []);
+  assert.match(logs[0][0], /separately hash-pinned bridge/);
+  assert.equal(
+    identifyYhmBaselineProfile("811004aeaf03812044ff"),
+    null,
+  );
+  assert.equal(
+    identifyYhmBaselineProfile("811104afaf03812033ff"),
+    null,
+  );
 });
 
 test("does not retry a text-only YHM mismatch without retained zero-write proof", async () => {
@@ -273,7 +333,7 @@ test("stops after bounded stock-app settling when the verified YHM baseline pers
       "The pogo bridge stopped safely: YHM baseline was not an allowlisted seated-idle state.",
     );
     error.pogoBridgeEvidence = {
-      baselineHex: "811004aeaf03812033ff",
+      baselineHex: "811004aeaf03812044ff",
       transmitted: 0,
       zeroWriteBaselineStopVerified: true,
     };
@@ -363,8 +423,25 @@ test("paces deferred DATA batches more conservatively late in the image", () => 
 
 test("pins the hardware-validated volatile flash bridge", async () => {
   const payload = await getVerifiedPogoFlashBridgePayload();
+  const observed33Payload = await getVerifiedPogoFlashBridgePayload(
+    YHM_PROFILE_OBSERVED_33,
+  );
   assert.equal(payload.length, POGO_FLASH_BRIDGE_BYTES);
   assert.equal(await sha256Hex(payload), POGO_FLASH_BRIDGE_SHA256);
+  assert.equal(
+    await sha256Hex(observed33Payload),
+    POGO_FLASH_BRIDGE_OBSERVED_33_SHA256,
+  );
+  assert.deepEqual(
+    [...observed33Payload]
+      .map((value, index) => [index, payload[index], value])
+      .filter(([, reviewed, observed]) => reviewed !== observed),
+    [
+      [2826, 0x22, 0x33],
+      [2846, 0x22, 0x33],
+      [2856, 0x22, 0x33],
+    ],
+  );
   assert.deepEqual(
     [...payload.subarray(0, 8)],
     [0x00, 0xf0, 0x01, 0x20, 0x09, 0x00, 0x01, 0x20],
@@ -445,6 +522,74 @@ test("resynchronizes to a complete retransmitted response without replaying a re
   );
   assert.deepEqual(header, response.header);
   assert.equal(discardedBytes, 2);
+});
+
+test("waits through an incomplete cached G2RX header for another retransmission", async () => {
+  const captured = makeTempleFrame(new Uint8Array([0x54, 1, 3, 1, 0]));
+  const response = makeBridgeResponse(7, captured);
+  const timeout = new Error(
+    "Timed out reading flash bridge response header byte: received 0 of 1 bytes.",
+  );
+  const events = [
+    ...response.header.subarray(0, 2),
+    ...response.header.subarray(0, 7),
+    timeout,
+    ...response.header,
+  ];
+  const incompleteCandidates = [];
+  let writes = 0;
+  const header = await readPogoFlashResponseHeader(
+    {
+      async readExact(count) {
+        assert.equal(count, 1);
+        const event = events.shift();
+        if (event instanceof Error) throw event;
+        assert.notEqual(event, undefined);
+        return Uint8Array.of(event);
+      },
+      async write() {
+        writes += 1;
+      },
+    },
+    1000,
+    () => {},
+    (receivedSuffixBytes) => {
+      incompleteCandidates.push(receivedSuffixBytes);
+    },
+  );
+
+  assert.deepEqual(header, response.header);
+  assert.deepEqual(incompleteCandidates, [3]);
+  assert.equal(writes, 0);
+});
+
+test("replaces an incomplete cached header when the next G2RX arrives immediately", async () => {
+  const captured = makeTempleFrame(new Uint8Array([0x54, 1, 3, 1, 0]));
+  const response = makeBridgeResponse(7, captured);
+  const events = [
+    ...response.header.subarray(0, 7),
+    ...response.header,
+  ];
+  const incompleteCandidates = [];
+
+  const header = await readPogoFlashResponseHeader(
+    {
+      async readExact(count) {
+        assert.equal(count, 1);
+        const event = events.shift();
+        assert.notEqual(event, undefined);
+        return Uint8Array.of(event);
+      },
+    },
+    1000,
+    () => {},
+    (receivedSuffixBytes) => {
+      incompleteCandidates.push(receivedSuffixBytes);
+    },
+  );
+
+  assert.deepEqual(header, response.header);
+  assert.deepEqual(incompleteCandidates, [3]);
 });
 
 test("requires exact temple reply shapes and zero status", () => {
@@ -587,6 +732,27 @@ test("proves the observed 33ff baseline stopped before route selection or OTA by
   assert.equal(
     verifyPogoFlashOppositePhaseStop(result, POGO_FLASH_PROOF, "right"),
     null,
+  );
+  const observed33Stop = verifyPogoFlashZeroWriteSetupStop(
+    result,
+    POGO_FLASH_PROOF,
+    "right",
+    YHM_PROFILE_OBSERVED_33,
+  );
+  assert.equal(
+    observed33Stop.baselineProfile,
+    YHM_PROFILE_OBSERVED_33,
+  );
+  assert.equal(observed33Stop.baselineAllowlisted, true);
+  assert.equal(observed33Stop.phaseCompatibleRoute, "left");
+  assert.equal(
+    verifyPogoFlashOppositePhaseStop(
+      result,
+      POGO_FLASH_PROOF,
+      "right",
+      YHM_PROFILE_OBSERVED_33,
+    ).noMutationPhaseStopVerified,
+    true,
   );
 
   const routeResult = {
