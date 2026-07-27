@@ -59,6 +59,7 @@ import {
   requireOtaAcknowledgement,
   verifyPogoFlashHostTimeoutRestoration,
   verifyPogoFlashOppositePhaseStop,
+  verifyPogoFlashZeroWriteSetupStop,
 } from "./pogoFlashBridge.js";
 import { buildBundleDifferencePlan } from "./differential.js";
 
@@ -89,6 +90,7 @@ const POGO_DATA_LATE_SETTLE_NUMERATOR = 3;
 const POGO_DATA_LATE_SETTLE_DENOMINATOR = 4;
 const POGO_COMPONENT_RESTART_LIMIT = 2;
 const POGO_BILATERAL_ROUTE_ADAPTATION_LIMIT = 4;
+const POGO_SETUP_RESET_LIMIT = 2;
 const POGO_INTERMEDIATE_RESET_ATTEMPTS = 2;
 export const WEB_SERIAL_ROM_READ_SIZE = 31;
 
@@ -107,7 +109,10 @@ export function isPogoRoutePhaseMismatch(error) {
 
 export function isRetryablePostResetLivenessFailure(error) {
   const message = error instanceof Error ? error.message : String(error ?? "");
-  return message.includes("no framed temple response");
+  return (
+    message.includes("no framed temple response") ||
+    message.includes("YHM baseline was not an allowlisted seated-idle state")
+  );
 }
 
 export function templeDataSettleMilliseconds(acceptedBytes, totalBytes) {
@@ -317,6 +322,34 @@ export function canRestartFailedTempleComponent(
     routeResult?.retainedResult?.selectedMask === 0x3ff &&
     routeResult?.retainedResult?.restoredMask === 0x3ff &&
     routeResult?.retainedResult?.templeUartErrors === 0
+  );
+}
+
+export function canResetAfterZeroWriteSetupStop(
+  routeResult,
+  resetCount = 0,
+) {
+  return (
+    Number.isInteger(resetCount) &&
+    resetCount >= 0 &&
+    resetCount < POGO_SETUP_RESET_LIMIT &&
+    routeResult?.outcome === "failed_or_uncertain" &&
+    routeResult?.failureStage === "setup" &&
+    routeResult?.otaMutationAttempted === false &&
+    routeResult?.acceptedFirmwareBytes === 0 &&
+    routeResult?.caseRestoreVerified === true &&
+    routeResult?.caseApplicationVersion === REVIEWED_CASE_VERSION &&
+    routeResult?.retainedResult?.status === 3 &&
+    routeResult?.retainedResult?.selectedMask === 0 &&
+    routeResult?.retainedResult?.restoredMask === 0 &&
+    routeResult?.retainedResult?.writeMask === 0 &&
+    routeResult?.retainedResult?.declaredSize === 0 &&
+    routeResult?.retainedResult?.acceptedSize === 0 &&
+    routeResult?.retainedResult?.templeTxCount === 0 &&
+    routeResult?.retainedResult?.templeRxCount === 0 &&
+    routeResult?.retainedResult?.noMutationSetupStopVerified === true &&
+    routeResult?.recoveryBoundary?.classification ===
+      "yhm_setup_non_idle_zero_byte_boundary"
   );
 }
 
@@ -799,27 +832,8 @@ class CasePogoFlashTransport {
   }
 
   async open() {
-    for (let attempt = 1; attempt <= 4; attempt += 1) {
-      this.routePhaseSetupAttempts = attempt;
-      try {
-        await this.openOnce();
-        return;
-      } catch (error) {
-        const routePhaseMismatch = isPogoRoutePhaseMismatch(error);
-        if (!routePhaseMismatch || attempt === 4) throw error;
-        this.session.log(
-          `${this.route}: Case idle phase does not match the selected mutation route; returning fully to Case 1.2.57 before retrying the same route with zero temple transmissions.`,
-          "warn",
-        );
-        this.active = false;
-        this.bridgeLaunched = false;
-        await this.session.restoreNormal({
-          requireVersion: true,
-          expectedVersion: REVIEWED_CASE_VERSION,
-        });
-        await delay(500 * attempt);
-      }
-    }
+    this.routePhaseSetupAttempts = 1;
+    await this.openOnce();
   }
 
   async openOnce() {
@@ -1124,6 +1138,14 @@ class CasePogoFlashTransport {
                 this.route,
               )
             : null;
+        const setupStop =
+          hostTimeoutRestoration === null && phaseStop === null
+            ? verifyPogoFlashZeroWriteSetupStop(
+                result,
+                proof,
+                this.route,
+              )
+            : null;
         if (hostTimeoutRestoration) {
           this.retainedResult = hostTimeoutRestoration;
           this.restoreVerified = true;
@@ -1137,6 +1159,14 @@ class CasePogoFlashTransport {
           this.restoreVerified = true;
           this.session.log(
             `${this.route}: verified a zero-write setup stop in the ${phaseStop.phaseCompatibleRoute}-compatible allowlisted Case phase.`,
+            "warn",
+          );
+        } else if (setupStop) {
+          this.retainedResult = setupStop;
+          this.setupPhaseStopVerified = true;
+          this.restoreVerified = true;
+          this.session.log(
+            `${this.route}: verified an exact zero-write setup stop before YHM route selection; baseline ${setupStop.baselineHex} remains outside the mutation allowlist.`,
             "warn",
           );
         } else {
@@ -1925,13 +1955,22 @@ export class G2CaseSession {
     route,
     routeIndex,
     routeCount,
+    { recoveryReason = "component-restart" } = {},
   ) {
     const progressBase = (routeIndex / routeCount) * 0.9;
+    const setupRecovery = recoveryReason === "setup-stop";
     this.log(
-      `${route}: cleanup is fully proven; sending an intermediate bilateral reset before one fresh full-component restart.`,
+      setupRecovery
+        ? `${route}: the zero-write setup stop and Case cleanup are fully proven; sending an intermediate bilateral reset before a fresh route setup.`
+        : `${route}: cleanup is fully proven; sending an intermediate bilateral reset before one fresh full-component restart.`,
       "warn",
     );
-    this.progress(progressBase, `${route}: recovery reset before full restart`);
+    this.progress(
+      progressBase,
+      setupRecovery
+        ? `${route}: recovery reset before fresh setup`
+        : `${route}: recovery reset before full restart`,
+    );
     const attempts = [];
     for (
       let attempt = 1;
@@ -1952,7 +1991,9 @@ export class G2CaseSession {
           );
         attempts.push({ attempt, outcome: "success" });
         this.log(
-          `${route}: intermediate reset, contacts, Case application, and temple liveness verified${attempt > 1 ? ` on bounded reset attempt ${attempt}` : ""}; restarting from START rather than replaying an ambiguous DATA record.`,
+          setupRecovery
+            ? `${route}: intermediate reset, contacts, Case application, and temple liveness verified${attempt > 1 ? ` on bounded reset attempt ${attempt}` : ""}; retrying route setup with zero firmware bytes sent.`
+            : `${route}: intermediate reset, contacts, Case application, and temple liveness verified${attempt > 1 ? ` on bounded reset attempt ${attempt}` : ""}; restarting from START rather than replaying an ambiguous DATA record.`,
           "success",
         );
         return {
@@ -1964,6 +2005,7 @@ export class G2CaseSession {
           leftPresent: resetReport.telemetry.leftPresent,
           rightPresent: resetReport.telemetry.rightPresent,
           versions,
+          recoveryReason,
         };
       } catch (error) {
         attempts.push({
@@ -1979,7 +2021,7 @@ export class G2CaseSession {
           throw error;
         }
         this.log(
-          `${route}: the first intermediate reset returned a transient no-frame liveness probe; sending one bounded second bilateral reset before deciding whether a fresh START is safe.`,
+          `${route}: the first intermediate reset did not return a complete allowlisted liveness proof; sending one bounded second bilateral reset before deciding whether a fresh setup or START is safe.`,
           "warn",
         );
       }
@@ -2336,7 +2378,10 @@ export class G2CaseSession {
       supersededSuccessfulRouteResults: [],
       routeComponentRestartAttempts: [],
       routeComponentRestartResets: [],
+      routeSetupResetStops: [],
+      routeSetupResetResults: [],
       componentRestartLimit: POGO_COMPONENT_RESTART_LIMIT,
+      setupResetLimit: POGO_SETUP_RESET_LIMIT,
       bilateralRouteAdaptationLimit: POGO_BILATERAL_ROUTE_ADAPTATION_LIMIT,
       bootloaderAllowed: false,
       preflightCase: null,
@@ -2354,10 +2399,12 @@ export class G2CaseSession {
         rightPresent: preflightCase.telemetry?.rightPresent ?? null,
       };
       const componentRestartCounts = new Map();
+      const setupResetCounts = new Map();
       for (let index = 0; index < routes.length; index += 1) {
         const route = routes[index];
         const componentRestartCount =
           componentRestartCounts.get(route) ?? 0;
+        const setupResetCount = setupResetCounts.get(route) ?? 0;
         try {
           audit.routeResults.push(
             await this.flashPinnedTempleRoute(
@@ -2407,6 +2454,27 @@ export class G2CaseSession {
               "warn",
             );
             index = -1;
+            continue;
+          }
+          if (
+            canResetAfterZeroWriteSetupStop(
+              error.routeResult,
+              setupResetCount,
+            )
+          ) {
+            audit.routeSetupResetStops.push(error.routeResult);
+            audit.routeSetupResetResults.push(
+              await this.resetTempleOtaReceiverForComponentRestart(
+                livenessRoutes,
+                null,
+                route,
+                index,
+                routes.length,
+                { recoveryReason: "setup-stop" },
+              ),
+            );
+            setupResetCounts.set(route, setupResetCount + 1);
+            index -= 1;
             continue;
           }
           if (

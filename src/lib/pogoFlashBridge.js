@@ -94,9 +94,9 @@ export const YHM_SETUP_NON_IDLE_RECOVERY = Object.freeze({
   classification: "yhm_setup_non_idle_zero_byte_boundary",
   firmwareBytesAccepted: 0,
   otaMutationAttempted: false,
-  wiredRetryPolicy: "stop_after_bounded_setup_attempts",
+  wiredRetryPolicy: "bounded_cleanup_deb0_then_fresh_setup",
   recoveryRecommendation:
-    "Do not bypass the YHM allowlist or loop more wired setup attempts. Return the Case to firmware 1.2.57, issue the standalone bilateral DEB0 reset/recheck, and retain the existing Stock/CFW provenance because no OTA mutation began.",
+    "Do not bypass the YHM allowlist. After exact retained proof that setup stopped before route selection or OTA bytes, clear the volatile record, return the Case to firmware 1.2.57, issue a bounded bilateral DEB0 reset/liveness check, and retry only from a fresh setup. Retain the existing Stock/CFW provenance because no OTA mutation began.",
 });
 
 const POGO_FLASH_ALLOWED_BASELINES = Object.freeze([
@@ -387,7 +387,11 @@ export function decodePogoFlashRetainedResult(result) {
   };
 }
 
-export function verifyPogoFlashOppositePhaseStop(result, proof, attemptedRoute) {
+export function verifyPogoFlashZeroWriteSetupStop(
+  result,
+  proof,
+  attemptedRoute,
+) {
   const proofBytes = asBytes(proof);
   if (
     !["left", "right"].includes(attemptedRoute) ||
@@ -405,7 +409,6 @@ export function verifyPogoFlashOppositePhaseStop(result, proof, attemptedRoute) 
     .map((value) => value.toString(16).padStart(2, "0"))
     .join("");
   const zeroBytes = (bytes) => bytes.every((value) => value === 0);
-  const phaseCompatibleRoute = report.baseline[1] & 1 ? "right" : "left";
   if (
     report.magic !== 0x57463247 ||
     report.progress !== 3 ||
@@ -423,16 +426,41 @@ export function verifyPogoFlashOppositePhaseStop(result, proof, attemptedRoute) 
     report.templeTxCount !== 0 ||
     report.templeRxCount !== 0 ||
     report.templeUartErrors !== 0 ||
-    !POGO_FLASH_ALLOWED_BASELINES.includes(baselineHex) ||
     !zeroBytes(report.selected) ||
-    !zeroBytes(report.restored) ||
-    phaseCompatibleRoute === attemptedRoute
+    !zeroBytes(report.restored)
+  ) {
+    return null;
+  }
+  const baselineAllowlisted =
+    POGO_FLASH_ALLOWED_BASELINES.includes(baselineHex);
+  const phaseCompatibleRoute = baselineAllowlisted
+    ? report.baseline[1] & 1
+      ? "right"
+      : "left"
+    : null;
+  return {
+    ...report,
+    baselineHex,
+    baselineAllowlisted,
+    phaseCompatibleRoute,
+    noMutationSetupStopVerified: true,
+  };
+}
+
+export function verifyPogoFlashOppositePhaseStop(result, proof, attemptedRoute) {
+  const report = verifyPogoFlashZeroWriteSetupStop(
+    result,
+    proof,
+    attemptedRoute,
+  );
+  if (
+    !report?.baselineAllowlisted ||
+    report.phaseCompatibleRoute === attemptedRoute
   ) {
     return null;
   }
   return {
     ...report,
-    phaseCompatibleRoute,
     noMutationPhaseStopVerified: true,
   };
 }

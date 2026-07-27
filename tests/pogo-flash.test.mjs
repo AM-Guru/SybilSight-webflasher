@@ -35,11 +35,13 @@ import {
   requireOtaAcknowledgement,
   verifyPogoFlashHostTimeoutRestoration,
   verifyPogoFlashOppositePhaseStop,
+  verifyPogoFlashZeroWriteSetupStop,
 } from "../src/lib/pogoFlashBridge.js";
 import { sha256Hex, writeU32LE } from "../src/lib/firmware.js";
 import {
   G2CaseSession,
   WEB_SERIAL_ROM_READ_SIZE,
+  canResetAfterZeroWriteSetupStop,
   canRestartFailedTempleComponent,
   canRunFinalResetAfterFailure,
   isExplicitTempleDataRejection,
@@ -474,6 +476,65 @@ test("retains zero-byte setup diagnostics without treating them as cleanup proof
   );
 });
 
+test("proves the observed 33ff baseline stopped before route selection or OTA bytes", () => {
+  const result = new Uint8Array(POGO_FLASH_RESULT_LENGTH);
+  writeU32LE(result, 0, 0x57463247);
+  writeU32LE(result, 4, 3);
+  writeU32LE(result, 8, 1);
+  writeU32LE(result, 12, 0x42);
+  writeU32LE(result, 16, 3);
+  writeU32LE(result, 20, 0x3ff);
+  result.set(
+    Uint8Array.from([0x81, 0x10, 0x04, 0xae, 0xaf, 0x03, 0x81, 0x20, 0x33, 0xff]),
+    64,
+  );
+
+  const setupStop = verifyPogoFlashZeroWriteSetupStop(
+    result,
+    POGO_FLASH_PROOF,
+    "right",
+  );
+  assert.equal(setupStop.baselineHex, "811004aeaf03812033ff");
+  assert.equal(setupStop.baselineAllowlisted, false);
+  assert.equal(setupStop.phaseCompatibleRoute, null);
+  assert.equal(setupStop.noMutationSetupStopVerified, true);
+  assert.equal(setupStop.acceptedSize, 0);
+  assert.equal(
+    verifyPogoFlashOppositePhaseStop(result, POGO_FLASH_PROOF, "right"),
+    null,
+  );
+
+  const routeResult = {
+    outcome: "failed_or_uncertain",
+    failureStage: "setup",
+    otaMutationAttempted: false,
+    acceptedFirmwareBytes: 0,
+    caseRestoreVerified: true,
+    caseApplicationVersion: "1.2.57",
+    retainedResult: setupStop,
+    recoveryBoundary: classifyPogoFlashRecoveryBoundary(
+      new Error(
+        "The Case bridge stopped during setup: YHM baseline is not an allowlisted seated-idle state.",
+      ),
+      setupStop,
+      "setup",
+    ),
+  };
+  assert.equal(canResetAfterZeroWriteSetupStop(routeResult, 0), true);
+  assert.equal(canResetAfterZeroWriteSetupStop(routeResult, 1), true);
+  assert.equal(canResetAfterZeroWriteSetupStop(routeResult, 2), false);
+  assert.equal(
+    canResetAfterZeroWriteSetupStop(
+      {
+        ...routeResult,
+        retainedResult: { ...setupStop, writeMask: 1 },
+      },
+      0,
+    ),
+    false,
+  );
+});
+
 test("accepts an exact retained restoration after a host-only response timeout", () => {
   const result = new Uint8Array(POGO_FLASH_RESULT_LENGTH);
   for (const [offset, value] of [
@@ -573,8 +634,11 @@ test("classifies a bounded non-idle YHM setup as a zero-byte stop", () => {
   );
   assert.equal(recovery.firmwareBytesAccepted, 0);
   assert.equal(recovery.otaMutationAttempted, false);
-  assert.equal(recovery.wiredRetryPolicy, "stop_after_bounded_setup_attempts");
-  assert.match(recovery.recoveryRecommendation, /standalone bilateral DEB0/);
+  assert.equal(
+    recovery.wiredRetryPolicy,
+    "bounded_cleanup_deb0_then_fresh_setup",
+  );
+  assert.match(recovery.recoveryRecommendation, /bounded bilateral DEB0/);
   assert.equal(
     classifyPogoFlashRecoveryBoundary(
       new Error(
@@ -1009,6 +1073,14 @@ test("retries one transient intermediate-reset no-frame before a fresh START", a
       new Error("left: contact did not return after the final B0 reset."),
     ),
     false,
+  );
+  assert.equal(
+    isRetryablePostResetLivenessFailure(
+      new Error(
+        "The pogo bridge stopped safely: YHM baseline was not an allowlisted seated-idle state.",
+      ),
+    ),
+    true,
   );
 
   const events = [];

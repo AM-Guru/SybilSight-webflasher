@@ -484,6 +484,16 @@ default Easy Mode Stock Update transmitted zero firmware bytes because the
 saved bilateral audit already proved the selected target; its reset/liveness
 verification also passed.
 
+One later Case reported the previously unseen YHM baseline
+`811004aeaf03812033ff`. The mutation bridge correctly rejected it before route
+selection with status 3, zero selected/restored/write masks, zero temple
+transactions, and zero accepted firmware bytes. The host does not add that
+state to the mutation allowlist. It now verifies and clears that exact
+zero-write retained record, returns to Case 1.2.57, performs a bounded
+bilateral `DEB0` reset and liveness check, and retries only from a fresh route
+setup. If the baseline remains outside the five reviewed states after the
+bounded resets, flashing still stops with no OTA mutation.
+
 For offline analysis, selected `EVENOTA` bundles show the exact number of
 1,000-byte `0x54` records and final sequence value for each component. The
 recovered writer grammar uses an exact 128-byte component header for `0x53`,
