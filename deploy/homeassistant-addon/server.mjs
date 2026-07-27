@@ -3,13 +3,13 @@ import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
 
-export const REMOTE_SUPPORT_PROTOCOL = 1;
-export const REMOTE_SUPPORT_ACTIONS = Object.freeze([
-  "refresh_case",
-  "left_version",
-  "left_status",
-  "right_version",
-  "right_status",
+export const REMOTE_SUPPORT_PROTOCOL = 2;
+export const REMOTE_SERIAL_OPERATIONS = Object.freeze([
+  "get_info",
+  "open",
+  "write",
+  "set_signals",
+  "close",
 ]);
 
 const SESSION_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -17,6 +17,8 @@ const DEFAULT_SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 const DEFAULT_MAX_PAYLOAD_BYTES = 64 * 1024;
 const DEFAULT_MAX_SESSIONS = 128;
 const DEFAULT_MAX_CONNECTIONS = 256;
+const MAX_PENDING_SERIAL_REQUESTS = 32;
+const MAX_BASE64_SERIAL_CHARS = 24 * 1024;
 const HELLO_TIMEOUT_MS = 10_000;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
@@ -176,6 +178,7 @@ export function createRemoteSupportServer({
         device: null,
         operator: null,
         expiresAt: Date.now() + sessionTtlMs,
+        pendingSerialRequests: new Set(),
       };
       sessions.set(code, session);
     }
@@ -240,11 +243,32 @@ export function createRemoteSupportServer({
   };
 
   const forwardDeviceMessage = (connection, message) => {
-    if (!["event", "result", "state"].includes(message.type)) {
+    if (
+      ![
+        "event",
+        "state",
+        "serial_result",
+        "serial_data",
+        "serial_event",
+      ].includes(message.type)
+    ) {
       throw new Error("The device sent a message type outside its allowlist.");
     }
-    if (message.type === "result" && !validMessageId(message.id)) {
-      throw new Error("The device result has an invalid command id.");
+    if (message.type === "serial_result") {
+      if (
+        !validMessageId(message.id) ||
+        !connection.session.pendingSerialRequests.has(message.id)
+      ) {
+        throw new Error("The device returned an unknown serial request id.");
+      }
+      connection.session.pendingSerialRequests.delete(message.id);
+    }
+    if (
+      message.type === "serial_data" &&
+      (typeof message.data !== "string" ||
+        message.data.length > MAX_BASE64_SERIAL_CHARS)
+    ) {
+      throw new Error("The device serial-data frame is outside its size limit.");
     }
     touch(connection.session);
     send(connection.session.operator, message);
@@ -252,26 +276,48 @@ export function createRemoteSupportServer({
 
   const forwardOperatorMessage = (connection, message) => {
     if (
-      message.type !== "command" ||
+      message.type !== "serial_request" ||
       !validMessageId(message.id) ||
-      !REMOTE_SUPPORT_ACTIONS.includes(message.action)
+      !REMOTE_SERIAL_OPERATIONS.includes(message.op)
     ) {
-      throw new Error("The technician command is outside the read-only allowlist.");
+      throw new Error(
+        "The technician request is outside the single-port serial protocol.",
+      );
     }
     if (connection.session.device?.readyState !== WebSocket.OPEN) {
       send(connection.session.operator, {
-        type: "result",
+        type: "serial_result",
         id: message.id,
         ok: false,
         error: "The person's browser is not connected.",
       });
       return;
     }
+    if (connection.session.pendingSerialRequests.has(message.id)) {
+      throw new Error("The technician reused an active serial request id.");
+    }
+    if (
+      connection.session.pendingSerialRequests.size >=
+      MAX_PENDING_SERIAL_REQUESTS
+    ) {
+      throw new Error("Too many serial requests are awaiting the device.");
+    }
+    if (
+      message.op === "write" &&
+      (typeof message.data !== "string" ||
+        message.data.length > MAX_BASE64_SERIAL_CHARS)
+    ) {
+      throw new Error("The technician serial write is outside its size limit.");
+    }
+    connection.session.pendingSerialRequests.add(message.id);
     touch(connection.session);
     send(connection.session.device, {
-      type: "command",
+      type: "serial_request",
       id: message.id,
-      action: message.action,
+      op: message.op,
+      ...(message.op === "open" ? { options: message.options } : {}),
+      ...(message.op === "write" ? { data: message.data } : {}),
+      ...(message.op === "set_signals" ? { signals: message.signals } : {}),
     });
   };
 
@@ -321,6 +367,15 @@ export function createRemoteSupportServer({
       if (!session) return;
       if (connection.role === "device" && session.device === socket) {
         session.device = null;
+        for (const id of session.pendingSerialRequests) {
+          send(session.operator, {
+            type: "serial_result",
+            id,
+            ok: false,
+            error: "The person's browser disconnected during the serial request.",
+          });
+        }
+        session.pendingSerialRequests.clear();
         send(session.operator, {
           type: "peer",
           role: "device",

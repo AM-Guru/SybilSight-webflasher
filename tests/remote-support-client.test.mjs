@@ -114,33 +114,46 @@ test("browser clients exchange only authenticated relay messages", async (t) => 
       type === "peer" && role === "operator" && online,
   );
 
-  const id = operator.sendCommand("right_version");
-  assert.deepEqual(
-    await deviceInbox.next(({ type }) => type === "command"),
-    {
-      type: "command",
-      id,
-      action: "right_version",
-    },
-  );
-  device.sendResult(id, {
-    ok: true,
-    result: {
-      frame: Uint8Array.from([0x5a, 0xa5]),
+  const id = "serial_request_12345678";
+  operator.send({
+    type: "serial_request",
+    id,
+    op: "set_signals",
+    signals: {
+      dataTerminalReady: false,
+      requestToSend: true,
     },
   });
   assert.deepEqual(
-    await operatorInbox.next(({ type }) => type === "result"),
+    await deviceInbox.next(({ type }) => type === "serial_request"),
     {
-      type: "result",
+      type: "serial_request",
+      id,
+      op: "set_signals",
+      signals: {
+        dataTerminalReady: false,
+        requestToSend: true,
+      },
+    },
+  );
+  device.send({
+    type: "serial_result",
+    id,
+    ok: true,
+    result: {
+      dataTerminalReady: false,
+      requestToSend: true,
+    },
+  });
+  assert.deepEqual(
+    await operatorInbox.next(({ type }) => type === "serial_result"),
+    {
+      type: "serial_result",
       id,
       ok: true,
       result: {
-        frame: {
-          type: "bytes",
-          byteLength: 2,
-          hex: "5aa5",
-        },
+        dataTerminalReady: false,
+        requestToSend: true,
       },
     },
   );

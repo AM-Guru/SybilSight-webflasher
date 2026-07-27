@@ -1,11 +1,4 @@
-export const REMOTE_SUPPORT_PROTOCOL = 1;
-export const REMOTE_SUPPORT_ACTIONS = Object.freeze([
-  "refresh_case",
-  "left_version",
-  "left_status",
-  "right_version",
-  "right_status",
-]);
+export const REMOTE_SUPPORT_PROTOCOL = 2;
 
 const MAX_REMOTE_DEPTH = 12;
 const MAX_REMOTE_STRING_LENGTH = 24_000;
@@ -76,7 +69,7 @@ export function remoteJsonValue(value, depth = 0, seen = new WeakSet()) {
   return String(value);
 }
 
-function makeCommandId() {
+export function makeRemoteMessageId() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return crypto.randomUUID();
   }
@@ -99,6 +92,7 @@ export class RemoteSupportConnection {
     this.session = null;
     this.resumeToken = null;
     this.userClosed = false;
+    this.messageListeners = new Set();
   }
 
   async connect(hello) {
@@ -152,6 +146,7 @@ export class RemoteSupportConnection {
             return;
           }
           this.onMessage(message);
+          for (const listener of this.messageListeners) listener(message);
         } catch (error) {
           this.onState({
             status: "error",
@@ -241,13 +236,9 @@ export class RemoteSupportConnection {
     });
   }
 
-  sendCommand(action) {
-    if (!REMOTE_SUPPORT_ACTIONS.includes(action)) {
-      throw new Error("That command is outside the read-only support allowlist.");
-    }
-    const id = makeCommandId();
-    this.send({ type: "command", id, action });
-    return id;
+  addMessageListener(listener) {
+    this.messageListeners.add(listener);
+    return () => this.messageListeners.delete(listener);
   }
 
   close() {

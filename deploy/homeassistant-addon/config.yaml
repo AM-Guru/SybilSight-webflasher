@@ -1,7 +1,7 @@
 name: "SybilSight Remote Support"
-version: "1.0.0"
+version: "2.0.0"
 slug: "sybilsight_remote_support"
-description: "Ephemeral authenticated relay for consent-gated G2 diagnostics"
+description: "Ephemeral authenticated relay for one selected G2 Case serial interface"
 url: "https://webflasher.sybilsight.com"
 arch:
   - aarch64

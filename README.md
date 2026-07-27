@@ -85,11 +85,13 @@ Production deployment:
   messages, and browser failures.
 - Shows operation-count progress and the current task in the right-hand footer
   for every analysis, backup, probe, staging, activation, reset, and restore.
-- Offers authenticated remote support: the person with the glasses explicitly
-  starts an expiring session, while a separately authenticated technician may
-  request only Case refresh and pinned left/right version/status diagnostics.
-  The relay cannot request firmware transfers, bank writes, resets, or
-  arbitrary serial bytes.
+- Offers authenticated attended remote service: the person selects one exact
+  G2 Case CH340 interface and starts an expiring session once. A separately
+  authenticated technician can then operate that serial interface through the
+  complete WebFlasher—including diagnostics, backups, resets, and guarded Case
+  or Smart Glasses recovery—until the person ends the session. The browser
+  grants no access to files, applications, cameras, microphones, or other USB
+  devices.
 
 ## Important limitation
 
@@ -891,21 +893,41 @@ normal application and ROM-loader modes.
 
 1. The person with the glasses connects and analyzes their Case with Web Serial
    or **Use WebUSB**.
-2. They open **Remote Support**, confirm the diagnostic-data consent, and start
-   a session.
+2. They open **Remote Support**, authorize the technician to control that one
+   selected G2 Case serial interface, and start a session.
 3. They tell the technician the displayed eight-character code.
 4. The technician opens **Remote Support**, selects **Technician**, enters the
    session code and separately held technician key, then joins.
-5. The technician may refresh Case telemetry or request the pinned left/right
-   version and status probes. Results and live console events appear in the
-   technician view.
+5. The technician clicks **Open remote Case in WebFlasher**. The complete
+   WebFlasher now uses a serial-compatible remote port, so its analysis,
+   backups, Case recovery, left/right probes, resets, and guarded Smart Glasses
+   reinstall workflows operate exactly as they do with a local Case.
 6. Either side ends the session when finished. Sessions also expire after two
    hours and the relay keeps no session database.
 
-The browser holding the physical Case performs every request. The relay is a
-small authenticated rendezvous service; it never opens USB and does not expose
-a raw serial tunnel. The person's explicit consent does not authorize firmware
-flashing, Case-bank changes, temple resets, or arbitrary factory commands.
+The browser holding the physical Case performs every serial operation. The
+relay is a small authenticated rendezvous service; it never opens USB itself.
+The customer's one attended authorization covers the selected serial interface
+for the life of that session, so no per-command customer approval is required.
+The browser's origin and exact `1A86:7523` device check keep the capability
+scoped to the G2 Case.
+
+### Operate a customer Case from Codex
+
+The repository includes a project-scoped Codex MCP server in
+`scripts/remote_support_mcp.mjs`; `.codex/config.toml` enables it for trusted
+checkouts. Restart Codex after installing dependencies so it discovers the
+server, then ask it to join the one-time code shown in the customer's browser.
+On macOS the server reads the technician credential from the
+`SybilSight WebFlasher Remote Support` Keychain item. Other hosts can provide
+`SUPPORT_OPERATOR_KEY`.
+
+The MCP tools can join/disconnect, analyze the Case, interrogate either temple,
+reset and recheck both temples, create a private Case backup, perform a bounded
+expert serial exchange, stage/activate an eligible Case image, and install a
+hash-pinned reviewed Smart Glasses image. Mutation tools are annotated as
+destructive for the technician's Codex approval policy; this does not create
+another approval prompt in the customer's browser.
 
 ### Reset and recheck the glasses
 
@@ -1299,9 +1321,10 @@ The repository includes
 
 `deploy/homeassistant-addon` contains that relay app. It accepts one required
 `operator_key`, exposes no host port, stores no sessions on disk, and is
-reachable only through Caddy's same-origin HTTPS/WebSocket route. Install it as
-the local `sybilsight_remote_support` app and configure a unique technician key
-of at least 24 characters. The public health check is
+reachable only through Caddy's same-origin HTTPS/WebSocket route. It validates
+the bounded single-port serial protocol but has no USB or host-computer access.
+Install it as the local `sybilsight_remote_support` app and configure a unique
+technician key of at least 24 characters. The public health check is
 `/remote-support/healthz`.
 
 Pushes to `main` run the test and build steps on the organization's
@@ -1335,6 +1358,7 @@ src/lib/backup.js              Combined case/glasses recovery artifact builder
 src/lib/serial.js              Shared serial and STM32 ROM-loader transport
 src/lib/webusb.js              CH340 WebUSB serial-compatible transport
 src/lib/remoteSupport.js       Browser relay protocol and safe serializer
+src/lib/remoteSerial.js        Single-device remote serial proxy and port
 src/lib/firmware.js            Bundle, checksum, image, and option-byte logic
 src/lib/pogoBridge.js          Pinned read-only SRAM bridge and proof validation
 src/lib/pogoFlashBridge.js     Pinned main-only write bridge and protocol gates
@@ -1345,6 +1369,7 @@ scripts/g2_pogo_flasher.py     Raw 1-Mbaud temple-UART flasher
 scripts/g2_case_pogo_flasher.py
                                Case-USB reviewed-CFW flasher
 scripts/g2_case_rom.py         Safety-scoped volatile-SRAM ROM primitives
+scripts/remote_support_mcp.mjs Codex technician tools over the remote port
 tests/firmware.test.mjs        Parser and safety tests
 tests/backup.test.mjs          Combined recovery artifact tests
 tests/pogo-flash.test.mjs      Write-bridge and OTA protocol vectors
@@ -1363,12 +1388,14 @@ public/even-g2-case-grey.png   G2 product image
 - Never use a backup from one case as another case's device-data image.
 - Do not publish `.g2-backup.json` files; they can contain identifiers,
   provisioning data, live temple snapshots, and embedded firmware.
-- Remote support sends diagnostic snapshots and live console events only after
-  the person checks the consent control. Use a private session code, protect
-  the technician key, and end the session immediately after troubleshooting.
-- The relay's command allowlist is intentionally read-only at the product
-  level. Do not expand it to firmware, reset, bank, or arbitrary-byte commands
-  without a separate threat model and explicit per-operation consent.
+- Remote support exposes the selected Case serial interface only after the
+  person selects the explicit authorization button. Use a private session code,
+  protect the technician key, and end the session immediately after
+  troubleshooting.
+- Serial control includes firmware-changing capabilities by design. Keep the
+  exact G2 USB identity restriction, bounded frame sizes, one-technician limit,
+  existing image trust pins, backup gates, readback verification, and deployed
+  release-integrity check intact.
 - A successful parser or build test is not a substitute for hardware
   validation.
 - This software is provided without warranty under the MIT License.

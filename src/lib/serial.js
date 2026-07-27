@@ -3374,6 +3374,7 @@ export function portUsesUsbDevice(port, device) {
 }
 
 export function g2CaseTransportLabel(port) {
+  if (port?.transportKind === "remote") return "Remote G2 Case";
   return port?.transportKind === "webusb" ? "WebUSB" : "Web Serial";
 }
 

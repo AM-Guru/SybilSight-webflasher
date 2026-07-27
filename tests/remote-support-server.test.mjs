@@ -116,39 +116,55 @@ test("pairs an authenticated technician with one ephemeral device session", asyn
 
   operator.socket.send(
     JSON.stringify({
-      type: "command",
+      type: "serial_request",
       id: "command_12345678",
-      action: "left_status",
+      op: "open",
+      options: {
+        baudRate: 1_000_000,
+        dataBits: 8,
+        stopBits: 1,
+        parity: "none",
+        flowControl: "none",
+        bufferSize: 4096,
+      },
     }),
   );
   assert.deepEqual(
-    await device.queue.next(({ type }) => type === "command"),
+    await device.queue.next(({ type }) => type === "serial_request"),
     {
-      type: "command",
+      type: "serial_request",
       id: "command_12345678",
-      action: "left_status",
+      op: "open",
+      options: {
+        baudRate: 1_000_000,
+        dataBits: 8,
+        stopBits: 1,
+        parity: "none",
+        flowControl: "none",
+        bufferSize: 4096,
+      },
     },
   );
   device.socket.send(
     JSON.stringify({
-      type: "result",
+      type: "serial_result",
       id: "command_12345678",
       ok: true,
-      result: { batteryPercent: 88 },
+      result: { opened: true },
     }),
   );
   assert.deepEqual(
-    await operator.queue.next(({ type }) => type === "result"),
+    await operator.queue.next(({ type }) => type === "serial_result"),
     {
-      type: "result",
+      type: "serial_result",
       id: "command_12345678",
       ok: true,
-      result: { batteryPercent: 88 },
+      result: { opened: true },
     },
   );
 });
 
-test("rejects a bad technician key and commands outside the allowlist", async (t) => {
+test("rejects a bad technician key and messages outside the serial protocol", async (t) => {
   const relay = createRemoteSupportServer({
     operatorKey: OPERATOR_KEY,
     host: "127.0.0.1",
@@ -207,6 +223,6 @@ test("rejects a bad technician key and commands outside the allowlist", async (t
   );
   assert.match(
     (await operator.queue.next(({ type }) => type === "error")).error,
-    /read-only allowlist/i,
+    /single-port serial protocol/i,
   );
 });

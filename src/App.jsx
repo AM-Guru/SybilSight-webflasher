@@ -17,10 +17,11 @@ import {
   webSerialSupported,
   webUsbSupported,
 } from "./lib/serial.js";
+import { RemoteSupportConnection } from "./lib/remoteSupport.js";
 import {
-  REMOTE_SUPPORT_ACTIONS,
-  RemoteSupportConnection,
-} from "./lib/remoteSupport.js";
+  RemoteG2CasePort,
+  RemoteSerialDeviceBridge,
+} from "./lib/remoteSerial.js";
 import {
   buildG2SystemBackupArtifact,
   findMatchingGlassesRecoveryRelease,
@@ -697,14 +698,6 @@ function Console({ open, entries, onClose, onClear, onDownload }) {
   );
 }
 
-const REMOTE_SUPPORT_LABELS = Object.freeze({
-  refresh_case: "Refresh Case diagnostics",
-  left_version: "Read left firmware",
-  left_status: "Read left battery/status",
-  right_version: "Read right firmware",
-  right_status: "Read right battery/status",
-});
-
 function RemoteSupportDialog({
   open,
   onClose,
@@ -715,16 +708,13 @@ function RemoteSupportDialog({
   onSupportCodeChange,
   operatorKey,
   onOperatorKeyChange,
-  consent,
-  onConsentChange,
   deviceReady,
   transport,
   events,
-  pendingCommands,
   onStartDevice,
   onJoinOperator,
   onStop,
-  onCommand,
+  onOpenRemoteCase,
 }) {
   if (!open) return null;
   const connected = state.status === "connected";
@@ -741,7 +731,7 @@ function RemoteSupportDialog({
       >
         <div className="console-header">
           <div>
-            <div className="eyebrow">Consent-gated remote diagnostics</div>
+            <div className="eyebrow">Single-device remote service</div>
             <h2 id="remote-support-title">Remote support</h2>
           </div>
           <button className="console-close" onClick={onClose} aria-label="Close remote support">
@@ -773,10 +763,11 @@ function RemoteSupportDialog({
         {mode === "device" ? (
           <div className="remote-support-body">
             <p>
-              The Case stays connected to this browser. A technician can request
-              fresh Case telemetry and the pinned left/right version or status
-              probes; firmware flashing, Case-bank writes, resets, and arbitrary
-              serial bytes are not available through the relay.
+              The Case stays connected to this browser. After you start the
+              session, the authenticated technician can use only this selected
+              G2 Case USB serial interface until you end the session. This
+              includes diagnostics, backup, resets, and firmware recovery for
+              the Case and seated Smart Glasses.
             </p>
             <div className="remote-support-facts">
               <span>
@@ -811,23 +802,21 @@ function RemoteSupportDialog({
               </>
             ) : (
               <>
-                <label className="remote-support-consent">
-                  <input
-                    type="checkbox"
-                    checked={consent}
-                    onChange={(event) => onConsentChange(event.target.checked)}
-                  />
+                <div className="remote-support-consent">
                   <span>
-                    I consent to sending diagnostic results and console events to
-                    the authenticated technician for this session.
+                    Selecting the button below authorizes the authenticated
+                    technician to control this selected G2 Case USB serial
+                    interface until you end the session. It does not grant
+                    access to files, applications, cameras, microphones, or any
+                    other device on this computer.
                   </span>
-                </label>
+                </div>
                 <Button
                   onClick={onStartDevice}
                   busy={connecting}
-                  disabled={!deviceReady || !consent}
+                  disabled={!deviceReady}
                 >
-                  Start remote support
+                  Authorize technician & start support
                 </Button>
               </>
             )}
@@ -875,22 +864,16 @@ function RemoteSupportDialog({
                   <strong>{state.session?.code}</strong>
                   <small>
                     {peerOnline
-                      ? "The person’s browser is online and will execute one allowlisted diagnostic at a time."
+                      ? "The person’s browser is online. Attach the remote Case to use the complete WebFlasher."
                       : "Waiting for the person’s browser to reconnect."}
                   </small>
                 </div>
-                <div className="remote-support-command-grid">
-                  {REMOTE_SUPPORT_ACTIONS.map((action) => (
-                    <Button
-                      tone="secondary"
-                      key={action}
-                      onClick={() => onCommand(action)}
-                      disabled={!peerOnline || pendingCommands.size > 0}
-                    >
-                      {REMOTE_SUPPORT_LABELS[action]}
-                    </Button>
-                  ))}
-                </div>
+                <Button
+                  onClick={onOpenRemoteCase}
+                  disabled={!peerOnline}
+                >
+                  Open remote Case in WebFlasher
+                </Button>
                 <div className="remote-support-events" aria-live="polite">
                   {events.length ? (
                     events.slice(-40).map((event, index) => (
@@ -901,7 +884,7 @@ function RemoteSupportDialog({
                       </div>
                     ))
                   ) : (
-                    <span>No remote diagnostic results yet.</span>
+                    <span>No remote service events yet.</span>
                   )}
                 </div>
                 <Button tone="ghost" onClick={onStop}>
@@ -1007,12 +990,8 @@ function App() {
   );
   const [supportCode, setSupportCode] = useState(linkedSupportCode);
   const [supportOperatorKey, setSupportOperatorKey] = useState("");
-  const [supportConsent, setSupportConsent] = useState(false);
   const [supportState, setSupportState] = useState({ status: "idle" });
   const [supportEvents, setSupportEvents] = useState([]);
-  const [supportPendingCommands, setSupportPendingCommands] = useState(
-    () => new Map(),
-  );
   const [interfaceMode, setInterfaceMode] = useState(DEFAULT_INTERFACE_MODE);
   const [automaticInstallMode, setAutomaticInstallMode] = useState(
     DEFAULT_AUTOMATIC_INSTALL_MODE,
@@ -1065,8 +1044,8 @@ function App() {
   const transcriptPersistTimerRef = useRef(null);
   const transcriptRecoveredRef = useRef(false);
   const supportConnectionRef = useRef(null);
-  const supportPendingCommandsRef = useRef(new Map());
-  const remoteCommandHandlerRef = useRef(null);
+  const remoteDeviceBridgeRef = useRef(null);
+  const remoteOperatorPortRef = useRef(null);
 
   const writeTranscriptNow = useCallback(() => {
     if (transcriptPersistTimerRef.current) {
@@ -1212,27 +1191,33 @@ function App() {
             message.online ? "connected" : "disconnected"
           }`,
         );
+        if (
+          message.role === "operator" &&
+          supportConnectionRef.current?.role === "device"
+        ) {
+          if (message.online) {
+            try {
+              supportConnectionRef.current.sendState({
+                transport: g2CaseTransportLabel(portRef.current),
+                caseReport: report,
+                templeResults: pogoResults,
+              });
+            } catch {
+              // The peer notification can race a technician disconnect.
+            }
+          } else {
+            void remoteDeviceBridgeRef.current?.close();
+          }
+        }
         return;
       }
-      if (message.type === "command") {
-        remoteCommandHandlerRef.current?.(message);
+      if (message.type === "serial_request") {
+        remoteDeviceBridgeRef.current?.handleMessage(message);
         return;
       }
-      if (message.type === "result") {
-        const action = supportPendingCommandsRef.current.get(message.id) ?? null;
-        supportPendingCommandsRef.current.delete(message.id);
-        setSupportPendingCommands((current) => {
-          const next = new Map(current);
-          next.delete(message.id);
-          return next;
-        });
-        recordSupportEvent(
-          action
-            ? REMOTE_SUPPORT_LABELS[action]
-            : "Remote diagnostic result",
-          message.ok ? message.result : message.error,
-          message.ok,
-        );
+      if (message.type.startsWith("serial_")) {
+        // The operator-side RemoteG2CasePort consumes serial frames through its
+        // dedicated listener; do not copy raw bytes into the support event UI.
         return;
       }
       if (message.type === "event") {
@@ -1248,7 +1233,7 @@ function App() {
         return;
       }
       if (message.type === "state") {
-        recordSupportEvent("Device diagnostic snapshot", message.value);
+        recordSupportEvent("Remote Case snapshot", message.value);
         return;
       }
       if (message.type === "expired") {
@@ -1259,7 +1244,7 @@ function App() {
         }));
       }
     },
-    [recordSupportEvent],
+    [pogoResults, recordSupportEvent, report],
   );
 
   const newSupportConnection = useCallback(() => {
@@ -1273,10 +1258,16 @@ function App() {
   }, [handleSupportMessage, handleSupportState]);
 
   const startRemoteSupport = useCallback(async () => {
-    if (!report || !portRef.current || !supportConsent) return;
+    if (!report || !portRef.current) return;
     const connection = newSupportConnection();
     setSupportEvents([]);
     try {
+      await remoteDeviceBridgeRef.current?.close();
+      remoteDeviceBridgeRef.current = new RemoteSerialDeviceBridge(
+        connection,
+        portRef.current,
+        { log: addLog },
+      );
       const ready = await connection.startDevice();
       setSupportCode(ready.session.code);
       connection.sendState({
@@ -1285,7 +1276,7 @@ function App() {
         templeResults: pogoResults,
       });
       addLog(
-        `Remote support started · session ${ready.session.code} · diagnostic allowlist only.`,
+        `Remote support started · session ${ready.session.code} · access is restricted to the selected G2 Case USB serial interface.`,
         "success",
       );
     } catch (caught) {
@@ -1294,6 +1285,8 @@ function App() {
         role: "device",
         error: caught.message,
       });
+      await remoteDeviceBridgeRef.current?.close();
+      remoteDeviceBridgeRef.current = null;
       supportConnectionRef.current = null;
     }
   }, [
@@ -1301,20 +1294,28 @@ function App() {
     newSupportConnection,
     pogoResults,
     report,
-    supportConsent,
   ]);
 
   const joinRemoteSupport = useCallback(async () => {
+    try {
+      await remoteOperatorPortRef.current?.dispose();
+    } catch {
+      // A previous relay may already be gone; continue with the new session.
+    }
+    remoteOperatorPortRef.current = null;
     const connection = newSupportConnection();
     setSupportEvents([]);
-    supportPendingCommandsRef.current = new Map();
-    setSupportPendingCommands(new Map());
     try {
       await connection.joinOperator({
         code: supportCode,
         operatorKey: supportOperatorKey,
       });
+      remoteOperatorPortRef.current = new RemoteG2CasePort(connection);
       setSupportOperatorKey("");
+      recordSupportEvent(
+        "Technician authenticated",
+        "The remote G2 Case serial interface is ready to attach.",
+      );
     } catch (caught) {
       setSupportState({
         status: "error",
@@ -1325,37 +1326,27 @@ function App() {
     }
   }, [
     newSupportConnection,
+    recordSupportEvent,
     supportCode,
     supportOperatorKey,
   ]);
 
   const stopRemoteSupport = useCallback(() => {
+    const remoteOperatorPort = remoteOperatorPortRef.current;
+    if (portRef.current === remoteOperatorPort) {
+      portRef.current = null;
+      sessionRef.current = null;
+      setReport(null);
+      setRecheckReport(null);
+    }
+    void remoteOperatorPort?.dispose();
+    void remoteDeviceBridgeRef.current?.close();
+    remoteOperatorPortRef.current = null;
+    remoteDeviceBridgeRef.current = null;
     supportConnectionRef.current?.close();
     supportConnectionRef.current = null;
     setSupportState({ status: "idle" });
-    supportPendingCommandsRef.current = new Map();
-    setSupportPendingCommands(new Map());
-    setSupportConsent(false);
   }, []);
-
-  const sendRemoteSupportCommand = useCallback((action) => {
-    try {
-      const id = supportConnectionRef.current?.sendCommand(action);
-      if (!id) throw new Error("The technician relay is not connected.");
-      supportPendingCommandsRef.current.set(id, action);
-      setSupportPendingCommands((current) => {
-        const next = new Map(current);
-        next.set(id, action);
-        return next;
-      });
-      recordSupportEvent(`${REMOTE_SUPPORT_LABELS[action]} requested`);
-    } catch (caught) {
-      setSupportState((current) => ({
-        ...current,
-        error: caught.message,
-      }));
-    }
-  }, [recordSupportEvent]);
 
   // Panes are addressed by hash so deep links, back/forward, and in-page anchors
   // keep working even though the page no longer scrolls as one document.
@@ -1591,6 +1582,8 @@ function App() {
 
   useEffect(
     () => () => {
+      void remoteOperatorPortRef.current?.dispose();
+      void remoteDeviceBridgeRef.current?.close();
       supportConnectionRef.current?.close();
     },
     [],
@@ -1646,102 +1639,6 @@ function App() {
       );
     }
   }, [addLog]);
-
-  const executeRemoteSupportCommand = useCallback(
-    async ({ id, action }) => {
-      const connection = supportConnectionRef.current;
-      if (connection?.role !== "device") return;
-      if (activeOperationRef.current) {
-        try {
-          connection.sendResult(id, {
-            ok: false,
-            error: `The browser is already running ${
-              OPERATION_LABELS[activeOperationRef.current] ??
-              activeOperationRef.current
-            }.`,
-          });
-        } catch {
-          // The local operation remains authoritative if the relay drops.
-        }
-        return;
-      }
-
-      let result = null;
-      let failure = null;
-      const isCaseRefresh = action === "refresh_case";
-      const operationName = isCaseRefresh ? "analyze" : "pogo";
-      await run(operationName, async () => {
-        try {
-          if (isCaseRefresh) {
-            result = await getSession().analyze();
-            setReport(result);
-            setBackup(null);
-            setStaged(null);
-            setPogoResults({});
-            setTempleFlashAudit(null);
-            addLog(
-              "Technician-requested Case diagnostics completed without changing device memory.",
-              "success",
-            );
-            return result;
-          }
-
-          const [route, request] = action.split("_");
-          if (
-            !["left", "right"].includes(route) ||
-            !["version", "status"].includes(request)
-          ) {
-            throw new Error("The relay requested an unsupported diagnostic.");
-          }
-          const probe = await getSession().probeRunningTemple(request, route);
-          result = {
-            ...probe,
-            observedAt: new Date().toISOString(),
-          };
-          setPogoResults((current) => ({
-            ...current,
-            [route]: {
-              ...current[route],
-              [request]: result,
-            },
-          }));
-          addLog(
-            `Technician-requested ${route} ${request} probe completed through the pinned diagnostic bridge.`,
-            "success",
-          );
-          return result;
-        } catch (caught) {
-          failure = caught;
-          throw caught;
-        }
-      });
-
-      try {
-        connection.sendResult(id, {
-          ok: !failure && result !== null,
-          result,
-          error: failure?.message ?? "The diagnostic stopped before returning a result.",
-        });
-        if (!failure && result !== null) {
-          connection.sendState({
-            action,
-            result,
-          });
-        }
-      } catch {
-        // A relay disconnect must not convert a completed local diagnostic into
-        // a hardware failure or trigger any retry.
-      }
-    },
-    [addLog, getSession, run],
-  );
-
-  useEffect(() => {
-    remoteCommandHandlerRef.current = executeRemoteSupportCommand;
-    return () => {
-      remoteCommandHandlerRef.current = null;
-    };
-  }, [executeRemoteSupportCommand]);
 
   useEffect(() => {
     let active = true;
@@ -1857,6 +1754,39 @@ function App() {
       setTempleFlashAudit(null);
       addLog("Analysis complete. No device memory was changed.", "success");
     });
+  };
+
+  const openRemoteSupportCase = async () => {
+    const remotePort = remoteOperatorPortRef.current;
+    if (!remotePort || supportConnectionRef.current?.role !== "operator") {
+      setSupportState((current) => ({
+        ...current,
+        error: "Join an active technician session before opening the remote Case.",
+      }));
+      return;
+    }
+    portRef.current = remotePort;
+    sessionRef.current = null;
+    const result = await run("analyze", async () => {
+      addLog(
+        "Opening the customer's selected G2 Case through the remote serial interface.",
+      );
+      const remoteReport = await getSession(remotePort).analyze();
+      setReport(remoteReport);
+      setBackup(null);
+      setStaged(null);
+      setPogoResults({});
+      setPogoConfirm(false);
+      setGlassesAnalyzeConfirm(false);
+      setAnalysisView("case");
+      setTempleFlashAudit(null);
+      addLog(
+        "Remote Case attached. The complete WebFlasher now operates through the customer's selected USB serial interface.",
+        "success",
+      );
+      return remoteReport;
+    });
+    if (result) setSupportOpen(false);
   };
 
   const reanalyze = async () => {
@@ -4545,16 +4475,13 @@ function App() {
         onSupportCodeChange={setSupportCode}
         operatorKey={supportOperatorKey}
         onOperatorKeyChange={setSupportOperatorKey}
-        consent={supportConsent}
-        onConsentChange={setSupportConsent}
         deviceReady={Boolean(report && portRef.current)}
         transport={selectedTransport}
         events={supportEvents}
-        pendingCommands={supportPendingCommands}
         onStartDevice={startRemoteSupport}
         onJoinOperator={joinRemoteSupport}
         onStop={stopRemoteSupport}
-        onCommand={sendRemoteSupportCommand}
+        onOpenRemoteCase={openRemoteSupportCase}
       />
     </div>
   );

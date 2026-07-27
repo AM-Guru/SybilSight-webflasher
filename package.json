@@ -11,12 +11,14 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
     "remote-support": "node deploy/homeassistant-addon/server.mjs",
+    "remote-support:mcp": "node scripts/remote_support_mcp.mjs",
     "test": "node --test tests/*.test.mjs",
     "test:python": "python3 -m unittest -v scripts/test_g2_flash_tools.py",
     "check": "npm run test && npm run build",
     "archive:firmware": "node scripts/build-firmware-archive.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "ws": "8.21.1"
