@@ -1418,6 +1418,68 @@ export class G2CaseSession {
     );
   }
 
+  async confirmCaseFirmwareVersion(expectedVersion, attempts = 3) {
+    if (!expectedVersion) {
+      throw new Error("An expected Case firmware version is required.");
+    }
+    if (!Number.isInteger(attempts) || attempts < 1) {
+      throw new Error(
+        "Case firmware confirmation attempts must be a positive integer.",
+      );
+    }
+
+    const observations = [];
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      let normal = null;
+      try {
+        this.log(
+          `Opening fresh Case console ${attempt}/${attempts} for explicit DEA0 firmware confirmation.`,
+        );
+        normal = await this.openNormal(this.port);
+        const boot = new TextDecoder().decode(await normal.collectFor(2500));
+        const versionReply = await queryNormal(normal, 0xa0, 1000);
+        const report = parseConsoleReport(boot, versionReply);
+        const dea0Report = parseConsoleReport(versionReply);
+        const confirmedVersion = dea0Report.caseVersion;
+        observations.push(
+          `DEA0 ${confirmedVersion ?? "unknown"}${report.caseVersion && report.caseVersion !== confirmedVersion ? ` (banner ${report.caseVersion})` : ""}`,
+        );
+        if (confirmedVersion === expectedVersion) {
+          this.log(
+            `Fresh DEA0 confirmation passed · Charging Case ${expectedVersion} · attempt ${attempt}/${attempts}.`,
+            "success",
+          );
+          return {
+            ...report,
+            expectedVersion,
+            confirmedVersion,
+            confirmationCommand: "DEA0",
+            confirmationAttempt: attempt,
+            confirmationAttempts: attempts,
+            confirmedAt: new Date().toISOString(),
+          };
+        }
+        this.log(
+          `Fresh DEA0 confirmation attempt ${attempt}/${attempts} reported Case ${confirmedVersion ?? "unknown"}, expected ${expectedVersion}.`,
+          "warn",
+        );
+      } catch (error) {
+        observations.push(`error: ${error.message}`);
+        this.log(
+          `Fresh DEA0 confirmation attempt ${attempt}/${attempts} failed: ${error.message}`,
+          "warn",
+        );
+      } finally {
+        if (normal) await normal.close();
+      }
+      if (attempt !== attempts) await this.wait(750 * attempt);
+    }
+
+    throw new PogoFlashSafetyError(
+      `Charging Case ${expectedVersion} was not confirmed by ${attempts} fresh DEA0 sessions (${observations.join("; ")}). Smart Glasses flashing was not started.`,
+    );
+  }
+
   async restartAndRecheck() {
     this.log("Starting the traced stock reset for both seated G2 temples.");
     const normal = await this.openNormal(this.port);

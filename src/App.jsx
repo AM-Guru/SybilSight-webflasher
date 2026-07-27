@@ -1510,6 +1510,9 @@ function App() {
       async () => {
         try {
           const session = getSession();
+          addLog(
+            `Automatic Apply requested · Smart Glasses ${automaticInstallMode} · Update Charging Case first ${automaticCaseUpdate ? "enabled" : "disabled"}.`,
+          );
           setSessionProgress(0.03, "Refreshing Case and contact telemetry");
           const freshConsole = await session.readTempleFlashPreflight(
             ["right", "left"],
@@ -1532,6 +1535,10 @@ function App() {
           if (!caseUpdatePlan.executable) {
             throw new Error(caseUpdatePlan.reason);
           }
+          addLog(
+            `Charging Case preflight · observed ${caseUpdatePlan.currentVersion} · latest ${caseUpdatePlan.targetVersion} · ${caseUpdatePlan.action === "update" ? "update required" : "already current"}.`,
+            caseUpdatePlan.action === "update" ? "warn" : "success",
+          );
           if (caseUpdatePlan.targetVersion !== REVIEWED_CASE_VERSION) {
             throw new Error(
               `This WebFlasher's glasses writer requires Case ${REVIEWED_CASE_VERSION}, but the latest library Case is ${caseUpdatePlan.targetVersion}. Update the WebFlasher before continuing.`,
@@ -1570,10 +1577,20 @@ function App() {
                     0.27,
                     "Activating the verified Case bank",
                   );
-                } else {
+                } else if (step === "reanalyze") {
                   setSessionProgress(
                     0.37,
                     "Re-analyzing the updated Charging Case",
+                  );
+                } else if (step === "verify-bank-switch") {
+                  setSessionProgress(
+                    0.48,
+                    "Verifying the Charging Case physical bank switch",
+                  );
+                } else if (step === "confirm") {
+                  setSessionProgress(
+                    0.49,
+                    `Confirming Case ${caseUpdatePlan.targetVersion} in a fresh DEA0 session`,
                   );
                 }
               },
@@ -1593,8 +1610,11 @@ function App() {
             };
             setReport(fresh);
             freshTelemetry = fresh.console?.telemetry;
+            setAutomaticStatus(
+              `Charging Case ${caseUpdate.confirmation.confirmedVersion} confirmed by fresh DEA0; starting Smart Glasses ${automaticInstallMode}…`,
+            );
             addLog(
-              `Charging Case updated ${caseUpdatePlan.currentVersion} → ${caseUpdatePlan.targetVersion}; inactive-bank readback, activation, application banner, and active bank verified.`,
+              `Charging Case updated ${caseUpdatePlan.currentVersion} → ${caseUpdatePlan.targetVersion}; physical bank ${caseUpdate.bankSwitch.stagedPhysicalBank} activated (nSWAP_BANK ${Number(caseUpdate.bankSwitch.previousSwapBank)} → ${Number(caseUpdate.bankSwitch.activeSwapBank)}), physical bank ${caseUpdate.bankSwitch.fallbackPhysicalBank} preserved as the ${caseUpdate.bankSwitch.fallbackVersion} fallback, and fresh ${caseUpdate.confirmation.confirmationCommand} attempt ${caseUpdate.confirmation.confirmationAttempt}/${caseUpdate.confirmation.confirmationAttempts} verified.`,
               "success",
             );
           }

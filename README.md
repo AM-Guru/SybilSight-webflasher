@@ -874,9 +874,14 @@ panes. Both interfaces call the same automatic Apply implementation.
 
 When enabled and needed, Apply validates the latest official Case component,
 stages only the inactive bank, verifies its complete readback, activates that
-bank, and proves both the normal application banner and active-bank version
-before sending any Smart Glasses firmware bytes. If the option is off, an older
-Case still stops at preflight with an actionable message.
+bank, and re-analyzes the physical-bank mapping. The update is accepted only
+when `nSWAP_BANK` changed, the previously inactive physical bank is active on
+the target version, and the previous active bank remains available as the
+fallback. It then proves the normal application banner and opens a separate
+fresh console to explicitly reissue `DEA0` with bounded retries. Smart Glasses
+firmware bytes remain blocked until the bank transition and fresh reply both
+report the target Case version. If the option is off, an older Case still stops
+at preflight with an actionable message.
 
 Restore revalidates the selected bundle and rewrites the complete pinned
 Apollo main on both temples. It starts right then left, but may reverse that

@@ -102,6 +102,28 @@ test("automatic Case update refuses a downgrade", () => {
   assert.match(result.reason, /will not downgrade/);
 });
 
+test("automatic Case update requires a fresh physical-bank map before writing", async () => {
+  let stageCalled = false;
+  await assert.rejects(
+    () =>
+      executeAutomaticCaseUpdate({
+        session: {
+          stageCaseImage: async () => {
+            stageCalled = true;
+          },
+        },
+        currentReport: { optionBytes: new Uint8Array(128) },
+        targetFirmware: {
+          caseRecoveryEligible: true,
+          caseVersion: "1.2.57",
+          caseImage: new Uint8Array([1]),
+        },
+      }),
+    /pre-update active physical bank/,
+  );
+  assert.equal(stageCalled, false);
+});
+
 test("automatic Case update stages, activates, and re-analyzes before returning", async () => {
   const events = [];
   const optionBytes = new Uint8Array(128);
@@ -114,11 +136,28 @@ test("automatic Case update stages, activates, and re-analyzes before returning"
   const report = {
     optionBytes,
     console: { caseVersion: "1.2.56" },
+    options: {
+      swapBank: false,
+      activePhysicalBank: 2,
+      inactivePhysicalBank: 1,
+    },
+    banks: {
+      active: { physicalBank: 2, version: "1.2.56" },
+      inactive: { physicalBank: 1, version: "1.2.54" },
+    },
   };
   const updatedReport = {
     optionBytes: new Uint8Array(128),
     console: { caseVersion: "1.2.57" },
-    banks: { active: { version: "1.2.57" } },
+    options: {
+      swapBank: true,
+      activePhysicalBank: 1,
+      inactivePhysicalBank: 2,
+    },
+    banks: {
+      active: { physicalBank: 1, version: "1.2.57" },
+      inactive: { physicalBank: 2, version: "1.2.56" },
+    },
   };
   const result = await executeAutomaticCaseUpdate({
     session: {
@@ -133,6 +172,15 @@ test("automatic Case update stages, activates, and re-analyzes before returning"
       analyze: async (...args) => {
         events.push(["analyze", ...args]);
         return updatedReport;
+      },
+      confirmCaseFirmwareVersion: async (...args) => {
+        events.push(["confirm", ...args]);
+        return {
+          confirmedVersion: "1.2.57",
+          confirmationCommand: "DEA0",
+          confirmationAttempt: 1,
+          confirmationAttempts: 3,
+        };
       },
     },
     currentReport: report,
@@ -150,10 +198,121 @@ test("automatic Case update stages, activates, and re-analyzes before returning"
       ["activate", caseImage],
       ["step", "reanalyze"],
       ["analyze", { progressBase: 0.36, progressSpan: 0.12 }],
+      ["step", "verify-bank-switch"],
+      ["step", "confirm"],
+      ["confirm", "1.2.57"],
     ],
   );
   assert.equal(events[1][2], optionBytes);
   assert.equal(events[3][2], optionBytes);
+  assert.deepEqual(result.bankSwitch, {
+    verified: true,
+    targetVersion: "1.2.57",
+    previousActiveVersion: "1.2.56",
+    fallbackVersion: "1.2.56",
+    previousActivePhysicalBank: 2,
+    stagedPhysicalBank: 1,
+    activePhysicalBank: 1,
+    fallbackPhysicalBank: 2,
+    previousSwapBank: false,
+    activeSwapBank: true,
+  });
+  assert.equal(result.confirmation.confirmationCommand, "DEA0");
+});
+
+test("automatic Case update rejects 1.2.57 when the staged bank was not activated", async () => {
+  const optionBytes = new Uint8Array(128);
+  let confirmationCalled = false;
+  await assert.rejects(
+    () =>
+      executeAutomaticCaseUpdate({
+        session: {
+          stageCaseImage: async () => ({}),
+          activateStagedBank: async () => ({ caseVersion: "1.2.57" }),
+          analyze: async () => ({
+            console: { caseVersion: "1.2.57" },
+            options: {
+              swapBank: false,
+              activePhysicalBank: 2,
+              inactivePhysicalBank: 1,
+            },
+            banks: {
+              active: { physicalBank: 2, version: "1.2.57" },
+              inactive: { physicalBank: 1, version: "1.2.54" },
+            },
+          }),
+          confirmCaseFirmwareVersion: async () => {
+            confirmationCalled = true;
+            return { confirmedVersion: "1.2.57" };
+          },
+        },
+        currentReport: {
+          optionBytes,
+          options: {
+            swapBank: false,
+            activePhysicalBank: 2,
+            inactivePhysicalBank: 1,
+          },
+          banks: {
+            active: { physicalBank: 2, version: "1.2.56" },
+            inactive: { physicalBank: 1, version: "1.2.54" },
+          },
+        },
+        targetFirmware: {
+          caseRecoveryEligible: true,
+          caseVersion: "1.2.57",
+          caseImage: new Uint8Array([1]),
+        },
+      }),
+    /bank switch was not confirmed.*nSWAP_BANK option did not toggle/i,
+  );
+  assert.equal(confirmationCalled, false);
+});
+
+test("automatic Case update stops before returning when fresh confirmation fails", async () => {
+  const optionBytes = new Uint8Array(128);
+  await assert.rejects(
+    () =>
+      executeAutomaticCaseUpdate({
+        session: {
+          stageCaseImage: async () => ({}),
+          activateStagedBank: async () => ({ caseVersion: "1.2.57" }),
+          analyze: async () => ({
+            console: { caseVersion: "1.2.57" },
+            options: {
+              swapBank: true,
+              activePhysicalBank: 1,
+              inactivePhysicalBank: 2,
+            },
+            banks: {
+              active: { physicalBank: 1, version: "1.2.57" },
+              inactive: { physicalBank: 2, version: "1.2.56" },
+            },
+          }),
+          confirmCaseFirmwareVersion: async () => {
+            throw new Error("fresh DEA0 still reports 1.2.56");
+          },
+        },
+        currentReport: {
+          optionBytes,
+          options: {
+            swapBank: false,
+            activePhysicalBank: 2,
+            inactivePhysicalBank: 1,
+          },
+          banks: {
+            active: { physicalBank: 2, version: "1.2.56" },
+            inactive: { physicalBank: 1, version: "1.2.54" },
+          },
+        },
+        targetFirmware: {
+          caseRecoveryEligible: true,
+          caseVersion: "1.2.57",
+          caseImage: new Uint8Array([1]),
+        },
+      }),
+    /fresh DEA0 still reports 1\.2\.56/,
+  );
 });
 
 test("Restore always plans a complete bilateral rewrite", () => {

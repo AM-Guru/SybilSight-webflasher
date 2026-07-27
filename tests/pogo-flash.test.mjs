@@ -822,6 +822,77 @@ test("closes the reset console and retries telemetry in reopened sessions", asyn
   );
 });
 
+test("re-interrogates DEA0 in fresh sessions until the updated Case version is confirmed", async () => {
+  const encoder = new TextEncoder();
+  const writes = [];
+  const waits = [];
+  const transports = [
+    { banner: "1.2.56", reply: "1.2.56" },
+    // A stale buffered banner must not override the explicit fresh DEA0 reply.
+    { banner: "1.2.56", reply: "1.2.57" },
+  ].map(({ banner, reply }, index) => ({
+    closed: false,
+    outputs: [
+      `****** B200 ${banner} DEVICE******\r\n`,
+      `B200 ${reply}, 3\r\n`,
+    ],
+    clear() {},
+    async write(data) {
+      writes.push({ index, text: new TextDecoder().decode(data) });
+    },
+    async collectFor() {
+      return encoder.encode(this.outputs.shift() ?? "");
+    },
+    async close() {
+      this.closed = true;
+    },
+  }));
+  let openIndex = 0;
+  const session = new G2CaseSession(null, {
+    openNormal: async () => transports[openIndex++],
+    wait: async (milliseconds) => waits.push(milliseconds),
+  });
+
+  const report = await session.confirmCaseFirmwareVersion("1.2.57", 3);
+
+  assert.equal(report.confirmedVersion, "1.2.57");
+  assert.equal(report.confirmationCommand, "DEA0");
+  assert.equal(report.confirmationAttempt, 2);
+  assert.equal(report.confirmationAttempts, 3);
+  assert.deepEqual(
+    writes.map(({ text }) => text),
+    ["DEA0\n", "DEA0\n"],
+  );
+  assert.deepEqual(waits, [750]);
+  assert.ok(transports.every((transport) => transport.closed));
+});
+
+test("blocks glasses flashing evidence when fresh DEA0 never confirms the update", async () => {
+  const encoder = new TextEncoder();
+  const transports = Array.from({ length: 2 }, () => ({
+    outputs: [
+      "****** B200 1.2.56 DEVICE******\r\n",
+      "B200 1.2.56, 3\r\n",
+    ],
+    clear() {},
+    async write() {},
+    async collectFor() {
+      return encoder.encode(this.outputs.shift() ?? "");
+    },
+    async close() {},
+  }));
+  let openIndex = 0;
+  const session = new G2CaseSession(null, {
+    openNormal: async () => transports[openIndex++],
+    wait: async () => {},
+  });
+
+  await assert.rejects(
+    () => session.confirmCaseFirmwareVersion("1.2.57", 2),
+    /Smart Glasses flashing was not started/,
+  );
+});
+
 test("standalone reset verifies both temple applications without firmware", async () => {
   const events = [];
   const session = new G2CaseSession(null, { progress: () => {} });

@@ -92,6 +92,128 @@ export function resolveAutomaticCaseUpdatePlan({
   };
 }
 
+function requirePhysicalBank(value, label) {
+  if (value !== 1 && value !== 2) {
+    throw new Error(
+      `Charging Case bank switch verification is missing ${label}. Smart Glasses flashing was not started.`,
+    );
+  }
+  return value;
+}
+
+function verifyPreUpdateBankMapping(report) {
+  const activePhysicalBank = requirePhysicalBank(
+    report?.options?.activePhysicalBank,
+    "the pre-update active physical bank",
+  );
+  const inactivePhysicalBank = requirePhysicalBank(
+    report?.options?.inactivePhysicalBank,
+    "the pre-update inactive physical bank",
+  );
+  if (
+    activePhysicalBank === inactivePhysicalBank ||
+    typeof report?.options?.swapBank !== "boolean" ||
+    report?.banks?.active?.physicalBank !== activePhysicalBank ||
+    report?.banks?.inactive?.physicalBank !== inactivePhysicalBank ||
+    !report?.banks?.active?.version
+  ) {
+    throw new Error(
+      "The pre-update Charging Case option bytes and physical-bank mapping are incomplete or inconsistent. Analyze the Case again before updating it.",
+    );
+  }
+}
+
+export function verifyAutomaticCaseBankSwitch({
+  beforeReport,
+  afterReport,
+  targetVersion,
+}) {
+  const previousActivePhysicalBank = requirePhysicalBank(
+    beforeReport?.options?.activePhysicalBank,
+    "the pre-update active physical bank",
+  );
+  const stagedPhysicalBank = requirePhysicalBank(
+    beforeReport?.options?.inactivePhysicalBank,
+    "the pre-update inactive physical bank",
+  );
+  const activePhysicalBank = requirePhysicalBank(
+    afterReport?.options?.activePhysicalBank,
+    "the post-update active physical bank",
+  );
+  const fallbackPhysicalBank = requirePhysicalBank(
+    afterReport?.options?.inactivePhysicalBank,
+    "the post-update inactive physical bank",
+  );
+  const previousSwapBank = beforeReport?.options?.swapBank;
+  const activeSwapBank = afterReport?.options?.swapBank;
+  const previousActiveVersion = beforeReport?.banks?.active?.version;
+  const fallbackVersion = afterReport?.banks?.inactive?.version;
+
+  const failures = [];
+  if (previousActivePhysicalBank === stagedPhysicalBank) {
+    failures.push("the pre-update bank mapping is invalid");
+  }
+  if (
+    beforeReport?.banks?.active?.physicalBank !== previousActivePhysicalBank ||
+    beforeReport?.banks?.inactive?.physicalBank !== stagedPhysicalBank
+  ) {
+    failures.push("the pre-update option bytes and bank aliases disagree");
+  }
+  if (
+    typeof previousSwapBank !== "boolean" ||
+    typeof activeSwapBank !== "boolean" ||
+    previousSwapBank === activeSwapBank
+  ) {
+    failures.push("the nSWAP_BANK option did not toggle");
+  }
+  if (
+    activePhysicalBank !== stagedPhysicalBank ||
+    fallbackPhysicalBank !== previousActivePhysicalBank
+  ) {
+    failures.push(
+      `physical bank ${stagedPhysicalBank} did not become active while physical bank ${previousActivePhysicalBank} became the fallback`,
+    );
+  }
+  if (
+    afterReport?.banks?.active?.physicalBank !== activePhysicalBank ||
+    afterReport?.banks?.inactive?.physicalBank !== fallbackPhysicalBank
+  ) {
+    failures.push("the post-update option bytes and bank aliases disagree");
+  }
+  if (afterReport?.banks?.active?.version !== targetVersion) {
+    failures.push(
+      `active physical bank ${activePhysicalBank} reports ${afterReport?.banks?.active?.version ?? "an unknown version"}, expected ${targetVersion}`,
+    );
+  }
+  if (
+    !previousActiveVersion ||
+    fallbackVersion !== previousActiveVersion
+  ) {
+    failures.push(
+      `the fallback bank reports ${fallbackVersion ?? "an unknown version"}, expected the preserved pre-update version ${previousActiveVersion ?? "unknown"}`,
+    );
+  }
+
+  if (failures.length) {
+    throw new Error(
+      `Charging Case bank switch was not confirmed after staging ${targetVersion}: ${failures.join("; ")}. Smart Glasses flashing was not started.`,
+    );
+  }
+
+  return {
+    verified: true,
+    targetVersion,
+    previousActiveVersion,
+    fallbackVersion,
+    previousActivePhysicalBank,
+    stagedPhysicalBank,
+    activePhysicalBank,
+    fallbackPhysicalBank,
+    previousSwapBank,
+    activeSwapBank,
+  };
+}
+
 export async function executeAutomaticCaseUpdate({
   session,
   currentReport,
@@ -114,6 +236,7 @@ export async function executeAutomaticCaseUpdate({
       "Fresh Case option bytes are required before an automatic Case update.",
     );
   }
+  verifyPreUpdateBankMapping(currentReport);
 
   await onStep?.("stage", targetFirmware);
   const staged = await session.stageCaseImage(
@@ -146,7 +269,24 @@ export async function executeAutomaticCaseUpdate({
       `The Charging Case update was not proven in both the application and active bank (expected ${targetFirmware.caseVersion}).`,
     );
   }
-  return { staged, activation, report };
+
+  await onStep?.("verify-bank-switch", targetFirmware);
+  const bankSwitch = verifyAutomaticCaseBankSwitch({
+    beforeReport: currentReport,
+    afterReport: report,
+    targetVersion: targetFirmware.caseVersion,
+  });
+
+  await onStep?.("confirm", targetFirmware);
+  const confirmation = await session.confirmCaseFirmwareVersion(
+    targetFirmware.caseVersion,
+  );
+  if (confirmation?.confirmedVersion !== targetFirmware.caseVersion) {
+    throw new Error(
+      `The fresh Case firmware confirmation returned ${confirmation?.confirmedVersion ?? "unknown"}, expected ${targetFirmware.caseVersion}.`,
+    );
+  }
+  return { staged, activation, report, bankSwitch, confirmation };
 }
 
 function auditVerificationComplete(audit) {
