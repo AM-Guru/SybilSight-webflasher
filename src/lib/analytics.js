@@ -9,8 +9,13 @@ import {
   REVIEWED_CFW_BASE_VERSION,
   REVIEWED_CFW_VERSION,
 } from "./pogoFlashBridge.js";
+import { assessAutomaticTempleContacts } from "./automaticRecovery.js";
+import {
+  WEBFLASHER_BUILD_LABEL,
+  WEBFLASHER_BUILD_SHA,
+} from "./releaseIntegrity.js";
 
-export const DEVICE_ANALYTICS_SCHEMA_VERSION = 1;
+export const DEVICE_ANALYTICS_SCHEMA_VERSION = 2;
 
 const FACTORY_QUERIES = Object.freeze([
   Object.freeze({ command: "DEA0", scope: "case", data: "case firmware banner and serial" }),
@@ -49,19 +54,28 @@ function serializeProbe(probe) {
 function templeAnalytics(side, present, results) {
   const version = serializeProbe(results?.version);
   const status = serializeProbe(results?.status);
+  const analysisState =
+    version && status
+      ? "complete"
+      : version || status
+        ? "partial"
+        : "not-analyzed";
   const firmwareVersion = version?.decoded?.firmwareVersion ?? null;
   const hardwareRevision = version?.decoded?.hardwareRevision ?? null;
-  const applicationResponsive = Boolean(version || status);
-  const completeMainWriterCompatible = Boolean(
-    firmwareVersion && hardwareRevision === 5,
-  );
-  const reviewedWriterCompatible =
-    [REVIEWED_CFW_BASE_VERSION, REVIEWED_CFW_VERSION].includes(
-      firmwareVersion,
-    ) && hardwareRevision === 5;
+  const applicationResponsive =
+    analysisState === "not-analyzed" ? null : true;
+  const completeMainWriterCompatible = version
+    ? Boolean(firmwareVersion && hardwareRevision === 5)
+    : null;
+  const reviewedWriterCompatible = version
+    ? [REVIEWED_CFW_BASE_VERSION, REVIEWED_CFW_VERSION].includes(
+        firmwareVersion,
+      ) && hardwareRevision === 5
+    : null;
   return {
     side,
     present: Boolean(present),
+    analysisState,
     applicationResponsive,
     firmwareVersion,
     hardwareRevision,
@@ -123,6 +137,9 @@ function recoveryEvidence() {
       failClosedAttempt: { ...bridge.failClosedAttempt },
       leftFailClosed: { ...bridge.leftFailClosed },
       leftPartialTransfer: { ...bridge.leftPartialTransfer },
+      persistentDataRejectionBoundary: {
+        ...bridge.persistentDataRejectionBoundary,
+      },
     },
     allowlist: {
       component: POGO_TRANSFER_RESEARCH.directTempleHost.component,
@@ -136,10 +153,40 @@ function recoveryEvidence() {
       ],
       deferredBatchSettleMs:
         POGO_TRANSFER_RESEARCH.directTempleHost.deferredBatchSettleMs,
+      persistentDataRejectionWindowRecords:
+        POGO_TRANSFER_RESEARCH.directTempleHost
+          .persistentDataRejectionWindowRecords,
       postflightVersionRequired:
         POGO_TRANSFER_RESEARCH.directTempleHost.postflightVersionRequired,
       bootloaderAllowed: false,
     },
+  };
+}
+
+function caseVariantAssessment(report) {
+  const usb = report.usb ?? {};
+  const rom = report.rom ?? {};
+  const matchesReviewedElectronicProfile =
+    usb.vendorId === 0x1a86 &&
+    usb.productId === 0x7523 &&
+    rom.protocolVersion === 0x31 &&
+    rom.productId === 0x0467 &&
+    report.options?.dualBank === true;
+  return {
+    frameFitVariant: null,
+    frameFitVariantReportedByDevice: false,
+    matchesReviewedElectronicProfile,
+    electronicSignature: {
+      usbVendorId: usb.vendorId == null ? null : hex(usb.vendorId, 4),
+      usbProductId: usb.productId == null ? null : hex(usb.productId, 4),
+      romProtocolVersion:
+        rom.protocolVersion == null ? null : hex(rom.protocolVersion, 2),
+      stm32ProductId:
+        rom.productId == null ? null : hex(rom.productId, 4),
+      dualBank: report.options?.dualBank ?? null,
+    },
+    boundary:
+      "The observed factory console and STM32 ROM fields do not identify the G2 Frame A/Frame B case-fit variant. The WebFlasher does not infer that mechanical variant from the factory identifier.",
   };
 }
 
@@ -154,25 +201,57 @@ export function buildG2DeviceAnalytics({
   const telemetry = report.console?.telemetry;
   const left = templeAnalytics("left", telemetry?.leftPresent, pogoResults.left);
   const right = templeAnalytics("right", telemetry?.rightPresent, pogoResults.right);
+  left.caseReportedCharging =
+    report.console?.templeCharging?.left ?? null;
+  right.caseReportedCharging =
+    report.console?.templeCharging?.right ?? null;
   const caseVersion =
     report.console?.caseVersion ?? report.banks?.active?.version ?? null;
   const caseCompatible = caseVersion === REVIEWED_CASE_VERSION;
-  const bothTemplesResponsive =
-    left.applicationResponsive && right.applicationResponsive;
+  const contactAssessment = assessAutomaticTempleContacts(telemetry);
+  const bothTemplesAnalyzed =
+    left.analysisState !== "not-analyzed" &&
+    right.analysisState !== "not-analyzed";
+  const bothTemplesResponsive = bothTemplesAnalyzed
+    ? left.applicationResponsive === true &&
+      right.applicationResponsive === true
+    : null;
   const bothTemplesWriterCompatible =
-    left.completeMainWriterCompatible &&
-    right.completeMainWriterCompatible;
+    left.completeMainWriterCompatible == null ||
+    right.completeMainWriterCompatible == null
+      ? null
+      : left.completeMainWriterCompatible &&
+        right.completeMainWriterCompatible;
+  const bothRoutesReady =
+    bothTemplesResponsive == null ||
+    bothTemplesWriterCompatible == null
+      ? null
+      : caseCompatible &&
+        left.present &&
+        right.present &&
+        bothTemplesResponsive &&
+        bothTemplesWriterCompatible;
 
   return {
     schemaVersion: DEVICE_ANALYTICS_SCHEMA_VERSION,
     reportKind: "even-realities-g2-case-and-smart-glasses-analytics",
     generatedAt,
+    webFlasher: {
+      buildSha: WEBFLASHER_BUILD_SHA,
+      buildLabel: WEBFLASHER_BUILD_LABEL,
+      productionBuildIdentity:
+        /^[0-9a-f]{40}$/i.test(WEBFLASHER_BUILD_SHA),
+    },
     chargingCase: {
       scope: "charging-case MCU, USB bridge, factory console, banks, and option bytes",
       firmwareVersion: caseVersion,
       serialNumber: report.console?.serialNumber ?? null,
       factoryIdentifier: report.console?.identifier ?? null,
       telemetry: telemetry ? { ...telemetry } : null,
+      templeCharging:
+        report.console?.templeCharging
+          ? { ...report.console.templeCharging }
+          : null,
       usb: { ...report.usb },
       rom: {
         protocolVersion: report.rom?.protocolVersion ?? null,
@@ -196,6 +275,7 @@ export function buildG2DeviceAnalytics({
             inactive: { ...report.banks.inactive },
           }
         : null,
+      variantAssessment: caseVariantAssessment(report),
       shell: {
         transport: "Web Serial at 1,000,000 baud, 8N1",
         allowlistedQueries: FACTORY_QUERIES.map((query) => ({ ...query })),
@@ -205,7 +285,8 @@ export function buildG2DeviceAnalytics({
     smartGlasses: {
       scope: "left/right running Apollo applications reached through the case pogo routes",
       sourceBoundary:
-        "The case reports presence; version, battery, voltage, and route proof come from the reviewed volatile SRAM bridge.",
+        "The case reports presence and informational charging estimates. Application version/status and route proof come from the reviewed volatile SRAM bridge.",
+      contactAssessment,
       left,
       right,
       recoveryAssessment: {
@@ -220,14 +301,10 @@ export function buildG2DeviceAnalytics({
           "Any checksum-valid running G2 application on hardware revision 5",
         requiredHardwareRevision: 5,
         caseCompatible,
+        bothTemplesAnalyzed,
         bothTemplesResponsive,
         bothTemplesWriterCompatible,
-        bothRoutesReady:
-          caseCompatible &&
-          left.present &&
-          right.present &&
-          bothTemplesResponsive &&
-          bothTemplesWriterCompatible,
+        bothRoutesReady,
         applicationDeadRecoveryAvailable: false,
         bootloaderWriteAllowed: false,
         limitation:
@@ -236,6 +313,9 @@ export function buildG2DeviceAnalytics({
       offlineRecoveryProvisioning: recoveryConfig,
     },
     validatedRecoveryEvidence: recoveryEvidence(),
+    sessionRecoveryAuditState: templeFlashAudit
+      ? "captured-current-page-session"
+      : "not-captured-in-current-page-session",
     sessionRecoveryAudit: templeFlashAudit,
   };
 }

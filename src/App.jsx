@@ -36,6 +36,7 @@ import {
   DEFAULT_AUTOMATIC_CASE_UPDATE,
   DEFAULT_AUTOMATIC_INSTALL_MODE,
   DEFAULT_INTERFACE_MODE,
+  assessAutomaticTempleContacts,
   executeAutomaticCaseUpdate,
   executeAutomaticApply,
   installedProvenanceStorageKey,
@@ -436,6 +437,18 @@ function RecoveryConfigResult({ report }) {
 function SmartGlassesAnalyticsCard({ analytics, label }) {
   const proof =
     analytics.version?.transportProof ?? analytics.status?.transportProof;
+  const applicationBatteryAvailable = analytics.batteryPercent != null;
+  const applicationVoltageAvailable = analytics.voltageMv != null;
+  const displayedBattery = applicationBatteryAvailable
+    ? `${analytics.batteryPercent}%`
+    : analytics.caseReportedCharging?.batteryPercent == null
+      ? null
+      : `Case ${analytics.caseReportedCharging.batteryPercent}%`;
+  const displayedVoltage = applicationVoltageAvailable
+    ? `${analytics.voltageMv} mV`
+    : analytics.caseReportedCharging?.voltageMv == null
+      ? null
+      : `Case ${analytics.caseReportedCharging.voltageMv} mV`;
   return (
     <article className={cx(
       "glasses-analytics-card",
@@ -481,21 +494,21 @@ function SmartGlassesAnalyticsCard({ analytics, label }) {
         />
         <Field
           label="Battery"
-          value={
-            analytics.batteryPercent == null
-              ? null
-              : `${analytics.batteryPercent}%`
+          value={displayedBattery}
+          detail={
+            applicationBatteryAvailable
+              ? "0x2C running-app status reply"
+              : "Informational Charging Case console estimate; run Glasses analysis for application status"
           }
-          detail="0x2C running-app status reply"
         />
         <Field
           label="Voltage"
-          value={
-            analytics.voltageMv == null
-              ? null
-              : `${analytics.voltageMv} mV`
+          value={displayedVoltage}
+          detail={
+            applicationVoltageAvailable
+              ? "0x2C running-app status reply"
+              : "Informational Charging Case console estimate; run Glasses analysis for application status"
           }
-          detail="0x2C running-app status reply"
         />
       </div>
       <div className="glasses-route-proof">
@@ -877,7 +890,10 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const key = installedProvenanceStorageKey(report?.console?.serialNumber);
+    const key = installedProvenanceStorageKey(
+      report?.console?.serialNumber,
+      report?.console?.identifier,
+    );
     if (!key) {
       setInstalledProvenance({});
       return;
@@ -892,7 +908,11 @@ function App() {
         "warn",
       );
     }
-  }, [addLog, report?.console?.serialNumber]);
+  }, [
+    addLog,
+    report?.console?.identifier,
+    report?.console?.serialNumber,
+  ]);
 
   // Each pane is its own scroll context; entering one starts at its top unless
   // the navigation targeted an anchor inside it.
@@ -1453,11 +1473,16 @@ function App() {
     });
   };
 
-  const recordInstalledProvenance = (audit, caseSerial) => {
+  const recordInstalledProvenance = (
+    audit,
+    caseSerial,
+    factoryIdentifier,
+  ) => {
     setInstalledProvenance((current) => {
       const next = mergeInstalledProvenance(current, audit);
       const key = installedProvenanceStorageKey(
         caseSerial ?? report?.console?.serialNumber,
+        factoryIdentifier ?? report?.console?.identifier,
       );
       if (key) {
         try {
@@ -1558,6 +1583,11 @@ function App() {
           if (!caseUpdatePlan.executable) {
             throw new Error(caseUpdatePlan.reason);
           }
+          const contactPreflight =
+            assessAutomaticTempleContacts(freshTelemetry);
+          if (!contactPreflight.automaticApplyAllowed) {
+            throw new Error(contactPreflight.reason);
+          }
           addLog(
             `Charging Case preflight · observed ${caseUpdatePlan.currentVersion} · latest ${caseUpdatePlan.targetVersion} · ${caseUpdatePlan.action === "update" ? "update required" : "already current"}.`,
             caseUpdatePlan.action === "update" ? "warn" : "success",
@@ -1567,9 +1597,9 @@ function App() {
               `This WebFlasher's glasses writer requires Case ${REVIEWED_CASE_VERSION}, but the latest library Case is ${caseUpdatePlan.targetVersion}. Update the WebFlasher before continuing.`,
             );
           }
-          if (!freshTelemetry?.leftPresent || !freshTelemetry?.rightPresent) {
+          if (contactPreflight.resetRecoveryEligible) {
             addLog(
-              "Fresh Case telemetry does not currently report both contacts; Automatic Apply will attempt the traced bilateral reset and require both temples to return before any firmware transfer.",
+              `${contactPreflight.reason} Automatic Apply will attempt the traced bilateral reset and require both temples to return before any firmware transfer.`,
               "warn",
             );
           }
@@ -1651,6 +1681,16 @@ function App() {
             `Charging Case write gate passed · active physical bank ${caseReadiness.activePhysicalBank} ${caseReadiness.activeVersion} · fallback physical bank ${caseReadiness.fallbackPhysicalBank} ${caseReadiness.fallbackVersion ?? "version unknown"} · nSWAP_BANK ${Number(caseReadiness.swapBank)}.`,
             "success",
           );
+          const caseCharging = fresh.console?.templeCharging;
+          if (caseCharging?.left || caseCharging?.right) {
+            const summarizeCharging = (side, value) =>
+              value
+                ? `${side} ${value.batteryPercent}%/${value.voltageMv} mV${value.charging ? " charging" : ""}`
+                : `${side} unavailable`;
+            addLog(
+              `Informational Case charging telemetry · ${summarizeCharging("right", caseCharging.right)} · ${summarizeCharging("left", caseCharging.left)}. Running-app liveness remains separately required before START.`,
+            );
+          }
 
           setAutomaticStatus(
             "Resetting both temples and verifying fresh application identity…",
@@ -1839,6 +1879,7 @@ function App() {
           recordInstalledProvenance(
             audit,
             fresh.console?.serialNumber,
+            fresh.console?.identifier,
           );
           setAutomaticStatus(
             `${automaticInstallMode === "update" ? "Update" : "Restore"} complete · both temples reset and verified.`,
@@ -1853,6 +1894,7 @@ function App() {
             recordInstalledProvenance(
               caught.audit,
               report?.console?.serialNumber,
+              report?.console?.identifier,
             );
           }
           setAutomaticStatus(
@@ -1920,6 +1962,12 @@ function App() {
     ),
   };
   const telemetry = report?.console?.telemetry;
+  const automaticContactAssessment =
+    assessAutomaticTempleContacts(telemetry);
+  const caseDisplayIdentity =
+    report?.console?.serialNumber ??
+    report?.console?.identifier ??
+    "Identity unavailable";
   const selectedTemplePresent =
     pogoRoute === "left" ? telemetry?.leftPresent : telemetry?.rightPresent;
   const flashRoutesPresent =
@@ -2094,10 +2142,19 @@ function App() {
               </p>
             </div>
             <StatusPill
-              tone={report ? (caseUpdateNeeded ? "warm" : "success") : "quiet"}
+              tone={
+                report
+                  ? !automaticContactAssessment.automaticApplyAllowed ||
+                    caseUpdateNeeded
+                    ? "warm"
+                    : "success"
+                  : "quiet"
+              }
             >
               {report
-                ? caseUpdateNeeded
+                ? !automaticContactAssessment.automaticApplyAllowed
+                  ? "No glasses detected"
+                  : caseUpdateNeeded
                   ? `Case ${report.console?.caseVersion} · update available`
                   : `Case ${report.console?.caseVersion} ready`
                 : "Case required"}
@@ -2122,7 +2179,7 @@ function App() {
                 {report ? "Choose another Case" : "Select Case"}
               </Button>
               <div className={cx("easy-case-result", report && "is-ready")}>
-                <span>{report ? report.console?.serialNumber : "No Case selected"}</span>
+                <span>{report ? caseDisplayIdentity : "No Case selected"}</span>
                 <strong>
                   {report
                     ? `${telemetry?.leftPresent ? "L ready" : "L absent"} · ${telemetry?.rightPresent ? "R ready" : "R absent"}`
@@ -2421,6 +2478,21 @@ function App() {
                   <div className="field-grid">
                     <Field label="Case serial" value={report.console.serialNumber} />
                     <Field label="Factory identifier" value={report.console.identifier} />
+                    <Field
+                      label="Frame-fit variant"
+                      value="Not reported by device"
+                      detail="Frame A/B is not inferred from the factory identifier"
+                    />
+                    <Field
+                      label="Electronic profile"
+                      value={
+                        deviceAnalytics.chargingCase.variantAssessment
+                          .matchesReviewedElectronicProfile
+                          ? "Reviewed profile"
+                          : "Unrecognized"
+                      }
+                      detail="USB, STM32 ROM, and dual-bank signature"
+                    />
                     <Field
                       label="USB bridge"
                       value={`${hex(report.usb.vendorId ?? 0, 4)}:${hex(report.usb.productId ?? 0, 4).slice(2)}`}

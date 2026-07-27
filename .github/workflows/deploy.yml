@@ -250,18 +250,12 @@ jobs:
         run: |
           set -euo pipefail
           release_url="https://webflasher.sybilsight.com/release.json?verify=${GITHUB_SHA}&run=${GITHUB_RUN_ID}"
-          curl --fail --silent --show-error \
+          observed_release="$(curl --fail --silent --show-error \
             --header 'Cache-Control: no-cache' \
-            "${release_url}" |
-            node -e '
-              let input = "";
-              process.stdin.setEncoding("utf8");
-              process.stdin.on("data", (chunk) => { input += chunk; });
-              process.stdin.on("end", () => {
-                const release = JSON.parse(input);
-                if (release.schemaVersion !== 1 || release.buildSha !== process.env.GITHUB_SHA) {
-                  throw new Error("Production release " + JSON.stringify(release) + " does not match " + process.env.GITHUB_SHA);
-                }
-                console.log("Verified production WebFlasher " + release.buildSha);
-              });
-            '
+            "${release_url}")"
+          expected_release="$(printf '{"schemaVersion":1,"buildSha":"%s"}' "${GITHUB_SHA}")"
+          if [ "${observed_release}" != "${expected_release}" ]; then
+            echo "Production release ${observed_release} does not match ${expected_release}" >&2
+            exit 1
+          fi
+          echo "Verified production WebFlasher ${GITHUB_SHA}"

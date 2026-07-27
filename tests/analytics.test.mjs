@@ -51,6 +51,24 @@ function report(caseVersion = "1.2.57") {
         percent: 50,
         voltage: 3900,
       },
+      templeCharging: {
+        left: {
+          charging: true,
+          done: false,
+          voltageMv: 4490,
+          batteryPercent: 98,
+          currentRaw: -20,
+          source: "charging-case console",
+        },
+        right: {
+          charging: true,
+          done: false,
+          voltageMv: 4480,
+          batteryPercent: 97,
+          currentRaw: -18,
+          source: "charging-case console",
+        },
+      },
     },
     usb: { vendorId: 0x1a86, productId: 0x7523 },
     rom: { protocolVersion: 0x31, productId: 0x0467, commands: [0x11, 0x31] },
@@ -81,13 +99,45 @@ test("separates case shell data from left/right glasses analytics", () => {
   });
 
   assert.equal(analytics.schemaVersion, DEVICE_ANALYTICS_SCHEMA_VERSION);
+  assert.equal(typeof analytics.webFlasher.buildSha, "string");
   assert.equal(analytics.chargingCase.shell.allowlistedQueries.length, 4);
+  assert.equal(
+    analytics.chargingCase.variantAssessment
+      .matchesReviewedElectronicProfile,
+    true,
+  );
+  assert.equal(
+    analytics.chargingCase.variantAssessment.frameFitVariant,
+    null,
+  );
+  assert.match(
+    analytics.chargingCase.variantAssessment.boundary,
+    /do not identify.*Frame A\/Frame B/,
+  );
   assert.match(analytics.chargingCase.shell.rawOutput, /B200/);
+  assert.equal(
+    analytics.smartGlasses.contactAssessment.state,
+    "both-detected",
+  );
   assert.equal(analytics.smartGlasses.left.batteryPercent, 98);
   assert.equal(analytics.smartGlasses.right.voltageMv, 4480);
   assert.equal(
     analytics.smartGlasses.left.version.transportProof.restoredMask,
     "0x000003FF",
+  );
+  assert.equal(
+    analytics.validatedRecoveryEvidence.failureEvidence
+      .persistentDataRejectionBoundary.recordDistance,
+    35,
+  );
+  assert.equal(
+    analytics.validatedRecoveryEvidence.allowlist
+      .persistentDataRejectionWindowRecords,
+    64,
+  );
+  assert.equal(
+    analytics.sessionRecoveryAuditState,
+    "not-captured-in-current-page-session",
   );
   assert.equal(analytics.smartGlasses.recoveryAssessment.bothRoutesReady, true);
 });
@@ -136,4 +186,57 @@ test("treats older responsive hardware-5 temples as complete-main compatible", (
     analytics.smartGlasses.recoveryAssessment.completeMainSourceRequirement,
     /Any checksum-valid running G2 application/,
   );
+});
+
+test("reports unqueried temples as unknown rather than unresponsive", () => {
+  const analytics = buildG2DeviceAnalytics({
+    report: report(),
+    pogoResults: {},
+  });
+
+  assert.equal(analytics.smartGlasses.left.analysisState, "not-analyzed");
+  assert.equal(analytics.smartGlasses.left.applicationResponsive, null);
+  assert.equal(analytics.smartGlasses.right.applicationResponsive, null);
+  assert.equal(analytics.smartGlasses.left.completeMainWriterCompatible, null);
+  assert.equal(analytics.smartGlasses.left.reviewedWriterCompatible, null);
+  assert.equal(
+    analytics.smartGlasses.left.caseReportedCharging.batteryPercent,
+    98,
+  );
+  assert.equal(
+    analytics.smartGlasses.recoveryAssessment.bothTemplesAnalyzed,
+    false,
+  );
+  assert.equal(
+    analytics.smartGlasses.recoveryAssessment.bothTemplesResponsive,
+    null,
+  );
+  assert.equal(
+    analytics.smartGlasses.recoveryAssessment.bothRoutesReady,
+    null,
+  );
+});
+
+test("reports an empty Case as no contacts, not dead Smart Glasses", () => {
+  const emptyReport = report();
+  emptyReport.console.telemetry.leftPresent = false;
+  emptyReport.console.telemetry.rightPresent = false;
+  emptyReport.console.templeCharging = null;
+  const analytics = buildG2DeviceAnalytics({
+    report: emptyReport,
+    pogoResults: {},
+  });
+
+  assert.equal(
+    analytics.smartGlasses.contactAssessment.state,
+    "neither-detected",
+  );
+  assert.equal(
+    analytics.smartGlasses.contactAssessment.automaticApplyAllowed,
+    false,
+  );
+  assert.equal(analytics.smartGlasses.left.present, false);
+  assert.equal(analytics.smartGlasses.left.applicationResponsive, null);
+  assert.equal(analytics.smartGlasses.right.present, false);
+  assert.equal(analytics.smartGlasses.right.applicationResponsive, null);
 });

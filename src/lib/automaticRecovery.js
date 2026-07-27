@@ -10,6 +10,54 @@ const REVIEWED_STOCK_VERSION = "2.2.6.10";
 const REVIEWED_CFW_VERSION = "2.2.6.11";
 const MAIN_COMPONENT = "ota/s200_firmware_ota.bin";
 
+export function assessAutomaticTempleContacts(telemetry) {
+  if (
+    typeof telemetry?.leftPresent !== "boolean" ||
+    typeof telemetry?.rightPresent !== "boolean"
+  ) {
+    return {
+      state: "unknown",
+      leftPresent: null,
+      rightPresent: null,
+      bothPresent: null,
+      anyPresent: null,
+      automaticApplyAllowed: false,
+      resetRecoveryEligible: false,
+      reason:
+        "Fresh left/right Case contact telemetry is required before Automatic Apply. No Case update or Smart Glasses transfer was started.",
+    };
+  }
+  const leftPresent = telemetry.leftPresent;
+  const rightPresent = telemetry.rightPresent;
+  const bothPresent = leftPresent && rightPresent;
+  const anyPresent = leftPresent || rightPresent;
+  if (!anyPresent) {
+    return {
+      state: "neither-detected",
+      leftPresent,
+      rightPresent,
+      bothPresent,
+      anyPresent,
+      automaticApplyAllowed: false,
+      resetRecoveryEligible: false,
+      reason:
+        "Fresh Case telemetry reports neither Smart Glasses temple. Seat the matching glasses in the Case, refresh analysis, and retry. No Case update or Smart Glasses transfer was started.",
+    };
+  }
+  return {
+    state: bothPresent ? "both-detected" : "partial-contact",
+    leftPresent,
+    rightPresent,
+    bothPresent,
+    anyPresent,
+    automaticApplyAllowed: true,
+    resetRecoveryEligible: !bothPresent,
+    reason: bothPresent
+      ? "Both Smart Glasses temples are detected."
+      : "One temple is detected; the bounded bilateral reset/contact recovery gate must restore both before any glasses transfer.",
+  };
+}
+
 function compareVersions(left, right) {
   const parse = (version) => {
     const text = String(version ?? "").trim();
@@ -566,6 +614,7 @@ export function canFallbackDifferentialToComplete(error, plan) {
         audit?.supersededSuccessfulRouteResults,
         audit?.routeComponentRestartAttempts,
         audit?.routeComponentRestartResets,
+        audit?.persistentDataRejectionStops,
         audit?.routeSetupResetStops,
         audit?.routeSetupResetResults,
       ].every((history) => Array.isArray(history) && history.length === 0) &&
@@ -849,7 +898,18 @@ export async function executeAutomaticApply({
   }
 }
 
-export function installedProvenanceStorageKey(caseSerial) {
+export function installedProvenanceStorageKey(
+  caseSerial,
+  factoryIdentifier = null,
+) {
   const serial = String(caseSerial ?? "").trim();
-  return serial ? `sybilsight:g2-installed-provenance:${serial}` : null;
+  if (serial) return `sybilsight:g2-installed-provenance:${serial}`;
+  const identifier = String(factoryIdentifier ?? "")
+    .replace(/[^0-9a-f]/gi, "")
+    .toUpperCase();
+  const usableIdentifier =
+    identifier && !/^(?:00){8}$|^(?:FF){8}$/.test(identifier);
+  return usableIdentifier
+    ? `sybilsight:g2-installed-provenance:factory-${identifier}`
+    : null;
 }

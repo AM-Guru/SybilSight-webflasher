@@ -77,7 +77,13 @@ function ordinaryChecksum(prefix) {
 }
 
 export class RetryablePogoFlashError extends Error {}
-export class TempleRejectedError extends RetryablePogoFlashError {}
+export class TempleRejectedError extends RetryablePogoFlashError {
+  constructor(message, { command = null, status = null } = {}) {
+    super(message);
+    this.command = command;
+    this.status = status;
+  }
+}
 export class PogoFlashSafetyError extends Error {}
 
 export const WIRED_START_NO_FRAME_RECOVERY = Object.freeze({
@@ -250,6 +256,7 @@ export function requireOtaAcknowledgement(frame, expectedCommand) {
   if (payload[4] !== 0) {
     throw new TempleRejectedError(
       `The temple rejected 0x${expectedCommand.toString(16)} with status ${payload[4]}.`,
+      { command: expectedCommand, status: payload[4] },
     );
   }
 }

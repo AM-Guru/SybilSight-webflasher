@@ -57,6 +57,7 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
     maximumDataRetries: 0,
     retryBackoffMs: Object.freeze([]),
     maximumWholeComponentRestarts: 2,
+    persistentDataRejectionWindowRecords: 64,
     stabilityReadQueries: 1,
     preStartSettleMs: 250,
     postflightVersionRequired: true,
@@ -83,7 +84,7 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
       "eba56380f04bf00ad9d87dffbc40c3292ec5b3cee458d3607c8cffd0dcbe335b",
     ]),
     validationBoundary:
-      "The hosted Easy Update accepted the exact Stock/CFW compatible-pair gate, recovered a V7 short host-response boundary without replaying DATA, and completed both CFW mains through bounded fresh-component attempts. A later Stock speed test explicitly rejected a 12 KiB deferred batch at 691,000 accepted bytes; the 6 KiB conservative profile then completed all 3,524 right-Stock records, FINISH, postflight, exact YHM restoration, Case 1.2.57 return, and final bilateral DEB0/liveness in 1,571 seconds. Keep only the exact proven pair component-differential, use the complete pinned main for cross-version Update/Restore, and keep the Case boundary at 6 KiB.",
+      "The hosted Easy Update accepted the exact Stock/CFW compatible-pair gate, recovered a V7 short host-response boundary without replaying DATA, and completed both CFW mains through bounded fresh-component attempts. A later Stock speed test explicitly rejected a 12 KiB deferred batch at 691,000 accepted bytes; the 6 KiB conservative profile then completed all 3,524 right-Stock records, FINISH, postflight, exact YHM restoration, Case 1.2.57 return, and final bilateral DEB0/liveness in 1,571 seconds. A 2.0.7.16 to 2.2.6.10 complete-main update then produced explicit DATA 0x54/status 1 rejections at records 2,184 and 2,219 after exact cleanup and conservative restart pacing. Because those failures were only 35 records apart, the browser now treats the pair as a persistent receiver/storage boundary and does not start a third full-component attempt. Keep only the exact proven pair component-differential, use the complete pinned main for cross-version Update/Restore, keep the Case boundary at 6 KiB, and stop clustered explicit DATA rejections within 64 records.",
     officialRestore: Object.freeze({
       packageSha256:
         "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa",
@@ -238,6 +239,27 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
       baseline: "811104afaf03812022ff",
       caseRestoreVerified: true,
       caseApplicationVersion: "1.2.57",
+    }),
+    persistentDataRejectionBoundary: Object.freeze({
+      route: "right",
+      sourceFirmware: "2.0.7.16",
+      targetFirmware: "2.2.6.10",
+      targetBytes: 3539474,
+      rejectedCommand: "0x54",
+      rejectedStatus: 1,
+      firstRejectedRecord: 2184,
+      firstAcceptedBytes: 2183000,
+      secondRejectedRecord: 2219,
+      secondAcceptedBytes: 2218000,
+      recordDistance: 35,
+      conservativePacingMultiplier: 2,
+      cleanupVerifiedAfterEachFailure: true,
+      finalBilateralLivenessVerified: true,
+      observedThirdAttemptRejectedRecord: 34,
+      observedThirdAttemptAcceptedBytes: 33000,
+      finishAcknowledged: false,
+      policy:
+        "After one fresh conservative whole-component restart, stop when the same route and target explicitly reject DATA command 0x54/status 1 within 64 records of the prior rejection.",
     }),
     browserDifferenceCfwTest: Object.freeze({
       mode: "Stock-to-reviewed-CFW component differences",
@@ -522,6 +544,7 @@ export function describePogoOtaComponent(typeId, payloadSize) {
       maximumDataRetries: 0,
       retryBackoffMs: [],
       maximumWholeComponentRestarts: 2,
+      persistentDataRejectionWindowRecords: 64,
       stabilityReadQueries: 1,
       preStartSettleMs: 250,
       postflightVersionRequired: true,
@@ -1045,10 +1068,15 @@ export function parseConsoleReport(...chunks) {
   const serialNumber =
     text.match(/\*{4,}\s*B200\s+\d+\.\d+\.\d+\s+([0-9A-Fa-f]{16,32})\*{4,}/)?.[1] ??
     null;
-  const identifier =
-    text.match(/(?:^|\n)((?:[0-9A-Fa-f]{2}\s+){7}[0-9A-Fa-f]{2})(?:\r?\n|$)/)?.[1]
+  const identifierCandidate =
+    text.match(/(?:^|\n)((?:[0-9A-Fa-f]{2}\s+){7}[0-9A-Fa-f]{2})[ \t]*(?:\r?\n|$)/)?.[1]
       ?.trim()
       .toUpperCase() ?? null;
+  const identifierCompact = identifierCandidate?.replaceAll(" ", "") ?? "";
+  const identifier =
+    /^(?:00){8}$|^(?:FF){8}$/.test(identifierCompact)
+      ? null
+      : identifierCandidate;
   const telemetryMatch = text.match(
     /B200\s+vol:(-?\d+)\s+pct:(-?\d+),\s*open:(\d+),\s*usb:(\d+),\s*cur:(-?\d+),\s*GLS_L:(\d+),\s*GLS_R:(\d+)\s+temp:(-?\d+)(?:,\s*chEn:(\d+),\s*aging:(\d+),\s*otaGls:(\d+))?/,
   );
@@ -1069,8 +1097,30 @@ export function parseConsoleReport(...chunks) {
           telemetryMatch[11] == null ? null : telemetryMatch[11] === "1",
       }
     : null;
+  const templeCharging = {};
+  const templeChargingPattern =
+    /(?:^|\n)([LR])\s+charging:(\d+),\s*done:(\d+),\s*vol:(-?\d+)mv,\s*bat:(-?\d+),\s*cur:(-?\d+)/g;
+  for (const match of text.matchAll(templeChargingPattern)) {
+    templeCharging[match[1] === "L" ? "left" : "right"] = {
+      charging: match[2] === "1",
+      done: match[3] === "1",
+      voltageMv: Number(match[4]),
+      batteryPercent: Number(match[5]),
+      currentRaw: Number(match[6]),
+      source: "charging-case console",
+    };
+  }
   const scalarState = text.match(/(?:^|\n)(?:state[:=]\s*)?(-?\d+)(?:\r?\n|$)/i)?.[1] ?? null;
-  return { text, caseVersion, serialNumber, identifier, telemetry, scalarState };
+  return {
+    text,
+    caseVersion,
+    serialNumber,
+    identifier,
+    telemetry,
+    templeCharging:
+      templeCharging.left || templeCharging.right ? templeCharging : null,
+    scalarState,
+  };
 }
 
 export function bytesToBase64(input) {

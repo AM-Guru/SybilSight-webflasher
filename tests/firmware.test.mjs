@@ -193,6 +193,8 @@ test("parses case telemetry, identifiers, lid, and temple presence", () => {
 Power up...
 ****** B200 1.2.57 ABCDEF0123456789ABCDEF01******
 AA BB CC DD EE FF 10 20
+L charging:1, done:0, vol:4488mv, bat:98, cur:-22///
+R charging:0, done:1, vol:4491mv, bat:99, cur:-2\\\\
 ****** B200 vol:3894 pct:51, open:1, usb:1, cur:1073,
 GLS_L:1, GLS_R:0 temp:335, chEn:1, aging:0, otaGls:0
 `);
@@ -203,6 +205,40 @@ GLS_L:1, GLS_R:0 temp:335, chEn:1, aging:0, otaGls:0
   assert.equal(report.telemetry.leftPresent, true);
   assert.equal(report.telemetry.rightPresent, false);
   assert.equal(report.telemetry.percent, 51);
+  assert.deepEqual(report.templeCharging.left, {
+    charging: true,
+    done: false,
+    voltageMv: 4488,
+    batteryPercent: 98,
+    currentRaw: -22,
+    source: "charging-case console",
+  });
+  assert.deepEqual(report.templeCharging.right, {
+    charging: false,
+    done: true,
+    voltageMv: 4491,
+    batteryPercent: 99,
+    currentRaw: -2,
+    source: "charging-case console",
+  });
+});
+
+test("captures a query-only factory identifier with trailing whitespace", () => {
+  const report = parseConsoleReport(
+    "B200 1.2.57, 499541\r\n" +
+      "a5 26 03 26 00 00 07 80 \r\n" +
+      "****** B200 vol:3992 pct:67, open:1, usb:1, cur:1031, " +
+      "GLS_L:0, GLS_R:0 temp:205, chEn:1, aging:0, otaGls:0\r\n",
+  );
+  assert.equal(report.caseVersion, "1.2.57");
+  assert.equal(report.serialNumber, null);
+  assert.equal(report.identifier, "A5 26 03 26 00 00 07 80");
+  assert.equal(report.telemetry.leftPresent, false);
+  assert.equal(report.telemetry.rightPresent, false);
+  assert.equal(
+    parseConsoleReport("ff ff ff ff ff ff ff ff \r\n").identifier,
+    null,
+  );
 });
 
 test("pins the physically reviewed read-only pogo bridge payload", async () => {
@@ -358,6 +394,7 @@ test("marks the Apollo bootloader as omitted from pogo OTA", () => {
   assert.equal(main.maximumDataRetries, 0);
   assert.deepEqual(main.retryBackoffMs, []);
   assert.equal(main.maximumWholeComponentRestarts, 2);
+  assert.equal(main.persistentDataRejectionWindowRecords, 64);
   assert.equal(main.stabilityReadQueries, 1);
   assert.equal(main.preStartSettleMs, 250);
   assert.equal(main.postflightVersionRequired, true);
@@ -366,6 +403,11 @@ test("marks the Apollo bootloader as omitted from pogo OTA", () => {
 test("records successful case-pogo transfers and enables only the guarded browser writer", () => {
   assert.equal(POGO_TRANSFER_RESEARCH.directTempleHost.offlineTestsPassed, 8);
   assert.equal(POGO_TRANSFER_RESEARCH.directTempleHost.dataRetryReasons.length, 1);
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.directTempleHost
+      .persistentDataRejectionWindowRecords,
+    64,
+  );
   assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 38);
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.status,
@@ -424,6 +466,11 @@ test("records successful case-pogo transfers and enables only the guarded browse
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.failClosedAttempt.acceptedBytes,
     0,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.persistentDataRejectionBoundary
+      .recordDistance,
+    35,
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.failClosedAttempt.hostChunkOffset,

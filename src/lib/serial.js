@@ -89,6 +89,7 @@ const POGO_DATA_FINAL_SETTLE_MS = 15000;
 const POGO_DATA_LATE_SETTLE_NUMERATOR = 3;
 const POGO_DATA_LATE_SETTLE_DENOMINATOR = 4;
 const POGO_COMPONENT_RESTART_LIMIT = 2;
+const POGO_PERSISTENT_REJECTION_WINDOW_RECORDS = 64;
 const POGO_BILATERAL_ROUTE_ADAPTATION_LIMIT = 4;
 const POGO_SETUP_RESET_LIMIT = 2;
 const POGO_INTERMEDIATE_RESET_ATTEMPTS = 2;
@@ -332,6 +333,76 @@ export function canRestartFailedTempleComponent(
     routeResult?.retainedResult?.restoredMask === 0x3ff &&
     routeResult?.retainedResult?.templeUartErrors === 0
   );
+}
+
+function exactRestoredTempleDataFailure(routeResult) {
+  return Boolean(
+    routeResult?.outcome === "failed_or_uncertain" &&
+      routeResult?.otaMutationAttempted === true &&
+      /^DATA:\d+$/.test(routeResult?.failureStage ?? "") &&
+      routeResult?.transfer === null &&
+      routeResult?.caseRestoreVerified === true &&
+      routeResult?.caseApplicationVersion === REVIEWED_CASE_VERSION &&
+      routeResult?.retainedResult?.baselineMask === 0x3ff &&
+      routeResult?.retainedResult?.selectedMask === 0x3ff &&
+      routeResult?.retainedResult?.restoredMask === 0x3ff &&
+      routeResult?.retainedResult?.templeUartErrors === 0
+  );
+}
+
+export function classifyPersistentTempleDataRejection(
+  routeResult,
+  priorFailures = [],
+  recordWindow = POGO_PERSISTENT_REJECTION_WINDOW_RECORDS,
+) {
+  const current = routeResult?.dataRejection;
+  if (
+    !exactRestoredTempleDataFailure(routeResult) ||
+    !Array.isArray(priorFailures) ||
+    !Number.isInteger(recordWindow) ||
+    recordWindow < 0 ||
+    current?.command !== 0x54 ||
+    current?.status !== 1 ||
+    !Number.isInteger(current.record) ||
+    current.record < 1 ||
+    !Number.isInteger(current.acceptedBytes) ||
+    current.acceptedBytes < 0 ||
+    !Number.isInteger(current.totalBytes) ||
+    current.totalBytes < 1
+  ) {
+    return null;
+  }
+  const prior = [...priorFailures].reverse().find((candidate) => {
+    const rejection = candidate?.dataRejection;
+    return (
+      exactRestoredTempleDataFailure(candidate) &&
+      candidate.route === routeResult.route &&
+      rejection?.command === current.command &&
+      rejection?.status === current.status &&
+      rejection?.totalBytes === current.totalBytes &&
+      Number.isInteger(rejection.record) &&
+      Math.abs(rejection.record - current.record) <= recordWindow
+    );
+  });
+  if (!prior) return null;
+  return {
+    classification: "persistent_temple_data_rejection_boundary",
+    route: routeResult.route,
+    command: current.command,
+    status: current.status,
+    priorRecord: prior.dataRejection.record,
+    currentRecord: current.record,
+    recordDistance: Math.abs(
+      prior.dataRejection.record - current.record,
+    ),
+    priorAcceptedBytes: prior.dataRejection.acceptedBytes,
+    currentAcceptedBytes: current.acceptedBytes,
+    totalBytes: current.totalBytes,
+    recordWindow,
+    additionalWholeComponentRestartAllowed: false,
+    recoveryRecommendation:
+      "Repeated Case-USB full-component retries are blocked for this image region. Preserve the audit and use the reviewed fresh-BLE full-package recovery path or device service unless new hardware evidence justifies another wired attempt.",
+  };
 }
 
 export function canResetAfterZeroWriteSetupStop(
@@ -2288,6 +2359,14 @@ export class G2CaseSession {
           requireOtaAcknowledgement(response, 0x54);
         } catch (error) {
           if (!isExplicitTempleDataRejection(error)) throw error;
+          result.dataRejection = {
+            command: error.command,
+            status: error.status,
+            record: index + 1,
+            recordIndex: index,
+            acceptedBytes,
+            totalBytes: payload.length,
+          };
           this.log(
             `${route}: explicit rejection left DATA record ${index + 1} unadvanced; ending this component attempt so cleanup, reset, and a fresh START can occur without replaying the record.`,
             "warn",
@@ -2497,9 +2576,12 @@ export class G2CaseSession {
       supersededSuccessfulRouteResults: [],
       routeComponentRestartAttempts: [],
       routeComponentRestartResets: [],
+      persistentDataRejectionStops: [],
       routeSetupResetStops: [],
       routeSetupResetResults: [],
       componentRestartLimit: POGO_COMPONENT_RESTART_LIMIT,
+      persistentDataRejectionWindowRecords:
+        POGO_PERSISTENT_REJECTION_WINDOW_RECORDS,
       setupResetLimit: POGO_SETUP_RESET_LIMIT,
       bilateralRouteAdaptationLimit: POGO_BILATERAL_ROUTE_ADAPTATION_LIMIT,
       bootloaderAllowed: false,
@@ -2595,6 +2677,22 @@ export class G2CaseSession {
             setupResetCounts.set(route, setupResetCount + 1);
             index -= 1;
             continue;
+          }
+          const boundary = classifyPersistentTempleDataRejection(
+            error.routeResult,
+            audit.routeComponentRestartAttempts,
+          );
+          if (boundary) {
+            error.routeResult.recoveryBoundary = boundary;
+            audit.persistentDataRejectionStops.push(boundary);
+            this.log(
+              `${route}: explicit DATA status 1 repeated at records ${boundary.priorRecord} and ${boundary.currentRecord} (${boundary.recordDistance} records apart) after conservative restart pacing. Treating this as a persistent temple receiver/storage boundary; no third full-component attempt will be started.`,
+              "warn",
+            );
+            if (error.routeResult) {
+              audit.routeResults.push(error.routeResult);
+            }
+            throw error;
           }
           if (
             canRestartFailedTempleComponent(

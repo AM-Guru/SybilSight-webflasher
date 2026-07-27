@@ -231,7 +231,11 @@ unadvanced DATA rejections at records 349, 753, 874, and 1,663; same-record
 retries after 15, 30, and 60 seconds all produced no complete frame. The Case
 path now ends that component attempt, proves Case/YHM cleanup, issues the
 bilateral reset, verifies both contacts and applications, and begins a fresh
-component from START. It permits three total component attempts. Missing,
+component from START. It permits three total component attempts unless a
+conservative restart returns the same `0x54/status 1` rejection within 64
+records of an earlier rejection on the same route and target. That clustered
+pattern is treated as a persistent receiver/storage boundary and stops before
+an unproductive third full-component attempt. Missing,
 malformed, or timed-out replies are also never replayed. Together with the
 upstream `g2flash.py` observation that this grammar carries no destination
 block index, this keeps DATA recovery fail-closed. The host also requires one fresh
@@ -263,6 +267,15 @@ A fresh whole-component retry may use the hardware-qualified
 double to 2/4 seconds and the final settle becomes 30 seconds. It is valid only
 after exact cleanup, bilateral reset/contact/liveness proof, and a new START;
 the rejected DATA record is never replayed.
+
+A 2.0.7.16 cross-version run provided the clustered-boundary evidence. The
+right temple rejected record 2,184 after 2,183,000 accepted bytes, then
+rejected record 2,219 after a fresh START, exact cleanup, bilateral reset and
+doubled settle pacing. Those records are only 35,000 payload bytes apart. A
+third attempt rejected record 34 and provided no stronger recovery evidence.
+The host now records command, status, record, accepted bytes and target size
+for explicit rejections and stops after the second clustered boundary while
+still performing verified cleanup and final bilateral liveness.
 
 The first 100-query gate was retired after a fresh hardware comparison showed
 the live left route fail at query 52 and the already verified-stock right
@@ -960,6 +973,7 @@ Automatic Apply handles the reviewed failure boundaries as follows:
 | Just-in-time differential preflight changes before `START` | Retry complete only with proof of zero accepted firmware bytes, exact cleanup, Case 1.2.57 return, and bilateral reset/liveness |
 | Read-only YHM baseline is outside the seated-idle allowlist | Retry only from exact retained zero-write/zero-transmission proof; let the stock app settle for 15 then 45 seconds and re-confirm Case/contact before each probe |
 | Allowlisted zero-write YHM setup stop | Perform the existing bounded setup reset/recheck and retry the same route |
+| Two restored explicit DATA rejections recur within 64 records on the same route and target | Classify a persistent receiver/storage boundary, skip the third full-component attempt, restore the Case, and finish with bilateral liveness |
 | First final-reset contact, telemetry, banner, YHM, or no-frame check is transient | Wait, issue one bounded second `DEB0`, and repeat the full liveness gate |
 | Any transfer mutation, cleanup ambiguity, wrong hardware/version after transfer, or second reset failure | Stop closed and retain the failure audit |
 
@@ -1296,6 +1310,27 @@ hub, and confirm that the operating system recognizes the CH340/CH341 device.
 Reconnect the cable, close other applications that may own the serial port,
 choose the device again, and rerun analysis. Do not proceed with recovery from
 a partial report.
+
+An analytics export reports `applicationResponsive: null` when a seated temple
+has not yet been queried; this is unknown, not a dead application. Charging
+percent and voltage parsed from the Case console are labeled as informational
+Case estimates. Run the full Smart Glasses analysis for checksum-valid
+application status, version, and YHM route proof.
+
+[Even sells the G2 Case](https://www.evenrealities.com/en-FI/products/g2-case)
+for **Frame A** and **Frame B** fit geometries. Those labels describe the
+matching frame/case fit and are not exposed by the reviewed factory-console or
+STM32 ROM fields. The WebFlasher therefore reports the electronic signature
+separately and does not guess A/B from the eight-byte factory identifier. An
+empty Case legitimately reports `GLS_L:0` and `GLS_R:0`; Automatic Apply stops
+before either the Case or glasses are changed until at least one temple is
+detected. Use the Case variant matching the glasses and reseat both charging
+contacts before retrying.
+
+`sessionRecoveryAuditState` also distinguishes a current-page audit from an
+absent one. `not-captured-in-current-page-session` means the export was created
+after a reload or before an Apply attempt in that page session; it is not
+evidence that no earlier recovery attempt occurred.
 
 **The log reports a short ROM read, such as 31 of 128 bytes**
 

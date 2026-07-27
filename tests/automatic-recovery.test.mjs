@@ -5,8 +5,10 @@ import {
   DEFAULT_AUTOMATIC_CASE_UPDATE,
   DEFAULT_AUTOMATIC_INSTALL_MODE,
   DEFAULT_INTERFACE_MODE,
+  assessAutomaticTempleContacts,
   executeAutomaticCaseUpdate,
   executeAutomaticApply,
+  installedProvenanceStorageKey,
   mergeInstalledProvenance,
   provenanceFromSuccessfulAudit,
   resolveAutomaticCaseUpdatePlan,
@@ -82,6 +84,7 @@ const safePreflightFailureAudit = () => ({
   supersededSuccessfulRouteResults: [],
   routeComponentRestartAttempts: [],
   routeComponentRestartResets: [],
+  persistentDataRejectionStops: [],
   routeSetupResetStops: [],
   routeSetupResetResults: [],
   sourceValidation: {
@@ -131,6 +134,57 @@ test("defaults to Easy Mode, adaptive Update, and automatic Case repair", () => 
   assert.equal(DEFAULT_INTERFACE_MODE, "easy");
   assert.equal(DEFAULT_AUTOMATIC_INSTALL_MODE, "update");
   assert.equal(DEFAULT_AUTOMATIC_CASE_UPDATE, true);
+});
+
+test("blocks Automatic Apply before mutation when an analyzed Case is empty", () => {
+  const empty = assessAutomaticTempleContacts({
+    leftPresent: false,
+    rightPresent: false,
+  });
+  assert.equal(empty.state, "neither-detected");
+  assert.equal(empty.automaticApplyAllowed, false);
+  assert.equal(empty.resetRecoveryEligible, false);
+  assert.match(empty.reason, /No Case update or Smart Glasses transfer/);
+
+  const partial = assessAutomaticTempleContacts({
+    leftPresent: false,
+    rightPresent: true,
+  });
+  assert.equal(partial.state, "partial-contact");
+  assert.equal(partial.automaticApplyAllowed, true);
+  assert.equal(partial.resetRecoveryEligible, true);
+
+  const complete = assessAutomaticTempleContacts({
+    leftPresent: true,
+    rightPresent: true,
+  });
+  assert.equal(complete.state, "both-detected");
+  assert.equal(complete.automaticApplyAllowed, true);
+  assert.equal(complete.resetRecoveryEligible, false);
+
+  assert.equal(
+    assessAutomaticTempleContacts(null).automaticApplyAllowed,
+    false,
+  );
+});
+
+test("uses the factory identifier when a boot serial was not captured", () => {
+  assert.equal(
+    installedProvenanceStorageKey(null, "a5 26 03 26 00 00 07 80"),
+    "sybilsight:g2-installed-provenance:factory-A526032600000780",
+  );
+  assert.equal(
+    installedProvenanceStorageKey(
+      "00500041514250052037384b",
+      "a5 26 03 26 00 00 07 80",
+    ),
+    "sybilsight:g2-installed-provenance:00500041514250052037384b",
+  );
+  assert.equal(installedProvenanceStorageKey(null, null), null);
+  assert.equal(
+    installedProvenanceStorageKey(null, "FF FF FF FF FF FF FF FF"),
+    null,
+  );
 });
 
 const latestCaseRelease = {

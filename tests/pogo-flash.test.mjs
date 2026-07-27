@@ -44,6 +44,7 @@ import {
   canResetAfterZeroWriteSetupStop,
   canRestartFailedTempleComponent,
   canRunFinalResetAfterFailure,
+  classifyPersistentTempleDataRejection,
   isExplicitTempleDataRejection,
   isPogoRoutePhaseMismatch,
   isG2CaseSerialPort,
@@ -455,14 +456,19 @@ test("requires exact temple reply shapes and zero status", () => {
     makeTempleFrame(new Uint8Array([0x54, 1, 3, 1, 0])),
     0x54,
   );
-  assert.throws(
-    () =>
+  assert.throws(() => {
+    try {
       requireOtaAcknowledgement(
         makeTempleFrame(new Uint8Array([0x54, 1, 3, 1, 1])),
         0x54,
-      ),
-    TempleRejectedError,
-  );
+      );
+    } catch (error) {
+      assert.equal(error instanceof TempleRejectedError, true);
+      assert.equal(error.command, 0x54);
+      assert.equal(error.status, 1);
+      throw error;
+    }
+  }, TempleRejectedError);
 });
 
 test("binds retained restoration proof to route and final host sequence", () => {
@@ -1181,6 +1187,70 @@ test("allows one fresh component restart only after a DATA failure and exact cle
       0,
     ),
     false,
+  );
+});
+
+test("stops a third full component after repeated restored DATA rejections in one image region", () => {
+  const failure = (record, acceptedBytes) => ({
+    route: "right",
+    outcome: "failed_or_uncertain",
+    otaMutationAttempted: true,
+    failureStage: `DATA:${record - 1}`,
+    transfer: null,
+    acceptedFirmwareBytes: acceptedBytes,
+    dataRejection: {
+      command: 0x54,
+      status: 1,
+      record,
+      recordIndex: record - 1,
+      acceptedBytes,
+      totalBytes: 3_539_474,
+    },
+    caseRestoreVerified: true,
+    caseApplicationVersion: "1.2.57",
+    retainedResult: {
+      baselineMask: 0x3ff,
+      selectedMask: 0x3ff,
+      restoredMask: 0x3ff,
+      templeUartErrors: 0,
+    },
+  });
+  const first = failure(2184, 2_183_000);
+  const repeated = failure(2219, 2_218_000);
+  const boundary = classifyPersistentTempleDataRejection(
+    repeated,
+    [first],
+  );
+
+  assert.deepEqual(boundary, {
+    classification: "persistent_temple_data_rejection_boundary",
+    route: "right",
+    command: 0x54,
+    status: 1,
+    priorRecord: 2184,
+    currentRecord: 2219,
+    recordDistance: 35,
+    priorAcceptedBytes: 2_183_000,
+    currentAcceptedBytes: 2_218_000,
+    totalBytes: 3_539_474,
+    recordWindow: 64,
+    additionalWholeComponentRestartAllowed: false,
+    recoveryRecommendation:
+      "Repeated Case-USB full-component retries are blocked for this image region. Preserve the audit and use the reviewed fresh-BLE full-package recovery path or device service unless new hardware evidence justifies another wired attempt.",
+  });
+  assert.equal(
+    classifyPersistentTempleDataRejection(
+      failure(2300, 2_299_000),
+      [first],
+    ),
+    null,
+  );
+  assert.equal(
+    classifyPersistentTempleDataRejection(
+      { ...repeated, caseRestoreVerified: false },
+      [first],
+    ),
+    null,
   );
 });
 
