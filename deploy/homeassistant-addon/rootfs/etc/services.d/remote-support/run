@@ -1,0 +1,10 @@
+#!/usr/bin/with-contenv bashio
+set -euo pipefail
+
+export SUPPORT_OPERATOR_KEY
+SUPPORT_OPERATOR_KEY="$(bashio::config 'operator_key')"
+export HOST="0.0.0.0"
+export PORT="8787"
+export REMOTE_SUPPORT_PATH="/remote-support/ws"
+
+exec node /app/server.mjs

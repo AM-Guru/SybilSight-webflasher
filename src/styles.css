@@ -2652,6 +2652,332 @@ code {
 }
 
 /* ==========================================================================
+   WebUSB transport selection and consent-gated remote support
+   ========================================================================== */
+
+.case-transport-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.case-transport-actions .button {
+  flex: 1;
+}
+
+.console-trigger .remote-support-trigger-dot {
+  width: 7px;
+  height: 7px;
+  min-width: 7px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #6a6e6b;
+}
+
+.console-trigger .remote-support-trigger-dot.is-connected {
+  background: var(--accent);
+  box-shadow: 0 0 0 4px rgba(0, 255, 136, 0.12);
+}
+
+.remote-support-panel {
+  display: grid;
+  width: min(820px, 100%);
+  max-height: min(760px, calc(100vh - 48px));
+  overflow: hidden;
+  color: #dedbd3;
+  border: 1px solid #46453f;
+  border-radius: 7px;
+  background: #171714;
+  box-shadow: 0 40px 110px rgba(0, 0, 0, 0.48);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+.remote-support-mode-switch {
+  display: grid;
+  padding: 14px 25px 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.remote-support-mode-switch button {
+  min-height: 38px;
+  color: #8f948f;
+  border: 1px solid #353a37;
+  border-radius: 4px;
+  background: #101210;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.remote-support-mode-switch button.is-active {
+  color: #06130d;
+  border-color: var(--accent);
+  background: var(--accent);
+  font-weight: 700;
+}
+
+.remote-support-body {
+  display: grid;
+  min-height: 0;
+  padding: 24px 25px 26px;
+  overflow: auto;
+  align-content: start;
+  gap: 18px;
+}
+
+.remote-support-body > p {
+  max-width: 680px;
+  margin: 0;
+  color: #9a9f9b;
+  font-size: 11px;
+  line-height: 1.75;
+}
+
+.remote-support-facts {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid #303532;
+  border-radius: 5px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.remote-support-facts span {
+  display: grid;
+  min-width: 0;
+  padding: 14px;
+  color: #6f7571;
+  border-right: 1px solid #303532;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  gap: 7px;
+}
+
+.remote-support-facts span:last-child {
+  border-right: 0;
+}
+
+.remote-support-facts strong {
+  overflow: hidden;
+  color: #e7e9e7;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  text-transform: none;
+}
+
+.remote-support-code {
+  display: grid;
+  padding: 22px;
+  border: 1px solid rgba(0, 255, 136, 0.34);
+  border-radius: 6px;
+  background:
+    linear-gradient(140deg, rgba(0, 255, 136, 0.08), transparent 58%),
+    #0d100e;
+  justify-items: center;
+  gap: 9px;
+}
+
+.remote-support-code span {
+  color: #858b87;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.remote-support-code strong {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: clamp(28px, 7vw, 46px);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+.remote-support-code small {
+  max-width: 580px;
+  color: #858b87;
+  font-size: 9px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.remote-support-code.is-operator {
+  justify-items: start;
+}
+
+.remote-support-code.is-operator strong {
+  font-size: 24px;
+}
+
+.remote-support-code.is-operator small {
+  text-align: left;
+}
+
+.remote-support-consent {
+  display: flex;
+  padding: 14px;
+  color: #b9bdb9;
+  border: 1px solid #343936;
+  border-radius: 5px;
+  background: #101210;
+  font-size: 10px;
+  line-height: 1.6;
+  align-items: flex-start;
+  gap: 11px;
+}
+
+.remote-support-consent input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+
+.remote-support-field {
+  display: grid;
+  gap: 7px;
+}
+
+.remote-support-field > span {
+  color: #858b87;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.remote-support-field input {
+  min-height: 44px;
+  padding: 0 13px;
+  color: #f2f4f2;
+  border: 1px solid #3b403d;
+  border-radius: 4px;
+  outline: 0;
+  background: #0c0e0d;
+  font-family: var(--mono);
+}
+
+.remote-support-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 255, 136, 0.09);
+}
+
+.remote-support-command-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.remote-support-command-grid .button:first-child {
+  grid-column: 1 / -1;
+}
+
+.remote-support-events {
+  display: grid;
+  min-height: 160px;
+  max-height: 300px;
+  padding: 13px;
+  overflow: auto;
+  color: #737975;
+  border: 1px solid #303532;
+  border-radius: 5px;
+  background: #090b0a;
+  font-family: var(--mono);
+  font-size: 9px;
+  align-content: start;
+  gap: 10px;
+}
+
+.remote-support-events > div {
+  display: grid;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #242825;
+  grid-template-columns: 76px 1fr;
+  gap: 4px 10px;
+}
+
+.remote-support-events > div.is-error strong {
+  color: #ff9aa4;
+}
+
+.remote-support-events time {
+  color: #555b57;
+}
+
+.remote-support-events strong {
+  color: #cbd0cc;
+  font-weight: 500;
+}
+
+.remote-support-events pre {
+  grid-column: 2;
+  max-height: 180px;
+  margin: 0;
+  overflow: auto;
+  color: #89908b;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.remote-support-error {
+  padding: 12px 25px;
+  color: #ffabb4;
+  border-top: 1px solid rgba(255, 91, 106, 0.35);
+  background: rgba(255, 91, 106, 0.08);
+  font-size: 10px;
+}
+
+@media (max-width: 850px) {
+  .topbar-actions .console-trigger {
+    padding: 0 9px;
+    font-size: 0;
+  }
+
+  .topbar-actions .console-trigger .icon {
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 600px) {
+  .case-transport-actions,
+  .remote-support-command-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .remote-support-panel {
+    width: 100%;
+    height: 100vh;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .remote-support-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .remote-support-facts span,
+  .remote-support-facts span:last-child {
+    border-right: 0;
+    border-bottom: 1px solid #303532;
+  }
+
+  .remote-support-facts span:last-child {
+    border-bottom: 0;
+  }
+
+  .remote-support-command-grid .button:first-child {
+    grid-column: auto;
+  }
+}
+
+/* ==========================================================================
    Easy / Advanced interface modes
    ========================================================================== */
 

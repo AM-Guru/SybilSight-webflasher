@@ -4,9 +4,11 @@ A browser-based analyzer, combined Case + Smart Glasses recovery-backup
 utility, guarded charging-case recovery console, and application-alive CFW
 reinstall tool for the Even Realities G2.
 
-The webflasher communicates directly with the case through Web Serial. All
-device communication and firmware validation happen locally in the browser;
-case data and uploaded firmware files are not sent to a server.
+The webflasher communicates directly with the case through Web Serial or its
+CH340-specific WebUSB transport. Device communication and firmware validation
+happen locally in the browser. Case data and uploaded firmware files are not
+sent to a server unless the person explicitly starts a consent-gated remote
+support session.
 
 Production deployment:
 [webflasher.sybilsight.com](https://webflasher.sybilsight.com/)
@@ -15,6 +17,9 @@ Production deployment:
 
 - Connects to the retail case's WCH CH340/CH341 USB Serial interface
   (`1A86:7523`).
+- Implements the reviewed CH340 control/bulk protocol directly over WebUSB,
+  including 1-Mbaud 8N1 application framing, 115200-baud 8E1 STM32 framing,
+  and DTR/RTS boot selection.
 - Reports case firmware, exposed identifiers, battery and charging telemetry,
   lid state, USB state, glasses presence, temperature, and scalar case state.
 - Separates Analyze into Charging Case, Smart Glasses, and Shell & Evidence
@@ -80,6 +85,11 @@ Production deployment:
   messages, and browser failures.
 - Shows operation-count progress and the current task in the right-hand footer
   for every analysis, backup, probe, staging, activation, reset, and restore.
+- Offers authenticated remote support: the person with the glasses explicitly
+  starts an expiring session, while a separately authenticated technician may
+  request only Case refresh and pinned left/right version/status diagnostics.
+  The relay cannot request firmware transfers, bank writes, resets, or
+  arbitrary serial bytes.
 
 ## Important limitation
 
@@ -597,8 +607,8 @@ installed-MRAM readback.
 
 ## Requirements
 
-- A current desktop version of Google Chrome, Microsoft Edge, or another
-  Chromium browser with Web Serial enabled.
+- A current Google Chrome, Microsoft Edge, or other Chromium browser with Web
+  Serial or WebUSB.
 - HTTPS when using a hosted copy, or `localhost` during development.
 - An Even Realities G2 charging case.
 - Both Smart Glasses temples seated and running for the combined backup.
@@ -608,6 +618,11 @@ installed-MRAM readback.
 The browser should offer a serial device with USB ID `1A86:7523`. Depending on
 the operating system, it may appear as a CH340/CH341 device or as
 `/dev/cu.usbserial-*`.
+
+Direct WebUSB is useful where Web Serial is unavailable, including supported
+Chromium environments on Android. It can be unavailable when the operating
+system has already bound the CH340 interface to a native driver; use Web
+Serial on that computer instead.
 
 ## How the webflasher works
 
@@ -871,6 +886,26 @@ analyzed again.
 
 Analysis is read-only. The case may reset while the tool changes between the
 normal application and ROM-loader modes.
+
+### Start remote troubleshooting
+
+1. The person with the glasses connects and analyzes their Case with Web Serial
+   or **Use WebUSB**.
+2. They open **Remote Support**, confirm the diagnostic-data consent, and start
+   a session.
+3. They tell the technician the displayed eight-character code.
+4. The technician opens **Remote Support**, selects **Technician**, enters the
+   session code and separately held technician key, then joins.
+5. The technician may refresh Case telemetry or request the pinned left/right
+   version and status probes. Results and live console events appear in the
+   technician view.
+6. Either side ends the session when finished. Sessions also expire after two
+   hours and the relay keeps no session database.
+
+The browser holding the physical Case performs every request. The relay is a
+small authenticated rendezvous service; it never opens USB and does not expose
+a raw serial tunnel. The person's explicit consent does not authorize firmware
+flashing, Case-bank changes, temple resets, or arbitrary factory commands.
 
 ### Reset and recheck the glasses
 
@@ -1258,7 +1293,16 @@ The repository includes
 [`deploy/webflasher.caddy`](deploy/webflasher.caddy), which serves:
 
 - the application from `/share/webflasher`; and
-- `/firmware-updates/*` from `/share/sybilsight`.
+- `/firmware-updates/*` from `/share/sybilsight`; and
+- `/remote-support/*` through the isolated
+  `local-sybilsight-remote-support` Home Assistant app.
+
+`deploy/homeassistant-addon` contains that relay app. It accepts one required
+`operator_key`, exposes no host port, stores no sessions on disk, and is
+reachable only through Caddy's same-origin HTTPS/WebSocket route. Install it as
+the local `sybilsight_remote_support` app and configure a unique technician key
+of at least 24 characters. The public health check is
+`/remote-support/healthz`.
 
 Pushes to `main` run the test and build steps on the organization's
 `self-hosted`, `Linux`, `ARM64`, `rpi4` GitHub Actions runner. The release is
@@ -1288,7 +1332,9 @@ files.
 ```text
 src/App.jsx                    Guided recovery interface
 src/lib/backup.js              Combined case/glasses recovery artifact builder
-src/lib/serial.js              Web Serial and STM32 ROM-loader transport
+src/lib/serial.js              Shared serial and STM32 ROM-loader transport
+src/lib/webusb.js              CH340 WebUSB serial-compatible transport
+src/lib/remoteSupport.js       Browser relay protocol and safe serializer
 src/lib/firmware.js            Bundle, checksum, image, and option-byte logic
 src/lib/pogoBridge.js          Pinned read-only SRAM bridge and proof validation
 src/lib/pogoFlashBridge.js     Pinned main-only write bridge and protocol gates
@@ -1303,6 +1349,7 @@ tests/firmware.test.mjs        Parser and safety tests
 tests/backup.test.mjs          Combined recovery artifact tests
 tests/pogo-flash.test.mjs      Write-bridge and OTA protocol vectors
 deploy/webflasher.caddy        Production Caddy site block
+deploy/homeassistant-addon/    Authenticated ephemeral relay service
 public/even-g2-case-grey.png   G2 product image
 ```
 
@@ -1316,21 +1363,37 @@ public/even-g2-case-grey.png   G2 product image
 - Never use a backup from one case as another case's device-data image.
 - Do not publish `.g2-backup.json` files; they can contain identifiers,
   provisioning data, live temple snapshots, and embedded firmware.
+- Remote support sends diagnostic snapshots and live console events only after
+  the person checks the consent control. Use a private session code, protect
+  the technician key, and end the session immediately after troubleshooting.
+- The relay's command allowlist is intentionally read-only at the product
+  level. Do not expand it to firmware, reset, bank, or arbitrary-byte commands
+  without a separate threat model and explicit per-operation consent.
 - A successful parser or build test is not a substitute for hardware
   validation.
 - This software is provided without warranty under the MIT License.
 
 ## Troubleshooting
 
-**The connect button says Chrome or Edge is required**
+**The connect button says Chromium USB access is required**
 
-Web Serial is unavailable in the current browser. Use a current desktop
+Web Serial and WebUSB are unavailable in the current browser. Use a current
 Chromium browser and load the app over HTTPS or from `localhost`.
 
 **The case does not appear in the serial picker**
 
 Try a known USB-C data cable, reconnect the case directly rather than through a
 hub, and confirm that the operating system recognizes the CH340/CH341 device.
+If **Use WebUSB** reports that the interface is already claimed, use Web Serial
+on that computer; native USB serial drivers can make the same interface
+unavailable to WebUSB.
+
+**Remote support cannot join**
+
+Confirm that the code still matches the person's open session, retrieve the
+configured technician key, and check
+`https://webflasher.sybilsight.com/remote-support/healthz`. A session expires
+after two hours, and only one technician can be connected at a time.
 
 **Analysis times out after a reset**
 

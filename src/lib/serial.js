@@ -71,6 +71,11 @@ import {
   identifyYhmBaselineProfile,
   requireYhmProfile,
 } from "./yhmProfiles.js";
+import {
+  isG2CaseUsbDevice,
+  requestG2CaseUsbPort,
+  webUsbSupported,
+} from "./webusb.js";
 
 const ACK = 0x79;
 const NACK = 0x1f;
@@ -106,6 +111,20 @@ const POGO_INTERMEDIATE_RESET_ATTEMPTS = 2;
 const POGO_FINAL_RESET_ATTEMPTS = 2;
 const POGO_READ_ONLY_PHASE_SETTLE_MS = Object.freeze([15_000, 45_000]);
 export const WEB_SERIAL_ROM_READ_SIZE = 31;
+
+// The CH340 packet boundary is a property of this host's USB serial stack,
+// not of one loader session. Remember the first detection so later ROM
+// sessions start at the working read size instead of rediscovering the
+// boundary with a failed large read plus an extra loader re-entry each time.
+let webSerialRomPacketBoundaryObserved = false;
+
+export function hasObservedWebSerialRomPacketBoundary() {
+  return webSerialRomPacketBoundaryObserved;
+}
+
+export function noteWebSerialRomPacketBoundaryObserved() {
+  webSerialRomPacketBoundaryObserved = true;
+}
 
 export function isExplicitTempleDataRejection(error) {
   return error instanceof TempleRejectedError;
@@ -176,7 +195,14 @@ export async function retryReadOnlyBlock(
       lastError = error;
       if (attempt === attempts) break;
       onRetry(error, attempt, attempts - 1);
-      await resynchronize(attempt);
+      try {
+        await resynchronize(attempt);
+      } catch (resynchronizeError) {
+        // A failed re-entry (for example the Case momentarily booting its
+        // application instead of the ROM loader) is itself transient; spend
+        // the remaining attempts instead of abandoning the read here.
+        lastError = resynchronizeError;
+      }
     }
   }
   throw lastError;
@@ -219,7 +245,12 @@ export async function readRomBlockWithBoundaryRecovery(
       lastError = error;
       if (isWebSerialRomPacketBoundary(error, requestedSize)) {
         onPacketBoundary(error, attempt);
-        await resynchronize(attempt);
+        try {
+          await resynchronize(attempt);
+        } catch {
+          // The caller re-reads this block at the reduced size, and that
+          // cycle re-synchronizes again on its first failed attempt.
+        }
         return {
           block: null,
           packetBoundaryDetected: true,
@@ -227,7 +258,14 @@ export async function readRomBlockWithBoundaryRecovery(
       }
       if (attempt === attempts) break;
       onRetry(error, attempt + 1, attempts);
-      await resynchronize(attempt);
+      try {
+        await resynchronize(attempt);
+      } catch (resynchronizeError) {
+        // A failed re-entry (for example the Case momentarily booting its
+        // application instead of the ROM loader) is itself transient; spend
+        // the remaining attempts instead of abandoning the read here.
+        lastError = resynchronizeError;
+      }
     }
   }
   throw lastError;
@@ -908,7 +946,9 @@ class Stm32Bootloader {
     this.commands = [];
     this.version = null;
     this.productId = null;
-    this.maximumReadSize = 256;
+    this.maximumReadSize = hasObservedWebSerialRomPacketBoundary()
+      ? WEB_SERIAL_ROM_READ_SIZE
+      : 256;
   }
 
   async connect() {
@@ -1043,6 +1083,7 @@ class Stm32Bootloader {
       );
       if (readResult.packetBoundaryDetected) {
         this.maximumReadSize = WEB_SERIAL_ROM_READ_SIZE;
+        noteWebSerialRomPacketBoundaryObserved();
         continue;
       }
       const block = readResult.block;
@@ -3313,6 +3354,12 @@ export function webSerialSupported() {
   return typeof navigator !== "undefined" && "serial" in navigator;
 }
 
+export { webUsbSupported };
+
+export function webCaseTransportSupported() {
+  return webSerialSupported() || webUsbSupported();
+}
+
 export function isG2CaseSerialPort(port) {
   try {
     const { usbVendorId, usbProductId } = port?.getInfo?.() ?? {};
@@ -3322,9 +3369,25 @@ export function isG2CaseSerialPort(port) {
   }
 }
 
-export async function requestG2CasePort() {
+export function portUsesUsbDevice(port, device) {
+  return Boolean(port?.usbDevice && port.usbDevice === device);
+}
+
+export function g2CaseTransportLabel(port) {
+  return port?.transportKind === "webusb" ? "WebUSB" : "Web Serial";
+}
+
+export async function requestG2CasePort({ transport = "auto" } = {}) {
+  if (!["auto", "serial", "webusb"].includes(transport)) {
+    throw new Error(`Unknown G2 Case transport ${transport}.`);
+  }
+  if (transport === "webusb" || (transport === "auto" && !webSerialSupported())) {
+    return requestG2CaseUsbPort();
+  }
   if (!webSerialSupported()) {
-    throw new Error("Web Serial is not available. Use current Chrome or Edge on desktop.");
+    throw new Error(
+      "Web Serial is not available. Use WebUSB in a current Chromium-based browser.",
+    );
   }
   const grantedPorts = await navigator.serial.getPorts();
   const grantedCases = grantedPorts.filter(isG2CaseSerialPort);
@@ -3334,4 +3397,8 @@ export async function requestG2CasePort() {
   return navigator.serial.requestPort({
     filters: [{ usbVendorId: 0x1a86, usbProductId: 0x7523 }],
   });
+}
+
+export function isG2CaseUsbConnectionEvent(event) {
+  return isG2CaseUsbDevice(event?.device ?? event?.target);
 }

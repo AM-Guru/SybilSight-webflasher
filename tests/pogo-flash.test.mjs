@@ -133,6 +133,99 @@ test("re-synchronizes and rereads the exact block after a CH340 short read", asy
   assert.equal(retries.length, 2);
 });
 
+test("spends remaining read-only attempts when a re-synchronization fails", async () => {
+  let reads = 0;
+  let resynchronizations = 0;
+  const block = await retryReadOnlyBlock(
+    async () => {
+      reads += 1;
+      if (reads < 3) throw new Error(`received 4 of 31 bytes on attempt ${reads}`);
+      return new Uint8Array(31).fill(0x5a);
+    },
+    async () => {
+      resynchronizations += 1;
+      if (resynchronizations === 1) {
+        throw new Error(
+          "Timed out reading bootloader synchronization ACK: received 0 of 1 bytes.",
+        );
+      }
+    },
+  );
+  assert.equal(block.length, 31);
+  assert.equal(reads, 3);
+  assert.equal(resynchronizations, 2);
+});
+
+test("surfaces the final error when every re-synchronization fails", async () => {
+  await assert.rejects(
+    retryReadOnlyBlock(
+      async () => {
+        throw new Error("received 0 of 31 bytes");
+      },
+      async () => {
+        throw new Error(
+          "Timed out reading bootloader synchronization ACK: received 0 of 1 bytes.",
+        );
+      },
+      { attempts: 3 },
+    ),
+    /received 0 of 31 bytes/,
+  );
+});
+
+test("spends remaining ROM attempts when a bootloader re-entry fails mid-read", async () => {
+  let reads = 0;
+  let resynchronizations = 0;
+  const retries = [];
+  const result = await readRomBlockWithBoundaryRecovery(
+    async () => {
+      reads += 1;
+      if (reads < 3) {
+        throw new Error(
+          `Timed out reading memory at 0x80065d7: received 4 of 31 bytes.`,
+        );
+      }
+      return new Uint8Array(31).fill(0xc3);
+    },
+    async () => {
+      resynchronizations += 1;
+      if (resynchronizations === 1) {
+        throw new Error(
+          "Timed out reading bootloader synchronization ACK: received 0 of 1 bytes.",
+        );
+      }
+    },
+    {
+      requestedSize: 31,
+      onRetry: (error, nextAttempt, attempts) =>
+        retries.push([error.message, nextAttempt, attempts]),
+    },
+  );
+  assert.equal(result.packetBoundaryDetected, false);
+  assert.equal(result.block.length, 31);
+  assert.equal(reads, 3);
+  assert.equal(resynchronizations, 2);
+  assert.equal(retries.length, 2);
+});
+
+test("reports the packet boundary even when its re-synchronization fails", async () => {
+  const result = await readRomBlockWithBoundaryRecovery(
+    async () => {
+      throw new Error(
+        "Timed out reading memory at 0x8000000: received 31 of 128 bytes.",
+      );
+    },
+    async () => {
+      throw new Error(
+        "Timed out reading bootloader synchronization ACK: received 0 of 1 bytes.",
+      );
+    },
+    { requestedSize: 128 },
+  );
+  assert.equal(result.block, null);
+  assert.equal(result.packetBoundaryDetected, true);
+});
+
 test("recognizes the deterministic CH340 Web Serial packet boundary", () => {
   assert.equal(WEB_SERIAL_ROM_READ_SIZE, 31);
   assert.equal(

@@ -1,0 +1,12 @@
+{
+  "name": "sybilsight-remote-support-relay",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "dependencies": {
+    "ws": "8.21.1"
+  }
+}

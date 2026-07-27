@@ -1,0 +1,18 @@
+name: "SybilSight Remote Support"
+version: "1.0.0"
+slug: "sybilsight_remote_support"
+description: "Ephemeral authenticated relay for consent-gated G2 diagnostics"
+url: "https://webflasher.sybilsight.com"
+arch:
+  - aarch64
+startup: services
+boot: auto
+init: false
+ports:
+  8787/tcp: null
+ports_description:
+  8787/tcp: "Internal WebFlasher remote-support relay"
+options:
+  operator_key: null
+schema:
+  operator_key: "password"

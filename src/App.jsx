@@ -8,9 +8,19 @@ import {
 } from "./lib/firmware.js";
 import {
   G2CaseSession,
+  g2CaseTransportLabel,
+  isG2CaseUsbConnectionEvent,
+  isG2CaseSerialPort,
+  portUsesUsbDevice,
   requestG2CasePort,
+  webCaseTransportSupported,
   webSerialSupported,
+  webUsbSupported,
 } from "./lib/serial.js";
+import {
+  REMOTE_SUPPORT_ACTIONS,
+  RemoteSupportConnection,
+} from "./lib/remoteSupport.js";
 import {
   buildG2SystemBackupArtifact,
   findMatchingGlassesRecoveryRelease,
@@ -687,6 +697,229 @@ function Console({ open, entries, onClose, onClear, onDownload }) {
   );
 }
 
+const REMOTE_SUPPORT_LABELS = Object.freeze({
+  refresh_case: "Refresh Case diagnostics",
+  left_version: "Read left firmware",
+  left_status: "Read left battery/status",
+  right_version: "Read right firmware",
+  right_status: "Read right battery/status",
+});
+
+function RemoteSupportDialog({
+  open,
+  onClose,
+  mode,
+  onModeChange,
+  state,
+  supportCode,
+  onSupportCodeChange,
+  operatorKey,
+  onOperatorKeyChange,
+  consent,
+  onConsentChange,
+  deviceReady,
+  transport,
+  events,
+  pendingCommands,
+  onStartDevice,
+  onJoinOperator,
+  onStop,
+  onCommand,
+}) {
+  if (!open) return null;
+  const connected = state.status === "connected";
+  const connecting = state.status === "connecting";
+  const peerOnline = state.peerOnline === true;
+  return (
+    <div className="console-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="remote-support-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="remote-support-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="console-header">
+          <div>
+            <div className="eyebrow">Consent-gated remote diagnostics</div>
+            <h2 id="remote-support-title">Remote support</h2>
+          </div>
+          <button className="console-close" onClick={onClose} aria-label="Close remote support">
+            ×
+          </button>
+        </div>
+
+        {!connected ? (
+          <div className="remote-support-mode-switch" aria-label="Remote support role">
+            <button
+              type="button"
+              className={cx(mode === "device" && "is-active")}
+              onClick={() => onModeChange("device")}
+              disabled={connecting}
+            >
+              Person with the glasses
+            </button>
+            <button
+              type="button"
+              className={cx(mode === "operator" && "is-active")}
+              onClick={() => onModeChange("operator")}
+              disabled={connecting}
+            >
+              Technician
+            </button>
+          </div>
+        ) : null}
+
+        {mode === "device" ? (
+          <div className="remote-support-body">
+            <p>
+              The Case stays connected to this browser. A technician can request
+              fresh Case telemetry and the pinned left/right version or status
+              probes; firmware flashing, Case-bank writes, resets, and arbitrary
+              serial bytes are not available through the relay.
+            </p>
+            <div className="remote-support-facts">
+              <span>
+                Local transport
+                <strong>{deviceReady ? transport : "Select and analyze the Case first"}</strong>
+              </span>
+              <span>
+                Relay
+                <strong>{connected ? "Encrypted · connected" : "Not connected"}</strong>
+              </span>
+              <span>
+                Technician
+                <strong>{peerOnline ? "Connected" : "Not connected"}</strong>
+              </span>
+            </div>
+            {connected ? (
+              <>
+                <div className="remote-support-code">
+                  <span>Tell the technician this one-time code</span>
+                  <strong>{state.session?.code}</strong>
+                  <small>
+                    The session expires at{" "}
+                    {state.session?.expiresAt
+                      ? new Date(state.session.expiresAt).toLocaleTimeString()
+                      : "the relay deadline"}
+                    . Closing it immediately revokes technician access.
+                  </small>
+                </div>
+                <Button tone="ghost" onClick={onStop}>
+                  End remote session
+                </Button>
+              </>
+            ) : (
+              <>
+                <label className="remote-support-consent">
+                  <input
+                    type="checkbox"
+                    checked={consent}
+                    onChange={(event) => onConsentChange(event.target.checked)}
+                  />
+                  <span>
+                    I consent to sending diagnostic results and console events to
+                    the authenticated technician for this session.
+                  </span>
+                </label>
+                <Button
+                  onClick={onStartDevice}
+                  busy={connecting}
+                  disabled={!deviceReady || !consent}
+                >
+                  Start remote support
+                </Button>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="remote-support-body">
+            {!connected ? (
+              <>
+                <p>
+                  Join the code shown in the person’s browser. The separate
+                  technician key is checked by the relay and is never stored by
+                  WebFlasher.
+                </p>
+                <label className="remote-support-field">
+                  <span>Session code</span>
+                  <input
+                    value={supportCode}
+                    onChange={(event) => onSupportCodeChange(event.target.value)}
+                    placeholder="ABCD-EFGH"
+                    autoComplete="off"
+                    spellCheck="false"
+                  />
+                </label>
+                <label className="remote-support-field">
+                  <span>Technician access key</span>
+                  <input
+                    type="password"
+                    value={operatorKey}
+                    onChange={(event) => onOperatorKeyChange(event.target.value)}
+                    autoComplete="current-password"
+                  />
+                </label>
+                <Button
+                  onClick={onJoinOperator}
+                  busy={connecting}
+                  disabled={!supportCode.trim() || !operatorKey}
+                >
+                  Join support session
+                </Button>
+              </>
+            ) : (
+              <>
+                <div className="remote-support-code is-operator">
+                  <span>Support session</span>
+                  <strong>{state.session?.code}</strong>
+                  <small>
+                    {peerOnline
+                      ? "The person’s browser is online and will execute one allowlisted diagnostic at a time."
+                      : "Waiting for the person’s browser to reconnect."}
+                  </small>
+                </div>
+                <div className="remote-support-command-grid">
+                  {REMOTE_SUPPORT_ACTIONS.map((action) => (
+                    <Button
+                      tone="secondary"
+                      key={action}
+                      onClick={() => onCommand(action)}
+                      disabled={!peerOnline || pendingCommands.size > 0}
+                    >
+                      {REMOTE_SUPPORT_LABELS[action]}
+                    </Button>
+                  ))}
+                </div>
+                <div className="remote-support-events" aria-live="polite">
+                  {events.length ? (
+                    events.slice(-40).map((event, index) => (
+                      <div key={index} className={cx(event.ok === false && "is-error")}>
+                        <time>{event.time}</time>
+                        <strong>{event.label}</strong>
+                        {event.detail ? <pre>{event.detail}</pre> : null}
+                      </div>
+                    ))
+                  ) : (
+                    <span>No remote diagnostic results yet.</span>
+                  )}
+                </div>
+                <Button tone="ghost" onClick={onStop}>
+                  Leave support session
+                </Button>
+              </>
+            )}
+          </div>
+        )}
+
+        {state.error ? (
+          <div className="remote-support-error" role="alert">{state.error}</div>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
 function TaskProgress({ progress }) {
   if (!progress.visible) return null;
   return (
@@ -725,7 +958,37 @@ function downloadBlob(blob, name) {
   URL.revokeObjectURL(url);
 }
 
+// The transcript outlives the 300-entry console display so a crash or tab
+// close during a recovery cannot destroy the evidence of what was written to
+// the device. It is persisted to localStorage and recovered on the next load.
+const CONSOLE_TRANSCRIPT_STORAGE_KEY = "g2wf.console-transcript.v1";
+const CONSOLE_TRANSCRIPT_ENTRY_LIMIT = 5000;
+
+function readStoredConsoleTranscript() {
+  try {
+    const raw = window.localStorage.getItem(CONSOLE_TRANSCRIPT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed?.entries)) return null;
+    const entries = parsed.entries.filter(
+      (entry) =>
+        typeof entry?.time === "string" && typeof entry?.message === "string",
+    );
+    if (!entries.length) return null;
+    return {
+      savedAt: typeof parsed.savedAt === "string" ? parsed.savedAt : null,
+      entries,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function App() {
+  const linkedSupportCode =
+    typeof window === "undefined"
+      ? ""
+      : new URLSearchParams(window.location.search).get("support") ?? "";
   const [report, setReport] = useState(null);
   const [backup, setBackup] = useState(null);
   const [catalog, setCatalog] = useState([]);
@@ -738,6 +1001,18 @@ function App() {
   const [error, setError] = useState("");
   const [logs, setLogs] = useState([]);
   const [consoleOpen, setConsoleOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(Boolean(linkedSupportCode));
+  const [supportMode, setSupportMode] = useState(
+    linkedSupportCode ? "operator" : "device",
+  );
+  const [supportCode, setSupportCode] = useState(linkedSupportCode);
+  const [supportOperatorKey, setSupportOperatorKey] = useState("");
+  const [supportConsent, setSupportConsent] = useState(false);
+  const [supportState, setSupportState] = useState({ status: "idle" });
+  const [supportEvents, setSupportEvents] = useState([]);
+  const [supportPendingCommands, setSupportPendingCommands] = useState(
+    () => new Map(),
+  );
   const [interfaceMode, setInterfaceMode] = useState(DEFAULT_INTERFACE_MODE);
   const [automaticInstallMode, setAutomaticInstallMode] = useState(
     DEFAULT_AUTOMATIC_INSTALL_MODE,
@@ -786,15 +1061,62 @@ function App() {
   const progressLogRef = useRef({ name: null, bucket: -1 });
   const progressRenderRef = useRef({ name: null, updatedAt: 0 });
   const progressHideTimerRef = useRef(null);
+  const transcriptRef = useRef([]);
+  const transcriptPersistTimerRef = useRef(null);
+  const transcriptRecoveredRef = useRef(false);
+  const supportConnectionRef = useRef(null);
+  const supportPendingCommandsRef = useRef(new Map());
+  const remoteCommandHandlerRef = useRef(null);
 
-  const addLog = useCallback((message, tone = "info") => {
-    const time = new Date().toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-    setLogs((current) => [...current.slice(-299), { time, message, tone }]);
+  const writeTranscriptNow = useCallback(() => {
+    if (transcriptPersistTimerRef.current) {
+      clearTimeout(transcriptPersistTimerRef.current);
+      transcriptPersistTimerRef.current = null;
+    }
+    try {
+      window.localStorage.setItem(
+        CONSOLE_TRANSCRIPT_STORAGE_KEY,
+        JSON.stringify({
+          savedAt: new Date().toISOString(),
+          entries: transcriptRef.current,
+        }),
+      );
+    } catch {
+      // Storage may be full or unavailable; the in-memory transcript still
+      // serves downloads for this session.
+    }
   }, []);
+
+  const persistTranscript = useCallback(() => {
+    if (transcriptPersistTimerRef.current) return;
+    transcriptPersistTimerRef.current = setTimeout(writeTranscriptNow, 400);
+  }, [writeTranscriptNow]);
+
+  const addLog = useCallback(
+    (message, tone = "info") => {
+      const time = new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+      const entry = { time, message, tone };
+      transcriptRef.current = [
+        ...transcriptRef.current.slice(-(CONSOLE_TRANSCRIPT_ENTRY_LIMIT - 1)),
+        entry,
+      ];
+      persistTranscript();
+      setLogs((current) => [...current.slice(-299), entry]);
+      const support = supportConnectionRef.current;
+      if (support?.role === "device") {
+        try {
+          support.sendEvent("log", entry);
+        } catch {
+          // A dropped relay must never interrupt local hardware handling.
+        }
+      }
+    },
+    [persistTranscript],
+  );
 
   const setSessionProgress = useCallback((fraction, detail) => {
     const name = activeOperationRef.current;
@@ -843,6 +1165,197 @@ function App() {
     },
     [addLog, setSessionProgress],
   );
+
+  const recordSupportEvent = useCallback((label, value, ok = true) => {
+    const detail =
+      value === undefined
+        ? ""
+        : typeof value === "string"
+          ? value
+          : JSON.stringify(value, null, 2);
+    setSupportEvents((current) => [
+      ...current.slice(-199),
+      {
+        time: new Date().toLocaleTimeString(),
+        label,
+        detail,
+        ok,
+      },
+    ]);
+  }, []);
+
+  const handleSupportState = useCallback((next) => {
+    setSupportState((current) => ({
+      ...current,
+      ...next,
+      ...(next.status === "connected"
+        ? {
+            peerOnline:
+              next.role === "operator"
+                ? next.session?.deviceOnline === true
+                : next.session?.operatorOnline === true,
+          }
+        : {}),
+      error: next.status === "error" ? next.error : "",
+    }));
+  }, []);
+
+  const handleSupportMessage = useCallback(
+    (message) => {
+      if (message.type === "peer") {
+        setSupportState((current) => ({
+          ...current,
+          peerOnline: message.online,
+        }));
+        recordSupportEvent(
+          `${message.role === "operator" ? "Technician" : "Person's browser"} ${
+            message.online ? "connected" : "disconnected"
+          }`,
+        );
+        return;
+      }
+      if (message.type === "command") {
+        remoteCommandHandlerRef.current?.(message);
+        return;
+      }
+      if (message.type === "result") {
+        const action = supportPendingCommandsRef.current.get(message.id) ?? null;
+        supportPendingCommandsRef.current.delete(message.id);
+        setSupportPendingCommands((current) => {
+          const next = new Map(current);
+          next.delete(message.id);
+          return next;
+        });
+        recordSupportEvent(
+          action
+            ? REMOTE_SUPPORT_LABELS[action]
+            : "Remote diagnostic result",
+          message.ok ? message.result : message.error,
+          message.ok,
+        );
+        return;
+      }
+      if (message.type === "event") {
+        if (message.event === "log") {
+          recordSupportEvent(
+            "Device console",
+            message.value?.message ?? message.value,
+            message.value?.tone !== "error",
+          );
+        } else {
+          recordSupportEvent(`Device event · ${message.event}`, message.value);
+        }
+        return;
+      }
+      if (message.type === "state") {
+        recordSupportEvent("Device diagnostic snapshot", message.value);
+        return;
+      }
+      if (message.type === "expired") {
+        setSupportState((current) => ({
+          ...current,
+          status: "disconnected",
+          error: "This remote-support session expired.",
+        }));
+      }
+    },
+    [recordSupportEvent],
+  );
+
+  const newSupportConnection = useCallback(() => {
+    supportConnectionRef.current?.close();
+    const connection = new RemoteSupportConnection({
+      onMessage: handleSupportMessage,
+      onState: handleSupportState,
+    });
+    supportConnectionRef.current = connection;
+    return connection;
+  }, [handleSupportMessage, handleSupportState]);
+
+  const startRemoteSupport = useCallback(async () => {
+    if (!report || !portRef.current || !supportConsent) return;
+    const connection = newSupportConnection();
+    setSupportEvents([]);
+    try {
+      const ready = await connection.startDevice();
+      setSupportCode(ready.session.code);
+      connection.sendState({
+        transport: g2CaseTransportLabel(portRef.current),
+        caseReport: report,
+        templeResults: pogoResults,
+      });
+      addLog(
+        `Remote support started · session ${ready.session.code} · diagnostic allowlist only.`,
+        "success",
+      );
+    } catch (caught) {
+      setSupportState({
+        status: "error",
+        role: "device",
+        error: caught.message,
+      });
+      supportConnectionRef.current = null;
+    }
+  }, [
+    addLog,
+    newSupportConnection,
+    pogoResults,
+    report,
+    supportConsent,
+  ]);
+
+  const joinRemoteSupport = useCallback(async () => {
+    const connection = newSupportConnection();
+    setSupportEvents([]);
+    supportPendingCommandsRef.current = new Map();
+    setSupportPendingCommands(new Map());
+    try {
+      await connection.joinOperator({
+        code: supportCode,
+        operatorKey: supportOperatorKey,
+      });
+      setSupportOperatorKey("");
+    } catch (caught) {
+      setSupportState({
+        status: "error",
+        role: "operator",
+        error: caught.message,
+      });
+      supportConnectionRef.current = null;
+    }
+  }, [
+    newSupportConnection,
+    supportCode,
+    supportOperatorKey,
+  ]);
+
+  const stopRemoteSupport = useCallback(() => {
+    supportConnectionRef.current?.close();
+    supportConnectionRef.current = null;
+    setSupportState({ status: "idle" });
+    supportPendingCommandsRef.current = new Map();
+    setSupportPendingCommands(new Map());
+    setSupportConsent(false);
+  }, []);
+
+  const sendRemoteSupportCommand = useCallback((action) => {
+    try {
+      const id = supportConnectionRef.current?.sendCommand(action);
+      if (!id) throw new Error("The technician relay is not connected.");
+      supportPendingCommandsRef.current.set(id, action);
+      setSupportPendingCommands((current) => {
+        const next = new Map(current);
+        next.set(id, action);
+        return next;
+      });
+      recordSupportEvent(`${REMOTE_SUPPORT_LABELS[action]} requested`);
+    } catch (caught) {
+      setSupportState((current) => ({
+        ...current,
+        error: caught.message,
+      }));
+    }
+  }, [recordSupportEvent]);
 
   // Panes are addressed by hash so deep links, back/forward, and in-page anchors
   // keep working even though the page no longer scrolls as one document.
@@ -990,6 +1503,99 @@ function App() {
     };
   }, [addLog]);
 
+  useEffect(() => {
+    if (transcriptRecoveredRef.current) return;
+    transcriptRecoveredRef.current = true;
+    const stored = readStoredConsoleTranscript();
+    if (!stored) return;
+    // Prepend the recovered entries so they persist again and appear in
+    // downloads; the visible console only announces the recovery.
+    transcriptRef.current = [
+      ...stored.entries,
+      {
+        time: "--:--:--",
+        message: `———— end of previous session transcript${stored.savedAt ? ` (last saved ${stored.savedAt})` : ""} ————`,
+        tone: "info",
+      },
+      ...transcriptRef.current,
+    ].slice(-CONSOLE_TRANSCRIPT_ENTRY_LIMIT);
+    addLog(
+      `Recovered ${stored.entries.length} console ${stored.entries.length === 1 ? "entry" : "entries"} from the previous session; Download log includes them.`,
+    );
+    // Recover exactly once per load.
+  }, []);
+
+  useEffect(() => {
+    if (!webSerialSupported()) return undefined;
+    const eventPort = (event) => event.port ?? event.target;
+    const handleDisconnect = (event) => {
+      const port = eventPort(event);
+      if (!portRef.current || port !== portRef.current) return;
+      portRef.current = null;
+      sessionRef.current = null;
+      setReport(null);
+      setRecheckReport(null);
+      stopRemoteSupport();
+      addLog(
+        "The Case USB serial device disconnected. Reconnect the Case and run a fresh analysis before any recovery step.",
+        "error",
+      );
+    };
+    const handleConnect = (event) => {
+      if (!isG2CaseSerialPort(eventPort(event))) return;
+      addLog(
+        "A G2 Case USB serial interface was connected. Select the Case to analyze it.",
+      );
+    };
+    navigator.serial.addEventListener("disconnect", handleDisconnect);
+    navigator.serial.addEventListener("connect", handleConnect);
+    return () => {
+      navigator.serial.removeEventListener("disconnect", handleDisconnect);
+      navigator.serial.removeEventListener("connect", handleConnect);
+    };
+  }, [addLog, stopRemoteSupport]);
+
+  useEffect(() => {
+    if (!webUsbSupported()) return undefined;
+    const handleDisconnect = (event) => {
+      const device = event.device ?? event.target;
+      if (!portRef.current || !portUsesUsbDevice(portRef.current, device)) return;
+      portRef.current = null;
+      sessionRef.current = null;
+      setReport(null);
+      setRecheckReport(null);
+      stopRemoteSupport();
+      addLog(
+        "The Case WebUSB device disconnected. Reconnect it and run a fresh analysis before any recovery step.",
+        "error",
+      );
+    };
+    const handleConnect = (event) => {
+      if (!isG2CaseUsbConnectionEvent(event)) return;
+      addLog("A G2 Case WebUSB interface connected. Select it to analyze the Case.");
+    };
+    navigator.usb.addEventListener("disconnect", handleDisconnect);
+    navigator.usb.addEventListener("connect", handleConnect);
+    return () => {
+      navigator.usb.removeEventListener("disconnect", handleDisconnect);
+      navigator.usb.removeEventListener("connect", handleConnect);
+    };
+  }, [addLog, stopRemoteSupport]);
+
+  useEffect(() => {
+    // A debounced write can lose the final entries when the tab closes;
+    // pagehide is the last reliable moment to flush them.
+    window.addEventListener("pagehide", writeTranscriptNow);
+    return () => window.removeEventListener("pagehide", writeTranscriptNow);
+  }, [writeTranscriptNow]);
+
+  useEffect(
+    () => () => {
+      supportConnectionRef.current?.close();
+    },
+    [],
+  );
+
   const run = useCallback(async (name, task, { total = null } = {}) => {
     if (progressHideTimerRef.current) {
       clearTimeout(progressHideTimerRef.current);
@@ -1040,6 +1646,102 @@ function App() {
       );
     }
   }, [addLog]);
+
+  const executeRemoteSupportCommand = useCallback(
+    async ({ id, action }) => {
+      const connection = supportConnectionRef.current;
+      if (connection?.role !== "device") return;
+      if (activeOperationRef.current) {
+        try {
+          connection.sendResult(id, {
+            ok: false,
+            error: `The browser is already running ${
+              OPERATION_LABELS[activeOperationRef.current] ??
+              activeOperationRef.current
+            }.`,
+          });
+        } catch {
+          // The local operation remains authoritative if the relay drops.
+        }
+        return;
+      }
+
+      let result = null;
+      let failure = null;
+      const isCaseRefresh = action === "refresh_case";
+      const operationName = isCaseRefresh ? "analyze" : "pogo";
+      await run(operationName, async () => {
+        try {
+          if (isCaseRefresh) {
+            result = await getSession().analyze();
+            setReport(result);
+            setBackup(null);
+            setStaged(null);
+            setPogoResults({});
+            setTempleFlashAudit(null);
+            addLog(
+              "Technician-requested Case diagnostics completed without changing device memory.",
+              "success",
+            );
+            return result;
+          }
+
+          const [route, request] = action.split("_");
+          if (
+            !["left", "right"].includes(route) ||
+            !["version", "status"].includes(request)
+          ) {
+            throw new Error("The relay requested an unsupported diagnostic.");
+          }
+          const probe = await getSession().probeRunningTemple(request, route);
+          result = {
+            ...probe,
+            observedAt: new Date().toISOString(),
+          };
+          setPogoResults((current) => ({
+            ...current,
+            [route]: {
+              ...current[route],
+              [request]: result,
+            },
+          }));
+          addLog(
+            `Technician-requested ${route} ${request} probe completed through the pinned diagnostic bridge.`,
+            "success",
+          );
+          return result;
+        } catch (caught) {
+          failure = caught;
+          throw caught;
+        }
+      });
+
+      try {
+        connection.sendResult(id, {
+          ok: !failure && result !== null,
+          result,
+          error: failure?.message ?? "The diagnostic stopped before returning a result.",
+        });
+        if (!failure && result !== null) {
+          connection.sendState({
+            action,
+            result,
+          });
+        }
+      } catch {
+        // A relay disconnect must not convert a completed local diagnostic into
+        // a hardware failure or trigger any retry.
+      }
+    },
+    [addLog, getSession, run],
+  );
+
+  useEffect(() => {
+    remoteCommandHandlerRef.current = executeRemoteSupportCommand;
+    return () => {
+      remoteCommandHandlerRef.current = null;
+    };
+  }, [executeRemoteSupportCommand]);
 
   useEffect(() => {
     let active = true;
@@ -1131,13 +1833,19 @@ function App() {
     templeFlashMode,
   ]);
 
-  const connectAndAnalyze = async () => {
+  const connectAndAnalyze = async (transportOrEvent = "auto") => {
+    const transport =
+      typeof transportOrEvent === "string" ? transportOrEvent : "auto";
     await run("analyze", async () => {
-      addLog("Waiting for a G2 Case USB Serial selection.");
-      const port = await requestG2CasePort();
+      addLog(
+        `Waiting for a G2 Case ${
+          transport === "webusb" ? "WebUSB" : "USB Serial"
+        } selection.`,
+      );
+      const port = await requestG2CasePort({ transport });
       portRef.current = port;
       sessionRef.current = null;
-      addLog("G2 Case serial interface selected.");
+      addLog(`G2 Case ${g2CaseTransportLabel(port)} interface selected.`);
       const result = await getSession(port).analyze();
       setReport(result);
       setBackup(null);
@@ -2006,7 +2714,15 @@ function App() {
       latestCaseFirmwareRelease?.caseVersion &&
       report.console.caseVersion !== latestCaseFirmwareRelease.caseVersion,
   );
-  const serialSupported = webSerialSupported();
+  const serialSupported = webCaseTransportSupported();
+  const directWebUsbSupported = webUsbSupported();
+  const selectedTransport = portRef.current
+    ? g2CaseTransportLabel(portRef.current)
+    : webSerialSupported()
+      ? "Web Serial"
+      : directWebUsbSupported
+        ? "WebUSB"
+        : "Unavailable";
   const deviceAnalytics = useMemo(
     () =>
       report
@@ -2025,10 +2741,29 @@ function App() {
     pogoResults.right?.version &&
     pogoResults.right?.status,
   );
-  const consoleText = useMemo(
-    () => logs.map((entry) => `${entry.time}  ${entry.message}`).join("\n"),
-    [logs],
-  );
+  const clearConsole = useCallback(() => {
+    setLogs([]);
+    transcriptRef.current = [];
+    if (transcriptPersistTimerRef.current) {
+      clearTimeout(transcriptPersistTimerRef.current);
+      transcriptPersistTimerRef.current = null;
+    }
+    try {
+      window.localStorage.removeItem(CONSOLE_TRANSCRIPT_STORAGE_KEY);
+    } catch {
+      // Storage may be unavailable; nothing to clear in that case.
+    }
+  }, []);
+
+  const downloadConsoleTranscript = useCallback(() => {
+    const text = transcriptRef.current
+      .map((entry) => `${entry.time}  ${entry.message}`)
+      .join("\n");
+    downloadBlob(
+      new Blob([`${text}\n`], { type: "text/plain" }),
+      `g2-recovery-${new Date().toISOString().replaceAll(":", "-")}.log`,
+    );
+  }, []);
 
   return (
     <div className={cx("app-shell", `is-${interfaceMode}`)}>
@@ -2045,7 +2780,7 @@ function App() {
           <small>G2 WebFlasher</small>
         </a>
         <div className="sidebar-intro">
-          <span className="hardware-label">DEVICE SERVICE · USB SERIAL</span>
+          <span className="hardware-label">DEVICE SERVICE · WEB SERIAL / WEBUSB</span>
           <h1>Recover with precision.<br />Protect every byte.</h1>
           <p>
             A guided, local-only console for the Even Realities G2 Charging Case
@@ -2076,7 +2811,9 @@ function App() {
         <div className="sidebar-foot">
           <span className={cx("support-dot", serialSupported && "is-supported")} />
           <span>
-            {serialSupported ? "Web Serial ready" : "Chrome or Edge required"}
+            {serialSupported
+              ? `${selectedTransport} ready`
+              : "Chromium USB access required"}
           </span>
         </div>
       </aside>
@@ -2115,6 +2852,19 @@ function App() {
                 Advanced Mode
               </button>
             </div>
+            <button
+              className="console-trigger"
+              onClick={() => setSupportOpen(true)}
+            >
+              <Icon name="tools" />
+              Remote Support
+              <span
+                className={cx(
+                  "remote-support-trigger-dot",
+                  supportState.status === "connected" && "is-connected",
+                )}
+              />
+            </button>
             <button className="console-trigger" onClick={() => setConsoleOpen(true)}>
               <Icon name="terminal" />
               Console Log
@@ -2167,17 +2917,28 @@ function App() {
                 <span>01</span>
                 <div>
                   <strong>Select your G2 Case</strong>
-                  <small>USB Serial stays local to this browser.</small>
+                  <small>Web Serial or direct WebUSB stays local unless you start support.</small>
                 </div>
               </div>
-              <Button
-                onClick={connectAndAnalyze}
-                busy={operation === "analyze"}
-                disabled={!serialSupported || Boolean(operation)}
-              >
-                <Icon name="usb" />
-                {report ? "Choose another Case" : "Select Case"}
-              </Button>
+              <div className="case-transport-actions">
+                <Button
+                  onClick={connectAndAnalyze}
+                  busy={operation === "analyze"}
+                  disabled={!serialSupported || Boolean(operation)}
+                >
+                  <Icon name="usb" />
+                  {report ? "Choose another Case" : "Select Case"}
+                </Button>
+                {directWebUsbSupported ? (
+                  <Button
+                    tone="secondary"
+                    onClick={() => connectAndAnalyze("webusb")}
+                    disabled={Boolean(operation)}
+                  >
+                    Use WebUSB
+                  </Button>
+                ) : null}
+              </div>
               <div className={cx("easy-case-result", report && "is-ready")}>
                 <span>{report ? caseDisplayIdentity : "No Case selected"}</span>
                 <strong>
@@ -2329,6 +3090,15 @@ function App() {
                 <Icon name="usb" />
                 {report ? "Choose another Case" : "Connect & analyze Case"}
               </Button>
+              {directWebUsbSupported ? (
+                <Button
+                  tone="secondary"
+                  onClick={() => connectAndAnalyze("webusb")}
+                  disabled={Boolean(operation)}
+                >
+                  Use direct WebUSB
+                </Button>
+              ) : null}
               {report ? (
                 <Button
                   tone="secondary"
@@ -2341,8 +3111,8 @@ function App() {
             </div>
             {!serialSupported ? (
               <p className="browser-note">
-                This browser does not expose Web Serial. Open this page in current
-                desktop Chrome or Edge.
+                This browser exposes neither Web Serial nor WebUSB. Open this page
+                in a current Chromium-based browser.
               </p>
             ) : null}
           </div>
@@ -3747,10 +4517,12 @@ function App() {
         <footer className={cx("footer", progress.visible && "has-task")}>
           <div className="footer-meta">
             <span>
-              Sybil Sight™ · G2 WebFlasher {WEBFLASHER_BUILD_LABEL} · local Web
-              Serial
+              Sybil Sight™ · G2 WebFlasher {WEBFLASHER_BUILD_LABEL} ·{" "}
+              {selectedTransport}
             </span>
-            <span>No device data is uploaded by this app.</span>
+            <span>
+              Device data stays local unless the person explicitly starts remote support.
+            </span>
           </div>
           <TaskProgress progress={progress} />
         </footer>
@@ -3760,13 +4532,29 @@ function App() {
         open={consoleOpen}
         entries={logs}
         onClose={() => setConsoleOpen(false)}
-        onClear={() => setLogs([])}
-        onDownload={() =>
-          downloadBlob(
-            new Blob([`${consoleText}\n`], { type: "text/plain" }),
-            `g2-recovery-${new Date().toISOString().replaceAll(":", "-")}.log`,
-          )
-        }
+        onClear={clearConsole}
+        onDownload={downloadConsoleTranscript}
+      />
+      <RemoteSupportDialog
+        open={supportOpen}
+        onClose={() => setSupportOpen(false)}
+        mode={supportMode}
+        onModeChange={setSupportMode}
+        state={supportState}
+        supportCode={supportCode}
+        onSupportCodeChange={setSupportCode}
+        operatorKey={supportOperatorKey}
+        onOperatorKeyChange={setSupportOperatorKey}
+        consent={supportConsent}
+        onConsentChange={setSupportConsent}
+        deviceReady={Boolean(report && portRef.current)}
+        transport={selectedTransport}
+        events={supportEvents}
+        pendingCommands={supportPendingCommands}
+        onStartDevice={startRemoteSupport}
+        onJoinOperator={joinRemoteSupport}
+        onStop={stopRemoteSupport}
+        onCommand={sendRemoteSupportCommand}
       />
     </div>
   );

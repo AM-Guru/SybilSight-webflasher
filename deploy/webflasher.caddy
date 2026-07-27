@@ -20,6 +20,13 @@ webflasher.sybilsight.com {
 	}
 	header @firmwareFiles Cache-Control "public, max-age=31536000, immutable"
 
+	handle /remote-support/ws {
+		reverse_proxy local-sybilsight-remote-support:8787
+	}
+	handle /remote-support/healthz {
+		rewrite * /healthz
+		reverse_proxy local-sybilsight-remote-support:8787
+	}
 	handle /firmware-updates/* {
 		root * /share/sybilsight
 		file_server
@@ -32,7 +39,7 @@ webflasher.sybilsight.com {
 
 	header {
 		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
-		Permissions-Policy "camera=(), geolocation=(), microphone=(), payment=()"
+		Permissions-Policy "camera=(), geolocation=(), microphone=(), payment=(), usb=(self)"
 	}
 
 	log {
