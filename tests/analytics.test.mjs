@@ -5,7 +5,7 @@ import {
   buildG2DeviceAnalytics,
 } from "../src/lib/analytics.js";
 
-function probe(side, operation) {
+function probe(side, operation, firmwareVersion = "2.2.6.10") {
   const version = operation === "version";
   return {
     operation,
@@ -14,7 +14,7 @@ function probe(side, operation) {
     decoded: version
       ? {
           kind: "version",
-          firmwareVersion: "2.2.6.10",
+          firmwareVersion,
           hardwareRevision: 5,
         }
       : {
@@ -105,5 +105,35 @@ test("fails the glasses recovery gate without the reviewed case version", () => 
   assert.equal(
     analytics.smartGlasses.recoveryAssessment.applicationDeadRecoveryAvailable,
     false,
+  );
+});
+
+test("treats older responsive hardware-5 temples as complete-main compatible", () => {
+  const analytics = buildG2DeviceAnalytics({
+    report: report(),
+    pogoResults: {
+      left: { version: probe("left", "version", "2.1.1.12") },
+      right: { version: probe("right", "version", "2.1.1.12") },
+    },
+  });
+  assert.equal(
+    analytics.smartGlasses.left.completeMainWriterCompatible,
+    true,
+  );
+  assert.equal(
+    analytics.smartGlasses.left.reviewedWriterCompatible,
+    false,
+  );
+  assert.equal(
+    analytics.smartGlasses.left.differentialSourceCompatible,
+    false,
+  );
+  assert.equal(
+    analytics.smartGlasses.recoveryAssessment.bothRoutesReady,
+    true,
+  );
+  assert.match(
+    analytics.smartGlasses.recoveryAssessment.completeMainSourceRequirement,
+    /Any checksum-valid running G2 application/,
   );
 });

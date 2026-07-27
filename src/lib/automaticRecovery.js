@@ -1,6 +1,8 @@
+import { decodeOptionBytes } from "./firmware.js";
+
 export const DEFAULT_INTERFACE_MODE = "easy";
 export const DEFAULT_AUTOMATIC_INSTALL_MODE = "update";
-export const DEFAULT_AUTOMATIC_CASE_UPDATE = false;
+export const DEFAULT_AUTOMATIC_CASE_UPDATE = true;
 export const AUTOMATIC_INSTALL_MODES = Object.freeze(["update", "restore"]);
 
 const ROUTES = Object.freeze(["right", "left"]);
@@ -110,17 +112,120 @@ function verifyPreUpdateBankMapping(report) {
     report?.options?.inactivePhysicalBank,
     "the pre-update inactive physical bank",
   );
-  if (
-    activePhysicalBank === inactivePhysicalBank ||
-    typeof report?.options?.swapBank !== "boolean" ||
-    report?.banks?.active?.physicalBank !== activePhysicalBank ||
-    report?.banks?.inactive?.physicalBank !== inactivePhysicalBank ||
-    !report?.banks?.active?.version
-  ) {
+  let decodedOptions;
+  try {
+    decodedOptions = decodeOptionBytes(report?.optionBytes);
+  } catch (error) {
     throw new Error(
-      "The pre-update Charging Case option bytes and physical-bank mapping are incomplete or inconsistent. Analyze the Case again before updating it.",
+      `The pre-update Charging Case option snapshot is invalid: ${error.message}`,
     );
   }
+  if (
+    activePhysicalBank === inactivePhysicalBank ||
+    report?.options?.rdp !== 0xaa ||
+    report?.options?.dualBank !== true ||
+    typeof report?.options?.swapBank !== "boolean" ||
+    decodedOptions.rdp !== report.options.rdp ||
+    decodedOptions.dualBank !== report.options.dualBank ||
+    decodedOptions.swapBank !== report.options.swapBank ||
+    decodedOptions.activePhysicalBank !== activePhysicalBank ||
+    decodedOptions.inactivePhysicalBank !== inactivePhysicalBank ||
+    report?.banks?.active?.physicalBank !== activePhysicalBank ||
+    report?.banks?.inactive?.physicalBank !== inactivePhysicalBank ||
+    !report?.banks?.active?.version ||
+    report?.banks?.active?.vectorValid !== true
+  ) {
+    throw new Error(
+      "The pre-update Charging Case option bytes, dual-bank mode, active vector, and physical-bank mapping are incomplete or inconsistent. Analyze the Case again before updating it.",
+    );
+  }
+}
+
+export function verifyAutomaticCaseReadiness(report, expectedVersion) {
+  const activePhysicalBank = requirePhysicalBank(
+    report?.options?.activePhysicalBank,
+    "the active physical bank",
+  );
+  const fallbackPhysicalBank = requirePhysicalBank(
+    report?.options?.inactivePhysicalBank,
+    "the fallback physical bank",
+  );
+  const failures = [];
+  let decodedOptions = null;
+  if (!expectedVersion) {
+    failures.push("the required Case version is unknown");
+  }
+  if (report?.console?.caseVersion !== expectedVersion) {
+    failures.push(
+      `the application reports ${report?.console?.caseVersion ?? "an unknown version"}, expected ${expectedVersion}`,
+    );
+  }
+  if (
+    !(report?.optionBytes instanceof Uint8Array) ||
+    report.optionBytes.length !== 128
+  ) {
+    failures.push("fresh 128-byte option data is unavailable");
+  } else {
+    try {
+      decodedOptions = decodeOptionBytes(report.optionBytes);
+    } catch (error) {
+      failures.push(`the option snapshot is invalid (${error.message})`);
+    }
+  }
+  if (
+    report?.options?.rdp !== 0xaa ||
+    report?.options?.dualBank !== true ||
+    typeof report?.options?.swapBank !== "boolean"
+  ) {
+    failures.push("the Case is not in the reviewed level-0 dual-bank mode");
+  }
+  if (
+    decodedOptions &&
+    (decodedOptions.rdp !== report.options.rdp ||
+      decodedOptions.dualBank !== report.options.dualBank ||
+      decodedOptions.swapBank !== report.options.swapBank ||
+      decodedOptions.activePhysicalBank !== activePhysicalBank ||
+      decodedOptions.inactivePhysicalBank !== fallbackPhysicalBank)
+  ) {
+    failures.push("the decoded option snapshot and reported bank mode disagree");
+  }
+  if (activePhysicalBank === fallbackPhysicalBank) {
+    failures.push("the active and fallback physical banks are identical");
+  }
+  if (
+    report?.banks?.active?.physicalBank !== activePhysicalBank ||
+    report?.banks?.inactive?.physicalBank !== fallbackPhysicalBank
+  ) {
+    failures.push("the option bytes and physical-bank aliases disagree");
+  }
+  if (
+    report?.banks?.active?.version !== expectedVersion ||
+    report?.banks?.active?.vectorValid !== true
+  ) {
+    failures.push(
+      `active physical bank ${activePhysicalBank} is not a valid ${expectedVersion} image`,
+    );
+  }
+  if (report?.banks?.inactive?.vectorValid !== true) {
+    failures.push(
+      `fallback physical bank ${fallbackPhysicalBank} does not contain a valid vector table`,
+    );
+  }
+
+  if (failures.length) {
+    throw new Error(
+      `Charging Case readiness was not proven: ${failures.join("; ")}. Smart Glasses flashing was not started.`,
+    );
+  }
+  return {
+    verified: true,
+    expectedVersion,
+    activePhysicalBank,
+    fallbackPhysicalBank,
+    activeVersion: report.banks.active.version,
+    fallbackVersion: report.banks.inactive.version ?? null,
+    swapBank: report.options.swapBank,
+  };
 }
 
 export function verifyAutomaticCaseBankSwitch({
@@ -286,7 +391,11 @@ export async function executeAutomaticCaseUpdate({
       `The fresh Case firmware confirmation returned ${confirmation?.confirmedVersion ?? "unknown"}, expected ${targetFirmware.caseVersion}.`,
     );
   }
-  return { staged, activation, report, bankSwitch, confirmation };
+  const readiness = verifyAutomaticCaseReadiness(
+    report,
+    targetFirmware.caseVersion,
+  );
+  return { staged, activation, report, bankSwitch, confirmation, readiness };
 }
 
 function auditVerificationComplete(audit) {
@@ -400,6 +509,34 @@ function observedTempleIdentity(observedTempleVersions, route) {
   };
 }
 
+function targetFirmwareVersion(targetFirmware) {
+  return (
+    targetFirmware?.g2Version ??
+    targetFirmware?.internalVersion ??
+    targetFirmware?.version ??
+    targetFirmware?.catalogRelease?.internalVersion ??
+    targetFirmware?.catalogRelease?.version ??
+    null
+  );
+}
+
+function isReusableTempleReadiness(readiness, expectedVersion) {
+  return Boolean(
+    expectedVersion &&
+      readiness?.applicationLivenessVerified === true &&
+      readiness?.firmwareBytesTransmitted === 0 &&
+      readiness?.caseVersion === "1.2.57" &&
+      readiness?.telemetry?.leftPresent === true &&
+      readiness?.telemetry?.rightPresent === true &&
+      ROUTES.every(
+        (route) =>
+          readiness?.versions?.[route]?.firmware === expectedVersion &&
+          readiness.versions[route].hardware === 5 &&
+          readiness.versions[route].yhmRestoreVerified === true,
+      ),
+  );
+}
+
 function completeAutomaticUpdatePlan(targetSha256, reason) {
   return {
     executable: true,
@@ -410,6 +547,60 @@ function completeAutomaticUpdatePlan(targetSha256, reason) {
     targetSha256,
     reason,
   };
+}
+
+export function canFallbackDifferentialToComplete(error, plan) {
+  const audit = error?.audit;
+  const routeResults = audit?.routeResults;
+  const requiredSourceVersion =
+    audit?.sourceValidation?.requiredLiveFirmware;
+  const resetVersions = audit?.finalResetAndLiveness?.versions;
+  return Boolean(
+    plan?.flashMode === "differences" &&
+      plan?.sourceVersion &&
+      requiredSourceVersion === plan.sourceVersion &&
+      audit?.outcome === "failed_or_uncertain" &&
+      audit?.flashMode === "differences" &&
+      [
+        audit?.routeOrderSetupStops,
+        audit?.supersededSuccessfulRouteResults,
+        audit?.routeComponentRestartAttempts,
+        audit?.routeComponentRestartResets,
+        audit?.routeSetupResetStops,
+        audit?.routeSetupResetResults,
+      ].every((history) => Array.isArray(history) && history.length === 0) &&
+      Array.isArray(audit?.routes) &&
+      audit.routes.length === ROUTES.length &&
+      ROUTES.every((route) => audit.routes.includes(route)) &&
+      Array.isArray(routeResults) &&
+      routeResults.length === 1 &&
+      routeResults.every(
+        (result) =>
+          ROUTES.includes(result?.route) &&
+          result?.outcome === "failed_or_uncertain" &&
+          result?.failureStage === "PREFLIGHT" &&
+          result?.otaMutationAttempted === false &&
+          result?.acceptedFirmwareBytes === 0 &&
+          result?.preflightVersion?.hardware === 5 &&
+          result?.preflightVersion?.firmware &&
+          result.preflightVersion.firmware !== requiredSourceVersion &&
+          result?.caseRestoreVerified === true &&
+          result?.caseApplicationVersion === "1.2.57" &&
+          result?.retainedResult?.acceptedSize === 0 &&
+          result?.retainedResult?.baselineMask === 0x3ff &&
+          result?.retainedResult?.selectedMask === 0x3ff &&
+          result?.retainedResult?.restoredMask === 0x3ff &&
+          result?.retainedResult?.templeUartErrors === 0,
+      ) &&
+      audit?.finalResetAndLiveness?.resetConfirmed === true &&
+      audit.finalResetAndLiveness.caseFirmware === "1.2.57" &&
+      ROUTES.every(
+        (route) =>
+          resetVersions?.[route]?.firmware &&
+          resetVersions[route].hardware === 5 &&
+          resetVersions[route].yhmRestoreVerified === true,
+      ),
+  );
 }
 
 export function resolveAutomaticApplyPlan({
@@ -435,6 +626,23 @@ export function resolveAutomaticApplyPlan({
   }
 
   const targetSha256 = targetFirmware.fileSha256?.toLowerCase();
+  const targetVersion = targetFirmwareVersion(targetFirmware);
+  const observedIdentities = Object.fromEntries(
+    ROUTES.map((route) => [
+      route,
+      observedTempleIdentity(observedTempleVersions, route),
+    ]),
+  );
+  const observedTargetContradiction = ROUTES.some((route) => {
+    const observed = observedIdentities[route];
+    return Boolean(
+      (targetVersion &&
+        observed.firmwareVersion &&
+        observed.firmwareVersion !== targetVersion) ||
+        (observed.hardwareRevision != null &&
+          observed.hardwareRevision !== 5),
+    );
+  });
   if (installMode === "restore") {
     return {
       executable: true,
@@ -446,7 +654,10 @@ export function resolveAutomaticApplyPlan({
     };
   }
 
-  if (bothRoutesMatch(installedProvenance, targetSha256)) {
+  if (
+    bothRoutesMatch(installedProvenance, targetSha256) &&
+    !observedTargetContradiction
+  ) {
     return {
       executable: true,
       action: "verify-only",
@@ -456,6 +667,15 @@ export function resolveAutomaticApplyPlan({
       reason:
         "Both temples already have a verified audit for the selected target; reset and liveness verification are sufficient.",
     };
+  }
+  if (
+    bothRoutesMatch(installedProvenance, targetSha256) &&
+    observedTargetContradiction
+  ) {
+    return completeAutomaticUpdatePlan(
+      targetSha256,
+      `Fresh Smart Glasses identity contradicts the saved target audit${targetVersion ? ` for ${targetVersion}` : ""}; write the complete pinned target Apollo main on both temples.`,
+    );
   }
 
   const sourceSha256 = differenceSourceFirmware?.fileSha256?.toLowerCase();
@@ -471,12 +691,6 @@ export function resolveAutomaticApplyPlan({
     );
   }
   const sourceVersion = differencePlan.source?.version;
-  const observedIdentities = Object.fromEntries(
-    ROUTES.map((route) => [
-      route,
-      observedTempleIdentity(observedTempleVersions, route),
-    ]),
-  );
   const observedSourceCompatible = ROUTES.every(
     (route) =>
       observedIdentities[route].firmwareVersion === sourceVersion &&
@@ -532,6 +746,7 @@ export function resolveAutomaticApplyPlan({
     sourceProofMode: exactSourceProven
       ? "verified-source-audits"
       : "live-compatible-pair-preflight",
+    sourceVersion,
     sourceSha256,
     targetSha256,
     reason: exactSourceProven
@@ -548,7 +763,9 @@ export async function executeAutomaticApply({
   differenceSourceFirmware,
   differencePlan,
   observedTempleVersions,
+  verifiedTempleReadiness,
   onPlan,
+  onRecovery,
 }) {
   if (!session) throw new Error("An analyzed G2 Case session is required.");
   const plan = resolveAutomaticApplyPlan({
@@ -563,31 +780,73 @@ export async function executeAutomaticApply({
   await onPlan?.(plan);
 
   if (plan.action === "verify-only") {
+    const expectedVersion = targetFirmwareVersion(targetFirmware);
     return {
       plan,
       action: "verify-only",
-      result: await session.restartAndVerifyBothTemples(),
+      result: isReusableTempleReadiness(
+        verifiedTempleReadiness,
+        expectedVersion,
+      )
+        ? verifiedTempleReadiness
+        : await session.restartAndVerifyBothTemples({
+            expectedVersion,
+            purpose: "Already-target verification",
+          }),
     };
   }
 
-  return {
-    plan,
-    action: "flash",
-    audit: await session.flashPinnedTempleMain(
+  try {
+    return {
+      plan,
+      action: "flash",
+      audit: await session.flashPinnedTempleMain(
+        targetFirmware,
+        plan.route,
+        plan.flashMode === "differences"
+          ? {
+              mode: plan.flashMode,
+              differenceSourceFirmware,
+              sourceProofMode: plan.sourceProofMode,
+            }
+          : {
+              mode: plan.flashMode,
+              differenceSourceFirmware: null,
+            },
+      ),
+    };
+  } catch (error) {
+    if (!canFallbackDifferentialToComplete(error, plan)) throw error;
+    const observedVersion =
+      error.audit.routeResults[0].preflightVersion.firmware;
+    const fallbackPlan = completeAutomaticUpdatePlan(
+      plan.targetSha256,
+      `Just-in-time preflight reported ${observedVersion}/hardware 5 instead of the reviewed differential source; retry with the complete pinned target Apollo main.`,
+    );
+    await onRecovery?.({
+      kind: "differential-to-complete",
+      observedVersion,
+      priorPlan: plan,
+      fallbackPlan,
+      priorAudit: error.audit,
+    });
+    const audit = await session.flashPinnedTempleMain(
       targetFirmware,
-      plan.route,
-      plan.flashMode === "differences"
-        ? {
-            mode: plan.flashMode,
-            differenceSourceFirmware,
-            sourceProofMode: plan.sourceProofMode,
-          }
-        : {
-            mode: plan.flashMode,
-            differenceSourceFirmware: null,
-          },
-    ),
-  };
+      fallbackPlan.route,
+      { mode: "complete", differenceSourceFirmware: null },
+    );
+    audit.automaticFallback = {
+      kind: "differential-to-complete",
+      observedVersion,
+      priorAudit: error.audit,
+    };
+    return {
+      plan: fallbackPlan,
+      initialPlan: plan,
+      action: "flash",
+      audit,
+    };
+  }
 }
 
 export function installedProvenanceStorageKey(caseSerial) {

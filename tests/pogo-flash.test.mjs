@@ -782,6 +782,7 @@ test("makes the dual-temple reset the final restore mutation and verifies livene
   const session = new G2CaseSession(null, {
     log: (message) => events.push(`log:${message}`),
     progress: () => {},
+    wait: async () => {},
   });
   session.restartAndRecheck = async () => {
     events.push("mutate:DEB0");
@@ -987,8 +988,51 @@ test("standalone reset verifies both temple applications without firmware", asyn
   assert.equal(report.versions.right.hardware, 5);
 });
 
+test("final verification retries one transient missing-contact reset", async () => {
+  const events = [];
+  const session = new G2CaseSession(null, {
+    log: (message) => events.push(`log:${message}`),
+    progress: () => {},
+    wait: async () => {},
+  });
+  let resetAttempt = 0;
+  session.restartAndRecheck = async () => {
+    resetAttempt += 1;
+    events.push(`reset:${resetAttempt}`);
+    return {
+      caseVersion: "1.2.57",
+      telemetry: {
+        leftPresent: resetAttempt > 1,
+        rightPresent: true,
+      },
+    };
+  };
+  session.verifyPostResetTempleLiveness = async (resetReport) => {
+    if (!resetReport.telemetry.leftPresent) {
+      throw new Error("left: contact did not return after the final B0 reset.");
+    }
+    return {
+      versions: {
+        left: { firmware: "2.2.6.10", hardware: 5 },
+        right: { firmware: "2.2.6.10", hardware: 5 },
+      },
+      finalCase: { caseVersion: "1.2.57" },
+    };
+  };
+
+  const report = await session.restartAndVerifyBothTemples();
+
+  assert.deepEqual(
+    events.filter((event) => event.startsWith("reset:")),
+    ["reset:1", "reset:2"],
+  );
+  assert.equal(report.resetAttempts.length, 2);
+  assert.equal(report.resetAttempts[0].outcome, "failed");
+  assert.equal(report.resetAttempts[1].outcome, "success");
+});
+
 test("fails the final restore gate when a selected contact does not return", async () => {
-  const session = new G2CaseSession(null);
+  const session = new G2CaseSession(null, { wait: async () => {} });
   session.restartAndRecheck = async () => ({
     caseVersion: "1.2.57",
     telemetry: { leftPresent: false, rightPresent: true },
@@ -1072,7 +1116,7 @@ test("retries one transient intermediate-reset no-frame before a fresh START", a
     isRetryablePostResetLivenessFailure(
       new Error("left: contact did not return after the final B0 reset."),
     ),
-    false,
+    true,
   );
   assert.equal(
     isRetryablePostResetLivenessFailure(
@@ -1082,11 +1126,20 @@ test("retries one transient intermediate-reset no-frame before a fresh START", a
     ),
     true,
   );
+  assert.equal(
+    isRetryablePostResetLivenessFailure(
+      new Error(
+        "The Case did not confirm the traced B0 left/right temple reset command.",
+      ),
+    ),
+    true,
+  );
 
   const events = [];
   const session = new G2CaseSession(null, {
     log: (message) => events.push(`log:${message}`),
     progress: () => {},
+    wait: async () => {},
   });
   session.restartAndRecheck = async () => {
     events.push("reset:DEB0");

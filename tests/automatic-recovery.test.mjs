@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  canFallbackDifferentialToComplete,
   DEFAULT_AUTOMATIC_CASE_UPDATE,
   DEFAULT_AUTOMATIC_INSTALL_MODE,
   DEFAULT_INTERFACE_MODE,
@@ -10,6 +11,7 @@ import {
   provenanceFromSuccessfulAudit,
   resolveAutomaticCaseUpdatePlan,
   resolveAutomaticApplyPlan,
+  verifyAutomaticCaseReadiness,
 } from "../src/lib/automaticRecovery.js";
 
 const STOCK_SHA = "a".repeat(64);
@@ -26,6 +28,15 @@ const observedBoth = (version, hardwareRevision = 5) => ({
   right: { firmwareVersion: version, hardwareRevision },
   left: { firmwareVersion: version, hardwareRevision },
 });
+const caseOptionBytes = (swapBank = false) => {
+  const bytes = new Uint8Array(128);
+  const userWord =
+    (0xaa | (1 << 22) | (swapBank ? 1 << 20 : 0)) >>> 0;
+  const view = new DataView(bytes.buffer);
+  view.setUint32(0, userWord, true);
+  view.setUint32(4, (~userWord) >>> 0, true);
+  return bytes;
+};
 const differencePlan = {
   executable: true,
   changedMainOnly: true,
@@ -63,11 +74,63 @@ const reverseDifferencePlan = {
     targetMainSha256: differencePlan.source.mainSha256,
   },
 };
+const safePreflightFailureAudit = () => ({
+  outcome: "failed_or_uncertain",
+  flashMode: "differences",
+  routes: ["right", "left"],
+  routeOrderSetupStops: [],
+  supersededSuccessfulRouteResults: [],
+  routeComponentRestartAttempts: [],
+  routeComponentRestartResets: [],
+  routeSetupResetStops: [],
+  routeSetupResetResults: [],
+  sourceValidation: {
+    requiredLiveFirmware: "2.2.6.10",
+  },
+  routeResults: [
+    {
+      route: "right",
+      outcome: "failed_or_uncertain",
+      failureStage: "PREFLIGHT",
+      otaMutationAttempted: false,
+      acceptedFirmwareBytes: 0,
+      preflightVersion: {
+        firmware: "2.1.1.12",
+        hardware: 5,
+      },
+      caseRestoreVerified: true,
+      caseApplicationVersion: "1.2.57",
+      retainedResult: {
+        acceptedSize: 0,
+        baselineMask: 0x3ff,
+        selectedMask: 0x3ff,
+        restoredMask: 0x3ff,
+        templeUartErrors: 0,
+      },
+    },
+  ],
+  finalResetAndLiveness: {
+    resetConfirmed: true,
+    caseFirmware: "1.2.57",
+    versions: {
+      right: {
+        firmware: "2.1.1.12",
+        hardware: 5,
+        yhmRestoreVerified: true,
+      },
+      left: {
+        firmware: "2.1.1.12",
+        hardware: 5,
+        yhmRestoreVerified: true,
+      },
+    },
+  },
+});
 
-test("defaults to Easy Mode and adaptive Update", () => {
+test("defaults to Easy Mode, adaptive Update, and automatic Case repair", () => {
   assert.equal(DEFAULT_INTERFACE_MODE, "easy");
   assert.equal(DEFAULT_AUTOMATIC_INSTALL_MODE, "update");
-  assert.equal(DEFAULT_AUTOMATIC_CASE_UPDATE, false);
+  assert.equal(DEFAULT_AUTOMATIC_CASE_UPDATE, true);
 });
 
 const latestCaseRelease = {
@@ -138,9 +201,52 @@ test("automatic Case update requires a fresh physical-bank map before writing", 
   assert.equal(stageCalled, false);
 });
 
+test("automatic Case update refuses to erase when the preserved active vector is invalid", async () => {
+  let stageCalled = false;
+  await assert.rejects(
+    () =>
+      executeAutomaticCaseUpdate({
+        session: {
+          stageCaseImage: async () => {
+            stageCalled = true;
+          },
+        },
+        currentReport: {
+          optionBytes: caseOptionBytes(false),
+          options: {
+            rdp: 0xaa,
+            dualBank: true,
+            swapBank: false,
+            activePhysicalBank: 2,
+            inactivePhysicalBank: 1,
+          },
+          banks: {
+            active: {
+              physicalBank: 2,
+              version: "1.2.56",
+              vectorValid: false,
+            },
+            inactive: {
+              physicalBank: 1,
+              version: "1.2.54",
+              vectorValid: true,
+            },
+          },
+        },
+        targetFirmware: {
+          caseRecoveryEligible: true,
+          caseVersion: "1.2.57",
+          caseImage: new Uint8Array([1]),
+        },
+      }),
+    /active vector/,
+  );
+  assert.equal(stageCalled, false);
+});
+
 test("automatic Case update stages, activates, and re-analyzes before returning", async () => {
   const events = [];
-  const optionBytes = new Uint8Array(128);
+  const optionBytes = caseOptionBytes(false);
   const caseImage = new Uint8Array([1, 2, 3, 4]);
   const targetFirmware = {
     caseRecoveryEligible: true,
@@ -151,26 +257,46 @@ test("automatic Case update stages, activates, and re-analyzes before returning"
     optionBytes,
     console: { caseVersion: "1.2.56" },
     options: {
+      rdp: 0xaa,
+      dualBank: true,
       swapBank: false,
       activePhysicalBank: 2,
       inactivePhysicalBank: 1,
     },
     banks: {
-      active: { physicalBank: 2, version: "1.2.56" },
-      inactive: { physicalBank: 1, version: "1.2.54" },
+      active: {
+        physicalBank: 2,
+        version: "1.2.56",
+        vectorValid: true,
+      },
+      inactive: {
+        physicalBank: 1,
+        version: "1.2.54",
+        vectorValid: true,
+      },
     },
   };
   const updatedReport = {
-    optionBytes: new Uint8Array(128),
+    optionBytes: caseOptionBytes(true),
     console: { caseVersion: "1.2.57" },
     options: {
+      rdp: 0xaa,
+      dualBank: true,
       swapBank: true,
       activePhysicalBank: 1,
       inactivePhysicalBank: 2,
     },
     banks: {
-      active: { physicalBank: 1, version: "1.2.57" },
-      inactive: { physicalBank: 2, version: "1.2.56" },
+      active: {
+        physicalBank: 1,
+        version: "1.2.57",
+        vectorValid: true,
+      },
+      inactive: {
+        physicalBank: 2,
+        version: "1.2.56",
+        vectorValid: true,
+      },
     },
   };
   const result = await executeAutomaticCaseUpdate({
@@ -232,10 +358,72 @@ test("automatic Case update stages, activates, and re-analyzes before returning"
     activeSwapBank: true,
   });
   assert.equal(result.confirmation.confirmationCommand, "DEA0");
+  assert.deepEqual(result.readiness, {
+    verified: true,
+    expectedVersion: "1.2.57",
+    activePhysicalBank: 1,
+    fallbackPhysicalBank: 2,
+    activeVersion: "1.2.57",
+    fallbackVersion: "1.2.56",
+    swapBank: true,
+  });
+});
+
+test("current Case readiness requires fresh options and valid active and fallback banks", () => {
+  const report = {
+    optionBytes: caseOptionBytes(true),
+    console: { caseVersion: "1.2.57" },
+    options: {
+      rdp: 0xaa,
+      dualBank: true,
+      swapBank: true,
+      activePhysicalBank: 1,
+      inactivePhysicalBank: 2,
+    },
+    banks: {
+      active: {
+        physicalBank: 1,
+        version: "1.2.57",
+        vectorValid: true,
+      },
+      inactive: {
+        physicalBank: 2,
+        version: "1.2.56",
+        vectorValid: true,
+      },
+    },
+  };
+
+  assert.equal(
+    verifyAutomaticCaseReadiness(report, "1.2.57").verified,
+    true,
+  );
+  assert.throws(
+    () =>
+      verifyAutomaticCaseReadiness(
+        {
+          ...report,
+          banks: {
+            ...report.banks,
+            inactive: { ...report.banks.inactive, vectorValid: false },
+          },
+        },
+        "1.2.57",
+    ),
+    /fallback physical bank 2 does not contain a valid vector table/,
+  );
+  assert.throws(
+    () =>
+      verifyAutomaticCaseReadiness(
+        { ...report, optionBytes: caseOptionBytes(false) },
+        "1.2.57",
+      ),
+    /decoded option snapshot and reported bank mode disagree/,
+  );
 });
 
 test("automatic Case update rejects 1.2.57 when the staged bank was not activated", async () => {
-  const optionBytes = new Uint8Array(128);
+  const optionBytes = caseOptionBytes(false);
   let confirmationCalled = false;
   await assert.rejects(
     () =>
@@ -263,12 +451,18 @@ test("automatic Case update rejects 1.2.57 when the staged bank was not activate
         currentReport: {
           optionBytes,
           options: {
+            rdp: 0xaa,
+            dualBank: true,
             swapBank: false,
             activePhysicalBank: 2,
             inactivePhysicalBank: 1,
           },
           banks: {
-            active: { physicalBank: 2, version: "1.2.56" },
+            active: {
+              physicalBank: 2,
+              version: "1.2.56",
+              vectorValid: true,
+            },
             inactive: { physicalBank: 1, version: "1.2.54" },
           },
         },
@@ -284,7 +478,7 @@ test("automatic Case update rejects 1.2.57 when the staged bank was not activate
 });
 
 test("automatic Case update stops before returning when fresh confirmation fails", async () => {
-  const optionBytes = new Uint8Array(128);
+  const optionBytes = caseOptionBytes(false);
   await assert.rejects(
     () =>
       executeAutomaticCaseUpdate({
@@ -310,12 +504,18 @@ test("automatic Case update stops before returning when fresh confirmation fails
         currentReport: {
           optionBytes,
           options: {
+            rdp: 0xaa,
+            dualBank: true,
             swapBank: false,
             activePhysicalBank: 2,
             inactivePhysicalBank: 1,
           },
           banks: {
-            active: { physicalBank: 2, version: "1.2.56" },
+            active: {
+              physicalBank: 2,
+              version: "1.2.56",
+              vectorValid: true,
+            },
             inactive: { physicalBank: 1, version: "1.2.54" },
           },
         },
@@ -434,6 +634,20 @@ test("Update uses a complete main from 2.1.1.12 instead of the Stock-CFW differe
   assert.match(result.reason, /2\.1\.1\.12.*complete pinned target Apollo main/i);
 });
 
+test("fresh 2.1.1.12 identity overrides stale saved Stock differential proof", () => {
+  const result = resolveAutomaticApplyPlan({
+    installMode: "update",
+    targetFirmware: firmware(CFW_SHA),
+    installedProvenance: both(STOCK_SHA),
+    differenceSourceFirmware: firmware(STOCK_SHA),
+    differencePlan,
+    observedTempleVersions: observedBoth("2.1.1.12"),
+  });
+  assert.equal(result.flashMode, "complete");
+  assert.equal(result.sourceProofMode, "complete-target-main");
+  assert.match(result.reason, /2\.1\.1\.12.*complete pinned target Apollo main/i);
+});
+
 test("Update becomes reset-and-verify when both temples already prove target", () => {
   const result = resolveAutomaticApplyPlan({
     installMode: "update",
@@ -442,6 +656,21 @@ test("Update becomes reset-and-verify when both temples already prove target", (
   });
   assert.equal(result.executable, true);
   assert.equal(result.action, "verify-only");
+});
+
+test("fresh temple identity overrides stale saved target provenance", () => {
+  const result = resolveAutomaticApplyPlan({
+    installMode: "update",
+    targetFirmware: {
+      ...firmware(CFW_SHA),
+      g2Version: "2.2.6.11",
+    },
+    installedProvenance: both(CFW_SHA),
+    observedTempleVersions: observedBoth("2.1.1.12"),
+  });
+  assert.equal(result.action, "flash");
+  assert.equal(result.flashMode, "complete");
+  assert.match(result.reason, /contradicts the saved target audit/);
 });
 
 test("only a fully verified successful audit records installed provenance", () => {
@@ -548,6 +777,71 @@ test("automatic Update invokes the reviewed bilateral difference session", async
   ]);
 });
 
+test("differential fallback requires proof that preflight changed no firmware bytes", () => {
+  const plan = {
+    flashMode: "differences",
+    sourceVersion: "2.2.6.10",
+  };
+  const error = Object.assign(new Error("source mismatch"), {
+    audit: safePreflightFailureAudit(),
+  });
+  assert.equal(canFallbackDifferentialToComplete(error, plan), true);
+
+  error.audit.routeResults[0].acceptedFirmwareBytes = 1;
+  assert.equal(canFallbackDifferentialToComplete(error, plan), false);
+
+  error.audit = safePreflightFailureAudit();
+  error.audit.finalResetAndLiveness.resetConfirmed = false;
+  assert.equal(canFallbackDifferentialToComplete(error, plan), false);
+
+  error.audit = safePreflightFailureAudit();
+  error.audit.routeComponentRestartAttempts.push({
+    acceptedFirmwareBytes: 1000,
+  });
+  assert.equal(canFallbackDifferentialToComplete(error, plan), false);
+});
+
+test("automatic Update safely retries a stale differential plan with the complete main", async () => {
+  const calls = [];
+  const recoveries = [];
+  const successfulAudit = { outcome: "success" };
+  const source = firmware(STOCK_SHA);
+  const result = await executeAutomaticApply({
+    session: {
+      flashPinnedTempleMain: async (...args) => {
+        calls.push(args);
+        if (calls.length === 1) {
+          throw Object.assign(new Error("live source mismatch"), {
+            audit: safePreflightFailureAudit(),
+          });
+        }
+        return successfulAudit;
+      },
+    },
+    installMode: "update",
+    targetFirmware: firmware(CFW_SHA),
+    installedProvenance: both(STOCK_SHA),
+    differenceSourceFirmware: source,
+    differencePlan,
+    onRecovery: (recovery) => recoveries.push(recovery),
+  });
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0][2].mode, "differences");
+  assert.deepEqual(calls[1], [
+    firmware(CFW_SHA),
+    "both",
+    { mode: "complete", differenceSourceFirmware: null },
+  ]);
+  assert.equal(result.initialPlan.flashMode, "differences");
+  assert.equal(result.plan.flashMode, "complete");
+  assert.equal(
+    result.audit.automaticFallback.kind,
+    "differential-to-complete",
+  );
+  assert.equal(recoveries[0].observedVersion, "2.1.1.12");
+});
+
 test("automatic Update invokes a complete bilateral session for 2.1.1.12", async () => {
   const calls = [];
   await executeAutomaticApply({
@@ -575,18 +869,63 @@ test("automatic Update invokes a complete bilateral session for 2.1.1.12", async
 
 test("automatic Update already at target performs reset-only verification", async () => {
   let resetCalls = 0;
+  let resetOptions = null;
   const result = await executeAutomaticApply({
     session: {
-      restartAndVerifyBothTemples: async () => {
+      restartAndVerifyBothTemples: async (options) => {
         resetCalls += 1;
+        resetOptions = options;
         return { applicationLivenessVerified: true };
       },
     },
     installMode: "update",
-    targetFirmware: firmware(CFW_SHA),
+    targetFirmware: {
+      ...firmware(CFW_SHA),
+      g2Version: "2.2.6.11",
+    },
     installedProvenance: both(CFW_SHA),
   });
   assert.equal(resetCalls, 1);
+  assert.equal(resetOptions.expectedVersion, "2.2.6.11");
   assert.equal(result.action, "verify-only");
   assert.equal(result.result.applicationLivenessVerified, true);
+});
+
+test("automatic Update reuses the fresh matching preflight instead of resetting twice", async () => {
+  const readiness = {
+    applicationLivenessVerified: true,
+    firmwareBytesTransmitted: 0,
+    caseVersion: "1.2.57",
+    telemetry: { leftPresent: true, rightPresent: true },
+    versions: {
+      right: {
+        firmware: "2.2.6.11",
+        hardware: 5,
+        yhmRestoreVerified: true,
+      },
+      left: {
+        firmware: "2.2.6.11",
+        hardware: 5,
+        yhmRestoreVerified: true,
+      },
+    },
+  };
+  const result = await executeAutomaticApply({
+    session: {
+      restartAndVerifyBothTemples: async () => {
+        throw new Error("must not issue a second reset");
+      },
+    },
+    installMode: "update",
+    targetFirmware: {
+      ...firmware(CFW_SHA),
+      g2Version: "2.2.6.11",
+    },
+    installedProvenance: both(CFW_SHA),
+    observedTempleVersions: observedBoth("2.2.6.11"),
+    verifiedTempleReadiness: readiness,
+  });
+
+  assert.equal(result.action, "verify-only");
+  assert.equal(result.result, readiness);
 });

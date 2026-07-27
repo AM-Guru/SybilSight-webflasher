@@ -52,6 +52,9 @@ function templeAnalytics(side, present, results) {
   const firmwareVersion = version?.decoded?.firmwareVersion ?? null;
   const hardwareRevision = version?.decoded?.hardwareRevision ?? null;
   const applicationResponsive = Boolean(version || status);
+  const completeMainWriterCompatible = Boolean(
+    firmwareVersion && hardwareRevision === 5,
+  );
   const reviewedWriterCompatible =
     [REVIEWED_CFW_BASE_VERSION, REVIEWED_CFW_VERSION].includes(
       firmwareVersion,
@@ -65,6 +68,8 @@ function templeAnalytics(side, present, results) {
     batteryPercent: status?.decoded?.batteryPercent ?? null,
     voltageMv: status?.decoded?.voltageMv ?? null,
     reviewedWriterCompatible,
+    completeMainWriterCompatible,
+    differentialSourceCompatible: reviewedWriterCompatible,
     version,
     status,
   };
@@ -155,7 +160,8 @@ export function buildG2DeviceAnalytics({
   const bothTemplesResponsive =
     left.applicationResponsive && right.applicationResponsive;
   const bothTemplesWriterCompatible =
-    left.reviewedWriterCompatible && right.reviewedWriterCompatible;
+    left.completeMainWriterCompatible &&
+    right.completeMainWriterCompatible;
 
   return {
     schemaVersion: DEVICE_ANALYTICS_SCHEMA_VERSION,
@@ -209,6 +215,9 @@ export function buildG2DeviceAnalytics({
           REVIEWED_CFW_BASE_VERSION,
           REVIEWED_CFW_VERSION,
         ],
+        requiredTempleVersionsScope: "Stock-CFW differential mode only",
+        completeMainSourceRequirement:
+          "Any checksum-valid running G2 application on hardware revision 5",
         requiredHardwareRevision: 5,
         caseCompatible,
         bothTemplesResponsive,
@@ -222,7 +231,7 @@ export function buildG2DeviceAnalytics({
         applicationDeadRecoveryAvailable: false,
         bootloaderWriteAllowed: false,
         limitation:
-          "The validated path reinstalls only the reviewed Apollo main while each temple application and pogo UART task remain alive.",
+          "The validated Case-USB path reinstalls only a pinned Apollo main while each temple application and pogo UART task remain alive. Cross-version installs use the complete target main; only the exact reviewed Stock-CFW pair may use differential mode.",
       },
       offlineRecoveryProvisioning: recoveryConfig,
     },

@@ -92,6 +92,7 @@ const POGO_COMPONENT_RESTART_LIMIT = 2;
 const POGO_BILATERAL_ROUTE_ADAPTATION_LIMIT = 4;
 const POGO_SETUP_RESET_LIMIT = 2;
 const POGO_INTERMEDIATE_RESET_ATTEMPTS = 2;
+const POGO_FINAL_RESET_ATTEMPTS = 2;
 export const WEB_SERIAL_ROM_READ_SIZE = 31;
 
 export function isExplicitTempleDataRejection(error) {
@@ -111,7 +112,14 @@ export function isRetryablePostResetLivenessFailure(error) {
   const message = error instanceof Error ? error.message : String(error ?? "");
   return (
     message.includes("no framed temple response") ||
-    message.includes("YHM baseline was not an allowlisted seated-idle state")
+    message.includes("YHM baseline was not an allowlisted seated-idle state") ||
+    message.includes("contact did not return after the final B0 reset") ||
+    message.includes("Fresh Case telemetry did not return") ||
+    message.includes("fresh GLS_L/GLS_R telemetry was not observed") ||
+    message.includes("normal B200 application banner was not observed") ||
+    message.includes(
+      "Case did not confirm the traced B0 left/right temple reset command",
+    )
   );
 }
 
@@ -1896,22 +1904,86 @@ export class G2CaseSession {
     return { versions, finalCase };
   }
 
-  async restartAndVerifyBothTemples() {
-    const resetReport = await this.restartAndRecheck();
-    const { versions, finalCase } = await this.verifyPostResetTempleLiveness(
-      resetReport,
-      ["right", "left"],
-      { progressBase: 0.6, progressSpan: 0.38 },
+  async resetAndVerifyTemplesBounded(
+    routes,
+    {
+      expectedVersion = null,
+      progressBase = 0.6,
+      progressSpan = 0.38,
+      purpose = "bilateral reset",
+    } = {},
+  ) {
+    const attempts = [];
+    for (let attempt = 1; attempt <= POGO_FINAL_RESET_ATTEMPTS; attempt += 1) {
+      try {
+        const resetReport = await this.restartAndRecheck();
+        const verification = await this.verifyPostResetTempleLiveness(
+          resetReport,
+          routes,
+          { expectedVersion, progressBase, progressSpan },
+        );
+        attempts.push({ attempt, outcome: "success" });
+        if (attempt > 1) {
+          this.log(
+            `${purpose}: reset, contacts, and liveness passed on bounded attempt ${attempt}/${POGO_FINAL_RESET_ATTEMPTS}.`,
+            "success",
+          );
+        }
+        return { resetReport, ...verification, attempts };
+      } catch (error) {
+        attempts.push({
+          attempt,
+          outcome: "failed",
+          error: error.message,
+        });
+        if (
+          attempt === POGO_FINAL_RESET_ATTEMPTS ||
+          !isRetryablePostResetLivenessFailure(error)
+        ) {
+          error.resetAttempts = attempts;
+          throw error;
+        }
+        this.log(
+          `${purpose}: the first reset did not return complete contacts and checksum-valid liveness; issuing one bounded second DEB0 reset.`,
+          "warn",
+        );
+        await this.wait(1500);
+      }
+    }
+    throw new PogoFlashSafetyError(
+      "The bounded final reset loop ended unexpectedly.",
     );
-    this.progress(1, "Reset, contacts, and temple liveness verified");
+  }
+
+  async restartAndVerifyBothTemples({
+    expectedVersion = null,
+    progressBase = 0.6,
+    progressSpan = 0.38,
+    purpose = "Standalone verification",
+  } = {}) {
+    const { resetReport, versions, finalCase, attempts } =
+      await this.resetAndVerifyTemplesBounded(
+        ["right", "left"],
+        {
+          expectedVersion,
+          progressBase,
+          progressSpan,
+          purpose,
+        },
+      );
+    this.progress(
+      Math.min(1, progressBase + progressSpan),
+      "Reset, contacts, and temple liveness verified",
+    );
     this.log(
-      "B0 reset confirmed in the first serial session; reopened Case telemetry and checksum-valid left/right version replies verified.",
+      "B0 reset confirmed; reopened Case telemetry and checksum-valid left/right version replies verified.",
       "success",
     );
     return {
       ...resetReport,
       caseVersion: finalCase.caseVersion,
       versions,
+      resetAttempts: attempts,
       applicationLivenessVerified: true,
       firmwareBytesTransmitted: 0,
     };
@@ -1922,12 +1994,16 @@ export class G2CaseSession {
       "All selected routes and the Case application are restored; sending the final traced B0 dual-temple reset.",
     );
     this.progress(0.93, "Final dual-temple reset");
-    const resetReport = await this.restartAndRecheck();
-    const { versions, finalCase } = await this.verifyPostResetTempleLiveness(
-      resetReport,
-      routes,
-      { expectedVersion },
-    );
+    const { resetReport, versions, finalCase, attempts } =
+      await this.resetAndVerifyTemplesBounded(
+        routes,
+        {
+          expectedVersion,
+          progressBase: 0.95,
+          progressSpan: 0.04,
+          purpose: "Final bilateral verification",
+        },
+      );
     this.progress(1, "Final reset and temple liveness verified");
     this.log(
       "Final B0 reset confirmed; selected contacts and checksum-valid post-reset version replies verified.",
@@ -1945,6 +2021,7 @@ export class G2CaseSession {
       leftPresent: resetReport.telemetry.leftPresent,
       rightPresent: resetReport.telemetry.rightPresent,
       versions,
+      resetAttempts: attempts,
       versionIsLivenessNotImageProvenance: true,
     };
   }

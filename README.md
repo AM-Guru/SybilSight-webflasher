@@ -668,9 +668,10 @@ that failed closed before FINISH; retain the audit for every browser write.
 
 For the exact reviewed CFW or official recovery package, the webflasher loads
 the separately pinned 2,952-byte V7 bridge at `0x20010000`. It first requires
-case firmware 1.2.57 (or, when the explicit **Update Charging Case first**
-option is enabled, stages the latest official Case image in the inactive bank,
-verifies it byte-for-byte, activates it, and re-analyzes the Case),
+case firmware 1.2.57. Automatic Apply enables **Update Charging Case first**
+by default; when needed it stages the latest official Case image in the
+inactive bank, verifies it byte-for-byte, activates it, and re-analyzes the
+Case,
 fresh seated-route telemetry, the complete CFW bundle SHA-256, the Apollo-main
 payload SHA-256, hardware revision 5, and explicit user confirmations.
 
@@ -692,11 +693,11 @@ fatal cleanup only when all route masks are complete and the ten restored YHM
 bytes exactly match the allowlisted baseline. That proof permits a fresh
 whole-component restart after the bilateral reset/liveness gate; it is not a
 transfer-success proof.
-If the first intermediate reset returns the exact transient no-frame liveness
-failure observed after a completed opposite-side update, Easy Mode sends one
-bounded second bilateral reset and repeats the read-only contact/application
-gate. Missing contacts, wrong versions, incomplete cleanup, and every other
-failure still stop immediately.
+If an intermediate or final reset returns a transient no-frame, non-idle YHM,
+missing-contact, missing-telemetry, or missing-application-banner result, Easy
+Mode sends one bounded second bilateral reset and repeats the read-only
+contact/application gate. Wrong versions, incomplete cleanup, a second
+failure, and every non-allowlisted failure still stop immediately.
 Single-route Advanced repairs use the same bilateral rule: every intermediate
 DEB0 gate and the final DEB0 gate verify both seated temple applications, not
 only the route being rewritten.
@@ -878,21 +879,34 @@ panes. Both interfaces call the same automatic Apply implementation.
 1. Click **Select Case** and choose the G2 Case USB Serial device.
 2. Choose official Stock or reviewed CFW.
 3. Leave **Update** selected, or choose **Restore**.
-4. If the Case is older than the latest verified Case firmware, enable
-   **Update Charging Case first**. The default remains off, and the updater
-   never downgrades a newer or unknown Case version.
+4. Leave **Update Charging Case first** enabled. It is on by default; no Case
+   write occurs when the Case is already current, and the updater never
+   downgrades a newer or unknown Case version.
 5. Click **Apply** and keep the Case, glasses, and cable still.
 
-When enabled and needed, Apply validates the latest official Case component,
-stages only the inactive bank, verifies its complete readback, activates that
-bank, and re-analyzes the physical-bank mapping. The update is accepted only
-when `nSWAP_BANK` changed, the previously inactive physical bank is active on
-the target version, and the previous active bank remains available as the
-fallback. It then proves the normal application banner and opens a separate
-fresh console to explicitly reissue `DEA0` with bounded retries. Smart Glasses
-firmware bytes remain blocked until the bank transition and fresh reply both
-report the target Case version. If the option is off, an older Case still stops
-at preflight with an actionable message.
+Every Apply begins with a fresh full Case analysis, including both physical
+banks and all 128 option bytes. When enabled and needed, Apply validates the
+latest official Case component, stages only the inactive bank, verifies its
+complete readback, activates that bank, and re-analyzes the physical-bank
+mapping. The update is accepted only when `nSWAP_BANK` changed, the previously
+inactive physical bank is active on the target version, and the previous
+active bank remains available as the fallback. It then proves the normal
+application banner and opens a separate fresh console to explicitly reissue
+`DEA0` with bounded retries. Whether the Case was updated or already current,
+the glasses write gate also requires level-0 read access, dual-bank mode,
+consistent physical-bank aliases, a valid target-version vector in the active
+bank, and a valid fallback-bank vector.
+
+After the Case gate, Apply issues the traced bilateral `DEB0` reset and obtains
+fresh checksum-valid firmware/hardware-5 replies from both temples. This
+normalizes a stale charging-route phase and prevents old UI analysis or saved
+browser provenance from choosing the transfer mode. If initial telemetry is
+missing a seated contact, the same bounded reset is used as the recovery
+attempt instead of stopping before it; the operation still stops without
+transmitting firmware if the contact and application do not return. Smart
+Glasses firmware bytes remain blocked until the Case, contacts, and both
+running temple applications pass these checks. If the Case-update option is
+off, an older Case stops at preflight with an actionable message.
 
 Restore revalidates the selected bundle and rewrites the complete pinned
 Apollo main on both temples. It starts right then left, but may reverse that
@@ -905,17 +919,22 @@ component and transfers the one changed, complete CRC-gated Apollo main. The
 receiver has no safe sparse-write offset, so Update never transmits arbitrary
 changed byte ranges inside that component.
 
-Stock and CFW both report version 2.2.6.10, and installed Apollo MRAM readback
-is unavailable. Saved recovery audits remain the strongest source proof, but
-they are browser-origin-local and are not portable from a localhost hardware
-test to the hosted site. For the exact reviewed Stock 2.2.6.10 ↔ CFW pair,
-Automatic Update uses the difference plan without a saved audit only when a
-fresh bilateral analysis reports the exact source version and hardware. The
-plan omits five byte-identical components and transfers the **complete** pinned
-target Apollo main, not sparse byte ranges. Every route must return the same
+Stock reports version 2.2.6.10 and the reviewed CFW reports 2.2.6.11; installed
+Apollo MRAM readback is unavailable. Saved recovery audits remain useful
+source proof, but they are browser-origin-local and are not portable from a
+localhost hardware test to the hosted site. For the exact reviewed Stock
+2.2.6.10 ↔ CFW 2.2.6.11 pair, Automatic Update uses the difference plan only
+when the fresh bilateral preflight reports the exact source version and
+hardware. The plan omits five byte-identical components and transfers the
+**complete** pinned target Apollo main, not sparse byte ranges. Every route
+must return the same
 checksum-valid source-version/hardware-5 reply immediately before its START
-command. Without that proof, Update selects the complete-main path. The
-successful audit records the live compatibility proof.
+command. Without that proof, Update selects the complete-main path. If a saved
+proof becomes stale between planning and the just-in-time preflight, Automatic
+Update retries with the complete target only after proving that zero firmware
+bytes were accepted, exact route restoration completed, Case 1.2.57 returned,
+and the bilateral reset/liveness gate passed. Otherwise it stops. The
+successful audit records the live compatibility proof and any safe fallback.
 
 If both saved routes already prove the selected target, Apply performs only
 the required bilateral reset and liveness verification. An older version,
@@ -923,6 +942,20 @@ unknown source, or saved proof outside the reviewed pair selects a complete
 target-main write instead of attempting the differential path. A successful
 Restore or Update saves fresh per-route proof locally, keyed by Case serial,
 for later fail-closed updates.
+
+Automatic Apply handles the reviewed failure boundaries as follows:
+
+| Observed state | Automatic action |
+| --- | --- |
+| Case older than 1.2.57 | Stage 1.2.57 in the inactive bank, verify readback, switch banks, re-analyze, issue fresh `DEA0`, and recheck both vectors |
+| Case option bytes, bank aliases, or fallback vector disagree | Stop before any temple reset or firmware transfer |
+| One seated contact is initially missing | Issue the bounded traced bilateral reset and require contact plus application liveness to return |
+| Responsive hardware-5 temples run an older version such as 2.1.1.12 | Transfer the complete pinned target main; never select Stock ↔ CFW differential mode |
+| Saved proof disagrees with fresh bilateral identity | Discard the saved plan and transfer the complete pinned target main |
+| Just-in-time differential preflight changes before `START` | Retry complete only with proof of zero accepted firmware bytes, exact cleanup, Case 1.2.57 return, and bilateral reset/liveness |
+| Allowlisted zero-write YHM setup stop | Perform the existing bounded setup reset/recheck and retry the same route |
+| First final-reset contact, telemetry, banner, YHM, or no-frame check is transient | Wait, issue one bounded second `DEB0`, and repeat the full liveness gate |
+| Any transfer mutation, cleanup ambiguity, wrong hardware/version after transfer, or second reset failure | Stop closed and retain the failure audit |
 
 The first hosted retest also exposed a pre-write phase-oscillation edge case.
 A status-3 bridge setup reset can leave the Case charging task in the opposite

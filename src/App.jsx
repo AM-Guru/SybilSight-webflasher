@@ -41,6 +41,7 @@ import {
   installedProvenanceStorageKey,
   mergeInstalledProvenance,
   resolveAutomaticCaseUpdatePlan,
+  verifyAutomaticCaseReadiness,
 } from "./lib/automaticRecovery.js";
 import { REVIEWED_CASE_VERSION } from "./lib/pogoFlashBridge.js";
 
@@ -502,12 +503,18 @@ function SmartGlassesAnalyticsCard({ analytics, label }) {
       </div>
       <div className={cx(
         "writer-compatibility",
-        analytics.reviewedWriterCompatible && "is-compatible",
+        analytics.completeMainWriterCompatible && "is-compatible",
       )}>
-        <Icon name={analytics.reviewedWriterCompatible ? "check" : "warning"} />
+        <Icon
+          name={
+            analytics.completeMainWriterCompatible ? "check" : "warning"
+          }
+        />
         <span>
-          {analytics.reviewedWriterCompatible
-            ? "Matches the validated 2.2.6.10 / hardware 5 recovery path"
+          {analytics.completeMainWriterCompatible
+            ? analytics.differentialSourceCompatible
+              ? "Hardware 5 is complete-main compatible and this version is in the reviewed Stock ↔ CFW differential pair"
+              : "Running hardware-5 application supports complete pinned-main recovery"
             : "Recovery compatibility has not been proven for this temple"}
         </span>
       </div>
@@ -1513,18 +1520,14 @@ function App() {
           addLog(
             `Automatic Apply requested · Smart Glasses ${automaticInstallMode} · Update Charging Case first ${automaticCaseUpdate ? "enabled" : "disabled"}.`,
           );
-          setSessionProgress(0.03, "Refreshing Case and contact telemetry");
-          const freshConsole = await session.readTempleFlashPreflight(
-            ["right", "left"],
-            { requiredCaseVersion: null },
+          setSessionProgress(
+            0.02,
+            "Re-analyzing Case banks, option bytes, and contacts",
           );
-          let fresh = {
-            ...report,
-            console: {
-              ...report.console,
-              ...freshConsole,
-            },
-          };
+          let fresh = await session.analyze({
+            progressBase: 0.01,
+            progressSpan: 0.07,
+          });
           setReport(fresh);
           let freshTelemetry = fresh.console?.telemetry;
           const caseUpdatePlan = resolveAutomaticCaseUpdatePlan({
@@ -1545,8 +1548,9 @@ function App() {
             );
           }
           if (!freshTelemetry?.leftPresent || !freshTelemetry?.rightPresent) {
-            throw new Error(
-              "Automatic Apply stopped before writing: seat both temples in the Case, then refresh the connection.",
+            addLog(
+              "Fresh Case telemetry does not currently report both contacts; Automatic Apply will attempt the traced bilateral reset and require both temples to return before any firmware transfer.",
+              "warn",
             );
           }
 
@@ -1600,7 +1604,7 @@ function App() {
             setBackup(null);
             setStaged(null);
             const postUpdateConsole =
-              await session.readTempleFlashPreflight(["right", "left"]);
+              await session.readTempleFlashPreflight([]);
             fresh = {
               ...fresh,
               console: {
@@ -1619,8 +1623,86 @@ function App() {
             );
           }
 
+          const caseReadiness = verifyAutomaticCaseReadiness(
+            fresh,
+            caseUpdatePlan.targetVersion,
+          );
+          addLog(
+            `Charging Case write gate passed · active physical bank ${caseReadiness.activePhysicalBank} ${caseReadiness.activeVersion} · fallback physical bank ${caseReadiness.fallbackPhysicalBank} ${caseReadiness.fallbackVersion ?? "version unknown"} · nSWAP_BANK ${Number(caseReadiness.swapBank)}.`,
+            "success",
+          );
+
+          setAutomaticStatus(
+            "Resetting both temples and verifying fresh application identity…",
+          );
           setSessionProgress(
             caseUpdatePlan.action === "update" ? 0.5 : 0.09,
+            "Resetting both temples before firmware planning",
+          );
+          const templeReadiness =
+            await session.restartAndVerifyBothTemples({
+              progressBase:
+                caseUpdatePlan.action === "update" ? 0.5 : 0.09,
+              progressSpan: 0.06,
+              purpose: "Automatic preflight",
+            });
+          const observedAt = new Date().toISOString();
+          const observedTempleVersions = Object.fromEntries(
+            ["right", "left"].map((route) => [
+              route,
+              {
+                firmwareVersion:
+                  templeReadiness.versions[route].firmware,
+                hardwareRevision:
+                  templeReadiness.versions[route].hardware,
+              },
+            ]),
+          );
+          setRecheckReport(templeReadiness);
+          setPogoResults(
+            Object.fromEntries(
+              ["right", "left"].map((route) => [
+                route,
+                {
+                  version: {
+                    operation: "version",
+                    route,
+                    decoded: {
+                      kind: "version",
+                      firmwareVersion:
+                        observedTempleVersions[route].firmwareVersion,
+                      hardwareRevision:
+                        observedTempleVersions[route].hardwareRevision,
+                    },
+                    transportProof: {
+                      restoredMask:
+                        templeReadiness.versions[route]
+                          .yhmRestoreVerified
+                          ? 0x3ff
+                          : null,
+                    },
+                    observedAt,
+                  },
+                },
+              ]),
+            ),
+          );
+          fresh = {
+            ...fresh,
+            console: {
+              ...fresh.console,
+              ...templeReadiness,
+              telemetry: templeReadiness.telemetry,
+            },
+          };
+          setReport(fresh);
+          addLog(
+            `Smart Glasses preflight passed after DEB0 · right ${observedTempleVersions.right.firmwareVersion}/hardware ${observedTempleVersions.right.hardwareRevision} · left ${observedTempleVersions.left.firmwareVersion}/hardware ${observedTempleVersions.left.hardwareRevision} · reset attempt ${templeReadiness.resetAttempts.length}/2.`,
+            "success",
+          );
+
+          setSessionProgress(
+            caseUpdatePlan.action === "update" ? 0.57 : 0.16,
             "Loading and validating selected Smart Glasses firmware",
           );
           const targetFirmware = acceptPreparedFirmware(
@@ -1630,19 +1712,6 @@ function App() {
           );
           let sourceFirmware = null;
           let plan = null;
-          const observedTempleVersions = Object.fromEntries(
-            ["right", "left"].map((route) => [
-              route,
-              {
-                firmwareVersion:
-                  pogoResults?.[route]?.version?.decoded?.firmwareVersion ??
-                  null,
-                hardwareRevision:
-                  pogoResults?.[route]?.version?.decoded?.hardwareRevision ??
-                  null,
-              },
-            ]),
-          );
 
           if (automaticInstallMode === "update") {
             setSessionProgress(
@@ -1677,6 +1746,7 @@ function App() {
             differenceSourceFirmware: sourceFirmware,
             differencePlan: plan,
             observedTempleVersions,
+            verifiedTempleReadiness: templeReadiness,
           };
           const execution = await executeAutomaticApply({
             session,
@@ -1711,6 +1781,19 @@ function App() {
                 );
               }
             },
+            onRecovery: (recovery) => {
+              addLog(
+                `Differential preflight observed ${recovery.observedVersion}/hardware 5 before START; cleanup and bilateral reset were verified, so Automatic Update is switching to the complete pinned target main.`,
+                "warn",
+              );
+              setSessionProgress(
+                0.16,
+                "Switching safely from differential to complete target main",
+              );
+              setAutomaticStatus(
+                "Source identity changed before START; retrying automatically with the complete pinned target main…",
+              );
+            },
           });
 
           if (execution.action === "verify-only") {
@@ -1741,7 +1824,7 @@ function App() {
             `${automaticInstallMode === "update" ? "Update" : "Restore"} complete · both temples reset and verified.`,
           );
           addLog(
-            `Automatic ${automaticInstallMode} completed on right + left with FINISH, route restoration, final DEB0 reset, contacts, and application liveness verified.`,
+            `Automatic ${automaticInstallMode} completed on right + left${execution.initialPlan ? " after safe differential-to-complete fallback" : ""} with FINISH, route restoration, final DEB0 reset, contacts, and application liveness verified.`,
             "success",
           );
         } catch (caught) {
@@ -2449,8 +2532,10 @@ function App() {
                           : "Recovery readiness is not yet proven for both routes"}
                       </strong>
                       <span>
-                        Requires Case 1.2.57, each running temple on 2.2.6.10 /
-                        hardware 5, and both applications responsive. The Apollo
+                        Requires Case 1.2.57, a checksum-valid running
+                        hardware-5 application on each temple, and both
+                        contacts responsive. Only exact 2.2.6.10 ↔ 2.2.6.11
+                        transitions use differential mode; the Apollo
                         bootloader is never transferred.
                       </span>
                     </div>
