@@ -52,7 +52,15 @@ jobs:
         run: |
           set -euo pipefail
           test -s dist/index.html
+          test -s dist/release.json
           test -d dist/assets
+          node -e '
+            const fs = require("node:fs");
+            const release = JSON.parse(fs.readFileSync("dist/release.json", "utf8"));
+            if (release.schemaVersion !== 1 || release.buildSha !== process.env.GITHUB_SHA) {
+              throw new Error("Release manifest " + JSON.stringify(release) + " does not match " + process.env.GITHUB_SHA);
+            }
+          '
           if find dist -type l -print -quit | grep -q .; then
             echo "The deployable site must not contain symbolic links." >&2
             exit 1
@@ -236,3 +244,24 @@ jobs:
 
           trap - EXIT
           echo "Deployed ${GITHUB_SHA} to ${SSH_TARGET}:${remote_target}"
+
+      - name: Verify production release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_url="https://webflasher.sybilsight.com/release.json?verify=${GITHUB_SHA}&run=${GITHUB_RUN_ID}"
+          curl --fail --silent --show-error \
+            --header 'Cache-Control: no-cache' \
+            "${release_url}" |
+            node -e '
+              let input = "";
+              process.stdin.setEncoding("utf8");
+              process.stdin.on("data", (chunk) => { input += chunk; });
+              process.stdin.on("end", () => {
+                const release = JSON.parse(input);
+                if (release.schemaVersion !== 1 || release.buildSha !== process.env.GITHUB_SHA) {
+                  throw new Error("Production release " + JSON.stringify(release) + " does not match " + process.env.GITHUB_SHA);
+                }
+                console.log("Verified production WebFlasher " + release.buildSha);
+              });
+            '

@@ -5,6 +5,15 @@ webflasher.sybilsight.com {
 	@firmwareIndex path /firmware-updates/source-files/index.json
 	header @firmwareIndex Cache-Control "no-cache"
 
+	@releaseManifest path /release.json
+	header @releaseManifest Cache-Control "no-store, max-age=0"
+
+	@appShell path / /index.html
+	header @appShell Cache-Control "no-store, max-age=0"
+
+	@builtAssets path /assets/*
+	header @builtAssets Cache-Control "public, max-age=31536000, immutable"
+
 	@firmwareFiles {
 		path /firmware-updates/source-files/*
 		not path /firmware-updates/source-files/index.json

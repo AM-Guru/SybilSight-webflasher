@@ -44,6 +44,10 @@ import {
   verifyAutomaticCaseReadiness,
 } from "./lib/automaticRecovery.js";
 import { REVIEWED_CASE_VERSION } from "./lib/pogoFlashBridge.js";
+import {
+  WEBFLASHER_BUILD_LABEL,
+  assertCurrentWebFlasherRelease,
+} from "./lib/releaseIntegrity.js";
 
 const EMPTY_PROGRESS = {
   fraction: 0,
@@ -68,6 +72,13 @@ const OPERATION_LABELS = Object.freeze({
   stage: "Stage Case bank",
   activate: "Activate Case bank",
 });
+
+const PERSISTENT_MUTATION_OPERATIONS = new Set([
+  "automatic-apply",
+  "temple-flash",
+  "stage",
+  "activate",
+]);
 
 function cx(...values) {
   return values.filter(Boolean).join(" ");
@@ -980,8 +991,17 @@ function App() {
       detail: "Starting…",
       visible: true,
     });
-    addLog(`${OPERATION_LABELS[name] ?? name} started.`);
+    addLog(
+      `${OPERATION_LABELS[name] ?? name} started · WebFlasher ${WEBFLASHER_BUILD_LABEL}.`,
+    );
     try {
+      if (PERSISTENT_MUTATION_OPERATIONS.has(name)) {
+        const release = await assertCurrentWebFlasherRelease();
+        addLog(
+          `Release integrity passed · running and deployed WebFlasher ${release.deployedSha.slice(0, 7)} match.`,
+          "success",
+        );
+      }
       const result = await task();
       addLog(`${OPERATION_LABELS[name] ?? name} finished.`, "success");
       return result;
@@ -3654,7 +3674,10 @@ function App() {
         </div>
         <footer className={cx("footer", progress.visible && "has-task")}>
           <div className="footer-meta">
-            <span>Sybil Sight™ · G2 WebFlasher · local Web Serial</span>
+            <span>
+              Sybil Sight™ · G2 WebFlasher {WEBFLASHER_BUILD_LABEL} · local Web
+              Serial
+            </span>
             <span>No device data is uploaded by this app.</span>
           </div>
           <TaskProgress progress={progress} />

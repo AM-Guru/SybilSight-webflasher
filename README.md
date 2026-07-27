@@ -1224,7 +1224,19 @@ Pushes to `main` run the test and build steps on the organization's
 then checksummed, staged over the runner's `homeassistant` SSH target, and
 atomically published to `/root/share/webflasher/` on that host. Home
 Assistant's Caddy container sees the same directory as `/share/webflasher`.
-The previous release is retained at `/root/share/.webflasher-previous`.
+The previous release is retained at `/root/share/.webflasher-previous`. Every
+build emits `release.json` with its full Git commit identity. The deploy job
+verifies that identity in the artifact and again from the production URL after
+publication.
+
+Before Automatic Apply or any Advanced Case/Glasses firmware write, the
+running tab makes a cache-busted, `no-store` request for `release.json` and
+requires an exact commit match. An open tab from an older deployment therefore
+stops before resetting, erasing, selecting a bank, or transmitting firmware
+and asks for a reload. Operation logs and the footer include the running short
+commit so hardware reports identify the exact code that executed. The Caddy
+example disables caching for the app shell and release manifest while keeping
+fingerprinted assets immutable.
 
 The example also applies a content security policy, security headers, SPA
 fallback, catalog revalidation, and immutable caching for versioned firmware
@@ -1239,6 +1251,7 @@ src/lib/serial.js              Web Serial and STM32 ROM-loader transport
 src/lib/firmware.js            Bundle, checksum, image, and option-byte logic
 src/lib/pogoBridge.js          Pinned read-only SRAM bridge and proof validation
 src/lib/pogoFlashBridge.js     Pinned main-only write bridge and protocol gates
+src/lib/releaseIntegrity.js    Running/deployed build identity mutation gate
 scripts/build-firmware-archive.mjs
                                CDN mirroring and archive extraction
 scripts/g2_pogo_flasher.py     Raw 1-Mbaud temple-UART flasher
@@ -1299,6 +1312,12 @@ the partial result.
 A reset immediately after option-byte programming is expected. Wait for the
 tool to reconnect and complete the fresh analysis. If it cannot, disconnect and
 reconnect the case, then analyze it without starting another write.
+
+**The operation says this browser tab is running an older WebFlasher**
+
+The production safety release changed after the tab was opened. The write was
+blocked before device mutation. Reload the page, confirm the footer and first
+operation-log line show the new short commit, reconnect the Case, and retry.
 
 ## License
 
