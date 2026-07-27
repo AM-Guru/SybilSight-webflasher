@@ -146,6 +146,12 @@ function recoveryEvidence() {
           ...bridge.cachedResponseHeaderTruncation.acceptedBytesByAttempt,
         ],
       },
+      cachedResponsePayloadTruncation: {
+        ...bridge.cachedResponsePayloadTruncation,
+        attempts: bridge.cachedResponsePayloadTruncation.attempts.map(
+          (attempt) => ({ ...attempt }),
+        ),
+      },
       observed33YhmProfile: {
         ...bridge.observed33YhmProfile,
         baselines: [...bridge.observed33YhmProfile.baselines],
@@ -166,6 +172,11 @@ function recoveryEvidence() {
       persistentDataRejectionWindowRecords:
         POGO_TRANSFER_RESEARCH.directTempleHost
           .persistentDataRejectionWindowRecords,
+      maximumWholeComponentRestarts:
+        POGO_TRANSFER_RESEARCH.directTempleHost.maximumWholeComponentRestarts,
+      maximumHostTimeoutWholeComponentRestarts:
+        POGO_TRANSFER_RESEARCH.directTempleHost
+          .maximumHostTimeoutWholeComponentRestarts,
       postflightVersionRequired:
         POGO_TRANSFER_RESEARCH.directTempleHost.postflightVersionRequired,
       bootloaderAllowed: false,

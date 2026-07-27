@@ -51,6 +51,7 @@ import {
   isG2CaseSerialPort,
   isRetryablePostResetLivenessFailure,
   isWebSerialRomPacketBoundary,
+  readPogoFlashResponseFrame,
   readPogoFlashResponseHeader,
   readRomBlockWithBoundaryRecovery,
   retryReadOnlyBlock,
@@ -590,6 +591,92 @@ test("replaces an incomplete cached header when the next G2RX arrives immediatel
 
   assert.deepEqual(header, response.header);
   assert.deepEqual(incompleteCandidates, [3]);
+});
+
+test("recovers a truncated response payload from a later cached frame without writing", async () => {
+  const captured = makeTempleFrame(new Uint8Array([0x54, 1, 3, 1, 0]));
+  const response = makeBridgeResponse(7, captured);
+  const timeout = new Error(
+    "Timed out reading flash bridge response payload byte: received 0 of 1 bytes.",
+  );
+  const events = [
+    ...response.header,
+    ...response.tail.subarray(0, 7),
+    timeout,
+    ...response.header,
+    ...response.tail,
+  ];
+  const incompleteCandidates = [];
+  let writes = 0;
+  const parsed = await readPogoFlashResponseFrame(
+    {
+      async readExact(count) {
+        assert.equal(count, 1);
+        const event = events.shift();
+        if (event instanceof Error) throw event;
+        assert.notEqual(event, undefined);
+        return Uint8Array.of(event);
+      },
+      async write() {
+        writes += 1;
+      },
+    },
+    1000,
+    7,
+    {
+      onIncompleteCandidate: (candidate) =>
+        incompleteCandidates.push(candidate),
+    },
+  );
+
+  assert.deepEqual(parsed, {
+    sequence: 7,
+    status: 0,
+    uartErrors: 0,
+    otaState: 0,
+    captured,
+  });
+  assert.deepEqual(incompleteCandidates, [
+    {
+      stage: "payload",
+      receivedBytes: 7,
+      expectedBytes: 11,
+      sequence: 7,
+      capturedLength: 10,
+    },
+  ]);
+  assert.equal(writes, 0);
+});
+
+test("rejects a stale cached sequence and waits passively for the requested frame", async () => {
+  const captured = makeTempleFrame(new Uint8Array([0x54, 1, 3, 1, 0]));
+  const stale = makeBridgeResponse(6, captured);
+  const current = makeBridgeResponse(7, captured);
+  const events = [
+    ...stale.header,
+    ...current.header,
+    ...current.tail,
+  ];
+  const rejected = [];
+  const parsed = await readPogoFlashResponseFrame(
+    {
+      async readExact(count) {
+        assert.equal(count, 1);
+        const event = events.shift();
+        assert.notEqual(event, undefined);
+        return Uint8Array.of(event);
+      },
+    },
+    1000,
+    7,
+    {
+      onRejectedCandidate: (candidate) => rejected.push(candidate),
+    },
+  );
+
+  assert.equal(parsed.sequence, 7);
+  assert.equal(rejected.length, 1);
+  assert.match(rejected[0].reason, /stale response sequence 6/);
 });
 
 test("requires exact temple reply shapes and zero status", () => {
@@ -1338,6 +1425,35 @@ test("allows one fresh component restart only after a DATA failure and exact cle
   );
   assert.equal(
     canRestartFailedTempleComponent(verifiedDataFailure, 2),
+    false,
+  );
+  const exactHostTimeout = {
+    ...verifiedDataFailure,
+    retainedResult: {
+      ...verifiedDataFailure.retainedResult,
+      status: 16,
+      hostTimeoutRestorationVerified: true,
+    },
+  };
+  assert.equal(
+    canRestartFailedTempleComponent(exactHostTimeout, 2),
+    true,
+  );
+  assert.equal(
+    canRestartFailedTempleComponent(exactHostTimeout, 3),
+    false,
+  );
+  assert.equal(
+    canRestartFailedTempleComponent(
+      {
+        ...exactHostTimeout,
+        retainedResult: {
+          ...exactHostTimeout.retainedResult,
+          hostTimeoutRestorationVerified: false,
+        },
+      },
+      2,
+    ),
     false,
   );
   assert.equal(

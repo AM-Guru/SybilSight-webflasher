@@ -57,6 +57,7 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
     maximumDataRetries: 0,
     retryBackoffMs: Object.freeze([]),
     maximumWholeComponentRestarts: 2,
+    maximumHostTimeoutWholeComponentRestarts: 3,
     persistentDataRejectionWindowRecords: 64,
     stabilityReadQueries: 1,
     preStartSettleMs: 250,
@@ -64,7 +65,7 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
   }),
   caseUsbBridge: Object.freeze({
     status: "both-temples-reviewed-cfw",
-    attempts: 39,
+    attempts: 40,
     completeWiredTransfers: 7,
     attemptedBridgeSha256: Object.freeze([
       "6780d7ba8bf9a6539719dda4111c4fbaab706c74c16cda1e41751616f69109b4",
@@ -84,7 +85,7 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
       "eba56380f04bf00ad9d87dffbc40c3292ec5b3cee458d3607c8cffd0dcbe335b",
     ]),
     validationBoundary:
-      "The hosted Easy Update accepted the exact Stock/CFW compatible-pair gate, recovered a V7 short host-response boundary without replaying DATA, and completed both CFW mains through bounded fresh-component attempts. A later Stock speed test explicitly rejected a 12 KiB deferred batch at 691,000 accepted bytes; the 6 KiB conservative profile then completed all 3,524 right-Stock records, FINISH, postflight, exact YHM restoration, Case 1.2.57 return, and final bilateral DEB0/liveness in 1,571 seconds. A 2.0.7.16 to 2.2.6.10 complete-main update then produced explicit DATA 0x54/status 1 rejections at records 2,184 and 2,219 after exact cleanup and conservative restart pacing. Because those failures were only 35 records apart, the browser now treats the pair as a persistent receiver/storage boundary and does not start a third full-component attempt. A later Case produced six zero-write/zero-transmission probes across three exact register-8 0x33 counterparts; those states now select a separately pinned exact bridge profile while all unobserved baselines remain fail-closed. Keep only the exact proven pair component-differential, use the complete pinned main for cross-version Update/Restore, keep the Case boundary at 6 KiB, and stop clustered explicit DATA rejections within 64 records.",
+      "The hosted Easy Update accepted the exact Stock/CFW compatible-pair gate, recovered a V7 short host-response boundary without replaying DATA, and completed both CFW mains through bounded fresh-component attempts. A later Stock speed test explicitly rejected a 12 KiB deferred batch at 691,000 accepted bytes; the 6 KiB conservative profile then completed all 3,524 right-Stock records, FINISH, postflight, exact YHM restoration, Case 1.2.57 return, and final bilateral DEB0/liveness in 1,571 seconds. A 2.0.7.16 to 2.2.6.10 complete-main update then produced explicit DATA 0x54/status 1 rejections at records 2,184 and 2,219 after exact cleanup and conservative restart pacing. Because those failures were only 35 records apart, the browser now treats the pair as a persistent receiver/storage boundary and does not start a third full-component attempt. A later Case produced six zero-write/zero-transmission probes across three exact register-8 0x33 counterparts; those states now select a separately pinned exact bridge profile while all unobserved baselines remain fail-closed. Build 6454760 later reached complete cached response headers but lost 4 of 11 payload/checksum bytes twice; exact status-16 cleanup, reset, and bilateral liveness succeeded after every attempt. The browser now scans complete variable-length G2RX frames, passively replaces incomplete header or payload candidates with a later cached frame, logs every retained host USART counter, and permits one final triple-paced fresh component only after exact status-16 restoration. Keep only the exact proven pair component-differential, use the complete pinned main for cross-version Update/Restore, keep the Case boundary at 6 KiB, and stop clustered explicit DATA rejections within 64 records.",
     officialRestore: Object.freeze({
       packageSha256:
         "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa",
@@ -281,6 +282,41 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
       policy:
         "After a partial cached G2RX header, passively scan a bounded 256-byte/extended-deadline window for another cached Case retransmission. Never replay the temple request; preserve the existing immutable cleanup and reset path if no complete frame arrives.",
     }),
+    cachedResponsePayloadTruncation: Object.freeze({
+      observedAt: "2026-07-27",
+      webFlasherBuild: "6454760",
+      route: "right",
+      sourceFirmware: "2.2.6.10",
+      targetFirmware: "2.2.6.10 CFW",
+      targetBytes: 3539474,
+      attempts: Object.freeze([
+        Object.freeze({
+          outcome: "host-timeout",
+          acceptedBytes: 1350000,
+          retainedStatus: 16,
+        }),
+        Object.freeze({
+          outcome: "explicit-rejection",
+          rejectedRecord: 1512,
+          acceptedBytes: 1511000,
+          command: "0x54",
+          status: 1,
+        }),
+        Object.freeze({
+          outcome: "host-timeout",
+          acceptedBytes: 1052000,
+          retainedStatus: 16,
+        }),
+      ]),
+      finalPayloadBytes: 7,
+      expectedPayloadBytes: 11,
+      exactCleanupVerifiedAfterEveryAttempt: true,
+      intermediateBilateralLivenessVerified: true,
+      finalBilateralLivenessVerified: true,
+      finishAcknowledged: false,
+      policy:
+        "Scan and checksum the complete variable-length G2RX frame so both incomplete headers and incomplete payload/checksum candidates can be replaced by a later cached retransmission without any temple replay. If the bounded passive scan still ends at exact retained status 16, allow one final reset-gated, triple-paced full-component restart and preserve the existing clustered explicit-rejection stop.",
+    }),
     observed33YhmProfile: Object.freeze({
       observedAt: "2026-07-27",
       webFlasherBuild: "2825fce",
@@ -400,14 +436,14 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
         "The browser writer referenced TempleRejectedError without importing it. The import and explicit-rejection classifier regression test were added before the successful right run.",
     }),
     currentSourceReviewGate:
-      "v7-complete-target-main-live-compatible-pair-and-short-response-recovery",
+      "v7-complete-target-main-live-compatible-pair-and-complete-cached-frame-recovery",
     declaredBytes: 2952,
     declaredSha256:
       "eba56380f04bf00ad9d87dffbc40c3292ec5b3cee458d3607c8cffd0dcbe335b",
     observedBytes: 2952,
     observedSha256:
       "eba56380f04bf00ad9d87dffbc40c3292ec5b3cee458d3607c8cffd0dcbe335b",
-    hardwareAttemptsWithCurrentSource: 5,
+    hardwareAttemptsWithCurrentSource: 6,
     successfulHardwareAttemptsWithCurrentSource: 2,
     postRestoreReset: Object.freeze({
       status: "hardware-validated-revived-left-temple",

@@ -231,7 +231,7 @@ unadvanced DATA rejections at records 349, 753, 874, and 1,663; same-record
 retries after 15, 30, and 60 seconds all produced no complete frame. The Case
 path now ends that component attempt, proves Case/YHM cleanup, issues the
 bilateral reset, verifies both contacts and applications, and begins a fresh
-component from START. It permits three total component attempts unless a
+component from START. It normally permits three total component attempts unless a
 conservative restart returns the same `0x54/status 1` rejection within 64
 records of an earlier rejection on the same route and target. That clustered
 pattern is treated as a persistent receiver/storage boundary and stops before
@@ -241,8 +241,12 @@ upstream `g2flash.py` observation that this grammar carries no destination
 block index, this keeps DATA recovery fail-closed. The host also requires one fresh
 checksum-valid read-only version reply immediately before the first OTA
 command, waits 1 second at each 6-KiB handoff, increases that to 2 seconds
-after 75%, and doubles both values for a restarted component. The final DATA
-record gets a 15-second settle, or 30 seconds on a restarted component, with
+after 75%, and doubles both values for a restarted component. One fourth
+full-component attempt is reserved for an exact retained status-16 host
+timeout after complete route restoration, Case 1.2.57 return, and bilateral
+reset/liveness; that final attempt uses triple pacing. The final DATA
+record gets a 15-second settle, 30 seconds on a normal restart, or 45 seconds
+on the status-16 final recovery, with
 host-only keepalives. Success requires both the checksum-valid zero-status
 `0x55` reply and postflight liveness. A terminal failure preserves a
 failed/uncertain audit, restores Case/YHM state, and performs the final
@@ -708,8 +712,10 @@ payload SHA-256, hardware revision 5, and explicit user confirmations.
 The host uses 32-byte stop-and-wait USB chunks and replays no START, HEADER,
 DATA, or FINISH transaction. An explicit DATA rejection or ambiguous reply
 ends that component attempt. After exact cleanup, bilateral reset, contact and
-liveness proof, Easy Mode may begin a fresh full component, with three total
-attempts and doubled pacing on restarts. V6 rejects a mutating setup before
+liveness proof, Easy Mode may begin a fresh full component, with three normal
+attempts and doubled pacing on restarts. An exact retained status-16 host
+timeout can unlock one final triple-paced attempt after the same reset and
+liveness proof. V6 rejects a mutating setup before
 temple transmission when the Case idle-route phase does not match the selected
 side. A bilateral run may reorder left/right in either direction only from an
 exact allowlisted zero-write opposite-phase proof, capped at four adaptations.
@@ -718,10 +724,13 @@ only two bytes of a response after accepting DATA. The SRAM bridge
 reinitializes USART1 and retransmits only its cached checksum-framed `G2RX`
 response; the browser discards the short prefix and synchronizes to that
 complete frame. A later run reached cached `G2RX` markers but received only
-three of the seven header-suffix bytes on the final candidate. The browser now
-uses a bounded 256-byte scan and a two-second inter-byte candidate gap inside
-an extended response deadline, allowing another cached retransmission to
-replace an incomplete header. It never retransmits the temple DATA request.
+three of the seven header-suffix bytes on the final candidate. Build 6454760
+then received complete headers but stopped twice after 7 of 11
+payload/checksum bytes. The browser now uses a bounded 256-byte whole-frame
+scan and a two-second inter-byte candidate gap inside an extended response
+deadline, allowing another cached retransmission to replace either an
+incomplete header or payload. Every complete candidate must match the expected
+sequence and checksum. It never retransmits the temple DATA request.
 If every host-response attempt fails, immutable-ROM readback may prove a status-16
 fatal cleanup only when all route masks are complete and the ten restored YHM
 bytes exactly match the allowlisted baseline. That proof permits a fresh
@@ -989,6 +998,8 @@ Automatic Apply handles the reviewed failure boundaries as follows:
 | Just-in-time differential preflight changes before `START` | Retry complete only with proof of zero accepted firmware bytes, exact cleanup, Case 1.2.57 return, and bilateral reset/liveness |
 | Read-only YHM baseline is outside the active seated-idle profile | Retry only from exact retained zero-write/zero-transmission proof; switch once to a separately pinned exact profile when recognized, otherwise let the stock app settle for 15 then 45 seconds and re-confirm Case/contact before each probe |
 | Allowlisted zero-write YHM setup stop | Perform the existing bounded setup reset/recheck and retry the same route |
+| Incomplete cached `G2RX` header or payload | Passively scan for a complete same-sequence checksum-valid cached frame; never replay the temple request |
+| Exact retained status-16 DATA host timeout after normal retries | Prove byte-for-byte route cleanup, Case 1.2.57, bilateral reset/contact/liveness, then allow one final triple-paced full-component restart |
 | Two restored explicit DATA rejections recur within 64 records on the same route and target | Classify a persistent receiver/storage boundary, skip the third full-component attempt, restore the Case, and finish with bilateral liveness |
 | First final-reset contact, telemetry, banner, YHM, or no-frame check is transient | Wait, issue one bounded second `DEB0`, and repeat the full liveness gate |
 | Any transfer mutation, cleanup ambiguity, wrong hardware/version after transfer, or second reset failure | Stop closed and retain the failure audit |

@@ -137,6 +137,13 @@ test("separates case shell data from left/right glasses analytics", () => {
   );
   assert.deepEqual(
     analytics.validatedRecoveryEvidence.failureEvidence
+      .cachedResponsePayloadTruncation.attempts.map(
+        (attempt) => attempt.acceptedBytes,
+      ),
+    [1_350_000, 1_511_000, 1_052_000],
+  );
+  assert.deepEqual(
+    analytics.validatedRecoveryEvidence.failureEvidence
       .observed33YhmProfile.baselines,
     [
       "811004aeaf03812033ff",
@@ -148,6 +155,11 @@ test("separates case shell data from left/right glasses analytics", () => {
     analytics.validatedRecoveryEvidence.allowlist
       .persistentDataRejectionWindowRecords,
     64,
+  );
+  assert.equal(
+    analytics.validatedRecoveryEvidence.allowlist
+      .maximumHostTimeoutWholeComponentRestarts,
+    3,
   );
   assert.equal(
     analytics.sessionRecoveryAuditState,

@@ -98,6 +98,7 @@ const POGO_DATA_FINAL_SETTLE_MS = 15000;
 const POGO_DATA_LATE_SETTLE_NUMERATOR = 3;
 const POGO_DATA_LATE_SETTLE_DENOMINATOR = 4;
 const POGO_COMPONENT_RESTART_LIMIT = 2;
+const POGO_HOST_TIMEOUT_COMPONENT_RESTART_LIMIT = 3;
 const POGO_PERSISTENT_REJECTION_WINDOW_RECORDS = 64;
 const POGO_BILATERAL_ROUTE_ADAPTATION_LIMIT = 4;
 const POGO_SETUP_RESET_LIMIT = 2;
@@ -358,6 +359,217 @@ export async function readPogoFlashResponseHeader(
   );
 }
 
+function describeIncompletePogoFlashFrame(candidate) {
+  if (candidate.length < 11) {
+    return {
+      stage: "header",
+      receivedBytes: Math.max(
+        0,
+        candidate.length - POGO_FLASH_RESPONSE_MAGIC.length,
+      ),
+      expectedBytes: 11 - POGO_FLASH_RESPONSE_MAGIC.length,
+      sequence: candidate.length > 5 ? candidate[5] : null,
+      capturedLength: null,
+    };
+  }
+  return {
+    stage: "payload",
+    receivedBytes: candidate.length - 11,
+    expectedBytes: candidate[8] + 1,
+    sequence: candidate[5],
+    capturedLength: candidate[8],
+  };
+}
+
+export async function readPogoFlashResponseFrame(
+  bridge,
+  timeoutMs,
+  expectedSequence,
+  {
+    onResynchronized = () => {},
+    onIncompleteCandidate = () => {},
+    onRejectedCandidate = () => {},
+  } = {},
+) {
+  if (
+    !bridge?.readExact ||
+    !Number.isFinite(timeoutMs) ||
+    timeoutMs < 1 ||
+    !Number.isInteger(expectedSequence) ||
+    expectedSequence < 0 ||
+    expectedSequence > 0xff
+  ) {
+    throw new PogoFlashSafetyError(
+      "A readable Case bridge, positive response deadline, and byte-sized sequence are required.",
+    );
+  }
+  const deadline = Date.now() + timeoutMs;
+  const window = [];
+  let candidate = null;
+  let expectedFrameLength = null;
+  let inspected = 0;
+  let lastCandidateProblem = null;
+
+  const abandonCandidate = (reason = null, stageOverride = null) => {
+    if (!candidate) return;
+    const described = describeIncompletePogoFlashFrame(candidate);
+    const problem =
+      stageOverride === "header"
+        ? {
+            ...described,
+            stage: "header",
+            receivedBytes:
+              candidate.length - POGO_FLASH_RESPONSE_MAGIC.length,
+            expectedBytes: 11 - POGO_FLASH_RESPONSE_MAGIC.length,
+          }
+        : described;
+    lastCandidateProblem = reason ? { ...problem, reason } : problem;
+    if (reason) onRejectedCandidate(lastCandidateProblem);
+    else onIncompleteCandidate(problem);
+    window.splice(
+      0,
+      window.length,
+      ...candidate.slice(
+        Math.max(
+          0,
+          candidate.length - (POGO_FLASH_RESPONSE_MAGIC.length - 1),
+        ),
+      ),
+    );
+    candidate = null;
+    expectedFrameLength = null;
+  };
+
+  while (inspected < POGO_FLASH_RESPONSE_SCAN_LIMIT) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    let byte;
+    try {
+      byte = (
+        await bridge.readExact(
+          1,
+          candidate
+            ? Math.min(POGO_FLASH_HEADER_BYTE_GAP_MS, remaining)
+            : remaining,
+          candidate
+            ? candidate.length < 11
+              ? "flash bridge response header byte"
+              : "flash bridge response payload byte"
+            : "flash bridge response synchronization byte",
+        )
+      )[0];
+    } catch (error) {
+      if (candidate && isSerialReadTimeout(error)) {
+        abandonCandidate();
+        continue;
+      }
+      if (
+        !candidate &&
+        isSerialReadTimeout(error) &&
+        lastCandidateProblem
+      ) {
+        break;
+      }
+      throw error;
+    }
+    inspected += 1;
+
+    if (!candidate) {
+      window.push(byte);
+      if (window.length > POGO_FLASH_RESPONSE_MAGIC.length) window.shift();
+      if (
+        window.length === POGO_FLASH_RESPONSE_MAGIC.length &&
+        window.every(
+          (value, index) => value === POGO_FLASH_RESPONSE_MAGIC[index],
+        )
+      ) {
+        const discardedBytes = inspected - POGO_FLASH_RESPONSE_MAGIC.length;
+        if (discardedBytes > 0) onResynchronized(discardedBytes);
+        candidate = [...POGO_FLASH_RESPONSE_MAGIC];
+        expectedFrameLength = null;
+      }
+      continue;
+    }
+
+    candidate.push(byte);
+    const nestedMagic =
+      candidate.length > POGO_FLASH_RESPONSE_MAGIC.length &&
+      candidate
+        .slice(-POGO_FLASH_RESPONSE_MAGIC.length)
+        .every(
+          (value, index) => value === POGO_FLASH_RESPONSE_MAGIC[index],
+        );
+    if (nestedMagic) {
+      const priorCandidate = candidate.slice(
+        0,
+        candidate.length - POGO_FLASH_RESPONSE_MAGIC.length,
+      );
+      const incomplete = describeIncompletePogoFlashFrame(priorCandidate);
+      lastCandidateProblem = incomplete;
+      onIncompleteCandidate(incomplete);
+      candidate = [...POGO_FLASH_RESPONSE_MAGIC];
+      expectedFrameLength = null;
+      continue;
+    }
+
+    if (candidate.length === 11) {
+      if (candidate[4] !== 1) {
+        abandonCandidate(
+          `unsupported response version ${candidate[4]}`,
+          "header",
+        );
+        continue;
+      }
+      if (candidate[5] !== expectedSequence) {
+        abandonCandidate(
+          `stale response sequence ${candidate[5]}, expected ${expectedSequence}`,
+          "header",
+        );
+        continue;
+      }
+      if (candidate[8] > 64) {
+        abandonCandidate(
+          `capture length ${candidate[8]} exceeds 64`,
+          "header",
+        );
+        continue;
+      }
+      expectedFrameLength = 11 + candidate[8] + 1;
+    }
+
+    if (
+      expectedFrameLength !== null &&
+      candidate.length === expectedFrameLength
+    ) {
+      const frame = Uint8Array.from(candidate);
+      try {
+        return parsePogoFlashResponse(
+          frame.subarray(0, 11),
+          frame.subarray(11),
+          expectedSequence,
+        );
+      } catch (error) {
+        if (!(error instanceof RetryablePogoFlashError)) throw error;
+        abandonCandidate(error.message);
+      }
+    }
+  }
+
+  if (lastCandidateProblem?.reason) {
+    throw new RetryablePogoFlashError(
+      `Timed out locating a complete flash bridge response after ${inspected} bytes; the last cached ${lastCandidateProblem.stage} candidate was rejected because ${lastCandidateProblem.reason}.`,
+    );
+  }
+  if (lastCandidateProblem) {
+    throw new RetryablePogoFlashError(
+      `Timed out locating a complete flash bridge response after ${inspected} bytes; the last cached ${lastCandidateProblem.stage} stopped after ${lastCandidateProblem.receivedBytes}/${lastCandidateProblem.expectedBytes} bytes${lastCandidateProblem.sequence === null ? "" : ` for sequence ${lastCandidateProblem.sequence}`}.`,
+    );
+  }
+  throw new RetryablePogoFlashError(
+    `The Case bridge emitted ${inspected} bytes without a complete checksum-valid G2RX response frame.`,
+  );
+}
+
 export function canRunFinalResetAfterFailure(routeResults) {
   return (
     Array.isArray(routeResults) &&
@@ -374,10 +586,17 @@ export function canRestartFailedTempleComponent(
   routeResult,
   restartCount = 0,
 ) {
+  const exactHostTimeoutRestoration =
+    routeResult?.retainedResult?.status === 16 &&
+    routeResult?.retainedResult?.hostTimeoutRestorationVerified === true;
+  const restartLimit =
+    exactHostTimeoutRestoration
+      ? POGO_HOST_TIMEOUT_COMPONENT_RESTART_LIMIT
+      : POGO_COMPONENT_RESTART_LIMIT;
   return (
     Number.isInteger(restartCount) &&
     restartCount >= 0 &&
-    restartCount < POGO_COMPONENT_RESTART_LIMIT &&
+    restartCount < restartLimit &&
     routeResult?.outcome === "failed_or_uncertain" &&
     routeResult?.otaMutationAttempted === true &&
     /^DATA:\d+$/.test(routeResult?.failureStage ?? "") &&
@@ -1064,32 +1283,38 @@ class CasePogoFlashTransport {
 
   async readBridgeResponse(timeoutMs) {
     const responseTimeout = Math.max(20000, timeoutMs + 30000);
-    const header = await readPogoFlashResponseHeader(
+    return readPogoFlashResponseFrame(
       this.bridge,
       responseTimeout,
-      (discardedBytes) =>
-        this.session.log(
-          `${this.route}: discarded ${discardedBytes} byte${discardedBytes === 1 ? "" : "s"} from a short Case response prefix and synchronized to the retransmitted G2RX frame.`,
-          "warn",
-        ),
-      (receivedSuffixBytes) =>
-        this.session.log(
-          `${this.route}: cached G2RX response header stopped after ${receivedSuffixBytes}/7 suffix bytes; continuing to wait for another cached Case retransmission without replaying the temple request.`,
-          "warn",
-        ),
+      this.sequence,
+      {
+        onResynchronized: (discardedBytes) =>
+          this.session.log(
+            `${this.route}: discarded ${discardedBytes} byte${discardedBytes === 1 ? "" : "s"} from a short Case response prefix and synchronized to a cached G2RX frame.`,
+            "warn",
+          ),
+        onIncompleteCandidate: ({
+          stage,
+          receivedBytes,
+          expectedBytes,
+          sequence,
+        }) =>
+          this.session.log(
+            `${this.route}: cached G2RX response ${stage} stopped after ${receivedBytes}/${expectedBytes} bytes${sequence === null ? "" : ` for sequence ${sequence}`}; passively waiting for another complete cached frame without replaying the temple request.`,
+            "warn",
+          ),
+        onRejectedCandidate: ({
+          stage,
+          receivedBytes,
+          expectedBytes,
+          reason,
+        }) =>
+          this.session.log(
+            `${this.route}: discarded a cached G2RX ${stage} candidate after ${receivedBytes}/${expectedBytes} bytes (${reason}); passively waiting for a checksum-valid frame without replaying the temple request.`,
+            "warn",
+          ),
+      },
     );
-    const length = header[8];
-    if (length > 64) {
-      throw new RetryablePogoFlashError(
-        `The flash bridge declared ${length} captured bytes.`,
-      );
-    }
-    const tail = await this.bridge.readExact(
-      length + 1,
-      Math.max(10000, timeoutMs + 10000),
-      "flash bridge response payload",
-    );
-    return parsePogoFlashResponse(header, tail, this.sequence);
   }
 
   async transact(request, timeoutMs) {
@@ -1348,12 +1573,18 @@ class CasePogoFlashTransport {
         } else {
           validationError = error;
         }
-        if (this.retainedResult) {
-          this.session.log(
-            `${this.route}: retained setup/result diagnostics · status=${this.retainedResult.status}, progress=${this.retainedResult.progress}, baseline=${compactHex(this.retainedResult.baseline)}, selected=${compactHex(this.retainedResult.selected)}, restored=${compactHex(this.retainedResult.restored)}, accepted=${this.retainedResult.acceptedSize}.`,
-            "warn",
-          );
-        }
+      }
+      if (this.retainedResult) {
+        const diagnosticLevel =
+          this.retainedResult.status === 0 ? undefined : "warn";
+        this.session.log(
+          `${this.route}: retained route diagnostics · profile=${this.yhmProfile}, status=${this.retainedResult.status}, progress=${this.retainedResult.progress}, sequence=${this.retainedResult.sequenceValue}, masks=${this.retainedResult.baselineMask.toString(16)}/${this.retainedResult.selectedMask.toString(16)}/${this.retainedResult.restoredMask.toString(16)}, writeMask=0x${this.retainedResult.writeMask.toString(16)}, otaState=${this.retainedResult.otaState}, expectedOtaSequence=${this.retainedResult.expectedSequence}, declared=${this.retainedResult.declaredSize}, accepted=${this.retainedResult.acceptedSize}, templeTx/Rx=${this.retainedResult.templeTxCount}/${this.retainedResult.templeRxCount}, templeUartErrors=0x${this.retainedResult.templeUartErrors.toString(16)}.`,
+          diagnosticLevel,
+        );
+        this.session.log(
+          `${this.route}: retained host diagnostics · txRecoveries=${this.retainedResult.hostTxRecoveries}, txAborts=${this.retainedResult.hostTxAborts}, lastIsr=0x${this.retainedResult.hostTxLastIsr.toString(16).padStart(8, "0")}, rxTimeouts=${this.retainedResult.hostRxTimeouts}, rxErrors=${this.retainedResult.hostRxErrors}, tcTimeouts=${this.retainedResult.hostTcTimeouts}, stage=${this.retainedResult.hostStage}, chunkOffset=${this.retainedResult.hostChunkOffset}; baseline=${compactHex(this.retainedResult.baseline)}, selected=${compactHex(this.retainedResult.selected)}, restored=${compactHex(this.retainedResult.restored)}.`,
+          diagnosticLevel,
+        );
       }
 
       await this.loader.writeMemory(POGO_FLASH_PROOF_ADDRESS, zeroProof);
@@ -2372,10 +2603,10 @@ export class G2CaseSession {
     if (
       !Number.isInteger(dataPacingMultiplier) ||
       dataPacingMultiplier < 1 ||
-      dataPacingMultiplier > 2
+      dataPacingMultiplier > 3
     ) {
       throw new PogoFlashSafetyError(
-        "Temple DATA pacing multiplier must be one or two.",
+        "Temple DATA pacing multiplier must be one, two, or three.",
       );
     }
     const progressBase = (routeIndex / routeCount) * 0.9;
@@ -2730,6 +2961,8 @@ export class G2CaseSession {
       routeSetupResetStops: [],
       routeSetupResetResults: [],
       componentRestartLimit: POGO_COMPONENT_RESTART_LIMIT,
+      hostTimeoutComponentRestartLimit:
+        POGO_HOST_TIMEOUT_COMPONENT_RESTART_LIMIT,
       persistentDataRejectionWindowRecords:
         POGO_PERSISTENT_REJECTION_WINDOW_RECORDS,
       setupResetLimit: POGO_SETUP_RESET_LIMIT,
@@ -2756,6 +2989,12 @@ export class G2CaseSession {
         const componentRestartCount =
           componentRestartCounts.get(route) ?? 0;
         const setupResetCount = setupResetCounts.get(route) ?? 0;
+        const dataPacingMultiplier =
+          componentRestartCount >= POGO_HOST_TIMEOUT_COMPONENT_RESTART_LIMIT
+            ? 3
+            : componentRestartCount > 0
+              ? 2
+              : 1;
         try {
           audit.routeResults.push(
             await this.flashPinnedTempleRoute(
@@ -2765,7 +3004,7 @@ export class G2CaseSession {
               route,
               index,
               routes.length,
-              componentRestartCount > 0 ? 2 : 1,
+              dataPacingMultiplier,
             ),
           );
         } catch (error) {

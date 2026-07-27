@@ -438,14 +438,14 @@ test("records successful case-pogo transfers and enables only the guarded browse
       .persistentDataRejectionWindowRecords,
     64,
   );
-  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 39);
+  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 40);
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.status,
     "both-temples-reviewed-cfw",
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.currentSourceReviewGate,
-    "v7-complete-target-main-live-compatible-pair-and-short-response-recovery",
+    "v7-complete-target-main-live-compatible-pair-and-complete-cached-frame-recovery",
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.declaredSha256,
@@ -506,6 +506,21 @@ test("records successful case-pogo transfers and enables only the guarded browse
     POGO_TRANSFER_RESEARCH.caseUsbBridge.cachedResponseHeaderTruncation
       .acceptedBytesByAttempt,
     [2_467_000, 1_350_000, 1_648_000],
+  );
+  assert.deepEqual(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.cachedResponsePayloadTruncation
+      .attempts.map((attempt) => attempt.acceptedBytes),
+    [1_350_000, 1_511_000, 1_052_000],
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.caseUsbBridge.cachedResponsePayloadTruncation
+      .finalPayloadBytes,
+    7,
+  );
+  assert.equal(
+    POGO_TRANSFER_RESEARCH.directTempleHost
+      .maximumHostTimeoutWholeComponentRestarts,
+    3,
   );
   assert.deepEqual(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.observed33YhmProfile.baselines,
@@ -598,13 +613,13 @@ test("records successful case-pogo transfers and enables only the guarded browse
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.hardwareAttemptsWithCurrentSource,
-    5,
+    6,
   );
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulHardwareAttemptsWithCurrentSource,
     2,
   );
-  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 39);
+  assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.attempts, 40);
   assert.equal(POGO_TRANSFER_RESEARCH.caseUsbBridge.completeWiredTransfers, 7);
   assert.equal(
     POGO_TRANSFER_RESEARCH.caseUsbBridge.browserDifferenceCfwTest.right
