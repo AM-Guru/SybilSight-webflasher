@@ -29,15 +29,20 @@ import {
 import {
   DEFAULT_TEMPLE_FLASH_MODE,
   DEFAULT_TEMPLE_FLASH_ROUTE,
+  findLatestCaseFirmwareRelease,
   findLatestOfficialStockRelease,
 } from "./lib/recoveryDefaults.js";
 import {
+  DEFAULT_AUTOMATIC_CASE_UPDATE,
   DEFAULT_AUTOMATIC_INSTALL_MODE,
   DEFAULT_INTERFACE_MODE,
+  executeAutomaticCaseUpdate,
   executeAutomaticApply,
   installedProvenanceStorageKey,
   mergeInstalledProvenance,
+  resolveAutomaticCaseUpdatePlan,
 } from "./lib/automaticRecovery.js";
+import { REVIEWED_CASE_VERSION } from "./lib/pogoFlashBridge.js";
 
 const EMPTY_PROGRESS = {
   fraction: 0,
@@ -268,6 +273,42 @@ function InstallModeSelector({ value, onChange, disabled = false, idPrefix }) {
         ))}
       </div>
     </fieldset>
+  );
+}
+
+function AutomaticCaseUpdateOption({
+  checked,
+  onChange,
+  disabled = false,
+  currentVersion,
+  targetVersion,
+  idPrefix,
+}) {
+  const detail =
+    currentVersion && targetVersion
+      ? currentVersion === targetVersion
+        ? `Case ${currentVersion} is already current; no Case write will occur.`
+        : `Current Case ${currentVersion} · latest verified Case ${targetVersion}.`
+      : targetVersion
+        ? `If needed, install verified Case ${targetVersion} before flashing the glasses.`
+        : "The latest verified official Case image will be selected from the library.";
+  return (
+    <label
+      className={cx("automatic-case-update", checked && "is-selected")}
+      htmlFor={`${idPrefix}-case-update`}
+    >
+      <input
+        id={`${idPrefix}-case-update`}
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        disabled={disabled}
+      />
+      <span>
+        <strong>Update Charging Case first</strong>
+        <small>{detail}</small>
+      </span>
+    </label>
   );
 }
 
@@ -669,6 +710,9 @@ function App() {
   const [interfaceMode, setInterfaceMode] = useState(DEFAULT_INTERFACE_MODE);
   const [automaticInstallMode, setAutomaticInstallMode] = useState(
     DEFAULT_AUTOMATIC_INSTALL_MODE,
+  );
+  const [automaticCaseUpdate, setAutomaticCaseUpdate] = useState(
+    DEFAULT_AUTOMATIC_CASE_UPDATE,
   );
   const [automaticStatus, setAutomaticStatus] = useState(
     "Select a Case, choose firmware, and Apply.",
@@ -1448,6 +1492,8 @@ function App() {
 
   const automaticApply = async () => {
     const release = catalog.find((item) => item.id === selectedReleaseId);
+    const latestCaseFirmwareRelease =
+      findLatestCaseFirmwareRelease(catalog);
     if (!report) {
       setError("Select and analyze the G2 Case before applying firmware.");
       setAutomaticStatus("Waiting for a selected and analyzed Case.");
@@ -1465,11 +1511,11 @@ function App() {
         try {
           const session = getSession();
           setSessionProgress(0.03, "Refreshing Case and contact telemetry");
-          const freshConsole = await session.readTempleFlashPreflight([
-            "right",
-            "left",
-          ]);
-          const fresh = {
+          const freshConsole = await session.readTempleFlashPreflight(
+            ["right", "left"],
+            { requiredCaseVersion: null },
+          );
+          let fresh = {
             ...report,
             console: {
               ...report.console,
@@ -1477,10 +1523,18 @@ function App() {
             },
           };
           setReport(fresh);
-          const freshTelemetry = fresh.console?.telemetry;
-          if (fresh.console?.caseVersion !== "1.2.57") {
+          let freshTelemetry = fresh.console?.telemetry;
+          const caseUpdatePlan = resolveAutomaticCaseUpdatePlan({
+            enabled: automaticCaseUpdate,
+            currentVersion: fresh.console?.caseVersion,
+            targetRelease: latestCaseFirmwareRelease,
+          });
+          if (!caseUpdatePlan.executable) {
+            throw new Error(caseUpdatePlan.reason);
+          }
+          if (caseUpdatePlan.targetVersion !== REVIEWED_CASE_VERSION) {
             throw new Error(
-              `Automatic Smart Glasses recovery requires Case 1.2.57; found ${fresh.console?.caseVersion ?? "unknown"}.`,
+              `This WebFlasher's glasses writer requires Case ${REVIEWED_CASE_VERSION}, but the latest library Case is ${caseUpdatePlan.targetVersion}. Update the WebFlasher before continuing.`,
             );
           }
           if (!freshTelemetry?.leftPresent || !freshTelemetry?.rightPresent) {
@@ -1489,9 +1543,70 @@ function App() {
             );
           }
 
-          setSessionProgress(0.09, "Loading and validating selected firmware");
+          let caseUpdateFirmware = null;
+          if (caseUpdatePlan.action === "update") {
+            setAutomaticStatus(
+              `Updating Charging Case ${caseUpdatePlan.currentVersion} → ${caseUpdatePlan.targetVersion}…`,
+            );
+            setSessionProgress(
+              0.04,
+              `Loading verified Case ${caseUpdatePlan.targetVersion}`,
+            );
+            caseUpdateFirmware = await fetchCatalogFirmware(
+              latestCaseFirmwareRelease,
+            );
+            const caseUpdate = await executeAutomaticCaseUpdate({
+              session,
+              currentReport: fresh,
+              targetFirmware: caseUpdateFirmware,
+              onStep: (step) => {
+                if (step === "stage") {
+                  setSessionProgress(
+                    0.05,
+                    `Staging Case ${caseUpdatePlan.targetVersion} in the inactive bank`,
+                  );
+                } else if (step === "activate") {
+                  setSessionProgress(
+                    0.27,
+                    "Activating the verified Case bank",
+                  );
+                } else {
+                  setSessionProgress(
+                    0.37,
+                    "Re-analyzing the updated Charging Case",
+                  );
+                }
+              },
+            });
+            fresh = caseUpdate.report;
+            setReport(fresh);
+            setBackup(null);
+            setStaged(null);
+            const postUpdateConsole =
+              await session.readTempleFlashPreflight(["right", "left"]);
+            fresh = {
+              ...fresh,
+              console: {
+                ...fresh.console,
+                ...postUpdateConsole,
+              },
+            };
+            setReport(fresh);
+            freshTelemetry = fresh.console?.telemetry;
+            addLog(
+              `Charging Case updated ${caseUpdatePlan.currentVersion} → ${caseUpdatePlan.targetVersion}; inactive-bank readback, activation, application banner, and active bank verified.`,
+              "success",
+            );
+          }
+
+          setSessionProgress(
+            caseUpdatePlan.action === "update" ? 0.5 : 0.09,
+            "Loading and validating selected Smart Glasses firmware",
+          );
           const targetFirmware = acceptPreparedFirmware(
-            await fetchCatalogFirmware(release),
+            caseUpdateFirmware?.catalogRelease?.id === release.id
+              ? caseUpdateFirmware
+              : await fetchCatalogFirmware(release),
           );
           let sourceFirmware = null;
           let plan = null;
@@ -1604,7 +1719,7 @@ function App() {
           throw caught;
         }
       },
-      { total: 16 },
+      { total: automaticCaseUpdate ? 22 : 16 },
     );
   };
 
@@ -1694,7 +1809,13 @@ function App() {
     confirmText.trim().toUpperCase() === "ACTIVATE CASE BANK";
   const caseReleases = catalog.filter((item) => item.caseRecoveryEligible);
   const latestCaseRelease = findLatestOfficialStockRelease(caseReleases);
+  const latestCaseFirmwareRelease = findLatestCaseFirmwareRelease(catalog);
   const selectedRelease = catalog.find((item) => item.id === selectedReleaseId);
+  const caseUpdateNeeded = Boolean(
+    report?.console?.caseVersion &&
+      latestCaseFirmwareRelease?.caseVersion &&
+      report.console.caseVersion !== latestCaseFirmwareRelease.caseVersion,
+  );
   const serialSupported = webSerialSupported();
   const deviceAnalytics = useMemo(
     () =>
@@ -1830,8 +1951,14 @@ function App() {
                 and finishes with the required bilateral reset and liveness check.
               </p>
             </div>
-            <StatusPill tone={report ? "success" : "quiet"}>
-              {report ? `Case ${report.console?.caseVersion} ready` : "Case required"}
+            <StatusPill
+              tone={report ? (caseUpdateNeeded ? "warm" : "success") : "quiet"}
+            >
+              {report
+                ? caseUpdateNeeded
+                  ? `Case ${report.console?.caseVersion} · update available`
+                  : `Case ${report.console?.caseVersion} ready`
+                : "Case required"}
             </StatusPill>
           </div>
 
@@ -1904,6 +2031,14 @@ function App() {
                 onChange={setAutomaticInstallMode}
                 disabled={Boolean(operation)}
               />
+              <AutomaticCaseUpdateOption
+                idPrefix="easy"
+                checked={automaticCaseUpdate}
+                onChange={setAutomaticCaseUpdate}
+                disabled={Boolean(operation)}
+                currentVersion={report?.console?.caseVersion}
+                targetVersion={latestCaseFirmwareRelease?.caseVersion}
+              />
             </article>
 
             <article className="easy-action-card easy-apply-card">
@@ -1915,7 +2050,12 @@ function App() {
                 </div>
               </div>
               <div className="automatic-task-list">
-                <span><Icon name="check" /> Fresh Case + contact preflight</span>
+                <span>
+                  <Icon name="check" />
+                  {automaticCaseUpdate
+                    ? "Update + verify the Case first when needed"
+                    : "Require the latest Case + fresh contact preflight"}
+                </span>
                 <span><Icon name="check" /> Hash and component validation</span>
                 <span><Icon name="check" /> Right, then left, with bounded recovery</span>
                 <span><Icon name="check" /> Final DEB0 reset + liveness proof</span>
@@ -2461,6 +2601,14 @@ function App() {
                   value={automaticInstallMode}
                   onChange={setAutomaticInstallMode}
                   disabled={Boolean(operation)}
+                />
+                <AutomaticCaseUpdateOption
+                  idPrefix="advanced"
+                  checked={automaticCaseUpdate}
+                  onChange={setAutomaticCaseUpdate}
+                  disabled={Boolean(operation)}
+                  currentVersion={report?.console?.caseVersion}
+                  targetVersion={latestCaseFirmwareRelease?.caseVersion}
                 />
                 <Button
                   onClick={automaticApply}

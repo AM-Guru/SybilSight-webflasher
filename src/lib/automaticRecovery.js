@@ -1,11 +1,153 @@
 export const DEFAULT_INTERFACE_MODE = "easy";
 export const DEFAULT_AUTOMATIC_INSTALL_MODE = "update";
+export const DEFAULT_AUTOMATIC_CASE_UPDATE = false;
 export const AUTOMATIC_INSTALL_MODES = Object.freeze(["update", "restore"]);
 
 const ROUTES = Object.freeze(["right", "left"]);
 const REVIEWED_STOCK_VERSION = "2.2.6.10";
 const REVIEWED_CFW_VERSION = "2.2.6.11";
 const MAIN_COMPONENT = "ota/s200_firmware_ota.bin";
+
+function compareVersions(left, right) {
+  const parse = (version) => {
+    const text = String(version ?? "").trim();
+    if (!/^\d+(?:\.\d+)*$/.test(text)) return null;
+    return text.split(".").map((part) => Number.parseInt(part, 10));
+  };
+  const leftParts = parse(left);
+  const rightParts = parse(right);
+  if (!leftParts || !rightParts) return null;
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+    if (difference) return Math.sign(difference);
+  }
+  return 0;
+}
+
+export function resolveAutomaticCaseUpdatePlan({
+  enabled = DEFAULT_AUTOMATIC_CASE_UPDATE,
+  currentVersion,
+  targetRelease,
+}) {
+  const targetVersion = targetRelease?.caseVersion;
+  if (
+    targetRelease?.channel !== "official" ||
+    targetRelease?.caseRecoveryEligible === false ||
+    !targetVersion
+  ) {
+    return {
+      executable: false,
+      action: "blocked",
+      reason:
+        "The firmware library does not contain a verified official Charging Case update.",
+    };
+  }
+
+  const comparison = compareVersions(currentVersion, targetVersion);
+  if (comparison == null) {
+    return {
+      executable: false,
+      action: "blocked",
+      reason:
+        `Automatic Apply cannot safely compare Case firmware ${currentVersion ?? "unknown"} with ${targetVersion}.`,
+    };
+  }
+  if (comparison === 0) {
+    return {
+      executable: true,
+      action: "none",
+      currentVersion,
+      targetVersion,
+      reason: `The Charging Case already runs the latest firmware ${targetVersion}.`,
+    };
+  }
+  if (comparison > 0) {
+    return {
+      executable: false,
+      action: "blocked",
+      currentVersion,
+      targetVersion,
+      reason:
+        `The Charging Case reports ${currentVersion}, newer than library version ${targetVersion}; Automatic Apply will not downgrade it.`,
+    };
+  }
+  if (!enabled) {
+    return {
+      executable: false,
+      action: "blocked",
+      currentVersion,
+      targetVersion,
+      reason:
+        `Automatic Smart Glasses recovery requires Case ${targetVersion}; found ${currentVersion}. Enable “Update Charging Case first” and Apply again.`,
+    };
+  }
+  return {
+    executable: true,
+    action: "update",
+    currentVersion,
+    targetVersion,
+    reason:
+      `Update the Charging Case from ${currentVersion} to ${targetVersion}, verify the new active bank, then continue with Smart Glasses recovery.`,
+  };
+}
+
+export async function executeAutomaticCaseUpdate({
+  session,
+  currentReport,
+  targetFirmware,
+  onStep,
+}) {
+  if (!session) throw new Error("An analyzed G2 Case session is required.");
+  if (
+    !targetFirmware?.caseRecoveryEligible ||
+    !(targetFirmware.caseImage instanceof Uint8Array) ||
+    !targetFirmware.caseImage.length ||
+    !targetFirmware.caseVersion
+  ) {
+    throw new Error(
+      "The automatic Case update requires a validated official Case recovery image.",
+    );
+  }
+  if (!(currentReport?.optionBytes instanceof Uint8Array)) {
+    throw new Error(
+      "Fresh Case option bytes are required before an automatic Case update.",
+    );
+  }
+
+  await onStep?.("stage", targetFirmware);
+  const staged = await session.stageCaseImage(
+    targetFirmware.caseImage,
+    currentReport.optionBytes,
+    { progressBase: 0.04, progressSpan: 0.22 },
+  );
+  await onStep?.("activate", targetFirmware);
+  const activation = await session.activateStagedBank(
+    targetFirmware.caseImage,
+    currentReport.optionBytes,
+    { progressBase: 0.26, progressSpan: 0.1 },
+  );
+  if (activation?.caseVersion !== targetFirmware.caseVersion) {
+    throw new Error(
+      `The Charging Case restarted on ${activation?.caseVersion ?? "an unknown version"}, expected ${targetFirmware.caseVersion}.`,
+    );
+  }
+
+  await onStep?.("reanalyze", targetFirmware);
+  const report = await session.analyze({
+    progressBase: 0.36,
+    progressSpan: 0.12,
+  });
+  if (
+    report?.console?.caseVersion !== targetFirmware.caseVersion ||
+    report?.banks?.active?.version !== targetFirmware.caseVersion
+  ) {
+    throw new Error(
+      `The Charging Case update was not proven in both the application and active bank (expected ${targetFirmware.caseVersion}).`,
+    );
+  }
+  return { staged, activation, report };
+}
 
 function auditVerificationComplete(audit) {
   const verification = audit?.verification;

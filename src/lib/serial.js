@@ -1243,7 +1243,9 @@ export class G2CaseSession {
     this.wait = wait;
   }
 
-  async analyze() {
+  async analyze({ progressBase = 0, progressSpan = 1 } = {}) {
+    const reportProgress = (fraction, detail) =>
+      this.progress(progressBase + fraction * progressSpan, detail);
     const info = this.port.getInfo?.() ?? {};
     this.log("Opening the 1 Mbaud read-only factory console.");
     const normal = await openNormalConsole(this.port);
@@ -1264,23 +1266,24 @@ export class G2CaseSession {
       replies[0xa3],
       replies[0xa4],
     );
-    this.progress(0.32, "Factory telemetry captured");
+    reportProgress(0.32, "Factory telemetry captured");
     this.log("Factory telemetry and identifiers captured.");
 
     const loader = new Stm32Bootloader(this.port, this.log);
     try {
       this.log("Entering the immutable STM32 ROM loader for bank inspection.");
       await loader.connect();
-      this.progress(0.42, "ROM loader identified");
+      reportProgress(0.42, "ROM loader identified");
       const optionBytes = await loader.readRange(OPTION_BASE, OPTION_SIZE);
       const options = decodeOptionBytes(optionBytes);
       const activeHead = await loader.readRange(FLASH_BASE, 0x4000, (fraction) =>
-        this.progress(0.45 + fraction * 0.18, "Reading active bank"),
+        reportProgress(0.45 + fraction * 0.18, "Reading active bank"),
       );
       const inactiveHead = await loader.readRange(
         FLASH_BASE + BANK_SIZE,
         0x4000,
-        (fraction) => this.progress(0.63 + fraction * 0.18, "Reading inactive bank"),
+        (fraction) =>
+          reportProgress(0.63 + fraction * 0.18, "Reading inactive bank"),
       );
       return {
         usb: {
@@ -1313,7 +1316,7 @@ export class G2CaseSession {
     } finally {
       await loader.close();
       await this.restoreNormal();
-      this.progress(1, "Analysis complete");
+      reportProgress(1, "Analysis complete");
     }
   }
 
@@ -1698,16 +1701,22 @@ export class G2CaseSession {
     }
   }
 
-  async readTempleFlashPreflight(routes) {
+  async readTempleFlashPreflight(
+    routes,
+    { requiredCaseVersion = REVIEWED_CASE_VERSION } = {},
+  ) {
     this.log("Refreshing Case firmware and seated-temple telemetry before flashing.");
     const normal = await openNormalConsole(this.port);
     try {
       const bootText = new TextDecoder().decode(await normal.collectFor(2500));
       const telemetryText = await queryNormal(normal, 0xa3, 1000);
       const report = parseConsoleReport(bootText, telemetryText);
-      if (report.caseVersion !== REVIEWED_CASE_VERSION) {
+      if (
+        requiredCaseVersion &&
+        report.caseVersion !== requiredCaseVersion
+      ) {
         throw new PogoFlashSafetyError(
-          `The volatile writer is pinned to Case ${REVIEWED_CASE_VERSION}; this Case reports ${report.caseVersion ?? "unknown"}.`,
+          `The volatile writer is pinned to Case ${requiredCaseVersion}; this Case reports ${report.caseVersion ?? "unknown"}.`,
         );
       }
       if (!report.telemetry) {
@@ -2458,7 +2467,13 @@ export class G2CaseSession {
     }
   }
 
-  async stageCaseImage(caseImage, optionSnapshot) {
+  async stageCaseImage(
+    caseImage,
+    optionSnapshot,
+    { progressBase = 0, progressSpan = 1 } = {},
+  ) {
+    const reportProgress = (fraction, detail) =>
+      this.progress(progressBase + fraction * progressSpan, detail);
     const options = decodeOptionBytes(optionSnapshot);
     const pageCount = Math.ceil(caseImage.length / FLASH_PAGE_SIZE);
     const physicalPageStart = options.swapBank ? 128 : 0;
@@ -2479,22 +2494,28 @@ export class G2CaseSession {
         `Erasing ${pageCount} bounded pages in inactive physical bank ${options.inactivePhysicalBank}.`,
       );
       await loader.erasePages(pages);
-      this.progress(0.08, "Inactive pages erased");
+      reportProgress(0.08, "Inactive pages erased");
       await loader.writeRange(INACTIVE_ALIAS, caseImage, (fraction) =>
-        this.progress(0.08 + fraction * 0.7, `Writing inactive bank · ${Math.round(fraction * 100)}%`),
+        reportProgress(
+          0.08 + fraction * 0.7,
+          `Writing inactive bank · ${Math.round(fraction * 100)}%`,
+        ),
       );
       const readback = await loader.readRange(
         INACTIVE_ALIAS,
         caseImage.length,
         (fraction) =>
-          this.progress(0.78 + fraction * 0.2, `Verifying inactive bank · ${Math.round(fraction * 100)}%`),
+          reportProgress(
+            0.78 + fraction * 0.2,
+            `Verifying inactive bank · ${Math.round(fraction * 100)}%`,
+          ),
       );
       const sourceSha256 = await sha256Hex(caseImage);
       const readbackSha256 = await sha256Hex(readback);
       if (sourceSha256 !== readbackSha256 || !equalBytes(caseImage, readback)) {
         throw new Error("Inactive-bank readback does not match the selected Case image.");
       }
-      this.progress(1, "Inactive bank verified");
+      reportProgress(1, "Inactive bank verified");
       this.log(`Inactive bank staged and verified · ${readbackSha256.slice(0, 16)}…`);
       return { sourceSha256, readbackSha256, pageCount, optionSnapshot };
     } finally {
@@ -2503,7 +2524,13 @@ export class G2CaseSession {
     }
   }
 
-  async activateStagedBank(caseImage, optionSnapshot) {
+  async activateStagedBank(
+    caseImage,
+    optionSnapshot,
+    { progressBase = 0, progressSpan = 1 } = {},
+  ) {
+    const reportProgress = (fraction, detail) =>
+      this.progress(progressBase + fraction * progressSpan, detail);
     const loader = new Stm32Bootloader(this.port, this.log);
     let optionWriteStarted = false;
     try {
@@ -2517,7 +2544,8 @@ export class G2CaseSession {
       const readback = await loader.readRange(
         INACTIVE_ALIAS,
         caseImage.length,
-        (fraction) => this.progress(fraction * 0.35, "Rechecking staged bank"),
+        (fraction) =>
+          reportProgress(fraction * 0.35, "Rechecking staged bank"),
       );
       if (!equalBytes(readback, caseImage)) {
         throw new Error("The staged bank no longer matches the selected image.");
@@ -2526,7 +2554,7 @@ export class G2CaseSession {
       this.log("Staged image reverified. Committing the bank-selection option word.");
       optionWriteStarted = true;
       await loader.writeMemory(OPTION_BASE, nextOptions, 8000);
-      this.progress(0.72, "Bank selection committed");
+      reportProgress(0.72, "Bank selection committed");
     } catch (error) {
       if (!optionWriteStarted) throw error;
       if (/NACK|unexpected 0x/i.test(error?.message ?? "")) throw error;
@@ -2540,7 +2568,7 @@ export class G2CaseSession {
 
     await delay(1200);
     const report = await this.restartAndRecheck();
-    this.progress(1, "Activated and restarted");
+    reportProgress(1, "Activated and restarted");
     return report;
   }
 }

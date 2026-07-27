@@ -61,8 +61,9 @@ Production deployment:
   component with the same complete CRC/finish/reset verification as a normal
   reinstall.
 - Opens in **Easy Mode** at the site root: select the Case, choose Stock or
-  CFW, leave the default **Update** mode selected (or choose **Restore**), and
-  click **Apply**. One shared automation pipeline performs the fresh
+  CFW, leave the default **Update** mode selected (or choose **Restore**),
+  optionally update older Charging Case firmware first, and click **Apply**.
+  One shared automation pipeline performs the fresh
   preflight, catalog/image validation, bilateral right-then-left operation,
   bounded cleanup/recovery, final `DEB0` reset, contact checks, and
   checksum-valid liveness verification without mid-process prompts.
@@ -656,7 +657,9 @@ that failed closed before FINISH; retain the audit for every browser write.
 
 For the exact reviewed CFW or official recovery package, the webflasher loads
 the separately pinned 2,952-byte V7 bridge at `0x20010000`. It first requires
-case firmware 1.2.57,
+case firmware 1.2.57 (or, when the explicit **Update Charging Case first**
+option is enabled, stages the latest official Case image in the inactive bank,
+verifies it byte-for-byte, activates it, and re-analyzes the Case),
 fresh seated-route telemetry, the complete CFW bundle SHA-256, the Apollo-main
 payload SHA-256, hardware revision 5, and explicit user confirmations.
 
@@ -864,7 +867,16 @@ panes. Both interfaces call the same automatic Apply implementation.
 1. Click **Select Case** and choose the G2 Case USB Serial device.
 2. Choose official Stock or reviewed CFW.
 3. Leave **Update** selected, or choose **Restore**.
-4. Click **Apply** and keep the Case, glasses, and cable still.
+4. If the Case is older than the latest verified Case firmware, enable
+   **Update Charging Case first**. The default remains off, and the updater
+   never downgrades a newer or unknown Case version.
+5. Click **Apply** and keep the Case, glasses, and cable still.
+
+When enabled and needed, Apply validates the latest official Case component,
+stages only the inactive bank, verifies its complete readback, activates that
+bank, and proves both the normal application banner and active-bank version
+before sending any Smart Glasses firmware bytes. If the option is off, an older
+Case still stops at preflight with an actionable message.
 
 Restore revalidates the selected bundle and rewrites the complete pinned
 Apollo main on both temples. It starts right then left, but may reverse that

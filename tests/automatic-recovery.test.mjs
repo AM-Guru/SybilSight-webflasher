@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  DEFAULT_AUTOMATIC_CASE_UPDATE,
   DEFAULT_AUTOMATIC_INSTALL_MODE,
   DEFAULT_INTERFACE_MODE,
+  executeAutomaticCaseUpdate,
   executeAutomaticApply,
   mergeInstalledProvenance,
   provenanceFromSuccessfulAudit,
+  resolveAutomaticCaseUpdatePlan,
   resolveAutomaticApplyPlan,
 } from "../src/lib/automaticRecovery.js";
 
@@ -50,6 +53,107 @@ const differencePlan = {
 test("defaults to Easy Mode and differential Update", () => {
   assert.equal(DEFAULT_INTERFACE_MODE, "easy");
   assert.equal(DEFAULT_AUTOMATIC_INSTALL_MODE, "update");
+  assert.equal(DEFAULT_AUTOMATIC_CASE_UPDATE, false);
+});
+
+const latestCaseRelease = {
+  channel: "official",
+  caseRecoveryEligible: true,
+  caseVersion: "1.2.57",
+};
+
+test("Case update is a no-op when the latest version is already installed", () => {
+  assert.equal(
+    resolveAutomaticCaseUpdatePlan({
+      enabled: false,
+      currentVersion: "1.2.57",
+      targetRelease: latestCaseRelease,
+    }).action,
+    "none",
+  );
+});
+
+test("older Case firmware requires the explicit automatic-update option", () => {
+  const blocked = resolveAutomaticCaseUpdatePlan({
+    enabled: false,
+    currentVersion: "1.2.56",
+    targetRelease: latestCaseRelease,
+  });
+  assert.equal(blocked.executable, false);
+  assert.match(blocked.reason, /Enable “Update Charging Case first”/);
+
+  const update = resolveAutomaticCaseUpdatePlan({
+    enabled: true,
+    currentVersion: "1.2.56",
+    targetRelease: latestCaseRelease,
+  });
+  assert.equal(update.executable, true);
+  assert.equal(update.action, "update");
+  assert.equal(update.targetVersion, "1.2.57");
+});
+
+test("automatic Case update refuses a downgrade", () => {
+  const result = resolveAutomaticCaseUpdatePlan({
+    enabled: true,
+    currentVersion: "1.2.58",
+    targetRelease: latestCaseRelease,
+  });
+  assert.equal(result.executable, false);
+  assert.match(result.reason, /will not downgrade/);
+});
+
+test("automatic Case update stages, activates, and re-analyzes before returning", async () => {
+  const events = [];
+  const optionBytes = new Uint8Array(128);
+  const caseImage = new Uint8Array([1, 2, 3, 4]);
+  const targetFirmware = {
+    caseRecoveryEligible: true,
+    caseVersion: "1.2.57",
+    caseImage,
+  };
+  const report = {
+    optionBytes,
+    console: { caseVersion: "1.2.56" },
+  };
+  const updatedReport = {
+    optionBytes: new Uint8Array(128),
+    console: { caseVersion: "1.2.57" },
+    banks: { active: { version: "1.2.57" } },
+  };
+  const result = await executeAutomaticCaseUpdate({
+    session: {
+      stageCaseImage: async (...args) => {
+        events.push(["stage", ...args]);
+        return { readbackSha256: "a".repeat(64) };
+      },
+      activateStagedBank: async (...args) => {
+        events.push(["activate", ...args]);
+        return { caseVersion: "1.2.57" };
+      },
+      analyze: async (...args) => {
+        events.push(["analyze", ...args]);
+        return updatedReport;
+      },
+    },
+    currentReport: report,
+    targetFirmware,
+    onStep: (step) => events.push(["step", step]),
+  });
+
+  assert.equal(result.report, updatedReport);
+  assert.deepEqual(
+    events.map(([event, detail]) => [event, detail]),
+    [
+      ["step", "stage"],
+      ["stage", caseImage],
+      ["step", "activate"],
+      ["activate", caseImage],
+      ["step", "reanalyze"],
+      ["analyze", { progressBase: 0.36, progressSpan: 0.12 }],
+    ],
+  );
+  assert.equal(events[1][2], optionBytes);
+  assert.equal(events[3][2], optionBytes);
 });
 
 test("Restore always plans a complete bilateral rewrite", () => {

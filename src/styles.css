@@ -2935,6 +2935,49 @@ code {
   line-height: 1.4;
 }
 
+.automatic-case-update {
+  display: flex;
+  padding: 11px;
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #0d0d0d;
+  cursor: pointer;
+  gap: 8px;
+}
+
+.automatic-case-update.is-selected {
+  color: var(--ink);
+  border-color: rgba(0, 255, 136, 0.48);
+  background: rgba(0, 255, 136, 0.07);
+}
+
+.automatic-case-update input {
+  flex: none;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+
+.automatic-case-update strong,
+.automatic-case-update small {
+  display: block;
+}
+
+.automatic-case-update strong {
+  font-size: 11px;
+}
+
+.automatic-case-update small {
+  margin-top: 4px;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.automatic-case-update:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .automatic-task-list {
   display: grid;
   gap: 11px;

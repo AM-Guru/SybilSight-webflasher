@@ -30,3 +30,18 @@ export function findLatestOfficialStockRelease(releases) {
       compareVersionsDescending(left?.version, right?.version),
     )[0] ?? null;
 }
+
+export function findLatestCaseFirmwareRelease(releases) {
+  return [...(Array.isArray(releases) ? releases : [])]
+    .filter(
+      (release) =>
+        release?.channel === "official" &&
+        release?.caseRecoveryEligible !== false &&
+        release?.caseVersion,
+    )
+    .sort(
+      (left, right) =>
+        compareVersionsDescending(left?.caseVersion, right?.caseVersion) ||
+        compareVersionsDescending(left?.version, right?.version),
+    )[0] ?? null;
+}

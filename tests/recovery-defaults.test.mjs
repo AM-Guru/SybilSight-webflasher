@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   DEFAULT_TEMPLE_FLASH_MODE,
   DEFAULT_TEMPLE_FLASH_ROUTE,
+  findLatestCaseFirmwareRelease,
   findLatestOfficialStockRelease,
 } from "../src/lib/recoveryDefaults.js";
 
@@ -33,4 +34,34 @@ test("selects the newest official Stock release independent of catalog order", (
     },
   ];
   assert.equal(findLatestOfficialStockRelease(releases)?.id, "stock-new");
+});
+
+test("selects the newest Case firmware before using glasses version as a tie-breaker", () => {
+  const releases = [
+    {
+      id: "newer-glasses-older-case",
+      channel: "official",
+      version: "2.3.0.0",
+      caseVersion: "1.2.56",
+      caseRecoveryEligible: true,
+    },
+    {
+      id: "older-glasses-newer-case",
+      channel: "official",
+      version: "2.2.6.10",
+      caseVersion: "1.2.57",
+      caseRecoveryEligible: true,
+    },
+    {
+      id: "custom",
+      channel: "custom",
+      version: "9.9.9.9",
+      caseVersion: "9.9.9",
+      caseRecoveryEligible: false,
+    },
+  ];
+  assert.equal(
+    findLatestCaseFirmwareRelease(releases)?.id,
+    "older-glasses-newer-case",
+  );
 });
