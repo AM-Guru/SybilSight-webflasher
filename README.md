@@ -242,6 +242,26 @@ host-only keepalives. Success requires both the checksum-valid zero-status
 failed/uncertain audit, restores Case/YHM state, and performs the final
 bilateral reset when cleanup is proven.
 
+The 2026-07-26 speed qualification rejected a larger Case storage batch. A
+12-KiB `balanced-lab` right-Stock run received an explicit DATA rejection after
+691,000 accepted bytes, with zero temple UART errors and exact cleanup. A fresh
+6-KiB conservative run then accepted all 3,524 Stock-main records and
+3,523,396 bytes, FINISH/postflight, exact YHM restoration, Case 1.2.57 return,
+and final bilateral reset/liveness. It took 1,571 seconds. Consequently:
+
+- Update uses the complete changed-component plan and transmits zero unchanged
+  components when installed provenance is trusted;
+- Stock 2.2.6.10 ↔ CFW 2.2.6.11 sends only the complete target Apollo main;
+- Restore remains the complete reviewed-image operation;
+- Case USB retains the 6-KiB deferred-write boundary; and
+- `balanced-lab` remains explicit-risk research, not a faster default.
+
+A fresh whole-component retry may use the hardware-qualified
+`conservative-retry` profile: the batch remains 6 KiB while settle intervals
+double to 2/4 seconds and the final settle becomes 30 seconds. It is valid only
+after exact cleanup, bilateral reset/contact/liveness proof, and a new START;
+the rejected DATA record is never replayed.
+
 The first 100-query gate was retired after a fresh hardware comparison showed
 the live left route fail at query 52 and the already verified-stock right
 route fail at query 53, both with zero UART error flags. Slowing the left probe

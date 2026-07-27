@@ -19,16 +19,24 @@ They are intentionally fail-closed:
 - the case-USB writer exposes distinct commands for the exact reviewed CFW
   and official 2.2.6.10 bundles and pins the selected complete-image hash;
 - `0x52` start and `0x53` header are never replayed;
-- only the identical CRC-protected current `0x54` data record is retried,
-  after a lost/corrupt reply or an explicit rejection that did not advance the
-  temple sequence;
-- every 6-KiB parser handoff gets a 100-ms settling interval;
+- `0x54` DATA is never replayed after a rejection, missing reply, or malformed
+  reply; exact cleanup and the bilateral reset/liveness gate may authorize
+  only a fresh whole-component START;
+- the hardware-qualified Case profile keeps a 6-KiB parser handoff boundary,
+  waits 1 second at each boundary and 2 seconds after 75%, and doubles only
+  those settle windows for a fresh whole-component retry;
 - the checksum-valid, zero-status `0x55` reply is mandatory; and
 - success also requires postflight liveness, exact retained accepted
   size/sequence, byte-for-byte YHM restoration, volatile proof cleanup, and
   case 1.2.57 return; then the traced `DEB0` reset is the final
   temple-mutating operation and fresh contact plus version liveness is
-  required for every restored route.
+required for every restored route.
+
+Do not promote the 12-KiB `balanced-lab` profile. Hardware explicitly rejected
+right-Stock DATA after 691,000 accepted bytes even though the Case-to-temple
+UART remained error-free. The 6-KiB conservative profile subsequently
+completed all 3,524 records and 3,523,396 bytes with FINISH, postflight, exact
+route cleanup, and final reset/liveness.
 
 ## Install
 

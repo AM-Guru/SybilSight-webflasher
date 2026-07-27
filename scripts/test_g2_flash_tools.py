@@ -291,6 +291,15 @@ class G2FlashToolTests(unittest.TestCase):
         self.assertEqual(profile["deferred_batch_size"], 12_000)
         self.assertFalse(profile["hardware_qualified"])
         self.assertTrue(PACING_PROFILES["conservative"]["hardware_qualified"])
+        retry_profile = resolve_pacing_profile(
+            "conservative-retry",
+            accept_experimental_risk=False,
+        )
+        self.assertEqual(retry_profile["deferred_batch_size"], 6_000)
+        self.assertEqual(retry_profile["batch_settle_seconds"], 2.0)
+        self.assertEqual(retry_profile["late_batch_settle_seconds"], 4.0)
+        self.assertEqual(retry_profile["final_settle_seconds"], 30.0)
+        self.assertTrue(retry_profile["hardware_qualified"])
 
     def test_reset_only_command_is_bilateral_and_hardware_gated(self) -> None:
         args = build_parser().parse_args([

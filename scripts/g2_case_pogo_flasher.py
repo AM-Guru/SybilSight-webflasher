@@ -99,9 +99,21 @@ PACING_PROFILES = {
         "final_settle_seconds": 15.000,
         "hardware_qualified": True,
     },
+    # Use only for a fresh whole-component retry after exact cleanup and the
+    # bilateral reset/liveness gate. Hardware completed this policy after an
+    # explicit DATA rejection; the rejected record itself is never replayed.
+    "conservative-retry": {
+        "deferred_batch_size": 6_000,
+        "batch_settle_seconds": 2.000,
+        "late_batch_settle_seconds": 4.000,
+        "late_batch_threshold": 0.75,
+        "final_settle_seconds": 30.000,
+        "hardware_qualified": True,
+    },
     # This reduces scheduled idle time by batching twice as many accepted bytes.
-    # It is intentionally opt-in until it has completed repeated bilateral
-    # hardware qualification without a missing ACK or incomplete postflight.
+    # A 2026-07-26 right-Stock recovery explicitly rejected DATA at 691,000
+    # accepted bytes, so it remains opt-in research and must never be promoted
+    # merely from elapsed-time estimates.
     "balanced-lab": {
         "deferred_batch_size": 12_000,
         "batch_settle_seconds": 0.750,
