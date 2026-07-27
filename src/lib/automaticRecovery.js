@@ -390,12 +390,35 @@ function supportsLiveCompatiblePairProof(differencePlan) {
   );
 }
 
+function observedTempleIdentity(observedTempleVersions, route) {
+  const observed = observedTempleVersions?.[route];
+  return {
+    firmwareVersion:
+      observed?.firmwareVersion ?? observed?.firmware ?? observed?.version ?? null,
+    hardwareRevision:
+      observed?.hardwareRevision ?? observed?.hardware ?? null,
+  };
+}
+
+function completeAutomaticUpdatePlan(targetSha256, reason) {
+  return {
+    executable: true,
+    action: "flash",
+    route: "both",
+    flashMode: "complete",
+    sourceProofMode: "complete-target-main",
+    targetSha256,
+    reason,
+  };
+}
+
 export function resolveAutomaticApplyPlan({
   installMode = DEFAULT_AUTOMATIC_INSTALL_MODE,
   targetFirmware,
   installedProvenance,
   differenceSourceFirmware,
   differencePlan,
+  observedTempleVersions,
 }) {
   if (!AUTOMATIC_INSTALL_MODES.includes(installMode)) {
     return {
@@ -442,12 +465,32 @@ export function resolveAutomaticApplyPlan({
     differencePlan.source?.imageSha256?.toLowerCase() !== sourceSha256 ||
     differencePlan.target?.imageSha256?.toLowerCase() !== targetSha256
   ) {
-    return {
-      executable: false,
-      reason:
-        "Update is available only for a validated Stock ↔ CFW component-difference pair.",
-    };
+    return completeAutomaticUpdatePlan(
+      targetSha256,
+      "The installed firmware is not proven as the exact reviewed differential source; write the complete pinned target Apollo main on both temples.",
+    );
   }
+  const sourceVersion = differencePlan.source?.version;
+  const observedIdentities = Object.fromEntries(
+    ROUTES.map((route) => [
+      route,
+      observedTempleIdentity(observedTempleVersions, route),
+    ]),
+  );
+  const observedSourceCompatible = ROUTES.every(
+    (route) =>
+      observedIdentities[route].firmwareVersion === sourceVersion &&
+      observedIdentities[route].hardwareRevision === 5,
+  );
+  const observedSourceContradiction = ROUTES.some((route) => {
+    const observed = observedIdentities[route];
+    return Boolean(
+      (observed.firmwareVersion &&
+        observed.firmwareVersion !== sourceVersion) ||
+        (observed.hardwareRevision != null &&
+          observed.hardwareRevision !== 5),
+    );
+  });
   if (
     !knownRouteProofsBelongToPair(
       installedProvenance,
@@ -455,23 +498,30 @@ export function resolveAutomaticApplyPlan({
       targetSha256,
     )
   ) {
-    return {
-      executable: false,
-      reason:
-        "Update stopped before writing: saved proof identifies firmware outside the exact reviewed Stock ↔ CFW pair. Use Restore to establish a known target.",
-    };
+    return completeAutomaticUpdatePlan(
+      targetSha256,
+      "Saved proof identifies firmware outside the exact reviewed Stock ↔ CFW pair; write the complete pinned target Apollo main on both temples.",
+    );
   }
 
   const exactSourceProven = bothRoutesMatch(
     installedProvenance,
     sourceSha256,
   );
-  if (!exactSourceProven && !supportsLiveCompatiblePairProof(differencePlan)) {
-    return {
-      executable: false,
-      reason:
-        "Update stopped before writing: without portable source audits, live validation is allowed only for the exact reviewed Stock 2.2.6.10 ↔ CFW 2.2.6.11 pair when the complete pinned target main is transferred.",
-    };
+  if (
+    observedSourceContradiction ||
+    !supportsLiveCompatiblePairProof(differencePlan) ||
+    (!exactSourceProven && !observedSourceCompatible)
+  ) {
+    const observed = ROUTES
+      .map((route) => observedIdentities[route].firmwareVersion)
+      .filter(Boolean);
+    return completeAutomaticUpdatePlan(
+      targetSha256,
+      observedSourceContradiction
+        ? `Observed Smart Glasses firmware ${[...new Set(observed)].join(" / ")} is outside the exact ${sourceVersion} differential source; write the complete pinned target Apollo main on both temples.`
+        : "No exact bilateral Stock ↔ CFW source proof is available; write the complete pinned target Apollo main on both temples.",
+    );
   }
 
   return {
@@ -486,7 +536,7 @@ export function resolveAutomaticApplyPlan({
     targetSha256,
     reason: exactSourceProven
       ? "Saved bilateral audits prove the exact source. Skip byte-identical bundle components and transfer the changed, CRC-gated Apollo main to both temples."
-      : `No portable source audit is available. The exact reviewed pair transfers the complete pinned target main, so each temple will instead require a just-in-time checksum-valid ${differencePlan.source.version}/hardware-5 reply before START.`,
+      : `Fresh bilateral analysis reports the exact reviewed source. Each temple must still return a just-in-time checksum-valid ${differencePlan.source.version}/hardware-5 reply before START.`,
   };
 }
 
@@ -497,6 +547,7 @@ export async function executeAutomaticApply({
   installedProvenance,
   differenceSourceFirmware,
   differencePlan,
+  observedTempleVersions,
   onPlan,
 }) {
   if (!session) throw new Error("An analyzed G2 Case session is required.");
@@ -506,6 +557,7 @@ export async function executeAutomaticApply({
     installedProvenance,
     differenceSourceFirmware,
     differencePlan,
+    observedTempleVersions,
   });
   if (!plan.executable) throw new Error(plan.reason);
   await onPlan?.(plan);

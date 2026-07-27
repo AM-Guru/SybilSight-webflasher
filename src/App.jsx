@@ -243,7 +243,7 @@ function InstallModeSelector({ value, onChange, disabled = false, idPrefix }) {
           [
             "update",
             "Update",
-            "Apply only the reviewed Stock ↔ CFW component difference.",
+            "Use a full pinned main for version changes; optimize only an exact Stock ↔ CFW pair.",
           ],
           [
             "restore",
@@ -1630,11 +1630,24 @@ function App() {
           );
           let sourceFirmware = null;
           let plan = null;
+          const observedTempleVersions = Object.fromEntries(
+            ["right", "left"].map((route) => [
+              route,
+              {
+                firmwareVersion:
+                  pogoResults?.[route]?.version?.decoded?.firmwareVersion ??
+                  null,
+                hardwareRevision:
+                  pogoResults?.[route]?.version?.decoded?.hardwareRevision ??
+                  null,
+              },
+            ]),
+          );
 
           if (automaticInstallMode === "update") {
             setSessionProgress(
               0.13,
-              "Preparing the reviewed component-difference pair",
+              "Selecting complete or reviewed differential transfer",
             );
             const counterpart = findStockCfwCounterpartRelease(
               catalog,
@@ -1663,6 +1676,7 @@ function App() {
             installedProvenance,
             differenceSourceFirmware: sourceFirmware,
             differencePlan: plan,
+            observedTempleVersions,
           };
           const execution = await executeAutomaticApply({
             session,
@@ -1685,6 +1699,11 @@ function App() {
                   setSessionProgress(
                     0.16,
                     "Validating live 2.2.6.10/hardware-5 compatibility before each temple START",
+                  );
+                } else if (applyPlan.flashMode === "complete") {
+                  setSessionProgress(
+                    0.16,
+                    "Using the complete pinned target main for this version change",
                   );
                 }
                 setAutomaticStatus(
@@ -2107,11 +2126,10 @@ function App() {
               </div>
               {automaticInstallMode === "update" ? (
                 <small className="automatic-boundary">
-                  Update uses saved bilateral audits when available. For the exact
-                  reviewed Stock 2.2.6.10 ↔ CFW pair, it can instead require a fresh,
-                  checksum-valid 2.2.6.10/hardware-5 reply immediately before each
-                  temple START because it transfers the complete pinned target main,
-                  never sparse byte ranges.
+                  Update writes the complete pinned target main for cross-version or
+                  unknown-source installs. It uses the Stock ↔ CFW optimization only
+                  when saved audits or fresh bilateral analysis prove the exact
+                  source, then rechecks it immediately before each temple START.
                 </small>
               ) : null}
             </article>

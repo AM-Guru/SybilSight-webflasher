@@ -111,14 +111,15 @@ The case write and bank-activation path is research-derived and experimental.
 It has not been physically validated by this repository on sacrificial
 hardware. Read the safety section before using any write operation.
 
-“Update” / “Flash differences” does not mean sparse arbitrary-address
-programming. The G2
+“Flash differences” does not mean sparse arbitrary-address programming. The G2
 OTA receiver has no block index, destination offset, or installed-MRAM readback:
 it accepts one contiguous component stream and validates the complete
 component CRC at finish. Skipping changed ranges within
 `ota/s200_firmware_ota.bin` would shift or truncate the staged image. The safe
 difference unit is therefore a complete changed component; byte-identical
-components are the only data omitted from the wire operation.
+components are the only data omitted from the wire operation. Automatic
+Update falls back to the complete pinned target main whenever the exact
+differential source is not proven.
 
 ## Current firmware model
 
@@ -886,28 +887,32 @@ at preflight with an actionable message.
 Restore revalidates the selected bundle and rewrites the complete pinned
 Apollo main on both temples. It starts right then left, but may reverse that
 order only when the retained zero-write setup proof identifies the opposite
-allowlisted Case phase. Update compares the exact reviewed
-Stock/CFW pair, omits every byte-identical component, and transfers the one
-changed, complete CRC-gated Apollo main. The receiver has no safe sparse-write
-offset, so Update cannot transmit arbitrary changed byte ranges inside that
-component.
+allowlisted Case phase. Update also writes the complete pinned Apollo main for
+cross-version and unknown-source installs. It uses the component-difference
+optimization only when saved audits or fresh bilateral analysis prove the
+exact reviewed Stock/CFW source pair. That plan omits every byte-identical
+component and transfers the one changed, complete CRC-gated Apollo main. The
+receiver has no safe sparse-write offset, so Update never transmits arbitrary
+changed byte ranges inside that component.
 
 Stock and CFW both report version 2.2.6.10, and installed Apollo MRAM readback
 is unavailable. Saved recovery audits remain the strongest source proof, but
 they are browser-origin-local and are not portable from a localhost hardware
 test to the hosted site. For the exact reviewed Stock 2.2.6.10 ↔ CFW pair,
-Automatic Update can therefore proceed without a saved audit only because the
-difference plan omits five byte-identical components and transfers the
-**complete** pinned target Apollo main, not sparse byte ranges. Every route
-must return a fresh checksum-valid 2.2.6.10/hardware-5 reply immediately
-before its START command. The successful audit records this live
-compatibility proof.
+Automatic Update uses the difference plan without a saved audit only when a
+fresh bilateral analysis reports the exact source version and hardware. The
+plan omits five byte-identical components and transfers the **complete** pinned
+target Apollo main, not sparse byte ranges. Every route must return the same
+checksum-valid source-version/hardware-5 reply immediately before its START
+command. Without that proof, Update selects the complete-main path. The
+successful audit records the live compatibility proof.
 
 If both saved routes already prove the selected target, Apply performs only
-the required bilateral reset and liveness verification. Saved proof outside
-the reviewed pair still stops before writing. A successful Restore or Update
-saves fresh per-route proof locally, keyed by Case serial, for later
-fail-closed updates.
+the required bilateral reset and liveness verification. An older version,
+unknown source, or saved proof outside the reviewed pair selects a complete
+target-main write instead of attempting the differential path. A successful
+Restore or Update saves fresh per-route proof locally, keyed by Case serial,
+for later fail-closed updates.
 
 The first hosted retest also exposed a pre-write phase-oscillation edge case.
 A status-3 bridge setup reset can leave the Case charging task in the opposite

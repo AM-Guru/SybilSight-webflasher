@@ -22,6 +22,10 @@ const both = (sha) => ({
   right: { imageSha256: sha },
   left: { imageSha256: sha },
 });
+const observedBoth = (version, hardwareRevision = 5) => ({
+  right: { firmwareVersion: version, hardwareRevision },
+  left: { firmwareVersion: version, hardwareRevision },
+});
 const differencePlan = {
   executable: true,
   changedMainOnly: true,
@@ -49,8 +53,18 @@ const differencePlan = {
     finalDualTempleResetRequired: true,
   },
 };
+const reverseDifferencePlan = {
+  ...differencePlan,
+  source: differencePlan.target,
+  target: differencePlan.source,
+  verification: {
+    ...differencePlan.verification,
+    targetBundleSha256: STOCK_SHA,
+    targetMainSha256: differencePlan.source.mainSha256,
+  },
+};
 
-test("defaults to Easy Mode and differential Update", () => {
+test("defaults to Easy Mode and adaptive Update", () => {
   assert.equal(DEFAULT_INTERFACE_MODE, "easy");
   assert.equal(DEFAULT_AUTOMATIC_INSTALL_MODE, "update");
   assert.equal(DEFAULT_AUTOMATIC_CASE_UPDATE, false);
@@ -339,6 +353,7 @@ test("Update accepts the exact full-component pair with live compatibility proof
     installedProvenance: {},
     differenceSourceFirmware: firmware(STOCK_SHA),
     differencePlan,
+    observedTempleVersions: observedBoth("2.2.6.10"),
   });
   assert.equal(result.executable, true);
   assert.equal(result.sourceProofMode, "live-compatible-pair-preflight");
@@ -359,7 +374,7 @@ test("Update prefers bilateral source-audit proof when available", () => {
   assert.equal(result.sourceProofMode, "verified-source-audits");
 });
 
-test("Update rejects unknown provenance when the plan is not a complete target-main transfer", () => {
+test("Update falls back to a complete main when the difference proof is unsafe", () => {
   const result = resolveAutomaticApplyPlan({
     installMode: "update",
     targetFirmware: firmware(CFW_SHA),
@@ -373,11 +388,25 @@ test("Update rejects unknown provenance when the plan is not a complete target-m
       },
     },
   });
-  assert.equal(result.executable, false);
-  assert.match(result.reason, /complete pinned target main/i);
+  assert.equal(result.executable, true);
+  assert.equal(result.flashMode, "complete");
+  assert.match(result.reason, /complete pinned target Apollo main/i);
 });
 
-test("Update rejects saved provenance outside the exact reviewed pair", () => {
+test("Update falls back to a complete main when no differential pair exists", () => {
+  const result = resolveAutomaticApplyPlan({
+    installMode: "update",
+    targetFirmware: firmware(CFW_SHA),
+    installedProvenance: {},
+    observedTempleVersions: observedBoth("2.1.1.12"),
+  });
+  assert.equal(result.executable, true);
+  assert.equal(result.flashMode, "complete");
+  assert.equal(result.sourceProofMode, "complete-target-main");
+  assert.match(result.reason, /complete pinned target Apollo main/i);
+});
+
+test("Update falls back to a complete main for proof outside the reviewed pair", () => {
   const result = resolveAutomaticApplyPlan({
     installMode: "update",
     targetFirmware: firmware(CFW_SHA),
@@ -385,8 +414,24 @@ test("Update rejects saved provenance outside the exact reviewed pair", () => {
     differenceSourceFirmware: firmware(STOCK_SHA),
     differencePlan,
   });
-  assert.equal(result.executable, false);
+  assert.equal(result.executable, true);
+  assert.equal(result.flashMode, "complete");
   assert.match(result.reason, /outside the exact reviewed/i);
+});
+
+test("Update uses a complete main from 2.1.1.12 instead of the Stock-CFW differential", () => {
+  const result = resolveAutomaticApplyPlan({
+    installMode: "update",
+    targetFirmware: firmware(STOCK_SHA),
+    installedProvenance: {},
+    differenceSourceFirmware: firmware(CFW_SHA),
+    differencePlan: reverseDifferencePlan,
+    observedTempleVersions: observedBoth("2.1.1.12"),
+  });
+  assert.equal(result.executable, true);
+  assert.equal(result.flashMode, "complete");
+  assert.equal(result.sourceProofMode, "complete-target-main");
+  assert.match(result.reason, /2\.1\.1\.12.*complete pinned target Apollo main/i);
 });
 
 test("Update becomes reset-and-verify when both temples already prove target", () => {
@@ -499,6 +544,31 @@ test("automatic Update invokes the reviewed bilateral difference session", async
         differenceSourceFirmware: source,
         sourceProofMode: "verified-source-audits",
       },
+    ],
+  ]);
+});
+
+test("automatic Update invokes a complete bilateral session for 2.1.1.12", async () => {
+  const calls = [];
+  await executeAutomaticApply({
+    session: {
+      flashPinnedTempleMain: async (...args) => {
+        calls.push(args);
+        return { outcome: "success" };
+      },
+    },
+    installMode: "update",
+    targetFirmware: firmware(STOCK_SHA),
+    installedProvenance: {},
+    differenceSourceFirmware: firmware(CFW_SHA),
+    differencePlan: reverseDifferencePlan,
+    observedTempleVersions: observedBoth("2.1.1.12"),
+  });
+  assert.deepEqual(calls, [
+    [
+      firmware(STOCK_SHA),
+      "both",
+      { mode: "complete", differenceSourceFirmware: null },
     ],
   ]);
 });
