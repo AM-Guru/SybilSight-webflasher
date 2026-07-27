@@ -205,6 +205,7 @@ test("recognizes only the reviewed G2 Case USB serial identity", () => {
 test("retries only a fail-closed read-only YHM idle-phase mismatch", async () => {
   const waits = [];
   const logs = [];
+  const preflights = [];
   const session = new G2CaseSession(null, {
     wait: async (milliseconds) => waits.push(milliseconds),
     log: (message, level) => logs.push([message, level]),
@@ -213,17 +214,95 @@ test("retries only a fail-closed read-only YHM idle-phase mismatch", async () =>
   session.probeRunningTempleOnce = async () => {
     attempts += 1;
     if (attempts < 3) {
-      throw new Error(
+      const error = new Error(
         "The pogo bridge stopped safely: YHM baseline was not an allowlisted seated-idle state.",
       );
+      error.pogoBridgeEvidence = {
+        baselineHex: "811004aeaf03812033ff",
+        transmitted: 0,
+        zeroWriteBaselineStopVerified: true,
+      };
+      throw error;
     }
     return { route: "right", operation: "version" };
+  };
+  session.readTempleFlashPreflight = async (routes) => {
+    preflights.push(routes);
+    return { caseVersion: "1.2.57" };
   };
   const result = await session.probeRunningTemple("version", "right");
   assert.deepEqual(result, { route: "right", operation: "version" });
   assert.equal(attempts, 3);
-  assert.deepEqual(waits, [500, 1000]);
-  assert.equal(logs.length, 2);
+  assert.deepEqual(waits, [15_000, 45_000]);
+  assert.deepEqual(preflights, [["right"], ["right"]]);
+  assert.equal(logs.length, 4);
+  assert.match(logs[0][0], /811004aeaf03812033ff/);
+  assert.match(logs[0][0], /zero YHM writes and zero temple bytes/);
+});
+
+test("does not retry a text-only YHM mismatch without retained zero-write proof", async () => {
+  const waits = [];
+  const session = new G2CaseSession(null, {
+    wait: async (milliseconds) => waits.push(milliseconds),
+  });
+  let attempts = 0;
+  session.probeRunningTempleOnce = async () => {
+    attempts += 1;
+    throw new Error(
+      "The pogo bridge stopped safely: YHM baseline was not an allowlisted seated-idle state.",
+    );
+  };
+  await assert.rejects(
+    () => session.probeRunningTemple("version", "right"),
+    /YHM baseline was not an allowlisted seated-idle state/,
+  );
+  assert.equal(attempts, 1);
+  assert.deepEqual(waits, []);
+});
+
+test("stops after bounded stock-app settling when the verified YHM baseline persists", async () => {
+  const waits = [];
+  const session = new G2CaseSession(null, {
+    wait: async (milliseconds) => waits.push(milliseconds),
+  });
+  let attempts = 0;
+  session.probeRunningTempleOnce = async () => {
+    attempts += 1;
+    const error = new Error(
+      "The pogo bridge stopped safely: YHM baseline was not an allowlisted seated-idle state.",
+    );
+    error.pogoBridgeEvidence = {
+      baselineHex: "811004aeaf03812033ff",
+      transmitted: 0,
+      zeroWriteBaselineStopVerified: true,
+    };
+    throw error;
+  };
+  session.readTempleFlashPreflight = async () => ({
+    caseVersion: "1.2.57",
+  });
+
+  await assert.rejects(
+    async () => {
+      try {
+        await session.probeRunningTemple("version", "right");
+      } catch (error) {
+        assert.equal(error.readOnlyPhaseAttempts.length, 3);
+        assert.equal(
+          error.readOnlyPhaseAttempts.every(
+            (entry) =>
+              entry.zeroYhmWritesVerified &&
+              entry.templeBytesTransmitted === 0,
+          ),
+          true,
+        );
+        throw error;
+      }
+    },
+    /after 3 verified zero-write probes.*No YHM writes or temple transmissions occurred/,
+  );
+  assert.equal(attempts, 3);
+  assert.deepEqual(waits, [15_000, 45_000]);
 });
 
 test("classifies only the exact writer route-phase setup stop for a Case settle retry", () => {

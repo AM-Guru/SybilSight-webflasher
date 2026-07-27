@@ -633,9 +633,14 @@ missing release in the read-only probe.
 The browser bridge now keeps the ROM loader's `115200 8E1` framing and one
 continuous Web Serial session through the SRAM `GO`, banner, and host request.
 This avoids a CH340 close/reopen reset boundary. Read-only route-phase status
-`3` remains fail-closed, but the session may wait for charging activity to
-settle and retry up to three times with a fresh fixed bridge; no temple request
-is transmitted until the YHM baseline matches the allowlist.
+`3` remains fail-closed. The host now requires the retained result to prove a
+complete ten-register baseline read, zero YHM writes, zero selected/restored
+masks, and zero temple transmissions before retrying. It records the exact
+baseline, leaves the stock Case application undisturbed for 15 seconds and
+then 45 seconds, and re-confirms Case 1.2.57 plus seated contact before each of
+the two fresh fixed-bridge retries. No temple request is transmitted until the
+YHM baseline matches the allowlist; a text-only status error cannot authorize
+a retry.
 
 The option bytes determine which physical bank is mapped as the running bank.
 The UI reports the active and inactive physical-bank numbers rather than
@@ -953,6 +958,7 @@ Automatic Apply handles the reviewed failure boundaries as follows:
 | Responsive hardware-5 temples run an older version such as 2.1.1.12 | Transfer the complete pinned target main; never select Stock ↔ CFW differential mode |
 | Saved proof disagrees with fresh bilateral identity | Discard the saved plan and transfer the complete pinned target main |
 | Just-in-time differential preflight changes before `START` | Retry complete only with proof of zero accepted firmware bytes, exact cleanup, Case 1.2.57 return, and bilateral reset/liveness |
+| Read-only YHM baseline is outside the seated-idle allowlist | Retry only from exact retained zero-write/zero-transmission proof; let the stock app settle for 15 then 45 seconds and re-confirm Case/contact before each probe |
 | Allowlisted zero-write YHM setup stop | Perform the existing bounded setup reset/recheck and retry the same route |
 | First final-reset contact, telemetry, banner, YHM, or no-frame check is transient | Wait, issue one bounded second `DEB0`, and repeat the full liveness gate |
 | Any transfer mutation, cleanup ambiguity, wrong hardware/version after transfer, or second reset failure | Stop closed and retain the failure audit |

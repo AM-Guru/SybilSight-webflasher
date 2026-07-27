@@ -279,6 +279,58 @@ test("validates bridge, temple, and retained YHM restoration proof", () => {
   );
   assert.equal(proof.writeMask, 0x1ff);
   assert.equal(proof.errors, 0);
+  assert.equal(proof.baselineHex, "811004a6a603030022ff");
+  assert.equal(proof.zeroWriteBaselineStopVerified, false);
+});
+
+test("requires exact retained zero-write proof for a read-only YHM baseline stop", () => {
+  const request = makePogoBridgeRequest("version", "right");
+  const header = new Uint8Array([
+    0x47, 0x32, 0x52, 0x53, 1, 2, 1, 0x42, 3, 0, 0, 0,
+  ]);
+  const tail = Uint8Array.of(
+    header.reduce((sum, value) => (sum + value) & 0xff, 0),
+  );
+  const response = parsePogoBridgeResponse(header, tail, request);
+  const retained = new Uint8Array(160);
+  retained.set(new TextEncoder().encode("GBRG"), 0);
+  for (const [offset, value] of [
+    [4, 2],
+    [8, 2],
+    [12, 1],
+    [16, 0x42],
+    [20, 3],
+    [24, 0x3ff],
+  ]) {
+    writeU32LE(retained, offset, value);
+  }
+  retained.set(
+    Uint8Array.from([0x81, 0x10, 0x04, 0xae, 0xaf, 3, 0x81, 0x20, 0x33, 0xff]),
+    56,
+  );
+
+  const proof = validatePogoBridgeRetainedResult(
+    retained,
+    response,
+    "version",
+    "right",
+  );
+  assert.equal(proof.baselineHex, "811004aeaf03812033ff");
+  assert.equal(proof.zeroWriteBaselineStopVerified, true);
+  assert.equal(proof.transmitted, 0);
+  assert.equal(proof.writeMask, 0);
+
+  writeU32LE(retained, 36, 1);
+  assert.throws(
+    () =>
+      validatePogoBridgeRetainedResult(
+        retained,
+        response,
+        "version",
+        "right",
+      ),
+    /does not prove a zero-write, zero-transmission exit/,
+  );
 });
 
 test("describes the recovered component pogo OTA transfer plan offline", () => {

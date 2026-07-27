@@ -245,6 +245,25 @@ export function validatePogoBridgeRetainedResult(
       throw new Error("The retained pogo transport or YHM restoration proof failed.");
     }
   }
+  const baseline = result.slice(56, 66);
+  const zeroBytes = (bytes) => bytes.every((value) => value === 0);
+  const zeroWriteBaselineStopVerified =
+    status === 3 &&
+    baselineMask === 0x3ff &&
+    selectedMask === 0 &&
+    restoredMask === 0 &&
+    writeMask === 0 &&
+    transmitted === 0 &&
+    total === 0 &&
+    stored === 0 &&
+    errors === 0 &&
+    zeroBytes(result.subarray(66, 76)) &&
+    zeroBytes(result.subarray(76, 86));
+  if (status === 3 && !zeroWriteBaselineStopVerified) {
+    throw new Error(
+      "The retained YHM baseline stop does not prove a zero-write, zero-transmission exit.",
+    );
+  }
   return {
     baselineMask,
     selectedMask,
@@ -253,6 +272,8 @@ export function validatePogoBridgeRetainedResult(
     transmitted,
     stored,
     errors,
-    baseline: result.slice(56, 66),
+    baseline,
+    baselineHex: hexBytes(baseline, "").toLowerCase(),
+    zeroWriteBaselineStopVerified,
   };
 }

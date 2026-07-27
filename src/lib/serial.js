@@ -93,6 +93,7 @@ const POGO_BILATERAL_ROUTE_ADAPTATION_LIMIT = 4;
 const POGO_SETUP_RESET_LIMIT = 2;
 const POGO_INTERMEDIATE_RESET_ATTEMPTS = 2;
 const POGO_FINAL_RESET_ATTEMPTS = 2;
+const POGO_READ_ONLY_PHASE_SETTLE_MS = Object.freeze([15_000, 45_000]);
 export const WEB_SERIAL_ROM_READ_SIZE = 31;
 
 export function isExplicitTempleDataRejection(error) {
@@ -1552,19 +1553,53 @@ export class G2CaseSession {
     route,
     options = {},
   ) {
-    for (let attempt = 1; attempt <= 4; attempt += 1) {
+    const attempts = [];
+    const maximumAttempts = POGO_READ_ONLY_PHASE_SETTLE_MS.length + 1;
+    for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
       try {
         return await this.probeRunningTempleOnce(operation, route, options);
       } catch (error) {
-        const routePhaseMismatch = error?.message?.includes(
-          "YHM baseline was not an allowlisted seated-idle state",
-        );
-        if (!routePhaseMismatch || attempt === 4) throw error;
+        const evidence = error?.pogoBridgeEvidence;
+        const verifiedZeroWriteStop =
+          evidence?.zeroWriteBaselineStopVerified === true;
+        attempts.push({
+          attempt,
+          outcome: "failed",
+          error: error instanceof Error ? error.message : String(error),
+          baseline: evidence?.baselineHex ?? null,
+          zeroYhmWritesVerified: verifiedZeroWriteStop,
+          templeBytesTransmitted: evidence?.transmitted ?? null,
+        });
+        if (!verifiedZeroWriteStop) {
+          if (error && typeof error === "object") {
+            error.readOnlyPhaseAttempts = attempts;
+          }
+          throw error;
+        }
+        if (attempt === maximumAttempts) {
+          const baselines = attempts
+            .map(({ baseline }) => baseline)
+            .filter(Boolean)
+            .join(", ");
+          const finalError = new PogoFlashSafetyError(
+            `The pogo bridge stopped safely: YHM baseline was not an allowlisted seated-idle state after ${maximumAttempts} verified zero-write probes${baselines ? ` (${baselines})` : ""}. No YHM writes or temple transmissions occurred.`,
+          );
+          finalError.pogoBridgeEvidence = evidence;
+          finalError.readOnlyPhaseAttempts = attempts;
+          throw finalError;
+        }
+        const settleMilliseconds =
+          POGO_READ_ONLY_PHASE_SETTLE_MS[attempt - 1];
+        const settleSeconds = settleMilliseconds / 1000;
         this.log(
-          `${route} ${operation}: Case charging phase is between allowlisted idle states; waiting before read-only retry ${attempt}/3.`,
+          `${route} ${operation}: YHM baseline ${evidence.baselineHex} is outside the reviewed seated-idle allowlist; retained SRAM proves zero YHM writes and zero temple bytes. Leaving the normal Case app undisturbed for ${settleSeconds} seconds before read-only retry ${attempt}/${maximumAttempts - 1}.`,
           "warn",
         );
-        await this.wait(500 * attempt);
+        await this.wait(settleMilliseconds);
+        const readiness = await this.readTempleFlashPreflight([route]);
+        this.log(
+          `${route} ${operation}: Case ${readiness.caseVersion} and seated contact re-confirmed after the ${settleSeconds}-second stock-app settle.`,
+        );
       }
     }
     throw new Error("The bounded read-only temple retry loop ended unexpectedly.");
@@ -1766,9 +1801,16 @@ export class G2CaseSession {
       residueCleared = true;
 
       if (response.status !== 0) {
-        throw new Error(
+        const bridgeError = new Error(
           `The pogo bridge stopped safely: ${POGO_BRIDGE_STATUS[response.status] ?? `status ${response.status}`}.`,
         );
+        bridgeError.pogoBridgeEvidence = {
+          ...transportProof,
+          responseStatus: response.status,
+          responseStatusLabel:
+            POGO_BRIDGE_STATUS[response.status] ?? "unknown bridge status",
+        };
+        throw bridgeError;
       }
       const decoded = parseTempleFrame(response.captured, operation);
       this.log(
