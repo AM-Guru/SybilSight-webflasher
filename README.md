@@ -632,10 +632,10 @@ The browser should offer a serial device with USB ID `1A86:7523`. Depending on
 the operating system, it may appear as a CH340/CH341 device or as
 `/dev/cu.usbserial-*`.
 
-Direct WebUSB is useful where Web Serial is unavailable, including supported
-Chromium environments on Android. It can be unavailable when the operating
-system has already bound the CH340 interface to a native driver; use Web
-Serial on that computer instead.
+Direct WebUSB is reserved for an enabled device-side Remote Support session
+and remains hidden during normal local use and technician-role sessions. It
+can be unavailable when the operating system has already bound the CH340
+interface to a native driver; use Web Serial on that computer instead.
 
 ## How the webflasher works
 
@@ -902,8 +902,8 @@ normal application and ROM-loader modes.
 
 ### Start remote troubleshooting
 
-1. The person with the glasses connects and analyzes their Case with Web Serial
-   or **Use WebUSB**.
+1. The person with the glasses connects and analyzes their Case with Web
+   Serial.
 2. They open **Remote Support**, authorize the technician to control that one
    selected G2 Case serial interface, and start a session.
 3. They tell the technician the displayed eight-character code.
@@ -1447,9 +1447,10 @@ Chromium browser and load the app over HTTPS or from `localhost`.
 
 Try a known USB-C data cable, reconnect the case directly rather than through a
 hub, and confirm that the operating system recognizes the CH340/CH341 device.
-If **Use WebUSB** reports that the interface is already claimed, use Web Serial
-on that computer; native USB serial drivers can make the same interface
-unavailable to WebUSB.
+During an enabled device-side Remote Support session, if **Use WebUSB** reports
+that the interface is already claimed, use Web Serial on that computer; native
+USB serial drivers can make the same interface unavailable to WebUSB. The
+WebUSB option is intentionally hidden outside that support state.
 
 **Remote support cannot join**
 

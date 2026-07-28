@@ -6,6 +6,7 @@ import { createRemoteSupportServer } from "../deploy/homeassistant-addon/server.
 import {
   RemoteSupportConnection,
   remoteJsonValue,
+  remoteSupportAllowsDirectWebUsb,
   remoteSupportWebSocketUrl,
 } from "../src/lib/remoteSupport.js";
 
@@ -59,6 +60,35 @@ test("builds same-origin secure and local relay URLs", () => {
       host: "localhost:3000",
     }),
     "ws://localhost:3000/remote-support/ws",
+  );
+});
+
+test("shows direct WebUSB only for an enabled device-side support session", () => {
+  assert.equal(
+    remoteSupportAllowsDirectWebUsb(
+      { status: "connected", role: "device" },
+      true,
+    ),
+    true,
+  );
+  for (const supportState of [
+    { status: "idle", role: "device" },
+    { status: "connecting", role: "device" },
+    { status: "disconnected", role: "device" },
+    { status: "connected", role: "operator" },
+    null,
+  ]) {
+    assert.equal(
+      remoteSupportAllowsDirectWebUsb(supportState, true),
+      false,
+    );
+  }
+  assert.equal(
+    remoteSupportAllowsDirectWebUsb(
+      { status: "connected", role: "device" },
+      false,
+    ),
+    false,
   );
 });
 

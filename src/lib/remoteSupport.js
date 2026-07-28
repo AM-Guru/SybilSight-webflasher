@@ -3,6 +3,17 @@ export const REMOTE_SUPPORT_PROTOCOL = 2;
 const MAX_REMOTE_DEPTH = 12;
 const MAX_REMOTE_STRING_LENGTH = 24_000;
 
+export function remoteSupportAllowsDirectWebUsb(
+  supportState,
+  webUsbAvailable,
+) {
+  return Boolean(
+    webUsbAvailable &&
+      supportState?.status === "connected" &&
+      supportState?.role === "device",
+  );
+}
+
 export function remoteSupportWebSocketUrl(locationLike = window.location) {
   const configured =
     typeof import.meta !== "undefined"

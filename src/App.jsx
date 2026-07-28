@@ -13,11 +13,13 @@ import {
   isG2CaseSerialPort,
   portUsesUsbDevice,
   requestG2CasePort,
-  webCaseTransportSupported,
   webSerialSupported,
   webUsbSupported,
 } from "./lib/serial.js";
-import { RemoteSupportConnection } from "./lib/remoteSupport.js";
+import {
+  RemoteSupportConnection,
+  remoteSupportAllowsDirectWebUsb,
+} from "./lib/remoteSupport.js";
 import {
   RemoteG2CasePort,
   RemoteSerialDeviceBridge,
@@ -2523,18 +2525,34 @@ function App() {
             );
             if (counterpart) {
               sourceFirmware = await fetchCatalogFirmware(counterpart);
-              plan = buildBundleDifferencePlan(
-                sourceFirmware,
-                targetFirmware,
-              );
-              setDifferenceSourceFirmware(sourceFirmware);
-              setDifferencePlan(plan);
-              setDifferenceState(plan.executable ? "ready" : "blocked");
-              setDifferenceError(
-                plan.executable
-                  ? ""
-                  : "The selected pair is not an executable component difference.",
-              );
+              try {
+                plan = buildBundleDifferencePlan(
+                  sourceFirmware,
+                  targetFirmware,
+                );
+                setDifferenceSourceFirmware(sourceFirmware);
+                setDifferencePlan(plan);
+                setDifferenceState(plan.executable ? "ready" : "blocked");
+                setDifferenceError(
+                  plan.executable
+                    ? ""
+                    : "The selected pair is not an executable component difference.",
+                );
+              } catch (differenceError) {
+                // Update promises a complete pinned main whenever the
+                // differential optimization is unavailable; an ineligible
+                // pair must degrade to that path, not stop the operation.
+                sourceFirmware = null;
+                plan = null;
+                setDifferenceSourceFirmware(null);
+                setDifferencePlan(null);
+                setDifferenceState("blocked");
+                setDifferenceError(differenceError.message);
+                addLog(
+                  `The Stock ↔ CFW differential optimization is unavailable (${differenceError.message}) Continuing with the complete pinned target main.`,
+                  "warn",
+                );
+              }
             }
           }
 
@@ -2755,13 +2773,18 @@ function App() {
       latestCaseFirmwareRelease?.caseVersion &&
       report.console.caseVersion !== latestCaseFirmwareRelease.caseVersion,
   );
-  const serialSupported = webCaseTransportSupported();
   const directWebUsbSupported = webUsbSupported();
+  const directWebUsbVisible = remoteSupportAllowsDirectWebUsb(
+    supportState,
+    directWebUsbSupported,
+  );
+  const serialSupported =
+    webSerialSupported() || directWebUsbVisible;
   const selectedTransport = portRef.current
     ? g2CaseTransportLabel(portRef.current)
     : webSerialSupported()
       ? "Web Serial"
-      : directWebUsbSupported
+      : directWebUsbVisible
         ? "WebUSB"
         : "Unavailable";
   const deviceAnalytics = useMemo(
@@ -2958,7 +2981,10 @@ function App() {
                 <span>01</span>
                 <div>
                   <strong>Select your G2 Case</strong>
-                  <small>Web Serial or direct WebUSB stays local unless you start support.</small>
+                  <small>
+                    Web Serial stays local. Direct WebUSB is shown only during
+                    an enabled device-side Remote Support session.
+                  </small>
                 </div>
               </div>
               <div className="case-transport-actions">
@@ -2970,7 +2996,7 @@ function App() {
                   <Icon name="usb" />
                   {report ? "Choose another Case" : "Select Case"}
                 </Button>
-                {directWebUsbSupported ? (
+                {directWebUsbVisible ? (
                   <Button
                     tone="secondary"
                     onClick={() => connectAndAnalyze("webusb")}
@@ -3140,7 +3166,7 @@ function App() {
                 <Icon name="usb" />
                 {report ? "Choose another Case" : "Connect & analyze Case"}
               </Button>
-              {directWebUsbSupported ? (
+              {directWebUsbVisible ? (
                 <Button
                   tone="secondary"
                   onClick={() => connectAndAnalyze("webusb")}
