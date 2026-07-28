@@ -5447,6 +5447,64 @@ body {
   font-size: 9px;
 }
 
+.footer-wake-lock {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  padding: 7px 9px;
+  border: 1px solid rgba(255, 190, 92, 0.32);
+  border-radius: 7px;
+  color: #f4c477;
+  background: rgba(255, 180, 68, 0.06);
+  font-family: var(--mono);
+  gap: 7px;
+}
+
+.footer-wake-lock > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 10px currentColor;
+}
+
+.footer-wake-lock strong {
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.footer-wake-lock small {
+  color: #b8aaa0;
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.footer-wake-lock.is-active {
+  color: var(--accent);
+  border-color: rgba(0, 255, 136, 0.28);
+  background: rgba(0, 255, 136, 0.05);
+}
+
+.footer-wake-lock.is-active small {
+  color: #93aa9d;
+}
+
+.footer-wake-lock.is-pending > span {
+  animation: wake-lock-pulse 1s ease-in-out infinite alternate;
+}
+
+@keyframes wake-lock-pulse {
+  from {
+    opacity: 0.35;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
 @media (max-width: 600px) {
   .difference-plan-facts {
     grid-template-columns: 1fr;
@@ -5468,5 +5526,13 @@ body {
     align-items: flex-start;
     flex-direction: column;
     gap: 4px;
+  }
+
+  .footer-wake-lock {
+    grid-template-columns: auto 1fr;
+  }
+
+  .footer-wake-lock small {
+    grid-column: 1 / -1;
   }
 }

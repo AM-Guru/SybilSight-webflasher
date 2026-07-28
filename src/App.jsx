@@ -61,6 +61,10 @@ import {
   WEBFLASHER_BUILD_LABEL,
   assertCurrentWebFlasherRelease,
 } from "./lib/releaseIntegrity.js";
+import {
+  IDLE_WAKE_LOCK_STATUS,
+  MutationWakeLock,
+} from "./lib/wakeLock.js";
 
 const EMPTY_PROGRESS = {
   fraction: 0,
@@ -904,8 +908,21 @@ function RemoteSupportDialog({
   );
 }
 
-function TaskProgress({ progress }) {
+function TaskProgress({ progress, wakeLockStatus }) {
   if (!progress.visible) return null;
+  const wakeLockVisible = wakeLockStatus?.state !== "idle";
+  const wakeLockActive = wakeLockStatus?.state === "active";
+  const wakeLockPending = wakeLockStatus?.state === "requesting";
+  const wakeLockHeading =
+    wakeLockStatus?.state === "suspended"
+      ? "Computer sleep prevention paused"
+      : wakeLockStatus?.state === "released"
+        ? "Computer sleep prevention released"
+        : wakeLockActive
+          ? "Computer sleep prevention active"
+          : wakeLockPending
+            ? "Enabling computer sleep prevention"
+            : "Computer sleep prevention unavailable";
   return (
     <div className="footer-task-progress" role="status" aria-live="polite">
       <div className="footer-task-progress-heading">
@@ -927,6 +944,20 @@ function TaskProgress({ progress }) {
         <span style={{ width: `${progress.percent}%` }} />
       </div>
       <div className="footer-current-task">{progress.detail}</div>
+      {wakeLockVisible ? (
+        <div
+          className={cx(
+            "footer-wake-lock",
+            wakeLockActive && "is-active",
+            wakeLockPending && "is-pending",
+            !wakeLockActive && !wakeLockPending && "is-warning",
+          )}
+        >
+          <span aria-hidden="true" />
+          <strong>{wakeLockHeading}</strong>
+          <small>{wakeLockStatus.message}</small>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -982,6 +1013,9 @@ function App() {
   const [staged, setStaged] = useState(null);
   const [progress, setProgress] = useState(EMPTY_PROGRESS);
   const [operation, setOperation] = useState(null);
+  const [wakeLockStatus, setWakeLockStatus] = useState(
+    IDLE_WAKE_LOCK_STATUS,
+  );
   const [error, setError] = useState("");
   const [logs, setLogs] = useState([]);
   const [consoleOpen, setConsoleOpen] = useState(false);
@@ -1041,6 +1075,7 @@ function App() {
   const progressLogRef = useRef({ name: null, bucket: -1 });
   const progressRenderRef = useRef({ name: null, updatedAt: 0 });
   const progressHideTimerRef = useRef(null);
+  const mutationWakeLockRef = useRef(null);
   const transcriptRef = useRef([]);
   const transcriptPersistTimerRef = useRef(null);
   const transcriptRecoveredRef = useRef(false);
@@ -1096,6 +1131,30 @@ function App() {
       }
     },
     [persistTranscript],
+  );
+
+  const handleWakeLockStatus = useCallback(
+    (status) => {
+      setWakeLockStatus(status);
+      if (status.state === "active") {
+        addLog(
+          status.reacquired
+            ? "Computer sleep prevention restored after the WebFlasher tab became visible."
+            : "Computer sleep prevention active for this firmware operation.",
+          "success",
+        );
+      } else if (
+        ["unsupported", "failed", "released", "suspended"].includes(
+          status.state,
+        )
+      ) {
+        addLog(
+          `${status.message}${status.error ? ` ${status.error}` : ""}`,
+          "warn",
+        );
+      }
+    },
+    [addLog],
   );
 
   const setSessionProgress = useCallback((fraction, detail) => {
@@ -1581,8 +1640,20 @@ function App() {
     return () => window.removeEventListener("pagehide", writeTranscriptNow);
   }, [writeTranscriptNow]);
 
+  useEffect(() => {
+    if (!PERSISTENT_MUTATION_OPERATIONS.has(operation)) return undefined;
+    const preventOperationUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", preventOperationUnload);
+    return () =>
+      window.removeEventListener("beforeunload", preventOperationUnload);
+  }, [operation]);
+
   useEffect(
     () => () => {
+      void mutationWakeLockRef.current?.stop();
       void remoteOperatorPortRef.current?.dispose();
       void remoteDeviceBridgeRef.current?.close();
       supportConnectionRef.current?.close();
@@ -1591,6 +1662,7 @@ function App() {
   );
 
   const run = useCallback(async (name, task, { total = null } = {}) => {
+    let mutationWakeLock = null;
     if (progressHideTimerRef.current) {
       clearTimeout(progressHideTimerRef.current);
       progressHideTimerRef.current = null;
@@ -1616,6 +1688,11 @@ function App() {
     );
     try {
       if (PERSISTENT_MUTATION_OPERATIONS.has(name)) {
+        mutationWakeLock = new MutationWakeLock({
+          onStatus: handleWakeLockStatus,
+        });
+        mutationWakeLockRef.current = mutationWakeLock;
+        await mutationWakeLock.start();
         const release = await assertCurrentWebFlasherRelease();
         addLog(
           `Release integrity passed · running and deployed WebFlasher ${release.deployedSha.slice(0, 7)} match.`,
@@ -1631,6 +1708,12 @@ function App() {
       addLog(message, "error");
       return null;
     } finally {
+      if (mutationWakeLock) {
+        await mutationWakeLock.stop();
+        if (mutationWakeLockRef.current === mutationWakeLock) {
+          mutationWakeLockRef.current = null;
+        }
+      }
       setOperation(null);
       activeOperationRef.current = null;
       activeOperationTotalRef.current = null;
@@ -1639,7 +1722,7 @@ function App() {
         2200,
       );
     }
-  }, [addLog]);
+  }, [addLog, handleWakeLockStatus]);
 
   useEffect(() => {
     let active = true;
@@ -4491,7 +4574,10 @@ function App() {
               Device data stays local unless the person explicitly starts remote support.
             </span>
           </div>
-          <TaskProgress progress={progress} />
+          <TaskProgress
+            progress={progress}
+            wakeLockStatus={wakeLockStatus}
+          />
         </footer>
       </main>
 

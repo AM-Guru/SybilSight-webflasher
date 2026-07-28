@@ -86,6 +86,10 @@ Production deployment:
   messages, and browser failures.
 - Shows operation-count progress and the current task in the right-hand footer
   for every analysis, backup, probe, staging, activation, reset, and restore.
+- Requests a browser Screen Wake Lock for every persistent firmware mutation,
+  reacquires it when the tab becomes visible again, releases it when the
+  operation ends, and warns when browser or operating-system policy refuses
+  sleep prevention.
 - Offers authenticated attended remote service: the person selects one exact
   G2 Case CH340 interface and starts an expiring session once. A separately
   authenticated technician can then operate that serial interface through the
@@ -616,6 +620,9 @@ installed-MRAM readback.
 - A current Google Chrome, Microsoft Edge, or other Chromium browser with Web
   Serial or WebUSB.
 - HTTPS when using a hosted copy, or `localhost` during development.
+- A visible WebFlasher tab while flashing. The HTTPS deployment requests a
+  Screen Wake Lock automatically; if the footer reports it unavailable,
+  connect AC power and temporarily disable automatic system sleep.
 - An Even Realities G2 charging case.
 - Both Smart Glasses temples seated and running for the combined backup.
 - A USB-C **data** cable, not a charge-only cable.
@@ -1408,6 +1415,10 @@ public/even-g2-case-grey.png   G2 product image
 - Back up the complete case and both seated Smart Glasses before every staging
   attempt.
 - Keep the case powered and connected throughout a write operation.
+- Keep the WebFlasher tab visible during firmware writes. Screen Wake Lock is
+  best-effort and cannot prevent lid closure, shutdown, power loss, browser
+  termination, or an operating-system low-power policy from suspending the
+  computer.
 - Leave the case connected throughout a volatile pogo diagnostic so its
   retained restore proof can be checked and cleared.
 - Never use a backup from one case as another case's device-data image.
