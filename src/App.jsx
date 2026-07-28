@@ -52,6 +52,7 @@ import {
   executeAutomaticApply,
   installedProvenanceStorageKey,
   mergeInstalledProvenance,
+  prepareAutomaticTempleUpdate,
   resolveAutomaticCaseUpdatePlan,
   verifyAutomaticCaseReadiness,
 } from "./lib/automaticRecovery.js";
@@ -2331,31 +2332,38 @@ function App() {
           }
 
           setAutomaticStatus(
-            "Resetting both temples and verifying fresh application identity…",
+            "Checking installed versions before the clean-start reset…",
           );
-          setSessionProgress(
-            caseUpdatePlan.action === "update" ? 0.5 : 0.09,
-            "Resetting both temples before firmware planning",
-          );
-          const templeReadiness =
-            await session.restartAndVerifyBothTemples({
+          const templePreparation =
+            await prepareAutomaticTempleUpdate({
+              session,
               progressBase:
                 caseUpdatePlan.action === "update" ? 0.5 : 0.09,
               progressSpan: 0.06,
-              purpose: "Automatic preflight",
-            });
-          const observedAt = new Date().toISOString();
-          const observedTempleVersions = Object.fromEntries(
-            ["right", "left"].map((route) => [
-              route,
-              {
-                firmwareVersion:
-                  templeReadiness.versions[route].firmware,
-                hardwareRevision:
-                  templeReadiness.versions[route].hardware,
+              onStep: ({ step, route }) => {
+                if (step === "version-check") {
+                  setSessionProgress(
+                    caseUpdatePlan.action === "update" ? 0.5 : 0.09,
+                    `Checking ${route} installed version before reset`,
+                  );
+                } else if (step === "clean-reset") {
+                  setAutomaticStatus(
+                    "Resetting both temples into a clean starting state…",
+                  );
+                  setSessionProgress(
+                    caseUpdatePlan.action === "update" ? 0.52 : 0.11,
+                    "Resetting both temples before firmware planning",
+                  );
+                }
               },
-            ]),
-          );
+            });
+          const {
+            initialVersions,
+            observedTempleVersions,
+            changedAcrossReset,
+            verifiedTempleReadiness: templeReadiness,
+          } = templePreparation;
+          const observedAt = new Date().toISOString();
           setRecheckReport(templeReadiness);
           setPogoResults(
             Object.fromEntries(
@@ -2395,9 +2403,19 @@ function App() {
           };
           setReport(fresh);
           addLog(
-            `Smart Glasses preflight passed after DEB0 · right ${observedTempleVersions.right.firmwareVersion}/hardware ${observedTempleVersions.right.hardwareRevision} · left ${observedTempleVersions.left.firmwareVersion}/hardware ${observedTempleVersions.left.hardwareRevision} · reset attempt ${templeReadiness.resetAttempts.length}/2.`,
+            `Smart Glasses read-only version check passed · right ${initialVersions.right.firmwareVersion}/hardware ${initialVersions.right.hardwareRevision} · left ${initialVersions.left.firmwareVersion}/hardware ${initialVersions.left.hardwareRevision}.`,
             "success",
           );
+          addLog(
+            `Clean-start DEB0 passed · right ${observedTempleVersions.right.firmwareVersion}/hardware ${observedTempleVersions.right.hardwareRevision} · left ${observedTempleVersions.left.firmwareVersion}/hardware ${observedTempleVersions.left.hardwareRevision} · reset attempt ${templeReadiness.resetAttempts.length}/2.`,
+            "success",
+          );
+          if (changedAcrossReset.length > 0) {
+            addLog(
+              `Temple identity changed across the clean-start reset on ${changedAcrossReset.join(" + ")}; Automatic Apply will plan from the fresh post-reset identity.`,
+              "warn",
+            );
+          }
 
           setSessionProgress(
             caseUpdatePlan.action === "update" ? 0.57 : 0.16,
@@ -2443,6 +2461,7 @@ function App() {
             installedProvenance,
             differenceSourceFirmware: sourceFirmware,
             differencePlan: plan,
+            initialTempleVersions: initialVersions,
             observedTempleVersions,
             verifiedTempleReadiness: templeReadiness,
           };
@@ -2480,16 +2499,25 @@ function App() {
               }
             },
             onRecovery: (recovery) => {
-              addLog(
-                `Differential preflight observed ${recovery.observedVersion}/hardware 5 before START; cleanup and bilateral reset were verified, so Automatic Update is switching to the complete pinned target main.`,
-                "warn",
-              );
+              if (
+                recovery.trigger !== "source-preflight-mismatch"
+              ) {
+                addLog(
+                  `Differential transfer reached FINISH, but ${recovery.failedRoutes.join(" + ")} did not return the expected target liveness. Case-route cleanup and the prior reset proof are complete; Automatic Update will require one fresh bilateral recovery reset before switching to the complete pinned target main.`,
+                  "warn",
+                );
+              } else {
+                addLog(
+                  `Differential preflight observed ${recovery.observedVersion}/hardware 5 before START. No firmware bytes were accepted and cleanup is verified; Automatic Update will require one fresh bilateral recovery reset before switching to the complete pinned target main.`,
+                  "warn",
+                );
+              }
               setSessionProgress(
                 0.16,
-                "Switching safely from differential to complete target main",
+                "Resetting both temples before complete-image fallback",
               );
               setAutomaticStatus(
-                "Source identity changed before START; retrying automatically with the complete pinned target main…",
+                "Differential happy path failed safely; resetting before the complete pinned target main…",
               );
             },
           });
@@ -2947,8 +2975,14 @@ function App() {
                     : "Require the latest Case + fresh contact preflight"}
                 </span>
                 <span><Icon name="check" /> Hash and component validation</span>
-                <span><Icon name="check" /> Right, then left, with bounded recovery</span>
-                <span><Icon name="check" /> Final DEB0 reset + liveness proof</span>
+                <span><Icon name="check" /> Version check → clean DEB0 reset</span>
+                <span>
+                  <Icon name="check" />
+                  {automaticInstallMode === "update"
+                    ? "Differential first → verified full fallback"
+                    : "Complete right + left restore"}
+                </span>
+                <span><Icon name="check" /> Boot + bilateral liveness proof</span>
               </div>
               <Button
                 className="automatic-apply-button"
@@ -2980,7 +3014,10 @@ function App() {
                   Update writes the complete pinned target main for cross-version or
                   unknown-source installs. It uses the Stock ↔ CFW optimization only
                   when saved audits or fresh bilateral analysis prove the exact
-                  source, then rechecks it immediately before each temple START.
+                  source, then rechecks it immediately before each temple START. If
+                  the differential reaches FINISH but target boot/liveness fails,
+                  Update resets both temples and starts the complete image only when
+                  Case cleanup and bilateral application reachability are proven.
                 </small>
               ) : null}
             </article>

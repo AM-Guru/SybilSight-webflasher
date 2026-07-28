@@ -10,6 +10,7 @@ import {
   executeAutomaticApply,
   installedProvenanceStorageKey,
   mergeInstalledProvenance,
+  prepareAutomaticTempleUpdate,
   provenanceFromSuccessfulAudit,
   resolveAutomaticCaseUpdatePlan,
   resolveAutomaticApplyPlan,
@@ -29,6 +30,32 @@ const both = (sha) => ({
 const observedBoth = (version, hardwareRevision = 5) => ({
   right: { firmwareVersion: version, hardwareRevision },
   left: { firmwareVersion: version, hardwareRevision },
+});
+const versionProbe = (version, hardwareRevision = 5) => ({
+  decoded: {
+    kind: "version",
+    firmwareVersion: version,
+    hardwareRevision,
+  },
+});
+const verifiedReadiness = (version = "2.2.6.10") => ({
+  applicationLivenessVerified: true,
+  firmwareBytesTransmitted: 0,
+  caseVersion: "1.2.57",
+  telemetry: { leftPresent: true, rightPresent: true },
+  resetAttempts: [{ attempt: 1, outcome: "success" }],
+  versions: {
+    right: {
+      firmware: version,
+      hardware: 5,
+      yhmRestoreVerified: true,
+    },
+    left: {
+      firmware: version,
+      hardware: 5,
+      yhmRestoreVerified: true,
+    },
+  },
 });
 const caseOptionBytes = (swapBank = false) => {
   const bytes = new Uint8Array(128);
@@ -129,11 +156,99 @@ const safePreflightFailureAudit = () => ({
     },
   },
 });
+const safePostflightFailureAudit = () => ({
+  outcome: "failed_or_uncertain",
+  flashMode: "differences",
+  differencePlan,
+  routes: ["right", "left"],
+  sourceValidation: {
+    requiredLiveFirmware: "2.2.6.10",
+  },
+  routeResults: [
+    {
+      route: "right",
+      outcome: "failed_or_uncertain",
+      failureStage: "POSTFLIGHT",
+      otaMutationAttempted: true,
+      acceptedFirmwareBytes: 1234,
+      transfer: {
+        finishAckReceived: true,
+        payloadBytesSent: 1234,
+      },
+      caseRestoreVerified: true,
+      caseApplicationVersion: "1.2.57",
+      retainedResult: {
+        acceptedSize: 1234,
+        baselineMask: 0x3ff,
+        selectedMask: 0x3ff,
+        restoredMask: 0x3ff,
+        templeUartErrors: 0,
+      },
+    },
+  ],
+  finalResetAndLiveness: {
+    resetConfirmed: true,
+    caseFirmware: "1.2.57",
+    versions: {
+      right: {
+        firmware: "2.2.6.10",
+        hardware: 5,
+        yhmRestoreVerified: true,
+      },
+      left: {
+        firmware: "2.2.6.10",
+        hardware: 5,
+        yhmRestoreVerified: true,
+      },
+    },
+  },
+});
 
 test("defaults to Easy Mode, adaptive Update, and automatic Case repair", () => {
   assert.equal(DEFAULT_INTERFACE_MODE, "easy");
   assert.equal(DEFAULT_AUTOMATIC_INSTALL_MODE, "update");
   assert.equal(DEFAULT_AUTOMATIC_CASE_UPDATE, true);
+});
+
+test("Automatic Update checks both versions before issuing the clean-start reset", async () => {
+  const calls = [];
+  const preparation = await prepareAutomaticTempleUpdate({
+    session: {
+      probeRunningTemple: async (operation, route) => {
+        calls.push(`${operation}:${route}`);
+        return versionProbe("2.2.6.10");
+      },
+      restartAndVerifyBothTemples: async (options) => {
+        calls.push("reset");
+        assert.equal(options.purpose, "Automatic clean-start reset");
+        return verifiedReadiness("2.2.6.10");
+      },
+    },
+  });
+
+  assert.deepEqual(calls, ["version:right", "version:left", "reset"]);
+  assert.deepEqual(preparation.initialVersions, observedBoth("2.2.6.10"));
+  assert.deepEqual(
+    preparation.observedTempleVersions,
+    observedBoth("2.2.6.10"),
+  );
+  assert.deepEqual(preparation.changedAcrossReset, []);
+});
+
+test("Automatic Update plans from fresh post-reset identity when reset changes it", async () => {
+  const preparation = await prepareAutomaticTempleUpdate({
+    session: {
+      probeRunningTemple: async () => versionProbe("2.2.6.10"),
+      restartAndVerifyBothTemples: async () =>
+        verifiedReadiness("2.2.6.11"),
+    },
+  });
+
+  assert.deepEqual(preparation.changedAcrossReset, ["right", "left"]);
+  assert.deepEqual(
+    preparation.observedTempleVersions,
+    observedBoth("2.2.6.11"),
+  );
 });
 
 test("blocks Automatic Apply before mutation when an analyzed Case is empty", () => {
@@ -855,9 +970,42 @@ test("differential fallback requires proof that preflight changed no firmware by
   assert.equal(canFallbackDifferentialToComplete(error, plan), false);
 });
 
+test("differential fallback accepts a fully transferred image only after clean boot-recovery proof", () => {
+  const plan = {
+    flashMode: "differences",
+    sourceVersion: "2.2.6.10",
+  };
+  const error = Object.assign(new Error("postflight liveness failed"), {
+    audit: safePostflightFailureAudit(),
+  });
+  assert.equal(canFallbackDifferentialToComplete(error, plan), true);
+
+  error.audit.finalResetAndLiveness.resetConfirmed = false;
+  assert.equal(canFallbackDifferentialToComplete(error, plan), false);
+
+  error.audit = safePostflightFailureAudit();
+  error.audit.routeResults[0].failureStage = "DATA:1";
+  assert.equal(canFallbackDifferentialToComplete(error, plan), false);
+
+  error.audit = safePostflightFailureAudit();
+  error.audit.routeResults[0].transfer.payloadBytesSent = 1000;
+  assert.equal(canFallbackDifferentialToComplete(error, plan), false);
+
+  error.audit = safePostflightFailureAudit();
+  error.audit.routeResults = ["right", "left"].map((route) => ({
+    ...error.audit.routeResults[0],
+    route,
+    outcome: "success",
+    failureStage: undefined,
+  }));
+  error.audit.finalResetAndLiveness.versions.left.firmware = "2.2.6.11";
+  assert.equal(canFallbackDifferentialToComplete(error, plan), true);
+});
+
 test("automatic Update safely retries a stale differential plan with the complete main", async () => {
   const calls = [];
   const recoveries = [];
+  let resetCalls = 0;
   const successfulAudit = { outcome: "success" };
   const source = firmware(STOCK_SHA);
   const result = await executeAutomaticApply({
@@ -871,6 +1019,14 @@ test("automatic Update safely retries a stale differential plan with the complet
         }
         return successfulAudit;
       },
+      restartAndVerifyBothTemples: async (options) => {
+        resetCalls += 1;
+        assert.equal(
+          options.purpose,
+          "Differential-to-complete recovery reset",
+        );
+        return verifiedReadiness("2.1.1.12");
+      },
     },
     installMode: "update",
     targetFirmware: firmware(CFW_SHA),
@@ -881,6 +1037,7 @@ test("automatic Update safely retries a stale differential plan with the complet
   });
 
   assert.equal(calls.length, 2);
+  assert.equal(resetCalls, 1);
   assert.equal(calls[0][2].mode, "differences");
   assert.deepEqual(calls[1], [
     firmware(CFW_SHA),
@@ -894,6 +1051,92 @@ test("automatic Update safely retries a stale differential plan with the complet
     "differential-to-complete",
   );
   assert.equal(recoveries[0].observedVersion, "2.1.1.12");
+  assert.equal(
+    recoveries[0].trigger,
+    "source-preflight-mismatch",
+  );
+});
+
+test("automatic Update resets and retries the complete main after a recovered differential boot failure", async () => {
+  const steps = [];
+  const recoveries = [];
+  const successfulAudit = { outcome: "success" };
+  const source = firmware(STOCK_SHA);
+  const result = await executeAutomaticApply({
+    session: {
+      flashPinnedTempleMain: async (...args) => {
+        steps.push(`flash:${args[2].mode}`);
+        if (args[2].mode === "differences") {
+          throw Object.assign(new Error("postflight liveness failed"), {
+            audit: safePostflightFailureAudit(),
+          });
+        }
+        return successfulAudit;
+      },
+      restartAndVerifyBothTemples: async (options) => {
+        steps.push("reset");
+        assert.equal(
+          options.purpose,
+          "Differential-to-complete recovery reset",
+        );
+        return verifiedReadiness("2.2.6.10");
+      },
+    },
+    installMode: "update",
+    targetFirmware: firmware(CFW_SHA),
+    installedProvenance: both(STOCK_SHA),
+    differenceSourceFirmware: source,
+    differencePlan,
+    onRecovery: (recovery) => recoveries.push(recovery),
+  });
+
+  assert.deepEqual(steps, [
+    "flash:differences",
+    "reset",
+    "flash:complete",
+  ]);
+  assert.equal(
+    recoveries[0].trigger,
+    "postflight-boot-liveness-failure",
+  );
+  assert.deepEqual(recoveries[0].failedRoutes, ["right", "left"]);
+  assert.equal(result.initialPlan.flashMode, "differences");
+  assert.equal(result.plan.flashMode, "complete");
+  assert.equal(
+    result.audit.automaticFallback.outcome,
+    "complete-success",
+  );
+  assert.equal(
+    result.audit.automaticFallback.trigger,
+    "postflight-boot-liveness-failure",
+  );
+});
+
+test("automatic Update does not start the complete fallback when the recovery reset cannot prove liveness", async () => {
+  const modes = [];
+  const source = firmware(STOCK_SHA);
+  await assert.rejects(
+    executeAutomaticApply({
+      session: {
+        flashPinnedTempleMain: async (...args) => {
+          modes.push(args[2].mode);
+          throw Object.assign(new Error("postflight liveness failed"), {
+            audit: safePostflightFailureAudit(),
+          });
+        },
+        restartAndVerifyBothTemples: async () => {
+          throw new Error("left temple did not answer");
+        },
+      },
+      installMode: "update",
+      targetFirmware: firmware(CFW_SHA),
+      installedProvenance: both(STOCK_SHA),
+      differenceSourceFirmware: source,
+      differencePlan,
+    }),
+    /complete-image fallback was not started/i,
+  );
+  assert.deepEqual(modes, ["differences"]);
 });
 
 test("automatic Update invokes a complete bilateral session for 2.1.1.12", async () => {

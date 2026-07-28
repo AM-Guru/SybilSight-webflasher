@@ -18,6 +18,7 @@ import {
   executeAutomaticCaseUpdate,
   installedProvenanceStorageKey,
   mergeInstalledProvenance,
+  prepareAutomaticTempleUpdate,
   resolveAutomaticCaseUpdatePlan,
   verifyAutomaticCaseReadiness,
 } from "../src/lib/automaticRecovery.js";
@@ -813,7 +814,7 @@ server.registerTool(
   "automatic_apply",
   {
     description:
-      "Run the WebFlasher's Automatic Apply workflow: re-analyze the Case, update it to the latest verified Case firmware when needed, reset and verify both temples, then install the selected Smart Glasses release using the safest proven transfer (verify-only, reviewed differential, or complete main) with automatic differential-to-complete fallback.",
+      "Run the WebFlasher's Automatic Apply workflow: re-analyze and update the Case when needed, read both installed temple versions, issue a clean-start bilateral reset, then install the selected Smart Glasses release using verify-only, reviewed differential, or complete-main mode. A differential boot/liveness failure retries the complete main only after exact cleanup and another bilateral recovery reset prove both applications remain reachable.",
     inputSchema: {
       releaseId: z
         .string()
@@ -926,20 +927,24 @@ server.registerTool(
       "success",
     );
 
-    const templeReadiness = await caseSession.restartAndVerifyBothTemples({
+    const templePreparation = await prepareAutomaticTempleUpdate({
+      session: caseSession,
       progressBase: caseUpdatePlan.action === "update" ? 0.5 : 0.09,
       progressSpan: 0.06,
-      purpose: "Automatic preflight",
+      onStep: ({ step, route }) => {
+        record(
+          step === "version-check"
+            ? `Checking ${route} installed version before the clean-start reset.`
+            : "Issuing the clean-start bilateral reset before deployment planning.",
+        );
+      },
     });
-    const observedTempleVersions = Object.fromEntries(
-      ["right", "left"].map((route) => [
-        route,
-        {
-          firmwareVersion: templeReadiness.versions[route].firmware,
-          hardwareRevision: templeReadiness.versions[route].hardware,
-        },
-      ]),
-    );
+    const {
+      initialVersions,
+      observedTempleVersions,
+      changedAcrossReset,
+      verifiedTempleReadiness: templeReadiness,
+    } = templePreparation;
     fresh = {
       ...fresh,
       console: {
@@ -950,9 +955,19 @@ server.registerTool(
     };
     caseReport = fresh;
     record(
-      `Smart Glasses preflight passed after DEB0 · right ${observedTempleVersions.right.firmwareVersion}/hardware ${observedTempleVersions.right.hardwareRevision} · left ${observedTempleVersions.left.firmwareVersion}/hardware ${observedTempleVersions.left.hardwareRevision}.`,
+      `Smart Glasses read-only version check passed · right ${initialVersions.right.firmwareVersion}/hardware ${initialVersions.right.hardwareRevision} · left ${initialVersions.left.firmwareVersion}/hardware ${initialVersions.left.hardwareRevision}.`,
       "success",
     );
+    record(
+      `Clean-start DEB0 passed · right ${observedTempleVersions.right.firmwareVersion}/hardware ${observedTempleVersions.right.hardwareRevision} · left ${observedTempleVersions.left.firmwareVersion}/hardware ${observedTempleVersions.left.hardwareRevision}.`,
+      "success",
+    );
+    if (changedAcrossReset.length > 0) {
+      record(
+        `Temple identity changed across the clean-start reset on ${changedAcrossReset.join(" + ")}; Automatic Apply will plan from the fresh post-reset identity.`,
+        "warn",
+      );
+    }
 
     const targetFirmware =
       caseUpdateFirmware?.catalogRelease?.id === release.id
@@ -983,6 +998,7 @@ server.registerTool(
         installedProvenance: deviceProvenance(fresh),
         differenceSourceFirmware: sourceFirmware,
         differencePlan,
+        initialTempleVersions: initialVersions,
         observedTempleVersions,
         verifiedTempleReadiness: templeReadiness,
         onPlan: (applyPlan) => {
@@ -993,7 +1009,9 @@ server.registerTool(
         },
         onRecovery: (recovery) => {
           record(
-            `Differential preflight observed ${recovery.observedVersion}/hardware 5 before START; cleanup and bilateral reset were verified, so Automatic Update is switching to the complete pinned target main.`,
+            recovery.trigger !== "source-preflight-mismatch"
+              ? `Differential transfer reached FINISH, but ${recovery.failedRoutes.join(" + ")} did not return the expected target liveness. Exact cleanup is proven; Automatic Update is resetting both temples before the complete pinned target main.`
+              : `Differential preflight observed ${recovery.observedVersion}/hardware 5 before START. No firmware bytes were accepted and cleanup is proven; Automatic Update is resetting both temples before the complete pinned target main.`,
             "warn",
           );
         },

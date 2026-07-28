@@ -568,6 +568,87 @@ function targetFirmwareVersion(targetFirmware) {
   );
 }
 
+function decodedTempleIdentity(probe, route) {
+  const decoded = probe?.decoded;
+  if (
+    decoded?.kind !== "version" ||
+    !decoded.firmwareVersion ||
+    decoded.hardwareRevision !== 5
+  ) {
+    throw new Error(
+      `${route}: the clean-start version check requires a checksum-valid hardware-5 temple reply.`,
+    );
+  }
+  return {
+    firmwareVersion: decoded.firmwareVersion,
+    hardwareRevision: decoded.hardwareRevision,
+  };
+}
+
+export async function prepareAutomaticTempleUpdate({
+  session,
+  progressBase = 0,
+  progressSpan = 1,
+  onStep,
+} = {}) {
+  if (
+    !session?.probeRunningTemple ||
+    !session?.restartAndVerifyBothTemples
+  ) {
+    throw new Error(
+      "A G2 Case session with version-probe and bilateral-reset support is required.",
+    );
+  }
+
+  const initialProbes = {};
+  const initialVersions = {};
+  for (let index = 0; index < ROUTES.length; index += 1) {
+    const route = ROUTES[index];
+    await onStep?.({ step: "version-check", route });
+    const probe = await session.probeRunningTemple("version", route, {
+      progressBase:
+        progressBase + (index / ROUTES.length) * progressSpan * 0.3,
+      progressSpan: (progressSpan * 0.3) / ROUTES.length,
+    });
+    initialProbes[route] = probe;
+    initialVersions[route] = decodedTempleIdentity(probe, route);
+  }
+
+  await onStep?.({ step: "clean-reset" });
+  const verifiedTempleReadiness =
+    await session.restartAndVerifyBothTemples({
+      progressBase: progressBase + progressSpan * 0.3,
+      progressSpan: progressSpan * 0.7,
+      purpose: "Automatic clean-start reset",
+    });
+  const observedTempleVersions = Object.fromEntries(
+    ROUTES.map((route) => [
+      route,
+      {
+        firmwareVersion:
+          verifiedTempleReadiness?.versions?.[route]?.firmware ?? null,
+        hardwareRevision:
+          verifiedTempleReadiness?.versions?.[route]?.hardware ?? null,
+      },
+    ]),
+  );
+  const changedAcrossReset = ROUTES.filter(
+    (route) =>
+      initialVersions[route].firmwareVersion !==
+        observedTempleVersions[route].firmwareVersion ||
+      initialVersions[route].hardwareRevision !==
+        observedTempleVersions[route].hardwareRevision,
+  );
+
+  return {
+    initialProbes,
+    initialVersions,
+    observedTempleVersions,
+    changedAcrossReset,
+    verifiedTempleReadiness,
+  };
+}
+
 function isReusableTempleReadiness(readiness, expectedVersion) {
   return Boolean(
     expectedVersion &&
@@ -597,51 +678,10 @@ function completeAutomaticUpdatePlan(targetSha256, reason) {
   };
 }
 
-export function canFallbackDifferentialToComplete(error, plan) {
-  const audit = error?.audit;
-  const routeResults = audit?.routeResults;
-  const requiredSourceVersion =
-    audit?.sourceValidation?.requiredLiveFirmware;
+function completeResetLivenessProof(audit) {
   const resetVersions = audit?.finalResetAndLiveness?.versions;
   return Boolean(
-    plan?.flashMode === "differences" &&
-      plan?.sourceVersion &&
-      requiredSourceVersion === plan.sourceVersion &&
-      audit?.outcome === "failed_or_uncertain" &&
-      audit?.flashMode === "differences" &&
-      [
-        audit?.routeOrderSetupStops,
-        audit?.supersededSuccessfulRouteResults,
-        audit?.routeComponentRestartAttempts,
-        audit?.routeComponentRestartResets,
-        audit?.persistentDataRejectionStops,
-        audit?.routeSetupResetStops,
-        audit?.routeSetupResetResults,
-      ].every((history) => Array.isArray(history) && history.length === 0) &&
-      Array.isArray(audit?.routes) &&
-      audit.routes.length === ROUTES.length &&
-      ROUTES.every((route) => audit.routes.includes(route)) &&
-      Array.isArray(routeResults) &&
-      routeResults.length === 1 &&
-      routeResults.every(
-        (result) =>
-          ROUTES.includes(result?.route) &&
-          result?.outcome === "failed_or_uncertain" &&
-          result?.failureStage === "PREFLIGHT" &&
-          result?.otaMutationAttempted === false &&
-          result?.acceptedFirmwareBytes === 0 &&
-          result?.preflightVersion?.hardware === 5 &&
-          result?.preflightVersion?.firmware &&
-          result.preflightVersion.firmware !== requiredSourceVersion &&
-          result?.caseRestoreVerified === true &&
-          result?.caseApplicationVersion === "1.2.57" &&
-          result?.retainedResult?.acceptedSize === 0 &&
-          result?.retainedResult?.baselineMask === 0x3ff &&
-          result?.retainedResult?.selectedMask === 0x3ff &&
-          result?.retainedResult?.restoredMask === 0x3ff &&
-          result?.retainedResult?.templeUartErrors === 0,
-      ) &&
-      audit?.finalResetAndLiveness?.resetConfirmed === true &&
+    audit?.finalResetAndLiveness?.resetConfirmed === true &&
       audit.finalResetAndLiveness.caseFirmware === "1.2.57" &&
       ROUTES.every(
         (route) =>
@@ -650,6 +690,148 @@ export function canFallbackDifferentialToComplete(error, plan) {
           resetVersions[route].yhmRestoreVerified === true,
       ),
   );
+}
+
+function differentialFallbackDetails(error, plan) {
+  const audit = error?.audit;
+  const routeResults = audit?.routeResults;
+  const requiredSourceVersion =
+    audit?.sourceValidation?.requiredLiveFirmware;
+  if (
+    plan?.flashMode !== "differences" ||
+    !plan?.sourceVersion ||
+    requiredSourceVersion !== plan.sourceVersion ||
+    audit?.outcome !== "failed_or_uncertain" ||
+    audit?.flashMode !== "differences" ||
+    !Array.isArray(audit?.routes) ||
+    audit.routes.length !== ROUTES.length ||
+    !ROUTES.every((route) => audit.routes.includes(route)) ||
+    !Array.isArray(routeResults) ||
+    routeResults.length === 0 ||
+    !completeResetLivenessProof(audit)
+  ) {
+    return null;
+  }
+
+  const zeroWritePreflightMismatch =
+    [
+      audit?.routeOrderSetupStops,
+      audit?.supersededSuccessfulRouteResults,
+      audit?.routeComponentRestartAttempts,
+      audit?.routeComponentRestartResets,
+      audit?.persistentDataRejectionStops,
+      audit?.routeSetupResetStops,
+      audit?.routeSetupResetResults,
+    ].every((history) => Array.isArray(history) && history.length === 0) &&
+    routeResults.length === 1 &&
+    routeResults.every(
+      (result) =>
+        ROUTES.includes(result?.route) &&
+        result?.outcome === "failed_or_uncertain" &&
+        result?.failureStage === "PREFLIGHT" &&
+        result?.otaMutationAttempted === false &&
+        result?.acceptedFirmwareBytes === 0 &&
+        result?.preflightVersion?.hardware === 5 &&
+        result?.preflightVersion?.firmware &&
+        result.preflightVersion.firmware !== requiredSourceVersion &&
+        result?.caseRestoreVerified === true &&
+        result?.caseApplicationVersion === "1.2.57" &&
+        result?.retainedResult?.acceptedSize === 0 &&
+        result?.retainedResult?.baselineMask === 0x3ff &&
+        result?.retainedResult?.selectedMask === 0x3ff &&
+        result?.retainedResult?.restoredMask === 0x3ff &&
+        result?.retainedResult?.templeUartErrors === 0,
+    );
+  if (zeroWritePreflightMismatch) {
+    const observedVersion =
+      routeResults[0].preflightVersion.firmware;
+    return {
+      kind: "differential-to-complete",
+      trigger: "source-preflight-mismatch",
+      observedVersion,
+      observedVersions: Object.fromEntries(
+        ROUTES.map((route) => [
+          route,
+          audit.finalResetAndLiveness.versions[route].firmware,
+        ]),
+      ),
+      failedRoutes: [routeResults[0].route],
+      reason:
+        `Just-in-time preflight reported ${observedVersion}/hardware 5 instead of the reviewed differential source.`,
+    };
+  }
+
+  const targetBytes =
+    audit?.differencePlan?.verification?.targetMainBytes ??
+    audit?.differencePlan?.wireTransfer?.bytes;
+  const failedPostflightRoutes = routeResults
+    .filter(
+      (result) =>
+        result?.outcome === "failed_or_uncertain" &&
+        result?.failureStage === "POSTFLIGHT",
+    )
+    .map((result) => result.route);
+  const targetVersion = audit?.differencePlan?.target?.version;
+  const failedFinalLivenessRoutes = targetVersion
+    ? ROUTES.filter(
+        (route) =>
+          audit.finalResetAndLiveness.versions[route].firmware !==
+          targetVersion,
+      )
+    : [];
+  const bootFailureRoutes = [
+    ...new Set([
+      ...failedPostflightRoutes,
+      ...failedFinalLivenessRoutes,
+    ]),
+  ];
+  const safeCompletedTransfers = Boolean(
+    Number.isInteger(targetBytes) &&
+      targetBytes > 0 &&
+      bootFailureRoutes.length > 0 &&
+      routeResults.every(
+        (result) =>
+          ROUTES.includes(result?.route) &&
+          ["success", "failed_or_uncertain"].includes(result?.outcome) &&
+          (result.outcome === "success" ||
+            result.failureStage === "POSTFLIGHT") &&
+          result?.otaMutationAttempted === true &&
+          result?.transfer?.finishAckReceived === true &&
+          result.transfer.payloadBytesSent === targetBytes &&
+          result?.acceptedFirmwareBytes === targetBytes &&
+          result?.caseRestoreVerified === true &&
+          result?.caseApplicationVersion === "1.2.57" &&
+          result?.retainedResult?.acceptedSize === targetBytes &&
+          result?.retainedResult?.baselineMask === 0x3ff &&
+          result?.retainedResult?.selectedMask === 0x3ff &&
+          result?.retainedResult?.restoredMask === 0x3ff &&
+          result?.retainedResult?.templeUartErrors === 0,
+      ),
+  );
+  if (!safeCompletedTransfers) return null;
+
+  const observedVersions = Object.fromEntries(
+    ROUTES.map((route) => [
+      route,
+      audit.finalResetAndLiveness.versions[route].firmware,
+    ]),
+  );
+  return {
+    kind: "differential-to-complete",
+    trigger:
+      failedPostflightRoutes.length > 0
+        ? "postflight-boot-liveness-failure"
+        : "final-boot-liveness-failure",
+    observedVersion: null,
+    observedVersions,
+    failedRoutes: bootFailureRoutes,
+    reason:
+      `The differential target was accepted, but ${bootFailureRoutes.join(" + ")} did not return the expected target version during boot/liveness verification.`,
+  };
+}
+
+export function canFallbackDifferentialToComplete(error, plan) {
+  return Boolean(differentialFallbackDetails(error, plan));
 }
 
 export function resolveAutomaticApplyPlan({
@@ -811,6 +993,7 @@ export async function executeAutomaticApply({
   installedProvenance,
   differenceSourceFirmware,
   differencePlan,
+  initialTempleVersions,
   observedTempleVersions,
   verifiedTempleReadiness,
   onPlan,
@@ -845,48 +1028,97 @@ export async function executeAutomaticApply({
     };
   }
 
+  const automaticPreflight = initialTempleVersions
+    ? {
+        initialVersions: initialTempleVersions,
+        postResetVersions: observedTempleVersions ?? null,
+        cleanStartResetVerified:
+          verifiedTempleReadiness?.applicationLivenessVerified === true &&
+          verifiedTempleReadiness?.firmwareBytesTransmitted === 0,
+        resetAttempts:
+          verifiedTempleReadiness?.resetAttempts ?? [],
+      }
+    : null;
   try {
+    const audit = await session.flashPinnedTempleMain(
+      targetFirmware,
+      plan.route,
+      plan.flashMode === "differences"
+        ? {
+            mode: plan.flashMode,
+            differenceSourceFirmware,
+            sourceProofMode: plan.sourceProofMode,
+          }
+        : {
+            mode: plan.flashMode,
+            differenceSourceFirmware: null,
+          },
+    );
+    if (automaticPreflight) {
+      audit.automaticPreflight = automaticPreflight;
+    }
     return {
       plan,
       action: "flash",
-      audit: await session.flashPinnedTempleMain(
-        targetFirmware,
-        plan.route,
-        plan.flashMode === "differences"
-          ? {
-              mode: plan.flashMode,
-              differenceSourceFirmware,
-              sourceProofMode: plan.sourceProofMode,
-            }
-          : {
-              mode: plan.flashMode,
-              differenceSourceFirmware: null,
-            },
-      ),
+      audit,
     };
   } catch (error) {
-    if (!canFallbackDifferentialToComplete(error, plan)) throw error;
-    const observedVersion =
-      error.audit.routeResults[0].preflightVersion.firmware;
+    if (automaticPreflight && error?.audit) {
+      error.audit.automaticPreflight = automaticPreflight;
+    }
+    const recovery = differentialFallbackDetails(error, plan);
+    if (!recovery) throw error;
     const fallbackPlan = completeAutomaticUpdatePlan(
       plan.targetSha256,
-      `Just-in-time preflight reported ${observedVersion}/hardware 5 instead of the reviewed differential source; retry with the complete pinned target Apollo main.`,
+      `${recovery.reason} Reset both temples from a clean Case state, then retry with the complete pinned target Apollo main.`,
     );
     await onRecovery?.({
-      kind: "differential-to-complete",
-      observedVersion,
+      ...recovery,
       priorPlan: plan,
       fallbackPlan,
       priorAudit: error.audit,
     });
-    const audit = await session.flashPinnedTempleMain(
-      targetFirmware,
-      fallbackPlan.route,
-      { mode: "complete", differenceSourceFirmware: null },
-    );
+    let recoveryReset;
+    try {
+      recoveryReset = await session.restartAndVerifyBothTemples({
+        purpose: "Differential-to-complete recovery reset",
+      });
+    } catch (resetError) {
+      const blocked = new Error(
+        `The differential happy path did not pass, and the clean recovery reset did not prove both temple applications are reachable. The complete-image fallback was not started: ${resetError.message}`,
+        { cause: resetError },
+      );
+      blocked.audit = error.audit;
+      blocked.automaticFallback = {
+        ...recovery,
+        outcome: "blocked-before-complete",
+        resetError: resetError.message,
+      };
+      throw blocked;
+    }
+
+    let audit;
+    try {
+      audit = await session.flashPinnedTempleMain(
+        targetFirmware,
+        fallbackPlan.route,
+        { mode: "complete", differenceSourceFirmware: null },
+      );
+    } catch (fallbackError) {
+      if (fallbackError?.audit) {
+        fallbackError.audit.automaticFallback = {
+          ...recovery,
+          outcome: "complete-failed-or-uncertain",
+          recoveryReset,
+          priorAudit: error.audit,
+        };
+      }
+      throw fallbackError;
+    }
     audit.automaticFallback = {
-      kind: "differential-to-complete",
-      observedVersion,
+      ...recovery,
+      outcome: "complete-success",
+      recoveryReset,
       priorAudit: error.audit,
     };
     return {
@@ -894,6 +1126,7 @@ export async function executeAutomaticApply({
       initialPlan: plan,
       action: "flash",
       audit,
+      recovery,
     };
   }
 }

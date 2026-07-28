@@ -68,10 +68,11 @@ Production deployment:
 - Opens in **Easy Mode** at the site root: select the Case, choose Stock or
   CFW, leave the default **Update** mode selected (or choose **Restore**),
   optionally update older Charging Case firmware first, and click **Apply**.
-  One shared automation pipeline performs the fresh
-  preflight, catalog/image validation, bilateral right-then-left operation,
-  bounded cleanup/recovery, final `DEB0` reset, contact checks, and
-  checksum-valid liveness verification without mid-process prompts.
+  One shared automation pipeline reads both installed version numbers, issues
+  a clean-start `DEB0` reset, plans from the fresh post-reset identity,
+  validates the catalog/image, performs the bilateral right-then-left
+  operation, and finishes with boot/contact/checksum-valid liveness
+  verification without mid-process prompts.
 - Keeps the existing multi-pane console as **Advanced Mode**, including all
   manual analysis/recovery controls, and adds the same Update/Restore selector
   and automatic **Apply** action beneath its firmware menu.
@@ -131,7 +132,10 @@ component CRC at finish. Skipping changed ranges within
 difference unit is therefore a complete changed component; byte-identical
 components are the only data omitted from the wire operation. Automatic
 Update falls back to the complete pinned target main whenever the exact
-differential source is not proven.
+differential source is not proven. It also falls back after a completed
+differential transfer fails target boot/liveness, but only when exact Case
+route cleanup and a fresh bilateral recovery reset prove both running temple
+applications remain reachable.
 
 ## Current firmware model
 
@@ -1008,16 +1012,18 @@ the glasses write gate also requires level-0 read access, dual-bank mode,
 consistent physical-bank aliases, a valid target-version vector in the active
 bank, and a valid fallback-bank vector.
 
-After the Case gate, Apply issues the traced bilateral `DEB0` reset and obtains
-fresh checksum-valid firmware/hardware-5 replies from both temples. This
-normalizes a stale charging-route phase and prevents old UI analysis or saved
-browser provenance from choosing the transfer mode. If initial telemetry is
-missing a seated contact, the same bounded reset is used as the recovery
-attempt instead of stopping before it; the operation still stops without
-transmitting firmware if the contact and application do not return. Smart
-Glasses firmware bytes remain blocked until the Case, contacts, and both
-running temple applications pass these checks. If the Case-update option is
-off, an older Case stops at preflight with an actionable message.
+After the Case gate, Apply first obtains a checksum-valid read-only
+firmware/hardware-5 reply from each temple, then issues the traced bilateral
+`DEB0` reset and obtains fresh replies again. The post-reset identity is the
+one used for deployment planning. This normalizes a stale charging-route phase
+and prevents old UI analysis or saved browser provenance from choosing the
+transfer mode. If initial telemetry is missing a seated contact, the same
+bounded reset is used as the recovery attempt instead of stopping before it;
+the operation still stops without transmitting firmware if the contact and
+application do not return. Smart Glasses firmware bytes remain blocked until
+the Case, contacts, and both running temple applications pass these checks. If
+the Case-update option is off, an older Case stops at preflight with an
+actionable message.
 
 Restore revalidates the selected bundle and rewrites the complete pinned
 Apollo main on both temples. It starts right then left, but may reverse that
@@ -1044,8 +1050,14 @@ command. Without that proof, Update selects the complete-main path. If a saved
 proof becomes stale between planning and the just-in-time preflight, Automatic
 Update retries with the complete target only after proving that zero firmware
 bytes were accepted, exact route restoration completed, Case 1.2.57 returned,
-and the bilateral reset/liveness gate passed. Otherwise it stops. The
-successful audit records the live compatibility proof and any safe fallback.
+and the bilateral reset/liveness gate passed. If a differential main reaches
+`FINISH` but the expected target version does not boot, Automatic Update may
+also retry the complete target after proving exact accepted size, FINISH,
+route restoration, Case 1.2.57 return, bilateral application reachability, and
+one additional clean recovery reset. A dead or unreachable temple stops the
+fallback because this route requires the running application. The successful
+audit records the live compatibility proof, recovery reset, and any safe
+fallback.
 
 If both saved routes already prove the selected target, Apply performs only
 the required bilateral reset and liveness verification. An older version,
@@ -1064,6 +1076,8 @@ Automatic Apply handles the reviewed failure boundaries as follows:
 | Responsive hardware-5 temples run an older version such as 2.1.1.12 | Transfer the complete pinned target main; never select Stock ↔ CFW differential mode |
 | Saved proof disagrees with fresh bilateral identity | Discard the saved plan and transfer the complete pinned target main |
 | Just-in-time differential preflight changes before `START` | Retry complete only with proof of zero accepted firmware bytes, exact cleanup, Case 1.2.57 return, and bilateral reset/liveness |
+| Differential reaches `FINISH`, but target boot/version liveness fails | Require exact accepted size, FINISH, route cleanup, Case 1.2.57, bilateral application reachability, and a new recovery reset before retrying the complete target |
+| Differential failure leaves either temple application unreachable | Stop; do not start the complete fallback through an app-dependent OTA route |
 | Read-only YHM baseline is outside the active seated-idle profile | Retry only from exact retained zero-write/zero-transmission proof; switch once to a separately pinned exact profile when recognized, otherwise let the stock app settle for 15 then 45 seconds and re-confirm Case/contact before each probe |
 | Allowlisted zero-write YHM setup stop | Perform the existing bounded setup reset/recheck and retry the same route |
 | Incomplete cached `G2RX` header or payload | Passively scan for a complete same-sequence checksum-valid cached frame; never replay the temple request |
