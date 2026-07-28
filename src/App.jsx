@@ -2858,10 +2858,15 @@ function App() {
       report.console.caseVersion !== latestCaseFirmwareRelease.caseVersion,
   );
   const directWebUsbSupported = webUsbSupported();
-  const directWebUsbVisible = remoteSupportAllowsDirectWebUsb(
-    supportState,
-    directWebUsbSupported,
-  );
+  // Direct WebUSB is a local transport in its own right, not only a
+  // remote-support detail: it bypasses the host serial driver, which on macOS
+  // truncates CH340 reads badly enough to need per-block retries. Hardware
+  // comparison on one Case: a full 512 KiB backup took ~2 minutes with zero
+  // retries over WebUSB against 6m20s and 39 retries over Web Serial, and
+  // both produced the identical flash SHA-256.
+  const directWebUsbVisible =
+    directWebUsbSupported ||
+    remoteSupportAllowsDirectWebUsb(supportState, directWebUsbSupported);
   const serialSupported =
     webSerialSupported() || directWebUsbVisible;
   const selectedTransport = portRef.current
@@ -3066,8 +3071,9 @@ function App() {
                 <div>
                   <strong>Select your G2 Case</strong>
                   <small>
-                    Web Serial stays local. Direct WebUSB is shown only during
-                    an enabled device-side Remote Support session.
+                    Both transports stay local to this browser. Direct WebUSB
+                    bypasses the host serial driver and is faster and more
+                    reliable where CH340 reads arrive truncated.
                   </small>
                 </div>
               </div>

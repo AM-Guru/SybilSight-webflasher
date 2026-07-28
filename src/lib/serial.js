@@ -117,6 +117,7 @@ const POGO_READ_ONLY_PHASE_SETTLE_MS = Object.freeze([
   15_000, 45_000, 90_000, 180_000, 300_000,
 ]);
 export const WEB_SERIAL_ROM_READ_SIZE = 31;
+const ROM_ENTRY_ATTEMPTS = 3;
 
 // The CH340 packet boundary is a property of this host's USB serial stack,
 // not of one loader session. Remember the first detection so later ROM
@@ -1239,13 +1240,7 @@ class Stm32Bootloader {
       flowControl: "none",
       bufferSize: 4096,
     });
-    await this.transport.setSignals(false, true);
-    await delay(60);
-    await this.transport.setSignals(false, false);
-    await delay(180);
-    this.transport.clear();
-    await this.transport.write(new Uint8Array([SYNC]));
-    await this.expectAck("bootloader synchronization", 3000);
+    await this.enterRomLoader();
     const identity = await this.get();
     this.version = identity.version;
     this.commands = identity.commands;
@@ -1255,6 +1250,47 @@ class Stm32Bootloader {
         `Unexpected STM32 product ID 0x${this.productId.toString(16).padStart(4, "0")}.`,
       );
     }
+  }
+
+  // Drive the Case into its ROM loader and synchronize.
+  //
+  // The boot select line must already be settled when reset is released, so
+  // the sequence starts from an explicitly asserted state rather than from
+  // whatever the previous session left on the adapter — the normal-console
+  // entry does the same thing, and skipping it is why a WebUSB session could
+  // answer the sync with running application output ("Unexpected 0x4c").
+  // Each attempt gives the loader a little longer to come up before the
+  // sync byte.
+  async enterRomLoader(attempts = ROM_ENTRY_ATTEMPTS) {
+    let lastError = null;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        await this.transport.setSignals(true, true);
+        await delay(60);
+        await this.transport.setSignals(false, true);
+        await delay(60);
+        await this.transport.setSignals(false, false);
+        await delay(180 * attempt);
+        this.transport.clear();
+        await this.transport.write(new Uint8Array([SYNC]));
+        await this.expectAck("bootloader synchronization", 3000);
+        if (attempt > 1) {
+          this.log?.(
+            `Entered the STM32 ROM loader on boot-select attempt ${attempt}/${attempts}.`,
+            "warn",
+          );
+        }
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt === attempts) break;
+        this.log?.(
+          `The Case did not answer the ROM sync on attempt ${attempt}/${attempts} (${error.message}); repeating the boot-select reset.`,
+          "warn",
+        );
+      }
+    }
+    throw lastError;
   }
 
   async close() {
@@ -2711,12 +2747,21 @@ export class G2CaseSession {
         progressSpan: progressSpan / routes.length,
       });
       const version = probe.decoded;
+      // A bilateral reset in the middle of a cross-version update sees the
+      // two temples on different images: one already carries the target, the
+      // other still carries the source. Resolve the expectation per route
+      // rather than asserting a single version across both.
+      const routeExpectedVersion =
+        expectedVersion && typeof expectedVersion === "object"
+          ? expectedVersion[route] ?? null
+          : expectedVersion;
       if (
         version.hardwareRevision !== 5 ||
-        (expectedVersion && version.firmwareVersion !== expectedVersion)
+        (routeExpectedVersion &&
+          version.firmwareVersion !== routeExpectedVersion)
       ) {
-        const expected = expectedVersion
-          ? `${expectedVersion}/hardware 5`
+        const expected = routeExpectedVersion
+          ? `${routeExpectedVersion}/hardware 5`
           : "hardware 5";
         throw new PogoFlashSafetyError(
           `${route}: post-reset expected ${expected}, observed ${version.firmwareVersion}/hardware ${version.hardwareRevision}.`,
@@ -3497,12 +3542,29 @@ export class G2CaseSession {
             )
           ) {
             audit.routeComponentRestartAttempts.push(error.routeResult);
+            // The restarting route is still on its pre-flash image, but any
+            // route already finished in this run carries the target. Expect
+            // each temple at the image it should actually be holding.
+            const restartingRouteVersion =
+              error.routeResult?.preflightVersion?.firmware ??
+              expectedSourceVersion ??
+              target.version;
+            const expectedVersionByRoute = Object.fromEntries(
+              livenessRoutes.map((livenessRoute) => [
+                livenessRoute,
+                audit.routeResults.some(
+                  (completed) =>
+                    completed?.route === livenessRoute &&
+                    completed?.outcome === "success",
+                )
+                  ? target.version
+                  : restartingRouteVersion,
+              ]),
+            );
             audit.routeComponentRestartResets.push(
               await this.resetTempleOtaReceiverForComponentRestart(
                 livenessRoutes,
-                error.routeResult?.preflightVersion?.firmware ??
-                  expectedSourceVersion ??
-                  target.version,
+                expectedVersionByRoute,
                 route,
                 index,
                 routes.length,

@@ -233,6 +233,45 @@ test("reports the packet boundary even when its re-synchronization fails", async
   assert.equal(result.packetBoundaryDetected, true);
 });
 
+test("post-reset liveness accepts per-route versions during a cross-version update", async () => {
+  const session = new G2CaseSession(null, { log: () => {} });
+  const probed = [];
+  session.probeRunningTemple = async (_operation, route) => {
+    probed.push(route);
+    return {
+      decoded: {
+        // Right already carries the target; left still carries the source.
+        firmwareVersion: route === "right" ? "2.2.6.11" : "2.2.6.10",
+        hardwareRevision: 5,
+      },
+      transportProof: { restoredMask: 0x3ff },
+    };
+  };
+  session.confirmCaseFirmwareVersion = async () => ({ caseVersion: "1.2.57" });
+  session.restoreNormal = async () => ({ caseVersion: "1.2.57" });
+  const resetReport = {
+    caseVersion: "1.2.57",
+    telemetry: { leftPresent: true, rightPresent: true },
+  };
+  const result = await session.verifyPostResetTempleLiveness(
+    resetReport,
+    ["right", "left"],
+    { expectedVersion: { right: "2.2.6.11", left: "2.2.6.10" } },
+  );
+  assert.deepEqual(probed, ["right", "left"]);
+  assert.equal(result.versions.right.firmware, "2.2.6.11");
+  assert.equal(result.versions.left.firmware, "2.2.6.10");
+
+  // A single expected version still applies to every route.
+  await assert.rejects(
+    () =>
+      session.verifyPostResetTempleLiveness(resetReport, ["right", "left"], {
+        expectedVersion: "2.2.6.10",
+      }),
+    /right: post-reset expected 2\.2\.6\.10\/hardware 5, observed 2\.2\.6\.11/,
+  );
+});
+
 test("a zero-write setup stop qualifies for settling before any reset", () => {
   const zeroWriteSetupStop = {
     outcome: "failed_or_uncertain",
