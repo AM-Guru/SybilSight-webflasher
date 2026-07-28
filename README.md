@@ -922,12 +922,23 @@ On macOS the server reads the technician credential from the
 `SybilSight WebFlasher Remote Support` Keychain item. Other hosts can provide
 `SUPPORT_OPERATOR_KEY`.
 
-The MCP tools can join/disconnect, analyze the Case, interrogate either temple,
-reset and recheck both temples, create a private Case backup, perform a bounded
-expert serial exchange, stage/activate an eligible Case image, and install a
-hash-pinned reviewed Smart Glasses image. Mutation tools are annotated as
-destructive for the technician's Codex approval policy; this does not create
-another approval prompt in the customer's browser.
+The MCP tools expose the complete Remote WebFlasher capability set:
+join/disconnect, Case analysis, left/right temple interrogation, the traced
+bilateral reset with full reopened-telemetry and application-liveness
+verification, the combined Case + Smart Glasses backup (`backup_system`, with
+`backup_case` still available when temples are not seated), bounded expert
+serial exchanges, Case staging and activation, complete-main Smart Glasses
+flashing, the reviewed Stock 2.2.6.10 ↔ CFW 2.2.6.11 differential transfer
+(`mode: "differences"`), and the full Automatic Apply workflow
+(`automatic_apply`, including the Case-first update and automatic
+differential-to-complete fallback). Firmware can be selected either by a local
+file path or directly from the deployed WebFlasher's verified archive via
+`list_firmware_catalog` and `releaseId`; archive downloads are re-verified
+against their catalog size and SHA-256 before use. The archive origin defaults
+to the relay host and can be overridden with `WEBFLASHER_CATALOG_URL`.
+Mutation tools are annotated as destructive for the technician's Codex
+approval policy; this does not create another approval prompt in the
+customer's browser.
 
 ### Reset and recheck the glasses
 

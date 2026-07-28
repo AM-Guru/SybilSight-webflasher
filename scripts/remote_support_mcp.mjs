@@ -10,7 +10,29 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { WebSocket } from "ws";
 import { z } from "zod/v4";
 
+import {
+  assessAutomaticTempleContacts,
+  AUTOMATIC_INSTALL_MODES,
+  DEFAULT_AUTOMATIC_INSTALL_MODE,
+  executeAutomaticApply,
+  executeAutomaticCaseUpdate,
+  installedProvenanceStorageKey,
+  mergeInstalledProvenance,
+  resolveAutomaticCaseUpdatePlan,
+  verifyAutomaticCaseReadiness,
+} from "../src/lib/automaticRecovery.js";
+import {
+  buildG2SystemBackupArtifact,
+  findMatchingGlassesRecoveryRelease,
+  validateGlassesRecoveryBundle,
+} from "../src/lib/backup.js";
+import {
+  buildBundleDifferencePlan,
+  findStockCfwCounterpartRelease,
+} from "../src/lib/differential.js";
 import { parseFirmwareInput } from "../src/lib/firmware.js";
+import { REVIEWED_CASE_VERSION } from "../src/lib/pogoFlashBridge.js";
+import { findLatestCaseFirmwareRelease } from "../src/lib/recoveryDefaults.js";
 import { RemoteG2CasePort } from "../src/lib/remoteSerial.js";
 import {
   RemoteSupportConnection,
@@ -21,6 +43,7 @@ import { G2CaseSession } from "../src/lib/serial.js";
 const DEFAULT_RELAY_URL =
   "wss://webflasher.sybilsight.com/remote-support/ws";
 const KEYCHAIN_SERVICE = "SybilSight WebFlasher Remote Support";
+const CATALOG_INDEX_PATH = "firmware-updates/source-files/index.json";
 
 let connection = null;
 let remotePort = null;
@@ -29,6 +52,9 @@ let caseReport = null;
 let backupRecord = null;
 let stagedCase = null;
 let currentProgress = null;
+let catalog = null;
+let catalogSource = null;
+const installedProvenanceByDevice = new Map();
 const eventLog = [];
 
 function record(message, tone = "info") {
@@ -179,17 +205,183 @@ function updateSessionProgress(extra) {
   caseSession.progress = progressReporter(extra);
 }
 
+function catalogBaseUrl() {
+  const configured = String(process.env.WEBFLASHER_CATALOG_URL ?? "").trim();
+  if (configured) return configured.endsWith("/") ? configured : `${configured}/`;
+  const relay = new URL(process.env.REMOTE_SUPPORT_URL ?? DEFAULT_RELAY_URL);
+  relay.protocol = relay.protocol === "ws:" ? "http:" : "https:";
+  relay.pathname = "/";
+  relay.search = "";
+  relay.hash = "";
+  return relay.toString();
+}
+
+async function loadCatalog({ refresh = false } = {}) {
+  if (catalog && !refresh) return catalog;
+  const url = new URL(CATALOG_INDEX_PATH, catalogBaseUrl());
+  const response = await fetch(url, {
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) {
+    throw new Error(
+      `The firmware archive index at ${url} returned HTTP ${response.status}.`,
+    );
+  }
+  const value = await response.json();
+  const releases = Array.isArray(value.releases)
+    ? value.releases.map((release) => ({
+        ...release,
+        id: release.id ?? `g2-official-${release.version}`,
+        channel: release.channel ?? "official",
+        caseRecoveryEligible: release.caseRecoveryEligible ?? true,
+      }))
+    : [];
+  catalog = releases;
+  catalogSource = {
+    url: url.toString(),
+    schemaVersion: value.schemaVersion ?? null,
+    generatedAt: value.generatedAt ?? null,
+    fetchedAt: new Date().toISOString(),
+    releaseCount: releases.length,
+  };
+  record(
+    `Firmware archive index loaded · ${releases.length} verified releases.`,
+    "success",
+  );
+  return catalog;
+}
+
+async function requireCatalogRelease(releaseId) {
+  const releases = await loadCatalog();
+  const release = releases.find((item) => item.id === releaseId);
+  if (!release) {
+    throw new Error(
+      `The firmware archive does not contain release ${releaseId}. Call list_firmware_catalog for valid ids.`,
+    );
+  }
+  return release;
+}
+
+async function fetchCatalogReleaseBytes(release, label = "Firmware archive") {
+  const base = catalogBaseUrl();
+  const urls = [
+    ...new Set(
+      [release?.url, release?.sourceUrl]
+        .filter(Boolean)
+        .map((url) => new URL(url, base).toString()),
+    ),
+  ];
+  let lastError = null;
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (response.ok) return new Uint8Array(await response.arrayBuffer());
+      lastError = new Error(`${url} returned HTTP ${response.status}.`);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw new Error(
+    `${label} could not be downloaded${lastError?.message ? `: ${lastError.message}` : "."}`,
+  );
+}
+
+async function firmwareFromCatalogRelease(release) {
+  const bytes = await fetchCatalogReleaseBytes(release);
+  if (bytes.length !== release.size) {
+    throw new Error("The mirrored firmware size does not match its catalog.");
+  }
+  const parsed = await parseFirmwareInput(bytes, release.fileName);
+  if (parsed.fileSha256 !== release.sha256) {
+    throw new Error("The mirrored firmware SHA-256 does not match its catalog.");
+  }
+  return {
+    ...parsed,
+    provenance: {
+      ...parsed.provenance,
+      channel: release.channel,
+      trust: release.trust ?? parsed.provenance.trust,
+      label:
+        release.channel === "custom"
+          ? `Smart Glasses CFW · stock ${release.baseVersion} base`
+          : `Verified G2 ${release.version} · archived SHA-256`,
+      capabilities:
+        release.capabilities ?? parsed.provenance.capabilities ?? [],
+    },
+    caseRecoveryEligible:
+      release.caseRecoveryEligible ?? parsed.caseRecoveryEligible,
+    catalogRelease: release,
+  };
+}
+
+async function resolveFirmwareInput({ firmwarePath, releaseId }) {
+  if (Boolean(firmwarePath) === Boolean(releaseId)) {
+    throw new Error(
+      "Provide exactly one firmware source: a local firmwarePath or an archive releaseId.",
+    );
+  }
+  if (firmwarePath) {
+    const input = new Uint8Array(await readFile(resolve(firmwarePath)));
+    return parseFirmwareInput(input, basename(firmwarePath));
+  }
+  return firmwareFromCatalogRelease(await requireCatalogRelease(releaseId));
+}
+
+function deviceProvenanceKey(report) {
+  return installedProvenanceStorageKey(
+    report?.console?.serialNumber,
+    report?.console?.identifier,
+  );
+}
+
+function deviceProvenance(report) {
+  const key = deviceProvenanceKey(report);
+  return (key && installedProvenanceByDevice.get(key)) ?? {};
+}
+
+function recordInstalledProvenance(report, audit) {
+  const key = deviceProvenanceKey(report);
+  if (!key || !audit) return;
+  installedProvenanceByDevice.set(
+    key,
+    mergeInstalledProvenance(installedProvenanceByDevice.get(key), audit),
+  );
+}
+
+async function prepareDifferenceSource(firmware) {
+  const releases = await loadCatalog();
+  const counterpart = findStockCfwCounterpartRelease(releases, firmware);
+  if (!counterpart) {
+    throw new Error(
+      "Differential flashing is available only for the reviewed Stock 2.2.6.10 ↔ CFW 2.2.6.11 pair.",
+    );
+  }
+  const source = await firmwareFromCatalogRelease(counterpart);
+  const plan = buildBundleDifferencePlan(source, firmware);
+  if (!plan.executable) {
+    throw new Error(
+      "The Stock/CFW comparison is not an executable one-component difference.",
+    );
+  }
+  record(
+    `Difference plan ready · ${plan.unchangedComponentCount} identical components skipped · ${plan.changedComponentCount} changed component transferred.`,
+    "success",
+  );
+  return { source, plan };
+}
+
 const server = new McpServer(
   {
     name: "sybilsight-webflasher-support",
-    version: "0.2.0",
+    version: "0.3.0",
   },
   {
     capabilities: {
       logging: {},
     },
     instructions:
-      "This server operates only the exact G2 Case USB serial interface selected and authorized in the customer's open WebFlasher session. Join a session before using hardware tools. Prefer analyze_case and read_temple before mutation. Case activation and Smart Glasses flashing are destructive hardware operations; require explicit technician intent, a fresh analysis, and a saved backup. The customer does not need to approve individual commands after starting the session.",
+      "This server operates only the exact G2 Case USB serial interface selected and authorized in the customer's open WebFlasher session. Join a session before using hardware tools. Prefer analyze_case and read_temple before mutation. Case activation and Smart Glasses flashing are destructive hardware operations; require explicit technician intent, a fresh analysis, and a saved backup (backup_system preferred; backup_case when temples are not seated). automatic_apply mirrors the WebFlasher's Automatic Apply and manages the Case update, bilateral reset verification, and complete-or-differential transfer selection itself. The customer does not need to approve individual commands after starting the session.",
   },
 );
 
@@ -213,6 +405,45 @@ server.registerTool(
   tool(async ({ code, relayUrl }) =>
     textResult(await replaceConnection({ code, relayUrl })),
   ),
+);
+
+server.registerTool(
+  "list_firmware_catalog",
+  {
+    description:
+      "List the deployed WebFlasher's verified firmware archive so releases can be selected by id instead of a local file path.",
+    inputSchema: {
+      refresh: z
+        .boolean()
+        .default(false)
+        .describe("Refetch the archive index instead of using the cached copy"),
+    },
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: true,
+    },
+  },
+  tool(async ({ refresh }) => {
+    const releases = await loadCatalog({ refresh });
+    return textResult({
+      source: catalogSource,
+      releases: releases.map((release) => ({
+        id: release.id,
+        channel: release.channel,
+        trust: release.trust ?? null,
+        version: release.version,
+        baseVersion: release.baseVersion ?? null,
+        caseVersion: release.caseVersion ?? null,
+        recoveryTarget: release.recoveryTarget ?? null,
+        caseRecoveryEligible: release.caseRecoveryEligible,
+        fileName: release.fileName,
+        size: release.size,
+        sha256: release.sha256,
+        capabilities: release.capabilities ?? [],
+        notes: release.notes ?? null,
+      })),
+    });
+  }),
 );
 
 server.registerTool(
@@ -260,8 +491,16 @@ server.registerTool(
   "reset_and_recheck_glasses",
   {
     description:
-      "Issue the traced bilateral G2 temple reset through the selected Case and verify that both applications return.",
-    inputSchema: {},
+      "Issue the traced bilateral G2 temple reset through the selected Case, then verify reopened Case telemetry, both contacts, and checksum-valid left/right application liveness — the WebFlasher's full post-reset verification.",
+    inputSchema: {
+      expectedVersion: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "Optional firmware version both temples must report after the reset",
+        ),
+    },
     annotations: {
       readOnlyHint: false,
       destructiveHint: true,
@@ -269,9 +508,16 @@ server.registerTool(
       openWorldHint: false,
     },
   },
-  tool(async (_input, extra) => {
+  tool(async ({ expectedVersion }, extra) => {
     updateSessionProgress(extra);
-    return textResult(await caseSession.restartAndRecheck());
+    return textResult(
+      await caseSession.restartAndVerifyBothTemples({
+        expectedVersion: expectedVersion ?? null,
+        progressBase: 0,
+        progressSpan: 1,
+        purpose: "Technician reset and recheck",
+      }),
+    );
   }),
 );
 
@@ -279,7 +525,7 @@ server.registerTool(
   "backup_case",
   {
     description:
-      "Read and save a verified 512 KiB Case flash and option-byte backup on the technician computer before recovery.",
+      "Read and save a verified 512 KiB Case flash and option-byte backup on the technician computer. Use backup_system for the combined Case + Smart Glasses backup when both temples are seated.",
     inputSchema: {
       outputPath: z
         .string()
@@ -310,6 +556,7 @@ server.registerTool(
       { encoding: "utf8", mode: 0o600 },
     );
     backupRecord = {
+      scope: "case-only",
       outputPath: resolvedPath,
       flashSha256: backup.flashSha256,
       optionSha256: backup.optionSha256,
@@ -319,15 +566,107 @@ server.registerTool(
 );
 
 server.registerTool(
+  "backup_system",
+  {
+    description:
+      "Create the combined Case + Smart Glasses backup: full Case flash and option bytes, live left/right temple identity snapshots, and the matching validated official recovery bundle. Requires a fresh analysis with both temples seated.",
+    inputSchema: {
+      outputPath: z
+        .string()
+        .min(1)
+        .describe("Explicit local path for the private .g2-backup.json artifact"),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  },
+  tool(async ({ outputPath }, extra) => {
+    updateSessionProgress(extra);
+    if (
+      !caseReport?.console?.telemetry?.leftPresent ||
+      !caseReport?.console?.telemetry?.rightPresent
+    ) {
+      throw new Error(
+        "Seat both Smart Glasses temples in the Case, run analyze_case, and try the combined backup again.",
+      );
+    }
+    const releases = await loadCatalog();
+    const caseBackup = await caseSession.backup({
+      progressBase: 0,
+      progressSpan: 0.62,
+    });
+    const templeProbes = {};
+    for (const [index, route] of ["left", "right"].entries()) {
+      templeProbes[route] = await caseSession.probeRunningTemple(
+        "version",
+        route,
+        {
+          progressBase: 0.62 + index * 0.14,
+          progressSpan: 0.14,
+        },
+      );
+    }
+    const recoveryRelease = findMatchingGlassesRecoveryRelease(
+      releases,
+      templeProbes,
+    );
+    const recoveryBundleBytes = await fetchCatalogReleaseBytes(
+      recoveryRelease,
+      "Smart Glasses recovery archive",
+    );
+    await validateGlassesRecoveryBundle(recoveryBundleBytes, recoveryRelease);
+    const artifact = buildG2SystemBackupArtifact({
+      caseBackup,
+      report: caseReport,
+      templeProbes,
+      recoveryRelease,
+      recoveryBundleBytes,
+    });
+    const resolvedPath = resolve(outputPath);
+    await writeFile(
+      resolvedPath,
+      `${JSON.stringify(artifact, null, 2)}\n`,
+      { encoding: "utf8", mode: 0o600 },
+    );
+    backupRecord = {
+      scope: "system",
+      outputPath: resolvedPath,
+      flashSha256: caseBackup.flashSha256,
+      optionSha256: caseBackup.optionSha256,
+      templeFirmware: {
+        left: artifact.smartGlasses.left.firmwareVersion,
+        right: artifact.smartGlasses.right.firmwareVersion,
+      },
+      recoveryBundleVersion: recoveryRelease.version,
+      recoveryBundleSha256: recoveryRelease.sha256,
+    };
+    record(
+      `Combined backup saved · full Case + both G2 ${recoveryRelease.version} temple snapshots + validated official recovery bundle.`,
+      "success",
+    );
+    return textResult(backupRecord);
+  }),
+);
+
+server.registerTool(
   "stage_case_firmware",
   {
     description:
-      "Erase, write, and byte-verify an eligible Case image in the inactive bank. Requires a fresh analysis and saved backup.",
+      "Erase, write, and byte-verify an eligible Case image in the inactive bank, from a local file or an archive releaseId. Requires a fresh analysis and saved backup.",
     inputSchema: {
       firmwarePath: z
         .string()
         .min(1)
+        .optional()
         .describe("Local reviewed firmware package or Case image"),
+      releaseId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Verified firmware archive release id (see list_firmware_catalog)"),
     },
     annotations: {
       readOnlyHint: false,
@@ -336,16 +675,17 @@ server.registerTool(
       openWorldHint: false,
     },
   },
-  tool(async ({ firmwarePath }, extra) => {
+  tool(async ({ firmwarePath, releaseId }, extra) => {
     updateSessionProgress(extra);
     if (!caseReport?.optionBytes) {
       throw new Error("Run analyze_case immediately before staging.");
     }
     if (!backupRecord) {
-      throw new Error("Save a verified backup_case before staging firmware.");
+      throw new Error(
+        "Save a verified backup_system or backup_case before staging firmware.",
+      );
     }
-    const input = new Uint8Array(await readFile(resolve(firmwarePath)));
-    const firmware = await parseFirmwareInput(input, basename(firmwarePath));
+    const firmware = await resolveFirmwareInput({ firmwarePath, releaseId });
     if (!firmware.caseRecoveryEligible || !firmware.caseImage) {
       throw new Error("The selected input is not an eligible G2 Case image.");
     }
@@ -406,10 +746,25 @@ server.registerTool(
   "flash_glasses_firmware",
   {
     description:
-      "Install a hash-pinned reviewed Smart Glasses firmware main on the selected responsive temple route through the Case.",
+      "Install a hash-pinned reviewed Smart Glasses firmware main on the selected responsive temple route through the Case, from a local file or an archive releaseId. Mode 'differences' performs the reviewed Stock ↔ CFW differential transfer using the archived counterpart as the verified source.",
     inputSchema: {
-      firmwarePath: z.string().min(1).describe("Local reviewed EVENOTA package"),
+      firmwarePath: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Local reviewed EVENOTA package"),
+      releaseId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Verified firmware archive release id (see list_firmware_catalog)"),
       route: z.enum(["left", "right", "both"]).default("both"),
+      mode: z
+        .enum(["complete", "differences"])
+        .default("complete")
+        .describe(
+          "'complete' rewrites the pinned Apollo main; 'differences' transfers only the changed component of the reviewed Stock 2.2.6.10 ↔ CFW 2.2.6.11 pair",
+        ),
     },
     annotations: {
       readOnlyHint: false,
@@ -418,22 +773,276 @@ server.registerTool(
       openWorldHint: false,
     },
   },
-  tool(async ({ firmwarePath, route }, extra) => {
+  tool(async ({ firmwarePath, releaseId, route, mode }, extra) => {
     updateSessionProgress(extra);
     if (!caseReport) {
       throw new Error("Run analyze_case immediately before flashing.");
     }
     if (!backupRecord) {
-      throw new Error("Save a verified backup_case before flashing Smart Glasses.");
+      throw new Error(
+        "Save a verified backup_system or backup_case before flashing Smart Glasses.",
+      );
     }
-    const input = new Uint8Array(await readFile(resolve(firmwarePath)));
-    const firmware = await parseFirmwareInput(input, basename(firmwarePath));
-    const audit = await caseSession.flashPinnedTempleMain(
-      firmware,
-      route,
-      { mode: "complete" },
+    const firmware = await resolveFirmwareInput({ firmwarePath, releaseId });
+    let differenceSourceFirmware = null;
+    if (mode === "differences") {
+      ({ source: differenceSourceFirmware } =
+        await prepareDifferenceSource(firmware));
+    }
+    try {
+      const audit = await caseSession.flashPinnedTempleMain(
+        firmware,
+        route,
+        { mode, differenceSourceFirmware },
+      );
+      recordInstalledProvenance(caseReport, audit);
+      return textResult(audit);
+    } catch (error) {
+      if (!error?.audit) throw error;
+      recordInstalledProvenance(caseReport, error.audit);
+      record(error.message, "error");
+      return textResult(
+        { error: error.message, audit: error.audit },
+        true,
+      );
+    }
+  }),
+);
+
+server.registerTool(
+  "automatic_apply",
+  {
+    description:
+      "Run the WebFlasher's Automatic Apply workflow: re-analyze the Case, update it to the latest verified Case firmware when needed, reset and verify both temples, then install the selected Smart Glasses release using the safest proven transfer (verify-only, reviewed differential, or complete main) with automatic differential-to-complete fallback.",
+    inputSchema: {
+      releaseId: z
+        .string()
+        .min(1)
+        .describe(
+          "Target Smart Glasses release id from the verified firmware archive (see list_firmware_catalog)",
+        ),
+      installMode: z
+        .enum(AUTOMATIC_INSTALL_MODES)
+        .default(DEFAULT_AUTOMATIC_INSTALL_MODE)
+        .describe(
+          "'update' selects the safest sufficient transfer; 'restore' always rewrites the complete pinned main",
+        ),
+      updateCaseFirst: z
+        .boolean()
+        .default(true)
+        .describe("Update the Charging Case to the latest verified firmware first when it is older"),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  },
+  tool(async ({ releaseId, installMode, updateCaseFirst }, extra) => {
+    updateSessionProgress(extra);
+    if (!caseReport) {
+      throw new Error(
+        "Run analyze_case before automatic_apply so the session starts from a fresh analysis.",
+      );
+    }
+    const releases = await loadCatalog();
+    const release = await requireCatalogRelease(releaseId);
+    const latestCaseFirmwareRelease = findLatestCaseFirmwareRelease(releases);
+    record(
+      `Automatic Apply requested · Smart Glasses ${installMode} · Update Charging Case first ${updateCaseFirst ? "enabled" : "disabled"}.`,
     );
-    return textResult(audit);
+
+    let fresh = await caseSession.analyze({
+      progressBase: 0.01,
+      progressSpan: 0.07,
+    });
+    caseReport = fresh;
+    const caseUpdatePlan = resolveAutomaticCaseUpdatePlan({
+      enabled: updateCaseFirst,
+      currentVersion: fresh.console?.caseVersion,
+      targetRelease: latestCaseFirmwareRelease,
+    });
+    if (!caseUpdatePlan.executable) {
+      throw new Error(caseUpdatePlan.reason);
+    }
+    const contactPreflight = assessAutomaticTempleContacts(
+      fresh.console?.telemetry,
+    );
+    if (!contactPreflight.automaticApplyAllowed) {
+      throw new Error(contactPreflight.reason);
+    }
+    if (caseUpdatePlan.targetVersion !== REVIEWED_CASE_VERSION) {
+      throw new Error(
+        `This WebFlasher's glasses writer requires Case ${REVIEWED_CASE_VERSION}, but the latest library Case is ${caseUpdatePlan.targetVersion}. Update the WebFlasher before continuing.`,
+      );
+    }
+    if (contactPreflight.resetRecoveryEligible) {
+      record(
+        `${contactPreflight.reason} Automatic Apply will attempt the traced bilateral reset and require both temples to return before any firmware transfer.`,
+        "warn",
+      );
+    }
+
+    let caseUpdate = null;
+    let caseUpdateFirmware = null;
+    if (caseUpdatePlan.action === "update") {
+      record(
+        `Updating Charging Case ${caseUpdatePlan.currentVersion} → ${caseUpdatePlan.targetVersion}.`,
+        "warn",
+      );
+      caseUpdateFirmware = await firmwareFromCatalogRelease(
+        latestCaseFirmwareRelease,
+      );
+      caseUpdate = await executeAutomaticCaseUpdate({
+        session: caseSession,
+        currentReport: fresh,
+        targetFirmware: caseUpdateFirmware,
+        onStep: (step) => record(`Automatic Case update step: ${step}.`),
+      });
+      fresh = caseUpdate.report;
+      stagedCase = null;
+      const postUpdateConsole = await caseSession.readTempleFlashPreflight([]);
+      fresh = {
+        ...fresh,
+        console: {
+          ...fresh.console,
+          ...postUpdateConsole,
+        },
+      };
+      caseReport = fresh;
+      record(
+        `Charging Case updated ${caseUpdatePlan.currentVersion} → ${caseUpdatePlan.targetVersion}; physical bank ${caseUpdate.bankSwitch.stagedPhysicalBank} activated, physical bank ${caseUpdate.bankSwitch.fallbackPhysicalBank} preserved as the ${caseUpdate.bankSwitch.fallbackVersion} fallback.`,
+        "success",
+      );
+    }
+
+    const caseReadiness = verifyAutomaticCaseReadiness(
+      fresh,
+      caseUpdatePlan.targetVersion,
+    );
+    record(
+      `Charging Case write gate passed · active physical bank ${caseReadiness.activePhysicalBank} ${caseReadiness.activeVersion} · fallback physical bank ${caseReadiness.fallbackPhysicalBank} ${caseReadiness.fallbackVersion ?? "version unknown"}.`,
+      "success",
+    );
+
+    const templeReadiness = await caseSession.restartAndVerifyBothTemples({
+      progressBase: caseUpdatePlan.action === "update" ? 0.5 : 0.09,
+      progressSpan: 0.06,
+      purpose: "Automatic preflight",
+    });
+    const observedTempleVersions = Object.fromEntries(
+      ["right", "left"].map((route) => [
+        route,
+        {
+          firmwareVersion: templeReadiness.versions[route].firmware,
+          hardwareRevision: templeReadiness.versions[route].hardware,
+        },
+      ]),
+    );
+    fresh = {
+      ...fresh,
+      console: {
+        ...fresh.console,
+        ...templeReadiness,
+        telemetry: templeReadiness.telemetry,
+      },
+    };
+    caseReport = fresh;
+    record(
+      `Smart Glasses preflight passed after DEB0 · right ${observedTempleVersions.right.firmwareVersion}/hardware ${observedTempleVersions.right.hardwareRevision} · left ${observedTempleVersions.left.firmwareVersion}/hardware ${observedTempleVersions.left.hardwareRevision}.`,
+      "success",
+    );
+
+    const targetFirmware =
+      caseUpdateFirmware?.catalogRelease?.id === release.id
+        ? caseUpdateFirmware
+        : await firmwareFromCatalogRelease(release);
+
+    let sourceFirmware = null;
+    let differencePlan = null;
+    if (installMode === "update") {
+      const counterpart = findStockCfwCounterpartRelease(
+        releases,
+        targetFirmware,
+      );
+      if (counterpart) {
+        sourceFirmware = await firmwareFromCatalogRelease(counterpart);
+        differencePlan = buildBundleDifferencePlan(
+          sourceFirmware,
+          targetFirmware,
+        );
+      }
+    }
+
+    try {
+      const execution = await executeAutomaticApply({
+        session: caseSession,
+        installMode,
+        targetFirmware,
+        installedProvenance: deviceProvenance(fresh),
+        differenceSourceFirmware: sourceFirmware,
+        differencePlan,
+        observedTempleVersions,
+        verifiedTempleReadiness: templeReadiness,
+        onPlan: (applyPlan) => {
+          record(
+            `Automatic ${installMode} plan accepted · ${applyPlan.reason}`,
+            "success",
+          );
+        },
+        onRecovery: (recovery) => {
+          record(
+            `Differential preflight observed ${recovery.observedVersion}/hardware 5 before START; cleanup and bilateral reset were verified, so Automatic Update is switching to the complete pinned target main.`,
+            "warn",
+          );
+        },
+      });
+
+      if (execution.action === "verify-only") {
+        caseReport = {
+          ...fresh,
+          console: {
+            ...fresh.console,
+            ...execution.result,
+            telemetry: execution.result.telemetry,
+          },
+        };
+        record(
+          "Already up to date · both temples reset and verified.",
+          "success",
+        );
+        return textResult({
+          action: "verify-only",
+          caseUpdate: caseUpdatePlan,
+          caseBankSwitch: caseUpdate?.bankSwitch ?? null,
+          plan: execution.plan,
+          templeReadiness: execution.result,
+        });
+      }
+
+      recordInstalledProvenance(fresh, execution.audit);
+      record(
+        `Automatic ${installMode} completed on right + left${execution.initialPlan ? " after safe differential-to-complete fallback" : ""} with FINISH, route restoration, final DEB0 reset, contacts, and application liveness verified.`,
+        "success",
+      );
+      return textResult({
+        action: "flash",
+        caseUpdate: caseUpdatePlan,
+        caseBankSwitch: caseUpdate?.bankSwitch ?? null,
+        plan: execution.plan,
+        differentialFallback: Boolean(execution.initialPlan),
+        audit: execution.audit,
+      });
+    } catch (error) {
+      if (!error?.audit) throw error;
+      recordInstalledProvenance(fresh, error.audit);
+      record(error.message, "error");
+      return textResult(
+        { error: error.message, audit: error.audit },
+        true,
+      );
+    }
   }),
 );
 
@@ -548,7 +1157,7 @@ server.registerTool(
   "remote_support_status",
   {
     description:
-      "Return connection state, latest operation progress, saved backup metadata, staged state, and recent technician logs.",
+      "Return connection state, latest operation progress, saved backup metadata, staged state, firmware archive state, and recent technician logs.",
     inputSchema: {
       logEntries: z.number().int().min(0).max(200).default(50),
     },
@@ -569,6 +1178,8 @@ server.registerTool(
             sha256: stagedCase.result.sourceSha256,
           }
         : null,
+      firmwareCatalog: catalogSource,
+      installedProvenance: Object.fromEntries(installedProvenanceByDevice),
       progress: currentProgress,
       logs: eventLog.slice(-logEntries),
     }),

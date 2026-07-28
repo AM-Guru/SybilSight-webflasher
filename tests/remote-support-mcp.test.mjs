@@ -33,13 +33,16 @@ test("exposes the bounded remote Case tools to Codex over MCP stdio", async (t) 
   const tools = new Map(listed.tools.map((entry) => [entry.name, entry]));
   for (const name of [
     "join_remote_case",
+    "list_firmware_catalog",
     "analyze_case",
     "read_temple",
     "reset_and_recheck_glasses",
     "backup_case",
+    "backup_system",
     "stage_case_firmware",
     "activate_staged_case_firmware",
     "flash_glasses_firmware",
+    "automatic_apply",
     "serial_exchange",
     "remote_support_status",
     "disconnect_remote_case",
@@ -51,8 +54,35 @@ test("exposes the bounded remote Case tools to Codex over MCP stdio", async (t) 
     true,
   );
   assert.equal(
-    tools.get("flash_glasses_firmware").annotations.destructiveHint,
+    tools.get("list_firmware_catalog").annotations.readOnlyHint,
     true,
+  );
+  for (const name of [
+    "reset_and_recheck_glasses",
+    "stage_case_firmware",
+    "activate_staged_case_firmware",
+    "flash_glasses_firmware",
+    "automatic_apply",
+  ]) {
+    assert.equal(
+      tools.get(name).annotations.destructiveHint,
+      true,
+      `${name} must be annotated destructive`,
+    );
+  }
+  const flashSchema = tools.get("flash_glasses_firmware").inputSchema;
+  assert.deepEqual(flashSchema.properties.mode.enum, [
+    "complete",
+    "differences",
+  ]);
+  assert.ok(flashSchema.properties.releaseId, "flash accepts releaseId");
+  assert.ok(
+    tools.get("stage_case_firmware").inputSchema.properties.releaseId,
+    "stage accepts releaseId",
+  );
+  assert.deepEqual(
+    tools.get("automatic_apply").inputSchema.properties.installMode.enum,
+    ["update", "restore"],
   );
 
   const status = await client.callTool({
@@ -61,4 +91,24 @@ test("exposes the bounded remote Case tools to Codex over MCP stdio", async (t) 
   });
   assert.equal(status.isError, undefined);
   assert.match(status.content[0].text, /"connected": false/);
+
+  const hardwareGate = await client.callTool({
+    name: "automatic_apply",
+    arguments: { releaseId: "g2-official-2.2.6.10" },
+  });
+  assert.equal(hardwareGate.isError, true);
+  assert.match(
+    hardwareGate.content[0].text,
+    /Join a customer's remote-support session first\./,
+  );
+
+  const backupGate = await client.callTool({
+    name: "backup_system",
+    arguments: { outputPath: "unused.g2-backup.json" },
+  });
+  assert.equal(backupGate.isError, true);
+  assert.match(
+    backupGate.content[0].text,
+    /Join a customer's remote-support session first\./,
+  );
 });
