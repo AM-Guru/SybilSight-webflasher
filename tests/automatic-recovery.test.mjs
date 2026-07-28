@@ -894,6 +894,95 @@ test("a failed or uncertain audit clears affected route provenance", () => {
   );
 });
 
+test("a failed audit retains a route whose own install fully verified", () => {
+  const merged = mergeInstalledProvenance(both(STOCK_SHA), {
+    outcome: "failed_or_uncertain",
+    routes: ["right", "left"],
+    imageSha256: CFW_SHA,
+    finishedAt: "2026-07-27T23:59:59.000Z",
+    installedIdentity: {
+      channel: "custom",
+      reportedVersion: "2.2.6.10",
+      displayVersion: "2.2.6.10 CFW",
+    },
+    routeResults: [
+      {
+        route: "right",
+        outcome: "success",
+        caseRestoreVerified: true,
+        postflightVersion: { firmware: "2.2.6.10", hardware: 5 },
+      },
+      { route: "left", outcome: "failed_or_uncertain" },
+    ],
+  });
+  assert.deepEqual(merged, {
+    right: {
+      imageSha256: CFW_SHA,
+      channel: "custom",
+      reportedVersion: "2.2.6.10",
+      displayVersion: "2.2.6.10 CFW",
+      provenAt: "2026-07-27T23:59:59.000Z",
+      proof: "route-verified-interrupted-audit",
+    },
+  });
+});
+
+test("a failed audit does not retain a route with an unverified Case restore", () => {
+  const merged = mergeInstalledProvenance(both(STOCK_SHA), {
+    outcome: "failed_or_uncertain",
+    routes: ["right", "left"],
+    imageSha256: CFW_SHA,
+    installedIdentity: { channel: "custom", reportedVersion: "2.2.6.10" },
+    routeResults: [
+      {
+        route: "right",
+        outcome: "success",
+        caseRestoreVerified: false,
+        postflightVersion: { firmware: "2.2.6.10", hardware: 5 },
+      },
+      { route: "left", outcome: "failed_or_uncertain" },
+    ],
+  });
+  assert.deepEqual(merged, {});
+});
+
+test("update flashes only the unproven route when the other is target-proven", () => {
+  const plan = resolveAutomaticApplyPlan({
+    installMode: "update",
+    targetFirmware: firmware(CFW_SHA),
+    installedProvenance: {
+      right: {
+        imageSha256: CFW_SHA,
+        proof: "route-verified-interrupted-audit",
+      },
+    },
+    differenceSourceFirmware: null,
+    differencePlan: null,
+    observedTempleVersions: null,
+  });
+  assert.equal(plan.executable, true);
+  assert.equal(plan.action, "flash");
+  assert.equal(plan.route, "left");
+  assert.equal(plan.flashMode, "complete");
+  assert.match(plan.reason, /right temple already holds a verified install/);
+});
+
+test("update rewrites both routes when the proven route contradicts observation", () => {
+  const plan = resolveAutomaticApplyPlan({
+    installMode: "update",
+    targetFirmware: { ...firmware(CFW_SHA), g2Version: "2.2.6.11" },
+    installedProvenance: {
+      right: { imageSha256: CFW_SHA },
+    },
+    differenceSourceFirmware: null,
+    differencePlan: null,
+    observedTempleVersions: observedBoth("2.2.6.10"),
+  });
+  assert.equal(plan.executable, true);
+  assert.equal(plan.route, "both");
+  assert.equal(plan.flashMode, "complete");
+});
+
 test("automatic Restore invokes one complete bilateral session", async () => {
   const calls = [];
   const expectedAudit = { outcome: "success" };

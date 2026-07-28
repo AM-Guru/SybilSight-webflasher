@@ -482,6 +482,18 @@ export function provenanceFromSuccessfulAudit(audit) {
   );
 }
 
+function routeResultProvesInstall(routeResult, audit) {
+  return Boolean(
+    routeResult?.outcome === "success" &&
+      routeResult?.caseRestoreVerified === true &&
+      routeResult?.postflightVersion?.firmware &&
+      routeResult?.postflightVersion?.hardware === 5 &&
+      audit?.installedIdentity?.reportedVersion &&
+      routeResult.postflightVersion.firmware ===
+        audit.installedIdentity.reportedVersion,
+  );
+}
+
 export function mergeInstalledProvenance(current, audit) {
   const next = { ...(current ?? {}) };
   const affectedRoutes = Array.isArray(audit?.routes)
@@ -489,7 +501,29 @@ export function mergeInstalledProvenance(current, audit) {
     : [];
 
   if (audit?.outcome !== "success") {
-    for (const route of affectedRoutes) delete next[route];
+    // A later route's failure must not discard an earlier route's complete
+    // per-route proof: exact accepted bytes, FINISH acknowledgement,
+    // postflight version, and Case restoration were all verified before the
+    // failing route ever started. Retain that route under a distinct proof
+    // tier; every Update still re-probes just-in-time before any START.
+    const validImage = /^[0-9a-f]{64}$/i.test(audit?.imageSha256 ?? "");
+    for (const route of affectedRoutes) {
+      const routeResult = Array.isArray(audit?.routeResults)
+        ? audit.routeResults.find((entry) => entry?.route === route)
+        : null;
+      if (validImage && routeResultProvesInstall(routeResult, audit)) {
+        next[route] = {
+          imageSha256: audit.imageSha256.toLowerCase(),
+          channel: audit.installedIdentity?.channel ?? "unknown",
+          reportedVersion: audit.installedIdentity?.reportedVersion ?? null,
+          displayVersion: audit.installedIdentity?.displayVersion ?? null,
+          provenAt: audit.finishedAt ?? new Date().toISOString(),
+          proof: "route-verified-interrupted-audit",
+        };
+      } else {
+        delete next[route];
+      }
+    }
     return next;
   }
   return { ...next, ...provenanceFromSuccessfulAudit(audit) };
@@ -907,6 +941,37 @@ export function resolveAutomaticApplyPlan({
       targetSha256,
       `Fresh Smart Glasses identity contradicts the saved target audit${targetVersion ? ` for ${targetVersion}` : ""}; write the complete pinned target Apollo main on both temples.`,
     );
+  }
+
+  // One temple can carry a complete verified install from an interrupted
+  // bilateral run. Rewriting it costs a full extra transfer for nothing:
+  // flash only the unproven route, and let the mandatory final bilateral
+  // DEB0 reset and liveness check cover both temples.
+  const targetProvenRoutes = ROUTES.filter((route) => {
+    const observed = observedIdentities[route];
+    return (
+      installedProvenance?.[route]?.imageSha256?.toLowerCase() ===
+        targetSha256 &&
+      !(
+        targetVersion &&
+        observed.firmwareVersion &&
+        observed.firmwareVersion !== targetVersion
+      ) &&
+      !(observed.hardwareRevision != null && observed.hardwareRevision !== 5)
+    );
+  });
+  if (targetProvenRoutes.length === 1) {
+    const unprovenRoute = ROUTES.find(
+      (route) => !targetProvenRoutes.includes(route),
+    );
+    return {
+      executable: true,
+      action: "flash",
+      route: unprovenRoute,
+      flashMode: "complete",
+      targetSha256,
+      reason: `The ${targetProvenRoutes[0]} temple already holds a verified install of the selected target; write the complete pinned Apollo main to the ${unprovenRoute} temple only. The final bilateral DEB0 reset and liveness check still cover both temples.`,
+    };
   }
 
   const sourceSha256 = differenceSourceFirmware?.fileSha256?.toLowerCase();

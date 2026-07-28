@@ -452,7 +452,7 @@ function RecoveryConfigResult({ report }) {
   );
 }
 
-function SmartGlassesAnalyticsCard({ analytics, label }) {
+function SmartGlassesAnalyticsCard({ analytics, label, probeFailure = null }) {
   const proof =
     analytics.version?.transportProof ?? analytics.status?.transportProof;
   const applicationBatteryAvailable = analytics.batteryPercent != null;
@@ -486,19 +486,30 @@ function SmartGlassesAnalyticsCard({ analytics, label }) {
         <StatusPill
           tone={
             analytics.applicationResponsive
-              ? "success"
+              ? probeFailure
+                ? "warm"
+                : "success"
               : analytics.present
                 ? "warm"
                 : "quiet"
           }
         >
           {analytics.applicationResponsive
-            ? "Application responsive"
+            ? probeFailure
+              ? "Stale · last probe failed"
+              : "Application responsive"
             : analytics.present
               ? "Presence only"
               : "Absent"}
         </StatusPill>
       </div>
+      {probeFailure ? (
+        <small className="glasses-analytics-stale-note">
+          Shown values predate a failed probe
+          {probeFailure.at ? ` (${probeFailure.at})` : ""}:{" "}
+          {probeFailure.message}
+        </small>
+      ) : null}
       <div className="glasses-analytics-facts">
         <Field
           label="Firmware"
@@ -646,12 +657,20 @@ function ShellEvidenceView({ analytics, onDownload }) {
 
 function OperationError({ error, onDismiss }) {
   if (!error) return null;
+  const staleRelease = error.includes(
+    "Reload this page before changing device firmware",
+  );
   return (
     <div className="error-banner" role="alert">
       <Icon name="warning" />
       <div>
         <strong>Operation stopped safely</strong>
         <span>{error}</span>
+        {staleRelease ? (
+          <Button tone="secondary" onClick={() => window.location.reload()}>
+            Reload now
+          </Button>
+        ) : null}
       </div>
       <button onClick={onDismiss} aria-label="Dismiss error">
         ×
@@ -660,8 +679,28 @@ function OperationError({ error, onDismiss }) {
   );
 }
 
-function Console({ open, entries, onClose, onClear, onDownload }) {
+function Console({
+  open,
+  entries,
+  fullTranscript = null,
+  onClose,
+  onClear,
+  onDownload,
+}) {
+  const [showFullTranscript, setShowFullTranscript] = useState(false);
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [open, onClose]);
   if (!open) return null;
+  const fullTranscriptAvailable =
+    Array.isArray(fullTranscript) && fullTranscript.length > entries.length;
+  const displayedEntries =
+    showFullTranscript && fullTranscriptAvailable ? fullTranscript : entries;
   return (
     <div className="console-backdrop" role="presentation" onMouseDown={onClose}>
       <section
@@ -681,8 +720,8 @@ function Console({ open, entries, onClose, onClear, onDownload }) {
           </button>
         </div>
         <div className="console-output" aria-live="polite">
-          {entries.length ? (
-            entries.map((entry, index) => (
+          {displayedEntries.length ? (
+            displayedEntries.map((entry, index) => (
               <div className={cx("console-line", `console-${entry.tone}`)} key={index}>
                 <time>{entry.time}</time>
                 <span>{entry.message}</span>
@@ -696,6 +735,16 @@ function Console({ open, entries, onClose, onClear, onDownload }) {
           <Button tone="ghost" onClick={onClear}>
             Clear
           </Button>
+          {fullTranscriptAvailable ? (
+            <Button
+              tone="ghost"
+              onClick={() => setShowFullTranscript((current) => !current)}
+            >
+              {showFullTranscript
+                ? "Show recent only"
+                : `Show full transcript (${fullTranscript.length})`}
+            </Button>
+          ) : null}
           <Button tone="secondary" onClick={onDownload} disabled={!entries.length}>
             Download log
           </Button>
@@ -2147,10 +2196,28 @@ function App() {
         ["right", "status"],
       ];
       for (const [index, [route, request]] of requests.entries()) {
-        const result = await session.probeRunningTemple(request, route, {
-          progressBase: index / requests.length,
-          progressSpan: 1 / requests.length,
-        });
+        let result;
+        try {
+          result = await session.probeRunningTemple(request, route, {
+            progressBase: index / requests.length,
+            progressSpan: 1 / requests.length,
+          });
+        } catch (error) {
+          // Keep any previously captured values visible, but mark them
+          // stale so the panel cannot claim a responsive application from
+          // data that predates this failed probe.
+          setPogoResults((current) => ({
+            ...current,
+            [route]: {
+              ...current[route],
+              lastProbeFailure: {
+                at: new Date().toLocaleTimeString(),
+                message: error.message,
+              },
+            },
+          }));
+          throw error;
+        }
         nextResults = {
           ...nextResults,
           [route]: {
@@ -2159,6 +2226,7 @@ function App() {
               ...result,
               observedAt: new Date().toISOString(),
             },
+            lastProbeFailure: null,
           },
         };
         setPogoResults(nextResults);
@@ -2175,10 +2243,25 @@ function App() {
   const probeRunningTemple = async () => {
     if (!pogoConfirm) return;
     await run("pogo", async () => {
-      const result = await getSession().probeRunningTemple(
-        pogoOperation,
-        pogoRoute,
-      );
+      let result;
+      try {
+        result = await getSession().probeRunningTemple(
+          pogoOperation,
+          pogoRoute,
+        );
+      } catch (error) {
+        setPogoResults((current) => ({
+          ...current,
+          [pogoRoute]: {
+            ...current[pogoRoute],
+            lastProbeFailure: {
+              at: new Date().toLocaleTimeString(),
+              message: error.message,
+            },
+          },
+        }));
+        throw error;
+      }
       setPogoResults((current) => ({
         ...current,
         [pogoRoute]: {
@@ -2187,6 +2270,7 @@ function App() {
             ...result,
             observedAt: new Date().toISOString(),
           },
+          lastProbeFailure: null,
         },
       }));
       setPogoConfirm(false);
@@ -3445,10 +3529,12 @@ function App() {
                     <SmartGlassesAnalyticsCard
                       label="Left"
                       analytics={deviceAnalytics.smartGlasses.left}
+                      probeFailure={pogoResults.left?.lastProbeFailure ?? null}
                     />
                     <SmartGlassesAnalyticsCard
                       label="Right"
                       analytics={deviceAnalytics.smartGlasses.right}
+                      probeFailure={pogoResults.right?.lastProbeFailure ?? null}
                     />
                   </div>
                   <div className={cx(
@@ -4610,6 +4696,7 @@ function App() {
       <Console
         open={consoleOpen}
         entries={logs}
+        fullTranscript={consoleOpen ? transcriptRef.current : null}
         onClose={() => setConsoleOpen(false)}
         onClear={clearConsole}
         onDownload={downloadConsoleTranscript}

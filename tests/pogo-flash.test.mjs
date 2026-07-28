@@ -51,6 +51,13 @@ import {
   isG2CaseSerialPort,
   isRetryablePostResetLivenessFailure,
   isWebSerialRomPacketBoundary,
+  noteWebSerialShortReadRetry,
+  TEMPLE_DATA_PACING_LEVELS,
+  TEMPLE_DATA_PACING_MIN_AUTOMATIC_LEVEL,
+  TEMPLE_DATA_PACING_STOCK_LEVEL,
+  TempleDataPacingController,
+  nextTempleDataPacingMemory,
+  resolveTempleDataPacingStartLevel,
   readPogoFlashResponseFrame,
   readPogoFlashResponseHeader,
   readRomBlockWithBoundaryRecovery,
@@ -224,6 +231,154 @@ test("reports the packet boundary even when its re-synchronization fails", async
   );
   assert.equal(result.block, null);
   assert.equal(result.packetBoundaryDetected, true);
+});
+
+test("a zero-write setup stop qualifies for settling before any reset", () => {
+  const zeroWriteSetupStop = {
+    outcome: "failed_or_uncertain",
+    failureStage: "setup",
+    otaMutationAttempted: false,
+    acceptedFirmwareBytes: 0,
+    caseRestoreVerified: true,
+    caseApplicationVersion: "1.2.57",
+    retainedResult: {
+      status: 3,
+      baselineMask: 0x3ff,
+      selectedMask: 0,
+      restoredMask: 0,
+      writeMask: 0,
+      declaredSize: 0,
+      acceptedSize: 0,
+      templeTxCount: 0,
+      templeRxCount: 0,
+      noMutationSetupStopVerified: true,
+    },
+    recoveryBoundary: {
+      classification: "yhm_setup_non_idle_zero_byte_boundary",
+    },
+  };
+  // The settle branch gates on the same proof as the reset branch, evaluated
+  // with a zero reset count so waiting is always tried first.
+  assert.equal(canResetAfterZeroWriteSetupStop(zeroWriteSetupStop, 0), true);
+  // Anything that transmitted bytes must never reach either recovery.
+  assert.equal(
+    canResetAfterZeroWriteSetupStop(
+      {
+        ...zeroWriteSetupStop,
+        retainedResult: {
+          ...zeroWriteSetupStop.retainedResult,
+          templeTxCount: 4,
+        },
+      },
+      0,
+    ),
+    false,
+  );
+});
+
+test("adaptive pacing escalates on a slow ACK and injects an immediate settle", () => {
+  const controller = new TempleDataPacingController({
+    startLevel: 1,
+    totalBytes: 3_539_474,
+  });
+  // Warm the baseline with fast ACKs.
+  for (let index = 0; index < 30; index += 1) {
+    assert.equal(controller.noteAckLatency(index, 120), 0);
+  }
+  const injected = controller.noteAckLatency(30, 2_000);
+  assert.equal(controller.level, 2);
+  assert.equal(injected, TEMPLE_DATA_PACING_LEVELS[2].late);
+  assert.equal(controller.congestionEvents.length, 1);
+  // Cooldown: an immediately-following slow ACK does not double-escalate.
+  assert.equal(controller.noteAckLatency(31, 2_000), 0);
+  assert.equal(controller.level, 2);
+});
+
+test("adaptive pacing never eases mid-transfer on calm ACKs", () => {
+  const controller = new TempleDataPacingController({
+    startLevel: 2,
+    totalBytes: 3_539_474,
+  });
+  for (let index = 0; index < 500; index += 1) {
+    assert.equal(controller.noteAckLatency(index, 100), 0);
+  }
+  assert.equal(controller.level, 2);
+  assert.equal(controller.escalations, 0);
+});
+
+test("adaptive pacing settle amounts follow the active level", () => {
+  const controller = new TempleDataPacingController({
+    startLevel: 2,
+    totalBytes: 24_000,
+  });
+  assert.equal(controller.settleFor(1_000), 0);
+  assert.equal(controller.settleFor(6_000), TEMPLE_DATA_PACING_LEVELS[2].early);
+  // ≥75% of the payload switches to the late settle.
+  assert.equal(controller.settleFor(18_000), TEMPLE_DATA_PACING_LEVELS[2].late);
+  // Final settle never drops below the fixed floor.
+  assert.equal(controller.settleFor(24_000), 15_000);
+});
+
+test("pacing start level honors escalated restarts and the automatic floor", () => {
+  assert.equal(resolveTempleDataPacingStartLevel(1, 2), 2);
+  // Level 0 rejected 2 of 3 measured hardware attempts; never auto-selected.
+  assert.equal(
+    resolveTempleDataPacingStartLevel(1, 0),
+    TEMPLE_DATA_PACING_MIN_AUTOMATIC_LEVEL,
+  );
+  assert.equal(
+    resolveTempleDataPacingStartLevel(2, 1),
+    TEMPLE_DATA_PACING_LEVELS.length - 2,
+  );
+  assert.equal(
+    resolveTempleDataPacingStartLevel(3, 1),
+    TEMPLE_DATA_PACING_LEVELS.length - 1,
+  );
+});
+
+test("pacing memory probes faster only after consecutive clean components", () => {
+  let memory = { level: 3, cleanStreak: 0 };
+  memory = nextTempleDataPacingMemory(memory, "clean", 3);
+  assert.deepEqual(memory, { level: 3, cleanStreak: 1 });
+  memory = nextTempleDataPacingMemory(memory, "clean", 3);
+  assert.deepEqual(memory, { level: 2, cleanStreak: 0 });
+});
+
+test("pacing memory retreats to the proven level after any rejection", () => {
+  assert.deepEqual(
+    nextTempleDataPacingMemory({ level: 1, cleanStreak: 1 }, "failed", 1),
+    { level: TEMPLE_DATA_PACING_STOCK_LEVEL, cleanStreak: 0 },
+  );
+  // A failure above the proven level escalates further rather than dropping.
+  assert.deepEqual(
+    nextTempleDataPacingMemory({ level: 4, cleanStreak: 0 }, "failed", 4),
+    { level: 5, cleanStreak: 0 },
+  );
+});
+
+test("pacing memory never probes below the automatic floor", () => {
+  const memory = nextTempleDataPacingMemory(
+    { level: TEMPLE_DATA_PACING_MIN_AUTOMATIC_LEVEL, cleanStreak: 5 },
+    "clean",
+    TEMPLE_DATA_PACING_MIN_AUTOMATIC_LEVEL,
+  );
+  assert.equal(memory.level, TEMPLE_DATA_PACING_MIN_AUTOMATIC_LEVEL);
+});
+
+test("suggests WebUSB once after repeated Web Serial short-read retries", () => {
+  const logs = [];
+  const log = (message, tone) => logs.push([message, tone]);
+  // WebUSB and remote transports never count toward the hint.
+  for (let i = 0; i < 20; i += 1) {
+    noteWebSerialShortReadRetry({ transportKind: "webusb" }, log);
+  }
+  assert.equal(logs.length, 0);
+  for (let i = 0; i < 30; i += 1) {
+    noteWebSerialShortReadRetry({}, log);
+  }
+  const hints = logs.filter(([message]) => /WebUSB transport/.test(message));
+  assert.equal(hints.length, 1);
+  assert.equal(hints[0][1], "warn");
 });
 
 test("recognizes the deterministic CH340 Web Serial packet boundary", () => {
@@ -442,7 +597,7 @@ test("stops after bounded stock-app settling when the verified YHM baseline pers
       try {
         await session.probeRunningTemple("version", "right");
       } catch (error) {
-        assert.equal(error.readOnlyPhaseAttempts.length, 3);
+        assert.equal(error.readOnlyPhaseAttempts.length, 6);
         assert.equal(
           error.readOnlyPhaseAttempts.every(
             (entry) =>
@@ -454,10 +609,73 @@ test("stops after bounded stock-app settling when the verified YHM baseline pers
         throw error;
       }
     },
-    /after 3 verified zero-write probes.*No YHM writes or temple transmissions occurred/,
+    /after 6 verified zero-write probes.*No YHM writes or temple transmissions occurred/,
   );
-  assert.equal(attempts, 3);
-  assert.deepEqual(waits, [15_000, 45_000]);
+  assert.equal(attempts, 6);
+  assert.deepEqual(waits, [15_000, 45_000, 90_000, 180_000, 300_000]);
+});
+
+test("settles through a fully-restored silent-temple stop after a reset", async () => {
+  const waits = [];
+  const logs = [];
+  const session = new G2CaseSession(null, {
+    wait: async (milliseconds) => waits.push(milliseconds),
+    log: (message, level) => logs.push([message, level]),
+  });
+  let attempts = 0;
+  session.probeRunningTempleOnce = async () => {
+    attempts += 1;
+    if (attempts < 4) {
+      const error = new Error(
+        "The pogo bridge stopped safely: no framed temple response.",
+      );
+      error.pogoBridgeEvidence = {
+        baselineHex: "810004aeae03812022ff",
+        transmitted: 5,
+        responseStatus: 6,
+        responseStatusLabel: "no framed temple response",
+      };
+      throw error;
+    }
+    return { route: "left", operation: "version" };
+  };
+  session.readTempleFlashPreflight = async () => ({ caseVersion: "1.2.57" });
+
+  const result = await session.probeRunningTemple("version", "left");
+  assert.deepEqual(result, { route: "left", operation: "version" });
+  assert.equal(attempts, 4);
+  assert.deepEqual(waits, [15_000, 45_000, 90_000]);
+  assert.match(logs[0][0], /charging renegotiation/);
+});
+
+test("exhausts the settle ladder on a persistently silent temple", async () => {
+  const waits = [];
+  const session = new G2CaseSession(null, {
+    wait: async (milliseconds) => waits.push(milliseconds),
+    log: () => {},
+  });
+  let attempts = 0;
+  session.probeRunningTempleOnce = async () => {
+    attempts += 1;
+    const error = new Error(
+      "The pogo bridge stopped safely: no framed temple response.",
+    );
+    error.pogoBridgeEvidence = {
+      baselineHex: "810004aeae03812022ff",
+      transmitted: 5,
+      responseStatus: 6,
+      responseStatusLabel: "no framed temple response",
+    };
+    throw error;
+  };
+  session.readTempleFlashPreflight = async () => ({ caseVersion: "1.2.57" });
+
+  await assert.rejects(
+    () => session.probeRunningTemple("version", "left"),
+    /no framed response after 6 fully-restored probes/,
+  );
+  assert.equal(attempts, 6);
+  assert.deepEqual(waits, [15_000, 45_000, 90_000, 180_000, 300_000]);
 });
 
 test("classifies only the exact writer route-phase setup stop for a Case settle retry", () => {

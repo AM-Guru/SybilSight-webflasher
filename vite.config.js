@@ -1,6 +1,9 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { execFileSync } from "node:child_process";
+import { existsSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 
 function resolveBuildSha() {
   const configured = String(
@@ -72,6 +75,26 @@ export default defineConfig({
       "/firmware-updates/source-files/2": {
         target: "https://webflasher.sybilsight.com",
         changeOrigin: true,
+        // Locally staged artifacts (for example a new CFW bundle) must win
+        // over the production archive; proxy only what public/ lacks.
+        bypass(request) {
+          try {
+            const pathname = decodeURIComponent(
+              new URL(request.url, "http://localhost").pathname,
+            );
+            const local = path.join(
+              path.dirname(fileURLToPath(import.meta.url)),
+              "public",
+              pathname,
+            );
+            if (existsSync(local) && statSync(local).isFile()) {
+              return request.url;
+            }
+          } catch {
+            // Fall through to the proxy on any resolution error.
+          }
+          return undefined;
+        },
       },
     },
     watch: {

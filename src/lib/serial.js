@@ -109,7 +109,13 @@ const POGO_BILATERAL_ROUTE_ADAPTATION_LIMIT = 4;
 const POGO_SETUP_RESET_LIMIT = 2;
 const POGO_INTERMEDIATE_RESET_ATTEMPTS = 2;
 const POGO_FINAL_RESET_ATTEMPTS = 2;
-const POGO_READ_ONLY_PHASE_SETTLE_MS = Object.freeze([15_000, 45_000]);
+// After a B0/DEB0 reset the seated temples renegotiate charging with the
+// Case, and the pogo route can stay non-idle (status 3) or silent (status 6)
+// for on the order of ten minutes on hardware. The ladder must outlast that
+// window; resets do not shorten it — they restart it.
+const POGO_READ_ONLY_PHASE_SETTLE_MS = Object.freeze([
+  15_000, 45_000, 90_000, 180_000, 300_000,
+]);
 export const WEB_SERIAL_ROM_READ_SIZE = 31;
 
 // The CH340 packet boundary is a property of this host's USB serial stack,
@@ -124,6 +130,31 @@ export function hasObservedWebSerialRomPacketBoundary() {
 
 export function noteWebSerialRomPacketBoundaryObserved() {
   webSerialRomPacketBoundaryObserved = true;
+}
+
+// Hardware sessions on macOS have shown bursts of truncated CH340 reads
+// through the Web Serial driver stack; the direct WebUSB transport bypasses
+// that driver entirely. After enough retries in one page lifetime, surface
+// the alternative once instead of letting the user wonder about the churn.
+const WEB_SERIAL_SHORT_READ_HINT_THRESHOLD = 12;
+let webSerialShortReadRetryCount = 0;
+let webSerialShortReadHintLogged = false;
+
+export function noteWebSerialShortReadRetry(port, log) {
+  if (port?.transportKind === "webusb" || port?.transportKind === "remote") {
+    return;
+  }
+  webSerialShortReadRetryCount += 1;
+  if (
+    webSerialShortReadRetryCount >= WEB_SERIAL_SHORT_READ_HINT_THRESHOLD &&
+    !webSerialShortReadHintLogged
+  ) {
+    webSerialShortReadHintLogged = true;
+    log?.(
+      `This host has truncated ${webSerialShortReadRetryCount} CH340 reads over Web Serial this session; every one was recovered by a bounded retry. The direct WebUSB transport in Connect bypasses the host serial driver and may be more reliable here.`,
+      "warn",
+    );
+  }
 }
 
 export function isExplicitTempleDataRejection(error) {
@@ -177,6 +208,253 @@ export function templeDataSettleMilliseconds(acceptedBytes, totalBytes) {
 
 export function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+// Adaptive DATA pacing, calibrated on hardware 2026-07-27.
+//
+// The fixed 1 s/2 s batch settles (level 3) cost ~12 minutes per temple. Four
+// temple transfers at level 3 completed with zero DATA rejections, so it is
+// the proven baseline. Level 0 (no early settle) was measured across three
+// attempts and produced two explicit 0x54 rejections — at 76% of one transfer
+// and at 25% of another — so a near-zero settle is genuinely unsafe on this
+// hardware, in both transfer phases.
+//
+// The same runs disproved the original congestion model: ACK latency stayed
+// flat (mean 230 ms) right up to both rejections and never triggered a single
+// backoff. The temple does not slow its ACKs before refusing a record, so
+// within-run latency adaptation has no leading signal and easing down mid-run
+// is unjustified — it also silently undid the escalation a restart had just
+// applied. Latency escalation is retained only as a sticky safety net.
+//
+// The signal that does exist is per-run and unambiguous: did the component
+// finish without a rejection? Optimization therefore lives across runs — a
+// level is adopted only after repeated clean runs, and any rejection returns
+// pacing to the proven baseline.
+export const TEMPLE_DATA_PACING_LEVELS = Object.freeze([
+  Object.freeze({ early: 0, late: 250 }),
+  Object.freeze({ early: 250, late: 500 }),
+  Object.freeze({ early: 500, late: 1000 }),
+  Object.freeze({ early: 1000, late: 2000 }),
+  Object.freeze({ early: 2000, late: 4000 }),
+  Object.freeze({ early: 3000, late: 6000 }),
+]);
+export const TEMPLE_DATA_PACING_STOCK_LEVEL = 3;
+// Level 0 rejected 2 of 3 measured attempts; never select it automatically.
+export const TEMPLE_DATA_PACING_MIN_AUTOMATIC_LEVEL = 1;
+export const TEMPLE_DATA_PACING_DEFAULT_START_LEVEL = 2;
+// Consecutive clean components required before probing one level faster.
+export const TEMPLE_DATA_PACING_PROBE_STREAK = 2;
+const PACING_CONGESTION_ABSOLUTE_MS = 1500;
+const PACING_CONGESTION_BASELINE_FACTOR = 4;
+const PACING_BASELINE_WARMUP_RECORDS = 24;
+const PACING_CHANGE_COOLDOWN_RECORDS = 60;
+const PACING_CONGESTION_EVENT_LOG_LIMIT = 20;
+const PACING_MEMORY_KEY = "g2wf.temple-data-pacing.v2";
+
+function clampAutomaticLevel(level) {
+  return Math.min(
+    Math.max(level, TEMPLE_DATA_PACING_MIN_AUTOMATIC_LEVEL),
+    TEMPLE_DATA_PACING_LEVELS.length - 1,
+  );
+}
+
+export function readTempleDataPacingMemory() {
+  try {
+    const parsed = JSON.parse(
+      globalThis.localStorage?.getItem(PACING_MEMORY_KEY) ?? "null",
+    );
+    if (
+      Number.isInteger(parsed?.level) &&
+      Number.isInteger(parsed?.cleanStreak) &&
+      parsed.cleanStreak >= 0
+    ) {
+      return {
+        level: clampAutomaticLevel(parsed.level),
+        cleanStreak: parsed.cleanStreak,
+      };
+    }
+  } catch {
+    // Storage may be unavailable or hold an older shape; use the default.
+  }
+  return {
+    level: TEMPLE_DATA_PACING_DEFAULT_START_LEVEL,
+    cleanStreak: 0,
+  };
+}
+
+export function writeTempleDataPacingMemory(memory) {
+  try {
+    globalThis.localStorage?.setItem(PACING_MEMORY_KEY, JSON.stringify(memory));
+  } catch {
+    // Memory is an optimization, never a gate.
+  }
+}
+
+// Given the memory before a component and how that component ended, return
+// the memory to carry forward.
+export function nextTempleDataPacingMemory(memory, outcome, levelUsed) {
+  const level = clampAutomaticLevel(levelUsed ?? memory.level);
+  if (outcome !== "clean") {
+    return {
+      level: clampAutomaticLevel(
+        Math.max(level + 1, TEMPLE_DATA_PACING_STOCK_LEVEL),
+      ),
+      cleanStreak: 0,
+    };
+  }
+  const cleanStreak = memory.cleanStreak + 1;
+  if (
+    cleanStreak >= TEMPLE_DATA_PACING_PROBE_STREAK &&
+    level > TEMPLE_DATA_PACING_MIN_AUTOMATIC_LEVEL
+  ) {
+    return { level: clampAutomaticLevel(level - 1), cleanStreak: 0 };
+  }
+  return { level, cleanStreak };
+}
+
+export function resolveTempleDataPacingStartLevel(
+  dataPacingMultiplier,
+  rememberedLevel = readTempleDataPacingMemory().level,
+) {
+  if (dataPacingMultiplier >= 3) return TEMPLE_DATA_PACING_LEVELS.length - 1;
+  if (dataPacingMultiplier === 2) return TEMPLE_DATA_PACING_LEVELS.length - 2;
+  return clampAutomaticLevel(rememberedLevel);
+}
+
+export class TempleDataPacingController {
+  constructor({
+    startLevel = TEMPLE_DATA_PACING_DEFAULT_START_LEVEL,
+    totalBytes,
+    log = null,
+  } = {}) {
+    if (!Number.isInteger(totalBytes) || totalBytes <= 0) {
+      throw new Error("Adaptive pacing requires the total payload size.");
+    }
+    this.level = Math.min(
+      Math.max(startLevel, 0),
+      TEMPLE_DATA_PACING_LEVELS.length - 1,
+    );
+    this.startLevel = this.level;
+    this.totalBytes = totalBytes;
+    this.log = log;
+    this.baselineMs = null;
+    this.warmupLatencies = [];
+    this.cooldownRecords = 0;
+    this.escalations = 0;
+    this.congestionEvents = [];
+    this.ackCount = 0;
+    this.ackTotalMs = 0;
+    this.ackMaxMs = 0;
+    this.settleTotalMs = 0;
+  }
+
+  congestionThresholdMs() {
+    if (this.baselineMs == null) return PACING_CONGESTION_ABSOLUTE_MS;
+    return Math.max(
+      PACING_CONGESTION_ABSOLUTE_MS,
+      this.baselineMs * PACING_CONGESTION_BASELINE_FACTOR,
+    );
+  }
+
+  // Returns an immediate extra settle in milliseconds when the ACK latency
+  // signals congestion; 0 otherwise.
+  noteAckLatency(recordIndex, latencyMs) {
+    this.ackCount += 1;
+    this.ackTotalMs += latencyMs;
+    if (latencyMs > this.ackMaxMs) this.ackMaxMs = latencyMs;
+    if (this.baselineMs == null) {
+      this.warmupLatencies.push(latencyMs);
+      if (this.warmupLatencies.length >= PACING_BASELINE_WARMUP_RECORDS) {
+        const sorted = [...this.warmupLatencies].sort((a, b) => a - b);
+        this.baselineMs = sorted[Math.floor(sorted.length / 2)];
+      }
+    } else {
+      // Slow EWMA so the baseline tracks drift without chasing spikes.
+      this.baselineMs = this.baselineMs * 0.95 + latencyMs * 0.05;
+    }
+    if (this.cooldownRecords > 0) {
+      this.cooldownRecords -= 1;
+      return 0;
+    }
+    // Escalation only. Measured rejections arrived with flat ACK latency, so
+    // a calm stretch is not evidence that a lower level is safe; the level a
+    // run starts at is never reduced mid-transfer.
+    if (latencyMs <= this.congestionThresholdMs()) return 0;
+    const fromLevel = this.level;
+    this.level = Math.min(this.level + 1, TEMPLE_DATA_PACING_LEVELS.length - 1);
+    this.escalations += 1;
+    this.cooldownRecords = PACING_CHANGE_COOLDOWN_RECORDS;
+    if (this.congestionEvents.length < PACING_CONGESTION_EVENT_LOG_LIMIT) {
+      this.congestionEvents.push({
+        record: recordIndex + 1,
+        latencyMs: Math.round(latencyMs),
+        thresholdMs: Math.round(this.congestionThresholdMs()),
+        fromLevel,
+        toLevel: this.level,
+      });
+    }
+    const injected = TEMPLE_DATA_PACING_LEVELS[this.level].late;
+    this.settleTotalMs += injected;
+    this.log?.(
+      `pacing backoff: record ${recordIndex + 1} ACK took ${Math.round(latencyMs)} ms (threshold ${Math.round(this.congestionThresholdMs())} ms); level ${fromLevel} → ${this.level}, settling ${injected} ms now.`,
+      "warn",
+    );
+    return injected;
+  }
+
+  settleFor(acceptedBytes) {
+    const final = acceptedBytes === this.totalBytes;
+    if (final) {
+      // Match the settle the previous fixed policy granted escalated runs.
+      const finalMs = Math.max(
+        POGO_DATA_FINAL_SETTLE_MS,
+        TEMPLE_DATA_PACING_LEVELS[this.level].late * 7.5,
+      );
+      this.settleTotalMs += finalMs;
+      return finalMs;
+    }
+    if (acceptedBytes % POGO_DEFERRED_BATCH_BYTES !== 0) return 0;
+    const lateTransfer =
+      acceptedBytes * POGO_DATA_LATE_SETTLE_DENOMINATOR >=
+      this.totalBytes * POGO_DATA_LATE_SETTLE_NUMERATOR;
+    const settle = lateTransfer
+      ? TEMPLE_DATA_PACING_LEVELS[this.level].late
+      : TEMPLE_DATA_PACING_LEVELS[this.level].early;
+    this.settleTotalMs += settle;
+    return settle;
+  }
+
+  // Fold this component's result into the cross-run memory. A component that
+  // needed a latency backoff is not evidence that its starting level is safe,
+  // so it counts as unclean for probing purposes.
+  commitMemory(outcome) {
+    const clean = outcome === "clean" && this.escalations === 0;
+    const memory = nextTempleDataPacingMemory(
+      readTempleDataPacingMemory(),
+      clean ? "clean" : "failed",
+      this.level,
+    );
+    writeTempleDataPacingMemory(memory);
+    return memory;
+  }
+
+  summary() {
+    return {
+      mode: "adaptive",
+      startLevel: this.startLevel,
+      finalLevel: this.level,
+      escalations: this.escalations,
+      congestionEvents: this.congestionEvents,
+      ackCount: this.ackCount,
+      ackMeanMs: this.ackCount
+        ? Math.round(this.ackTotalMs / this.ackCount)
+        : null,
+      ackMaxMs: this.ackMaxMs,
+      baselineMs:
+        this.baselineMs == null ? null : Math.round(this.baselineMs),
+      settleTotalMs: this.settleTotalMs,
+    };
+  }
 }
 
 export async function retryReadOnlyBlock(
@@ -1074,11 +1352,13 @@ class Stm32Bootloader {
               `Detected the CH340 Web Serial packet boundary at 0x${blockAddress.toString(16)}; discarding the partial reply and switching to ${WEB_SERIAL_ROM_READ_SIZE}-byte ROM reads.`,
               "warn",
             ),
-          onRetry: (retryError, nextAttempt, attemptCount) =>
+          onRetry: (retryError, nextAttempt, attemptCount) => {
             this.log(
               `ROM read retry ${nextAttempt}/${attemptCount} at 0x${blockAddress.toString(16)} after ${retryError.message}`,
               "warn",
-            ),
+            );
+            noteWebSerialShortReadRetry(this.port, this.log);
+          },
         },
       );
       if (readResult.packetBoundaryDetected) {
@@ -2015,6 +2295,12 @@ export class G2CaseSession {
         const evidence = error?.pogoBridgeEvidence;
         const verifiedZeroWriteStop =
           evidence?.zeroWriteBaselineStopVerified === true;
+        // Status 6 is thrown only after the route restoration proof was
+        // verified byte-for-byte: the request went out, the temple stayed
+        // silent, and every YHM register was restored. During the post-reset
+        // charging renegotiation this is as safe to settle-retry as a
+        // zero-write setup stop.
+        const restoredSilentTempleStop = evidence?.responseStatus === 6;
         attempts.push({
           attempt,
           outcome: "failed",
@@ -2024,15 +2310,15 @@ export class G2CaseSession {
           zeroYhmWritesVerified: verifiedZeroWriteStop,
           templeBytesTransmitted: evidence?.transmitted ?? null,
         });
-        if (!verifiedZeroWriteStop) {
+        if (!verifiedZeroWriteStop && !restoredSilentTempleStop) {
           if (error && typeof error === "object") {
             error.readOnlyPhaseAttempts = attempts;
           }
           throw error;
         }
-        const observedProfile = identifyYhmBaselineProfile(
-          evidence.baselineHex,
-        );
+        const observedProfile = verifiedZeroWriteStop
+          ? identifyYhmBaselineProfile(evidence.baselineHex)
+          : null;
         if (
           observedProfile &&
           observedProfile !== yhmProfile &&
@@ -2053,7 +2339,9 @@ export class G2CaseSession {
             .filter(Boolean)
             .join(", ");
           const finalError = new PogoFlashSafetyError(
-            `The pogo bridge stopped safely: YHM baseline was not an allowlisted seated-idle state after ${attempts.length} verified zero-write probes${baselines ? ` (${baselines})` : ""}. No YHM writes or temple transmissions occurred.`,
+            restoredSilentTempleStop
+              ? `The pogo bridge stopped safely: the ${route} temple returned no framed response after ${attempts.length} fully-restored probes across the bounded settle ladder. The route was byte-for-byte restored each time.`
+              : `The pogo bridge stopped safely: YHM baseline was not an allowlisted seated-idle state after ${attempts.length} verified zero-write probes${baselines ? ` (${baselines})` : ""}. No YHM writes or temple transmissions occurred.`,
           );
           finalError.pogoBridgeEvidence = evidence;
           finalError.readOnlyPhaseAttempts = attempts;
@@ -2064,7 +2352,9 @@ export class G2CaseSession {
         settleIndex += 1;
         const settleSeconds = settleMilliseconds / 1000;
         this.log(
-          `${route} ${operation}: YHM baseline ${evidence.baselineHex} is outside the active seated-idle profile; retained SRAM proves zero YHM writes and zero temple bytes. Leaving the normal Case app undisturbed for ${settleSeconds} seconds before bounded stock-app settle ${settleIndex}/${POGO_READ_ONLY_PHASE_SETTLE_MS.length}.`,
+          restoredSilentTempleStop
+            ? `${route} ${operation}: the temple stayed silent through a fully-restored route (bridge status 6), consistent with post-reset charging renegotiation. Leaving the normal Case app undisturbed for ${settleSeconds} seconds before bounded stock-app settle ${settleIndex}/${POGO_READ_ONLY_PHASE_SETTLE_MS.length}.`
+            : `${route} ${operation}: YHM baseline ${evidence.baselineHex} is outside the active seated-idle profile; retained SRAM proves zero YHM writes and zero temple bytes. Leaving the normal Case app undisturbed for ${settleSeconds} seconds before bounded stock-app settle ${settleIndex}/${POGO_READ_ONLY_PHASE_SETTLE_MS.length}.`,
           "warn",
         );
         await this.wait(settleMilliseconds);
@@ -2243,7 +2533,24 @@ export class G2CaseSession {
       const response = parsePogoBridgeResponse(header, tail, request);
       await bridge.close();
       bridge = null;
-      reportProgress(0.66, "Temple response captured");
+      // The bridge transaction completing is not the same as the temple
+      // answering; keep the progress label and log honest about the status
+      // the bridge actually reported.
+      if (response.status === 0) {
+        reportProgress(0.66, "Temple response captured");
+      } else {
+        const statusLabel =
+          POGO_BRIDGE_STATUS[response.status] ??
+          `unknown bridge status ${response.status}`;
+        reportProgress(
+          0.66,
+          `Bridge result captured · status ${response.status}`,
+        );
+        this.log(
+          `${route} ${operation}: the Case bridge completed its transaction but reported status ${response.status} (${statusLabel}); verifying route restoration before deciding.`,
+          "warn",
+        );
+      }
 
       await delay(300);
       loader = await openProbeLoader(`${route} restoration proof`);
@@ -2677,12 +2984,8 @@ export class G2CaseSession {
       dataPacingPolicy: {
         deferredBatchBytes: POGO_DEFERRED_BATCH_BYTES,
         multiplier: dataPacingMultiplier,
-        batchSettleMs:
-          POGO_DATA_BATCH_SETTLE_MS * dataPacingMultiplier,
-        lateBatchSettleMs:
-          POGO_DATA_LATE_BATCH_SETTLE_MS * dataPacingMultiplier,
-        finalSettleMs:
-          POGO_DATA_FINAL_SETTLE_MS * dataPacingMultiplier,
+        mode: "adaptive",
+        levels: TEMPLE_DATA_PACING_LEVELS,
         lateThresholdPercent:
           (POGO_DATA_LATE_SETTLE_NUMERATOR /
             POGO_DATA_LATE_SETTLE_DENOMINATOR) *
@@ -2763,6 +3066,15 @@ export class G2CaseSession {
 
       const payload = component.payload;
       const totalRecords = Math.ceil(payload.length / 1000);
+      const pacing = new TempleDataPacingController({
+        startLevel: resolveTempleDataPacingStartLevel(dataPacingMultiplier),
+        totalBytes: payload.length,
+        log: (message, tone) => this.log(`${route}: ${message}`, tone),
+      });
+      result.dataPacingPolicy.startLevel = pacing.startLevel;
+      this.log(
+        `${route}: adaptive DATA pacing starts at level ${pacing.startLevel} (early ${TEMPLE_DATA_PACING_LEVELS[pacing.startLevel].early} ms / late ${TEMPLE_DATA_PACING_LEVELS[pacing.startLevel].late} ms per ${POGO_DEFERRED_BATCH_BYTES}-byte batch); temple ACK latency drives backoff.`,
+      );
       let acceptedBytes = 0;
       let retries = 0;
       for (let index = 0; index < totalRecords; index += 1) {
@@ -2771,10 +3083,16 @@ export class G2CaseSession {
         const data = payload.subarray(offset, Math.min(offset + 1000, payload.length));
         const final = index + 1 === totalRecords;
         const request = makeOtaDataRequest(data, final, index & 0xff);
+        const transactStartedAt = Date.now();
         try {
           const response = await transport.transact(request, 15000);
           requireOtaAcknowledgement(response, 0x54);
         } catch (error) {
+          result.dataPacingPolicy = {
+            ...result.dataPacingPolicy,
+            ...pacing.summary(),
+          };
+          pacing.commitMemory("failed");
           if (!isExplicitTempleDataRejection(error)) throw error;
           result.dataRejection = {
             command: error.command,
@@ -2790,19 +3108,33 @@ export class G2CaseSession {
           );
           throw error;
         }
+        const congestionSettleMs = pacing.noteAckLatency(
+          index,
+          Date.now() - transactStartedAt,
+        );
+        if (congestionSettleMs > 0) {
+          await transport.settleTempleStorage(congestionSettleMs);
+        }
         acceptedBytes += data.length;
         result.acceptedFirmwareBytes = acceptedBytes;
         transport.reportProgress(
           0.08 + ((index + 1) / totalRecords) * 0.78,
           `${route}: ${index + 1}/${totalRecords} main records`,
         );
-        const settleMilliseconds =
-          templeDataSettleMilliseconds(acceptedBytes, payload.length) *
-          dataPacingMultiplier;
+        const settleMilliseconds = pacing.settleFor(acceptedBytes);
         if (settleMilliseconds > 0) {
           await transport.settleTempleStorage(settleMilliseconds);
         }
       }
+      result.dataPacingPolicy = {
+        ...result.dataPacingPolicy,
+        ...pacing.summary(),
+      };
+      const pacingMemory = pacing.commitMemory("clean");
+      this.log(
+        `${route}: adaptive pacing finished at level ${pacing.level} · ${pacing.escalations} backoffs, ACK mean ${pacing.summary().ackMeanMs ?? "?"} ms, ${Math.round(pacing.settleTotalMs / 1000)} s total settle; next component starts at level ${pacingMemory.level} (clean streak ${pacingMemory.cleanStreak}).`,
+        "success",
+      );
 
       const finish = makeOtaFinishRequest();
       failureStage = "FINISH";
@@ -3000,6 +3332,7 @@ export class G2CaseSession {
       routeComponentRestartResets: [],
       persistentDataRejectionStops: [],
       routeSetupResetStops: [],
+      routeSetupSettleStops: [],
       routeSetupResetResults: [],
       componentRestartLimit: POGO_COMPONENT_RESTART_LIMIT,
       hostTimeoutComponentRestartLimit:
@@ -3025,6 +3358,7 @@ export class G2CaseSession {
       };
       const componentRestartCounts = new Map();
       const setupResetCounts = new Map();
+      const setupSettleCounts = new Map();
       for (let index = 0; index < routes.length; index += 1) {
         const route = routes[index];
         const componentRestartCount =
@@ -3085,6 +3419,38 @@ export class G2CaseSession {
               "warn",
             );
             index = -1;
+            continue;
+          }
+          // A zero-write setup stop means the route is busy, not broken —
+          // measured on hardware as a 10-25 minute post-reset charging
+          // renegotiation. Resetting restarts that window instead of ending
+          // it, so wait the route out first and only then fall back to the
+          // bounded reset path.
+          const setupSettleCount = setupSettleCounts.get(route) ?? 0;
+          if (
+            // Same audited zero-write proof the reset path requires; only the
+            // recovery action differs.
+            canResetAfterZeroWriteSetupStop(error.routeResult, 0) &&
+            setupSettleCount < POGO_READ_ONLY_PHASE_SETTLE_MS.length
+          ) {
+            const settleMs = POGO_READ_ONLY_PHASE_SETTLE_MS[setupSettleCount];
+            setupSettleCounts.set(route, setupSettleCount + 1);
+            audit.routeSetupSettleStops.push({
+              route,
+              settleMs,
+              attempt: setupSettleCount + 1,
+              baseline: error.routeResult?.retainedResult?.baselineMask ?? null,
+            });
+            this.log(
+              `${route}: the writer's zero-write setup stop proves the route is busy, not broken. Leaving the Case application undisturbed for ${settleMs / 1000} s before a fresh setup (bounded settle ${setupSettleCount + 1}/${POGO_READ_ONLY_PHASE_SETTLE_MS.length}); no reset, because a reset restarts the charging window.`,
+              "warn",
+            );
+            this.progress(
+              (index / routes.length) * 0.9,
+              `${route}: waiting ${Math.round(settleMs / 1000)} s for the charging route to settle`,
+            );
+            await this.wait(settleMs);
+            index -= 1;
             continue;
           }
           if (

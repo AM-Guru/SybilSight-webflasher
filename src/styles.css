@@ -5536,3 +5536,11 @@ body {
     grid-column: 1 / -1;
   }
 }
+
+.glasses-analytics-stale-note {
+  display: block;
+  margin: 0.35rem 0 0;
+  color: #754609;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
