@@ -13,6 +13,7 @@ import {
   sha256Hex,
   toggledBankOptionBytes,
 } from "./firmware.js";
+import { caseDeviceKey } from "./deviceIdentity.js";
 import {
   POGO_BRIDGE_ADDRESS,
   POGO_BRIDGE_BANNER,
@@ -119,9 +120,22 @@ const POGO_FINAL_RESET_ATTEMPTS = 2;
 // Case, and the pogo route can stay non-idle (status 3) or silent (status 6)
 // for on the order of ten minutes on hardware. The ladder must outlast that
 // window; resets do not shorten it — they restart it.
-const POGO_READ_ONLY_PHASE_SETTLE_MS = Object.freeze([
+export const POGO_READ_ONLY_PHASE_SETTLE_MS = Object.freeze([
   15_000, 45_000, 90_000, 180_000, 300_000,
 ]);
+// The 15 s opening rung is right for the read-only version path — measured
+// clearing a post-reset route on hardware — but measurably too short for the
+// writer's zero-write setup stop. On 2026-07-28 the writer hit the 15 s rung
+// twice on a temple at 100 % battery and cleared only on 45 s, so the opening
+// rung cost a wasted setup round trip on every run. The writer starts one rung
+// in; the ladder itself is unchanged for every other caller.
+export const POGO_SETUP_STOP_FIRST_SETTLE_INDEX = 1;
+// How long a temple gets to restart onto a committed image before the run
+// falls through to the bounded activation-reset path, and how often that wait
+// is narrated. Measured: a temple can run this whole window still reporting
+// the previous version and then activate on the first activation reset.
+const POGO_POSTFLIGHT_WINDOW_MS = 180_000;
+const POGO_POSTFLIGHT_HEARTBEAT_MS = 15_000;
 export const WEB_SERIAL_ROM_READ_SIZE = 31;
 const ROM_ENTRY_ATTEMPTS = 3;
 
@@ -417,6 +431,12 @@ export function resolveTempleDataPacingStartLevel(
   return clampAutomaticLevel(rememberedLevel);
 }
 
+// True when the browser is throttling this page's timers. Only the hidden
+// state is observable from script, and it is the one that matters here.
+export function defaultPacingThrottleProbe() {
+  return typeof document !== "undefined" && document.visibilityState === "hidden";
+}
+
 export class TempleDataPacingController {
   constructor({
     startLevel = TEMPLE_DATA_PACING_DEFAULT_START_LEVEL,
@@ -425,6 +445,7 @@ export class TempleDataPacingController {
     linkOverheadMs = 0,
     deviceKey = PACING_UNKNOWN_DEVICE_KEY,
     route = "both",
+    isThrottled = defaultPacingThrottleProbe,
   } = {}) {
     if (!Number.isInteger(totalBytes) || totalBytes <= 0) {
       throw new Error("Adaptive pacing requires the total payload size.");
@@ -444,6 +465,13 @@ export class TempleDataPacingController {
     // full round trip on each side of a transact) subtracted from every ACK
     // latency, so link distance is never mistaken for temple congestion.
     this.linkOverheadMs = Math.max(0, Number(linkOverheadMs) || 0);
+    // A backgrounded tab has its timers throttled by the browser, which
+    // inflates the measured ACK by far more than any temple delay: 372 ms
+    // per record foregrounded versus 967 ms hidden, on the same link and
+    // firmware (measured 2026-07-28). Those samples describe the operator's
+    // event loop, not the temple, so they must never drive escalation.
+    this.isThrottled = isThrottled;
+    this.throttledSamples = 0;
     this.baselineMs = null;
     this.warmupLatencies = [];
     this.cooldownRecords = 0;
@@ -465,8 +493,20 @@ export class TempleDataPacingController {
 
   // Returns an immediate extra settle in milliseconds when the ACK latency
   // signals congestion; 0 otherwise.
-  noteAckLatency(recordIndex, latencyMs) {
+  noteAckLatency(recordIndex, latencyMs, throttled = this.isThrottled()) {
     latencyMs = Math.max(0, latencyMs - this.linkOverheadMs);
+    if (throttled) {
+      // Counted so the summary can explain a slow transfer, but excluded
+      // from the baseline and from every escalation decision.
+      this.throttledSamples += 1;
+      if (this.throttledSamples === 1) {
+        this.log?.(
+          "the tab is in the background, so its timers are throttled; ACK samples taken while hidden are excluded from congestion decisions. Keep this tab in front for full speed.",
+          "warn",
+        );
+      }
+      return 0;
+    }
     this.ackCount += 1;
     this.ackTotalMs += latencyMs;
     if (latencyMs > this.ackMaxMs) this.ackMaxMs = latencyMs;
@@ -561,6 +601,7 @@ export class TempleDataPacingController {
       baselineMs:
         this.baselineMs == null ? null : Math.round(this.baselineMs),
       linkOverheadMs: this.linkOverheadMs,
+      throttledSamples: this.throttledSamples,
       settleTotalMs: this.settleTotalMs,
     };
   }
@@ -1325,6 +1366,33 @@ class SerialTransport {
   }
 }
 
+// Drain the serial line until it stays silent for one slice, so the STM32
+// sync byte is not answered with leftover application chatter.
+//
+// Draining once is not enough: bytes the reset spewed can still be in flight,
+// and over a remote-support relay a whole round trip of them lands after the
+// local queue was emptied. That produced an "Unexpected 0x.." sync rejection
+// on attempt 1 of essentially every entry. If the Case booted its application
+// instead of the loader it never goes quiet, so the wait is bounded by a slice
+// count and the caller's existing boot-select retry still handles that.
+export async function drainUntilQuietLine(
+  transport,
+  { remote = false, linkRttMs = null, sleeper = delay } = {},
+) {
+  const sliceMs = remote
+    ? Math.max(200, Math.min(600, Math.round(linkRttMs ?? 300)))
+    : 120;
+  const maxSlices = Math.max(1, Math.ceil((remote ? 2500 : 900) / sliceMs));
+  transport.clear();
+  for (let slice = 0; slice < maxSlices; slice += 1) {
+    await sleeper(sliceMs);
+    if (transport.queuedBytes === 0) return true;
+    transport.clear();
+  }
+  transport.clear();
+  return false;
+}
+
 class Stm32Bootloader {
   constructor(port, log) {
     this.port = port;
@@ -1369,6 +1437,13 @@ class Stm32Bootloader {
   // answer the sync with running application output ("Unexpected 0x4c").
   // Each attempt gives the loader a little longer to come up before the
   // sync byte.
+  async waitForQuietLine() {
+    return drainUntilQuietLine(this.transport, {
+      remote: this.port?.transportKind === "remote",
+      linkRttMs: this.port?.linkRttMs ?? null,
+    });
+  }
+
   async enterRomLoader(attempts = ROM_ENTRY_ATTEMPTS) {
     let lastError = null;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -1379,24 +1454,7 @@ class Stm32Bootloader {
         await delay(60);
         await this.transport.setSignals(false, false);
         await delay(180 * attempt);
-        this.transport.clear();
-        // Over a remote-support link, application output the reset spewed can
-        // still be in flight through the relay when the local queue clears;
-        // observed as "Unexpected 0x.." sync rejections on every first
-        // attempt. Give stragglers one generous link round trip to land,
-        // then clear again so the sync ACK read starts clean.
-        if (this.port?.transportKind === "remote") {
-          let rtt = this.port.linkRttMs;
-          if (rtt == null && typeof this.port.measureLinkRtt === "function") {
-            try {
-              rtt = await this.port.measureLinkRtt();
-            } catch {
-              rtt = null;
-            }
-          }
-          await delay(Math.max(250, Math.min(2000, Math.round((rtt ?? 300) * 1.5))));
-          this.transport.clear();
-        }
+        await this.waitForQuietLine();
         await this.transport.write(new Uint8Array([SYNC]));
         await this.expectAck("bootloader synchronization", 3000);
         if (attempt > 1) {
@@ -1629,6 +1687,36 @@ async function resetTemples(transport) {
   return resetOutput;
 }
 
+// Whether a record's token-paced loop runs in the person's browser as one
+// batched exchange, and if not, which leg is missing it. Logged once per
+// component so a slow remote transfer is diagnosable from the transcript
+// alone rather than by measuring throughput.
+export function describeRemoteTransactOffload(port) {
+  if (port?.transportKind !== "remote") {
+    return { offloaded: false, reason: "local transport" };
+  }
+  if (typeof port.supportsExchangeBatch !== "function") {
+    return { offloaded: false, reason: "this WebFlasher build cannot batch" };
+  }
+  if (port.supportsExchangeBatch()) {
+    return { offloaded: true, reason: null };
+  }
+  const relayOperations = port.connection?.serialOperations;
+  if (!Array.isArray(relayOperations)) {
+    return {
+      offloaded: false,
+      reason: "the relay does not advertise its serial operations",
+    };
+  }
+  if (!relayOperations.includes("exchange_batch")) {
+    return { offloaded: false, reason: "the relay does not forward batches" };
+  }
+  return {
+    offloaded: false,
+    reason: "the person's browser does not advertise batch support",
+  };
+}
+
 class CasePogoFlashTransport {
   constructor(
     session,
@@ -1804,6 +1892,10 @@ class CasePogoFlashTransport {
   // build all understand exchange batches, the entire paced loop executes in
   // the customer's browser as one declarative batch — one relay round trip
   // instead of one per token — with identical failure semantics.
+  describeTransactOffload() {
+    return describeRemoteTransactOffload(this.port);
+  }
+
   async writeTokenPacedRequest({
     header,
     payload,
@@ -2262,13 +2354,44 @@ export class G2CaseSession {
   // per-route YHM profile map from the profiles proven for this case in
   // earlier sessions, but never overrides a profile this session has already
   // established from live evidence.
-  adoptCaseIdentity(serialNumber) {
-    if (typeof serialNumber !== "string" || !serialNumber) return;
-    if (this.caseStorageSerial === serialNumber) return;
-    this.caseStorageSerial = serialNumber;
-    for (const [route, profile] of Object.entries(
-      readYhmRouteProfileMemory(serialNumber),
-    )) {
+  //
+  // Keyed on caseDeviceKey so YHM memory files under the same identity as
+  // pacing memory and device history. Before that it keyed on the raw console
+  // serial, which is only ever printed in the Case power-up banner: a capture
+  // that missed or corrupted the banner silently filed the same physical Case
+  // under a second, memory-less identity, and the next session re-derived every
+  // observed profile from scratch. The "unidentified-case" placeholder is
+  // deliberately excluded - seeding from a bucket shared by every anonymous
+  // Case would make the log line below untrue, and the profile is only ever a
+  // starting hint that live evidence still has to confirm.
+  adoptCaseIdentity(consoleReport) {
+    const report =
+      typeof consoleReport === "string"
+        ? { serialNumber: consoleReport }
+        : consoleReport;
+    const deviceKey = caseDeviceKey({ console: report ?? {} });
+    if (!deviceKey || deviceKey === PACING_UNKNOWN_DEVICE_KEY) return;
+    if (this.caseStorageSerial === deviceKey) return;
+    this.caseStorageSerial = deviceKey;
+    this.deviceKey = deviceKey;
+    let remembered = readYhmRouteProfileMemory(deviceKey);
+    // Records written before this keyed on the bare console serial. Carry them
+    // forward on first sight rather than making every already-serviced Case
+    // re-derive its observed profile.
+    const legacyKey = report?.serialNumber;
+    if (
+      !Object.keys(remembered).length &&
+      typeof legacyKey === "string" &&
+      legacyKey &&
+      legacyKey !== deviceKey
+    ) {
+      const legacy = readYhmRouteProfileMemory(legacyKey);
+      for (const [route, profile] of Object.entries(legacy)) {
+        writeYhmRouteProfileMemory(deviceKey, route, profile);
+      }
+      remembered = legacy;
+    }
+    for (const [route, profile] of Object.entries(remembered)) {
       if (this.routeYhmProfiles.has(route)) continue;
       this.routeYhmProfiles.set(route, profile);
       this.log(
@@ -2284,11 +2407,10 @@ export class G2CaseSession {
     }
   }
 
-  async analyze({ progressBase = 0, progressSpan = 1 } = {}) {
-    const reportProgress = (fraction, detail) =>
-      this.progress(progressBase + fraction * progressSpan, detail);
-    const info = this.port.getInfo?.() ?? {};
-    this.log("Opening the 1 Mbaud read-only factory console.");
+  // One read-only factory-console pass: open (which resets the Case and makes
+  // it reprint its power-up banner), collect the banner, then run the A0/A2/A3/A4
+  // query allowlist. Writes nothing.
+  async captureConsoleReport() {
     const normal = await openNormalConsole(this.port);
     let bootText;
     const replies = {};
@@ -2300,16 +2422,55 @@ export class G2CaseSession {
     } finally {
       await normal.close();
     }
-    const consoleReport = parseConsoleReport(
+    return parseConsoleReport(
       bootText,
       replies[0xa0],
       replies[0xa2],
       replies[0xa3],
       replies[0xa4],
     );
+  }
+
+  async analyze({ progressBase = 0, progressSpan = 1 } = {}) {
+    const reportProgress = (fraction, detail) =>
+      this.progress(progressBase + fraction * progressSpan, detail);
+    const info = this.port.getInfo?.() ?? {};
+    this.log("Opening the 1 Mbaud read-only factory console.");
+    let consoleReport = await this.captureConsoleReport();
+    // The 96-bit Case UID is printed once, in the power-up banner that the
+    // console open provokes; none of the A0/A2/A3/A4 replies repeat it. The
+    // first bytes after that reset are the least reliable ones on the link -
+    // over the remote-support relay they routinely arrive as mojibake - so a
+    // missing serial is far more often a clipped banner than a Case that has
+    // none. One extra read-only capture costs a few seconds and keeps the
+    // device key stable across sessions instead of splitting one physical Case
+    // between its real identity and the anonymous placeholder.
+    if (!consoleReport.serialNumber) {
+      this.log(
+        "The power-up banner arrived without a readable Case identifier; repeating the read-only console capture once before filing this session's per-Case records.",
+        "warn",
+      );
+      const retry = await this.captureConsoleReport();
+      if (retry.serialNumber) {
+        consoleReport = {
+          ...consoleReport,
+          text: `${consoleReport.text}\n${retry.text}`,
+          serialNumber: retry.serialNumber,
+          identifier: consoleReport.identifier ?? retry.identifier,
+        };
+        this.log(
+          "The repeated capture recovered the Case identifier; per-Case pacing and YHM profile memory apply to this session.",
+        );
+      } else {
+        this.log(
+          "The repeated capture also reported no Case identifier; this session's per-Case memory stays disabled rather than sharing an anonymous record.",
+          "warn",
+        );
+      }
+    }
     reportProgress(0.32, "Factory telemetry captured");
     this.log("Factory telemetry and identifiers captured.");
-    this.adoptCaseIdentity(consoleReport.serialNumber);
+    this.adoptCaseIdentity(consoleReport);
 
     const loader = new Stm32Bootloader(this.port, this.log);
     try {
@@ -3427,6 +3588,18 @@ export class G2CaseSession {
           `${route}: subtracting ${pacing.linkOverheadMs} ms of measured remote-relay round trip from temple ACK latencies before congestion decisions.`,
         );
       }
+      const offload = transport.describeTransactOffload();
+      if (offload.offloaded) {
+        this.log(
+          `${route}: each record's flow-control loop runs as one batched exchange in the person's browser, so every record costs one relay round trip instead of one per 32-byte chunk.`,
+          "success",
+        );
+      } else if (transport.port?.transportKind === "remote") {
+        this.log(
+          `${route}: batched exchanges are unavailable (${offload.reason}); every 32-byte chunk will pay its own relay round trip and this transfer will be far slower.`,
+          "warn",
+        );
+      }
       let acceptedBytes = 0;
       let retries = 0;
       for (let index = 0; index < totalRecords; index += 1) {
@@ -3444,8 +3617,14 @@ export class G2CaseSession {
             ...result.dataPacingPolicy,
             ...pacing.summary(),
           };
-          pacing.commitMemory("failed");
+          // Only an explicit temple rejection says anything about pacing. A
+          // transport failure — a dropped remote-support relay, an unplugged
+          // cable — carries no evidence that the temple was overrun, so it
+          // must not escalate the remembered level. Observed 2026-07-28: a
+          // relay session expiring mid-DATA left the memory one level slower,
+          // and the next run paid that penalty on every record.
           if (!isExplicitTempleDataRejection(error)) throw error;
+          pacing.commitMemory("failed");
           result.dataRejection = {
             command: error.command,
             status: error.status,
@@ -3507,11 +3686,48 @@ export class G2CaseSession {
         "success",
       );
 
-      const deadline = Date.now() + 180000;
+      const postflightStartedAt = Date.now();
+      const deadline = postflightStartedAt + POGO_POSTFLIGHT_WINDOW_MS;
       failureStage = "POSTFLIGHT";
       let lastVersion = null;
+      // The temple restarts onto the committed image here. Measured on
+      // hardware 2026-07-28: this window ran its full 182 s with no log line
+      // and a progress bar frozen at 77 %. It is also the one moment where
+      // pulling the cable is unrecoverable, so silence is exactly the wrong
+      // behaviour — narrate the wait instead of looking hung.
+      this.log(
+        `${route}: FINISH accepted; the temple is committing and restarting on the new image. This can take up to ${Math.round(
+          POGO_POSTFLIGHT_WINDOW_MS / 1000,
+        )} s — do not disconnect the Case or move the Glasses.`,
+        "warn",
+      );
+      let nextHeartbeatAt = postflightStartedAt + POGO_POSTFLIGHT_HEARTBEAT_MS;
       while (Date.now() < deadline) {
         await delay(2000);
+        const now = Date.now();
+        if (now >= nextHeartbeatAt) {
+          nextHeartbeatAt = now + POGO_POSTFLIGHT_HEARTBEAT_MS;
+          const elapsedSeconds = Math.round((now - postflightStartedAt) / 1000);
+          const remainingSeconds = Math.max(
+            0,
+            Math.round((deadline - now) / 1000),
+          );
+          // DATA finishes at 0.86 and the postflight verdict reports 0.90, so
+          // the wait has to climb strictly between them — starting any lower
+          // would walk the bar backwards at the moment it is being watched.
+          transport.reportProgress(
+            0.86 +
+              0.04 *
+                Math.min(
+                  1,
+                  (now - postflightStartedAt) / POGO_POSTFLIGHT_WINDOW_MS,
+                ),
+            `${route}: waiting for the temple to restart · ${elapsedSeconds} s elapsed`,
+          );
+          this.log(
+            `${route}: still waiting for a post-restart version reply · ${elapsedSeconds} s elapsed, up to ${remainingSeconds} s remaining. Do not disconnect.`,
+          );
+        }
         transport.drainInput();
         try {
           const version = decodeTempleVersion(
@@ -3837,13 +4053,18 @@ export class G2CaseSession {
           // it, so wait the route out first and only then fall back to the
           // bounded reset path.
           const setupSettleCount = setupSettleCounts.get(route) ?? 0;
+          const setupSettleIndex =
+            POGO_SETUP_STOP_FIRST_SETTLE_INDEX + setupSettleCount;
+          const setupSettleLimit =
+            POGO_READ_ONLY_PHASE_SETTLE_MS.length -
+            POGO_SETUP_STOP_FIRST_SETTLE_INDEX;
           if (
             // Same audited zero-write proof the reset path requires; only the
             // recovery action differs.
             canResetAfterZeroWriteSetupStop(error.routeResult, 0) &&
-            setupSettleCount < POGO_READ_ONLY_PHASE_SETTLE_MS.length
+            setupSettleCount < setupSettleLimit
           ) {
-            const settleMs = POGO_READ_ONLY_PHASE_SETTLE_MS[setupSettleCount];
+            const settleMs = POGO_READ_ONLY_PHASE_SETTLE_MS[setupSettleIndex];
             setupSettleCounts.set(route, setupSettleCount + 1);
             audit.routeSetupSettleStops.push({
               route,
@@ -3852,7 +4073,7 @@ export class G2CaseSession {
               baseline: error.routeResult?.retainedResult?.baselineMask ?? null,
             });
             this.log(
-              `${route}: the writer's zero-write setup stop proves the route is busy, not broken. Leaving the Case application undisturbed for ${settleMs / 1000} s before a fresh setup (bounded settle ${setupSettleCount + 1}/${POGO_READ_ONLY_PHASE_SETTLE_MS.length}); no reset, because a reset restarts the charging window.`,
+              `${route}: the writer's zero-write setup stop proves the route is busy, not broken. Leaving the Case application undisturbed for ${settleMs / 1000} s before a fresh setup (bounded settle ${setupSettleCount + 1}/${setupSettleLimit}); no reset, because a reset restarts the charging window.`,
               "warn",
             );
             this.progress(

@@ -15,9 +15,16 @@ const REVIEWED_CFW_BASE_SHA256 =
   "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa";
 const LEGACY_HARDWARE_VALIDATED_CFW_SHA256 =
   "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0";
+// Reviewed CFW 2.2.6.11. Case-USB temple transfer exercised end to end on
+// 2026-07-28: right temple Stock 2.2.6.10 -> CFW 2.2.6.11, all 3,543 records
+// and FINISH accepted, image activated on the first activation reset, and the
+// post-reset version reply verified on both temples.
+const REVIEWED_CFW_2_2_6_11_SHA256 =
+  "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86";
 const HARDWARE_VALIDATED_TEMPLE_IMAGES = new Set([
   LEGACY_HARDWARE_VALIDATED_CFW_SHA256,
   REVIEWED_CFW_BASE_SHA256,
+  REVIEWED_CFW_2_2_6_11_SHA256,
 ]);
 const RELEASES = [
   {

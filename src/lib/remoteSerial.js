@@ -724,7 +724,26 @@ export class RemoteG2CasePort {
     }
     if (message?.type === "serial_event" && message.event === "read_error") {
       this.failReadable(new Error(message.error || "The remote USB read failed."));
+      return;
     }
+    if (message?.type === "relay_closed") {
+      this.failPending(
+        new Error(message.reason || "The remote-support relay disconnected."),
+      );
+    }
+  }
+
+  // No reply can arrive once the relay is gone, so waiting out each request's
+  // timeout only delays an accurate error. Reject everything in flight with
+  // the real reason and end the read stream the same way.
+  failPending(error) {
+    this.remoteCapabilities = [];
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timeout);
+      pending.reject(error);
+    }
+    this.pending.clear();
+    this.failReadable(error);
   }
 
   failReadable(error) {
@@ -833,6 +852,11 @@ export class RemoteG2CasePort {
     if (!this.opened) return;
     try {
       await this.request("close");
+    } catch (error) {
+      // The port is closed either way once the relay or the person's browser
+      // is gone; surfacing this as a rejection produced an unhandled
+      // "Remote serial close timed out" during teardown.
+      this.lastCloseError = error;
     } finally {
       this.opened = false;
       this.readController = null;

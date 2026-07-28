@@ -57,6 +57,8 @@ import {
   TEMPLE_DATA_PACING_STOCK_LEVEL,
   TempleDataPacingController,
   nextTempleDataPacingMemory,
+  POGO_READ_ONLY_PHASE_SETTLE_MS,
+  POGO_SETUP_STOP_FIRST_SETTLE_INDEX,
   readTempleDataPacingMemory,
   writeTempleDataPacingMemory,
   TEMPLE_DATA_PACING_DEFAULT_START_LEVEL,
@@ -66,6 +68,9 @@ import {
   readPogoFlashResponseHeader,
   readRomBlockWithBoundaryRecovery,
   retryReadOnlyBlock,
+  defaultPacingThrottleProbe,
+  describeRemoteTransactOffload,
+  drainUntilQuietLine,
   templeDataSettleMilliseconds,
   writePogoFlashTransactionHeader,
   writeYhmRouteProfileMemory,
@@ -80,6 +85,14 @@ import { getVerifiedPogoBridgePayload } from "../src/lib/pogoBridge.js";
 
 const REVIEWED_STOCK_IMAGE_SHA256 =
   "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa";
+// Reviewed CFW 2.2.6.11 earned its hardware validation on 2026-07-28: a full
+// Case-USB temple transfer (Stock 2.2.6.10 -> CFW 2.2.6.11) with all 3,543
+// records and FINISH accepted, activation on the first activation reset, and a
+// verified post-reset version reply on both temples.
+const HARDWARE_VALIDATED_IMAGE_SHA256 = new Set([
+  REVIEWED_STOCK_IMAGE_SHA256,
+  REVIEWED_CFW_IMAGE_SHA256,
+]);
 
 function makeTempleFrame(payload) {
   const frame = new Uint8Array(payload.length + 5);
@@ -1609,6 +1622,30 @@ test("rehashes the main payload at the final reviewed-CFW trust gate", async () 
   );
 });
 
+test("the writer's setup stop skips the ladder rung that is too short for it", () => {
+  // The read-only version path still clears a post-reset route on the 15 s
+  // rung, so the ladder keeps it. The writer's zero-write setup stop does not:
+  // on 2026-07-28 it hit 15 s twice on a temple at 100 % battery (status 3)
+  // and only cleared on 45 s, costing a wasted setup round trip every run.
+  assert.equal(POGO_READ_ONLY_PHASE_SETTLE_MS[0], 15_000);
+  assert.equal(POGO_SETUP_STOP_FIRST_SETTLE_INDEX, 1);
+  assert.equal(
+    POGO_READ_ONLY_PHASE_SETTLE_MS[POGO_SETUP_STOP_FIRST_SETTLE_INDEX],
+    45_000,
+    "the writer's first settle must be the 45 s rung that cleared on hardware",
+  );
+  // Skipping a rung must not silently cost the writer its long tail: the
+  // post-reset charging window runs to minutes and the ladder has to outlast it.
+  const writerLadder = POGO_READ_ONLY_PHASE_SETTLE_MS.slice(
+    POGO_SETUP_STOP_FIRST_SETTLE_INDEX,
+  );
+  assert.deepEqual(writerLadder, [45_000, 90_000, 180_000, 300_000]);
+  assert.equal(
+    writerLadder.reduce((total, value) => total + value, 0),
+    615_000,
+  );
+});
+
 test("pins every temple-flash target to a distinct image and main digest", () => {
   assert.ok(TEMPLE_FLASH_TARGETS.length >= 2, "expected stock images beside the CFW");
   const images = new Set(TEMPLE_FLASH_TARGETS.map((t) => t.imageSha256));
@@ -1626,16 +1663,17 @@ test("pins every temple-flash target to a distinct image and main digest", () =>
     validated.map((t) => t.imageSha256),
     [
       "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0",
+      REVIEWED_CFW_IMAGE_SHA256,
       REVIEWED_STOCK_IMAGE_SHA256,
     ],
-    "the legacy reviewed CFW and pinned Stock image retain hardware evidence",
+    "the legacy reviewed CFW, reviewed CFW 2.2.6.11, and pinned Stock image retain hardware evidence",
   );
   assert.equal(
     TEMPLE_FLASH_TARGETS.find(
       (target) => target.imageSha256 === REVIEWED_CFW_IMAGE_SHA256,
     )?.hardwareValidated,
-    false,
-    "the new numeric-version CFW remains unqualified until a hardware run succeeds",
+    true,
+    "reviewed CFW 2.2.6.11 qualified on the 2026-07-28 Case-USB temple transfer",
   );
 });
 
@@ -1670,7 +1708,7 @@ test("keeps the generated pin table in sync with the firmware archive", async ()
       mainSha256: main.sha256,
       mainBytes: main.size,
       version: release.internalVersion ?? release.version,
-      hardwareValidated: release.sha256 === REVIEWED_STOCK_IMAGE_SHA256,
+      hardwareValidated: HARDWARE_VALIDATED_IMAGE_SHA256.has(release.sha256),
     }))];
   assert.deepEqual(
     TEMPLE_FLASH_TARGETS.map(({ label, ...rest }) => rest),
@@ -2318,4 +2356,341 @@ test("a repeat session for the same case starts from its proven YHM profiles", (
     other.adoptCaseIdentity("different-case-serial");
     assert.equal(other.routeYhmProfiles.size, 0);
   });
+});
+
+test("a transport failure mid-DATA does not slow the remembered pacing level", async () => {
+  // Regression, observed on hardware 2026-07-28: a remote-support relay
+  // session expiring mid-transfer committed a "failed" pacing outcome. The
+  // next run then started one level slower and paid that settle on every
+  // record, though nothing about the temple had misbehaved. Only an explicit
+  // temple rejection is evidence about pacing.
+  // A committed failure escalates one level: exactly how the interrupted run
+  // at level 3 left the next run starting at level 4.
+  assert.deepEqual(nextTempleDataPacingMemory({ level: 2, cleanStreak: 1 }, "failed", 3), {
+    level: 4,
+    cleanStreak: 0,
+  });
+  const source = await readFile(new URL("../src/lib/serial.js", import.meta.url), "utf8");
+  const guard = source.indexOf("if (!isExplicitTempleDataRejection(error)) throw error;");
+  const commit = source.indexOf('pacing.commitMemory("failed")');
+  assert.ok(guard !== -1 && commit !== -1);
+  assert.ok(
+    guard < commit,
+    "the explicit-rejection guard must run before the pacing memory is committed",
+  );
+});
+
+test("the flash transport reports whether records are batched over a relay", () => {
+  assert.deepEqual(describeRemoteTransactOffload({ transportKind: "webusb" }), {
+    offloaded: false,
+    reason: "local transport",
+  });
+  assert.deepEqual(
+    describeRemoteTransactOffload({
+      transportKind: "remote",
+      supportsExchangeBatch: () => true,
+    }),
+    { offloaded: true, reason: null },
+  );
+  // An old relay omits serialOperations entirely.
+  assert.match(
+    describeRemoteTransactOffload({
+      transportKind: "remote",
+      supportsExchangeBatch: () => false,
+      connection: {},
+    }).reason,
+    /relay does not advertise/,
+  );
+  // A relay that advertises but cannot forward batches.
+  assert.match(
+    describeRemoteTransactOffload({
+      transportKind: "remote",
+      supportsExchangeBatch: () => false,
+      connection: { serialOperations: ["get_info", "open", "write"] },
+    }).reason,
+    /relay does not forward batches/,
+  );
+  // The relay is capable, so the person's browser is the missing leg.
+  assert.match(
+    describeRemoteTransactOffload({
+      transportKind: "remote",
+      supportsExchangeBatch: () => false,
+      connection: { serialOperations: ["open", "exchange_batch"] },
+    }).reason,
+    /person's browser does not advertise/,
+  );
+});
+
+function fakeLine(chunks) {
+  const slices = [...chunks];
+  const cleared = [];
+  const transport = {
+    queuedBytes: 0,
+    clear() {
+      cleared.push(this.queuedBytes);
+      this.queuedBytes = 0;
+    },
+  };
+  // Each simulated sleep delivers the next slice of line noise.
+  const sleeper = async () => {
+    transport.queuedBytes = slices.length ? slices.shift() : 0;
+  };
+  return { transport, cleared, sleeper };
+}
+
+test("the ROM sync waits for the line to go quiet before the sync byte", async () => {
+  // Two slices of straggling reset output over a relay, then silence.
+  const busy = fakeLine([12, 4, 0]);
+  assert.equal(
+    await drainUntilQuietLine(busy.transport, {
+      remote: true,
+      linkRttMs: 300,
+      sleeper: busy.sleeper,
+    }),
+    true,
+  );
+  // Drained the initial queue plus each noisy slice.
+  assert.deepEqual(busy.cleared, [0, 12, 4]);
+
+  // An already-quiet local line proceeds after a single slice.
+  const quiet = fakeLine([0]);
+  assert.equal(
+    await drainUntilQuietLine(quiet.transport, { sleeper: quiet.sleeper }),
+    true,
+  );
+  assert.deepEqual(quiet.cleared, [0]);
+});
+
+test("a Case that booted its application still ends the quiet wait", async () => {
+  // The application never stops emitting; the wait must stay bounded so the
+  // caller's boot-select retry can run.
+  const noisy = fakeLine(Array.from({ length: 500 }, () => 9));
+  assert.equal(
+    await drainUntilQuietLine(noisy.transport, {
+      remote: true,
+      linkRttMs: 300,
+      sleeper: noisy.sleeper,
+    }),
+    false,
+  );
+  // Bounded: the initial drain, nine 300 ms slices inside the 2500 ms
+  // budget, and the final drain.
+  assert.equal(noisy.cleared.length, 11);
+});
+
+// Field evidence, remote-support session SBTF-JCML on 2026-07-28: the same
+// physical Case (UID 00500041514250052037384b) was filed under its real
+// identity in one capture and under the anonymous placeholder in the next,
+// because the 96-bit UID is printed only in the power-up banner and the first
+// bytes after that reset arrived as mojibake over the relay. The session then
+// re-derived observed-33 from scratch and, on a later load, seeded reviewed-22
+// from the wrong record. Identity therefore keys on caseDeviceKey, and a
+// capture with no readable identifier is repeated once before anything is
+// filed.
+
+test("case identity keys per-Case memory on the decoded UID", () => {
+  withFakeLocalStorage(() => {
+    const uid = "00500041514250052037384b";
+    writeYhmRouteProfileMemory(`uid:${uid}`, "left", YHM_PROFILE_OBSERVED_33);
+    const logged = [];
+    const session = new G2CaseSession(null, {
+      log: (message) => logged.push(message),
+    });
+    session.adoptCaseIdentity({ serialNumber: uid, identifier: null });
+    assert.equal(session.caseStorageSerial, `uid:${uid}`);
+    // Pacing memory and YHM memory must land on one key, not two.
+    assert.equal(session.deviceKey, `uid:${uid}`);
+    assert.equal(
+      session.routeYhmProfiles.get("left"),
+      YHM_PROFILE_OBSERVED_33,
+    );
+    assert.equal(
+      logged.some((line) => line.includes(YHM_PROFILE_OBSERVED_33)),
+      true,
+    );
+    // A profile written this session lands under the same key.
+    session.rememberRouteYhmProfile("right", YHM_PROFILE_OBSERVED_33);
+    assert.deepEqual(readYhmRouteProfileMemory(`uid:${uid}`), {
+      left: YHM_PROFILE_OBSERVED_33,
+      right: YHM_PROFILE_OBSERVED_33,
+    });
+  });
+});
+
+test("a Case with no UID still gets memory from its factory identifier", () => {
+  withFakeLocalStorage(() => {
+    const session = new G2CaseSession(null, { log: () => {} });
+    session.adoptCaseIdentity({
+      serialNumber: null,
+      identifier: "1A 2B 3C 4D 5E 6F 70 81",
+    });
+    assert.equal(session.caseStorageSerial, "factory:1a2b3c4d5e6f7081");
+    session.rememberRouteYhmProfile("left", YHM_PROFILE_OBSERVED_33);
+    assert.deepEqual(readYhmRouteProfileMemory("factory:1a2b3c4d5e6f7081"), {
+      left: YHM_PROFILE_OBSERVED_33,
+    });
+  });
+});
+
+test("an unidentifiable Case never shares the anonymous memory record", () => {
+  withFakeLocalStorage(() => {
+    writeYhmRouteProfileMemory(
+      "unidentified-case",
+      "left",
+      YHM_PROFILE_OBSERVED_33,
+    );
+    const logged = [];
+    const session = new G2CaseSession(null, {
+      log: (message) => logged.push(message),
+    });
+    session.adoptCaseIdentity({ serialNumber: null, identifier: null });
+    // No identity, so nothing is seeded and nothing claims to be "this exact
+    // Case"; live evidence has to derive the profile again.
+    assert.equal(session.caseStorageSerial, null);
+    assert.equal(session.routeYhmProfiles.size, 0);
+    assert.deepEqual(logged, []);
+    session.rememberRouteYhmProfile("left", YHM_PROFILE_REVIEWED_22);
+    assert.deepEqual(readYhmRouteProfileMemory("unidentified-case"), {
+      left: YHM_PROFILE_OBSERVED_33,
+    });
+  });
+});
+
+// analyze() only needs a port object to reach identity adoption; the ROM
+// loader that runs afterwards has nothing to talk to and rejects, which is
+// where these tests stop.
+function fakeAnalyzePort() {
+  return { getInfo: () => ({}) };
+}
+
+test("a console capture with no readable identifier is repeated once", async () => {
+  await withFakeLocalStorage(async () => {
+    const captures = [
+      // The clipped banner: telemetry survived, the UID line did not.
+      {
+        text: "****** B200 vol:4088 pct:94, open:1",
+        caseVersion: "1.2.57",
+        serialNumber: null,
+        identifier: null,
+      },
+      {
+        text: "****** B200 1.2.57 00500041514250052037384b******",
+        caseVersion: "1.2.57",
+        serialNumber: "00500041514250052037384b",
+        identifier: null,
+      },
+    ];
+    let calls = 0;
+    const logged = [];
+    const session = new G2CaseSession(fakeAnalyzePort(), {
+      log: (message) => logged.push(message),
+      progress: () => {},
+    });
+    session.captureConsoleReport = async () => captures[calls++];
+    // analyze() cannot reach the ROM loader with a null port; identity is
+    // adopted before that point, which is what this asserts.
+    await assert.rejects(() => session.analyze());
+    assert.equal(calls, 2);
+    assert.equal(
+      session.caseStorageSerial,
+      "uid:00500041514250052037384b",
+    );
+    assert.equal(
+      logged.some((line) => line.includes("repeated capture recovered")),
+      true,
+    );
+  });
+});
+
+test("a Case that truly reports no identifier is not retried forever", async () => {
+  await withFakeLocalStorage(async () => {
+    let calls = 0;
+    const session = new G2CaseSession(fakeAnalyzePort(), {
+      log: () => {},
+      progress: () => {},
+    });
+    session.captureConsoleReport = async () => {
+      calls += 1;
+      return {
+        text: "****** B200 vol:4088 pct:94, open:1",
+        caseVersion: "1.2.57",
+        serialNumber: null,
+        identifier: null,
+      };
+    };
+    await assert.rejects(() => session.analyze());
+    assert.equal(calls, 2);
+    assert.equal(session.caseStorageSerial, null);
+  });
+});
+
+test("memory written under the old bare-serial key migrates to the device key", () => {
+  withFakeLocalStorage(() => {
+    const uid = "00240024514250032037384b";
+    // Shape written by releases before identity keyed on caseDeviceKey.
+    writeYhmRouteProfileMemory(uid, "left", YHM_PROFILE_OBSERVED_33);
+    const session = new G2CaseSession(null, { log: () => {} });
+    session.adoptCaseIdentity({ serialNumber: uid, identifier: null });
+    assert.equal(
+      session.routeYhmProfiles.get("left"),
+      YHM_PROFILE_OBSERVED_33,
+    );
+    assert.deepEqual(readYhmRouteProfileMemory(`uid:${uid}`), {
+      left: YHM_PROFILE_OBSERVED_33,
+    });
+  });
+});
+
+test("ACK samples taken while the tab is throttled never escalate pacing", () => {
+  // Measured 2026-07-28: the same link and firmware cost 372 ms per record
+  // foregrounded and 967 ms hidden. Those hidden samples describe the
+  // operator's throttled event loop, not the temple, and previously could
+  // trip the congestion threshold and permanently slow the remembered level.
+  const warnings = [];
+  const controller = new TempleDataPacingController({
+    startLevel: 2,
+    totalBytes: 3_539_474,
+    log: (message, tone) => warnings.push([message, tone]),
+    isThrottled: () => true,
+  });
+  for (let index = 0; index < 40; index += 1) {
+    assert.equal(controller.noteAckLatency(index, 9_000), 0);
+  }
+  assert.equal(controller.level, 2);
+  assert.equal(controller.escalations, 0);
+  assert.equal(controller.throttledSamples, 40);
+  // Nothing throttled reaches the statistics either.
+  assert.equal(controller.summary().ackCount, 0);
+  assert.equal(controller.summary().baselineMs, null);
+  // The operator is told once, not once per record.
+  assert.equal(warnings.filter(([, tone]) => tone === "warn").length, 1);
+  assert.match(warnings[0][0], /Keep this tab in front/);
+
+  // A genuinely slow temple, measured while visible, still escalates.
+  const visible = new TempleDataPacingController({
+    startLevel: 2,
+    totalBytes: 3_539_474,
+    isThrottled: () => false,
+  });
+  assert.equal(
+    visible.noteAckLatency(0, 9_000),
+    TEMPLE_DATA_PACING_LEVELS[3].late,
+  );
+  assert.equal(visible.level, 3);
+});
+
+test("the throttle probe reports only a hidden document", () => {
+  const original = globalThis.document;
+  try {
+    globalThis.document = { visibilityState: "hidden" };
+    assert.equal(defaultPacingThrottleProbe(), true);
+    globalThis.document = { visibilityState: "visible" };
+    assert.equal(defaultPacingThrottleProbe(), false);
+    delete globalThis.document;
+    // Node has no document at all; nothing is throttled there.
+    assert.equal(defaultPacingThrottleProbe(), false);
+  } finally {
+    if (original === undefined) delete globalThis.document;
+    else globalThis.document = original;
+  }
 });

@@ -194,6 +194,26 @@ export class RemoteSupportConnection {
         }
         if (this.socket === socket) {
           this.socket = null;
+          // Tell anything waiting on a relayed reply that no reply can
+          // arrive, so it fails now with an accurate reason instead of
+          // waiting out a per-request timeout. A dropped relay used to
+          // surface as "Remote serial close timed out" fifteen seconds
+          // later, which describes the timer rather than the cause.
+          const closure = {
+            type: "relay_closed",
+            reason:
+              event.reason ||
+              (this.userClosed
+                ? "The support session was closed."
+                : `The remote-support relay disconnected (${event.code}).`),
+          };
+          for (const listener of this.messageListeners) {
+            try {
+              listener(closure);
+            } catch {
+              // A listener failing must not stop the others from learning.
+            }
+          }
           this.onState({
             status: this.userClosed ? "closed" : "disconnected",
             role: this.role,

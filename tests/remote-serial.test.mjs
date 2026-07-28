@@ -448,3 +448,32 @@ test("exchange batches enforce their declarative bounds on both sides", async (t
   });
   assert.ok(await closed);
 });
+
+test("a dropped relay fails pending requests at once instead of timing out", async (t) => {
+  const { relay, remotePort, operator } = await relayedPortPair(t);
+
+  // A request that the device will never answer, because the relay dies.
+  const pending = remotePort.exchangeBatch([
+    { op: "write", data: encodeRemoteBytes(Uint8Array.from([1])) },
+    {
+      op: "expect",
+      data: encodeRemoteBytes(Uint8Array.from([0xc3])),
+      timeoutMs: 15_000,
+    },
+  ]);
+  const reader = remotePort.readable.getReader();
+  const pendingRead = reader.read();
+
+  await relay.close();
+
+  // Rejects with the relay's reason, well inside the 15 s request timeout.
+  await assert.rejects(pending, /relay disconnected|closed/i);
+  await assert.rejects(pendingRead, /relay disconnected|closed/i);
+  reader.releaseLock();
+
+  // Closing afterwards is quiet: the port is closed either way.
+  await remotePort.close();
+  assert.equal(remotePort.opened, false);
+  assert.equal(remotePort.supportsExchangeBatch(), false);
+  operator.close();
+});

@@ -10,6 +10,8 @@ import {
 } from "../src/lib/deviceIdentity.js";
 import {
   buildDeviceHistoryEntry,
+  detectTempleFirmwareRegression,
+  lastRecordedTempleFirmware,
   summarizeDeviceHistory,
   summarizeRouteResult,
 } from "../src/lib/deviceHistory.js";
@@ -176,4 +178,76 @@ test("history summary exposes per-route asymmetry across operations", () => {
 test("history summary tolerates empty and malformed input", () => {
   assert.equal(summarizeDeviceHistory(null).operations, 0);
   assert.deepEqual(summarizeDeviceHistory([]).routes, {});
+});
+
+// Remote-support session SBTF-JCML, 2026-07-28. The right temple was verified
+// running 2.2.6.10 after an activation reset at 11:40, and reported 2.0.7.16 on
+// a read-only probe 73 minutes later with nothing written in between. Nothing
+// in a single session shows that; reconstructing it took a 1,225-line
+// transcript. History now carries the versions so the next operator sees it.
+const HISTORY = [
+  {
+    recordedAt: "2026-07-27T23:38:00.000Z",
+    templeFirmware: { left: "2.1.1.12", right: "2.1.1.12" },
+    routes: [
+      { route: "right", outcome: "success", postflightFirmware: "2.2.6.10" },
+      { route: "left", outcome: "success", postflightFirmware: "2.2.6.10" },
+    ],
+  },
+];
+
+test("history keeps the firmware each temple was last seen running", () => {
+  const entry = buildDeviceHistoryEntry({
+    operation: "glasses-flash",
+    recordedAt: "2026-07-28T18:40:00.000Z",
+    fingerprint: {
+      temples: {
+        left: { firmware: "2.1.1.12", hardware: 5 },
+        right: { firmware: "2.2.6.10", hardware: 5 },
+      },
+    },
+  });
+  assert.deepEqual(entry.templeFirmware, {
+    left: "2.1.1.12",
+    right: "2.2.6.10",
+  });
+  // A proven postflight version outranks what was observed on arrival.
+  assert.deepEqual(lastRecordedTempleFirmware(HISTORY), {
+    left: { firmware: "2.2.6.10", recordedAt: "2026-07-27T23:38:00.000Z" },
+    right: { firmware: "2.2.6.10", recordedAt: "2026-07-27T23:38:00.000Z" },
+  });
+});
+
+test("a temple running an older image than last recorded is reported", () => {
+  const findings = detectTempleFirmwareRegression(HISTORY, {
+    left: "2.0.7.16",
+    right: "2.0.7.16",
+  });
+  assert.equal(findings.length, 2);
+  assert.deepEqual(findings[0], {
+    route: "left",
+    previousFirmware: "2.2.6.10",
+    previousRecordedAt: "2026-07-27T23:38:00.000Z",
+    observedFirmware: "2.0.7.16",
+  });
+});
+
+test("an unchanged, newer, or unknown temple version is not a regression", () => {
+  assert.deepEqual(
+    detectTempleFirmwareRegression(HISTORY, {
+      left: "2.2.6.10",
+      right: "2.2.6.11",
+    }),
+    [],
+  );
+  // No prior record, no observation, and unparsable text all yield no finding
+  // rather than a guess.
+  assert.deepEqual(
+    detectTempleFirmwareRegression([], { left: "2.0.7.16", right: null }),
+    [],
+  );
+  assert.deepEqual(
+    detectTempleFirmwareRegression(HISTORY, { left: null, right: "unknown" }),
+    [],
+  );
 });

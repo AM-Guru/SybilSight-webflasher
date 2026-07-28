@@ -31,11 +31,19 @@ import {
 } from "./lib/backup.js";
 import { buildG2DeviceAnalytics } from "./lib/analytics.js";
 import {
+  consoleTranscriptStorageKey,
+  pruneConsoleTranscripts,
+  readConsoleTranscript,
+  resolveConsoleTranscriptTabId,
+  writeConsoleTranscript,
+} from "./lib/consoleTranscript.js";
+import {
   buildDeviceFingerprint,
   caseDeviceKey,
   usbBridgeRevisionOf,
 } from "./lib/deviceIdentity.js";
 import {
+  detectTempleFirmwareRegression,
   readDeviceHistory,
   readDeviceLabel,
   recordDeviceOperation,
@@ -43,6 +51,8 @@ import {
   writeDeviceLabel,
 } from "./lib/deviceHistory.js";
 import { decodeApollo510RecoveryConfig } from "./lib/recoveryConfig.js";
+import { TEMPLE_FLASH_TARGETS } from "./lib/templeFlashTargets.js";
+import { findUnservedPinnedImages } from "./lib/catalogCoverage.js";
 import {
   buildBundleDifferencePlan,
   findStockCfwCounterpartRelease,
@@ -1038,8 +1048,13 @@ function downloadBlob(blob, name) {
 
 // The transcript outlives the 300-entry console display so a crash or tab
 // close during a recovery cannot destroy the evidence of what was written to
-// the device. It is persisted to localStorage and recovered on the next load.
-const CONSOLE_TRANSCRIPT_STORAGE_KEY = "g2wf.console-transcript.v1";
+// the device. It is persisted per tab (see lib/consoleTranscript.js) and
+// recovered on that tab's next load.
+const CONSOLE_TRANSCRIPT_STORAGE_KEY = consoleTranscriptStorageKey(
+  resolveConsoleTranscriptTabId(
+    typeof window === "undefined" ? null : window.sessionStorage,
+  ),
+);
 const CONSOLE_TRANSCRIPT_ENTRY_LIMIT = 5000;
 const TRANSCRIPT_NOTICE_TIME = "--:--:--";
 
@@ -1055,23 +1070,13 @@ function isTranscriptRecoveryNotice(entry) {
 }
 
 function readStoredConsoleTranscript() {
-  try {
-    const raw = window.localStorage.getItem(CONSOLE_TRANSCRIPT_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed?.entries)) return null;
-    const entries = parsed.entries.filter(
-      (entry) =>
-        typeof entry?.time === "string" && typeof entry?.message === "string",
-    );
-    if (!entries.length) return null;
-    return {
-      savedAt: typeof parsed.savedAt === "string" ? parsed.savedAt : null,
-      entries,
-    };
-  } catch {
-    return null;
-  }
+  const recovered = readConsoleTranscript(
+    window.localStorage,
+    CONSOLE_TRANSCRIPT_STORAGE_KEY,
+  );
+  // Housekeeping only; a live transcript in another tab is left alone.
+  pruneConsoleTranscripts(window.localStorage, CONSOLE_TRANSCRIPT_STORAGE_KEY);
+  return recovered;
 }
 
 function App() {
@@ -1174,18 +1179,12 @@ function App() {
     // a broken build left recovery throwing, and the first save afterwards
     // replaced a 1,727-entry history with a handful of new lines.
     if (!transcriptCustodyRef.current) return;
-    try {
-      window.localStorage.setItem(
-        CONSOLE_TRANSCRIPT_STORAGE_KEY,
-        JSON.stringify({
-          savedAt: new Date().toISOString(),
-          entries: transcriptRef.current,
-        }),
-      );
-    } catch {
-      // Storage may be full or unavailable; the in-memory transcript still
-      // serves downloads for this session.
-    }
+    writeConsoleTranscript(
+      window.localStorage,
+      CONSOLE_TRANSCRIPT_STORAGE_KEY,
+      transcriptRef.current,
+      new Date().toISOString(),
+    );
   }, []);
 
   const persistTranscript = useCallback(() => {
@@ -1336,10 +1335,21 @@ function App() {
           ...current,
           peerOnline: message.online,
         }));
+        const peerLabel =
+          message.role === "operator" ? "Technician" : "Person's browser";
         recordSupportEvent(
-          `${message.role === "operator" ? "Technician" : "Person's browser"} ${
-            message.online ? "connected" : "disconnected"
-          }`,
+          `${peerLabel} ${message.online ? "connected" : "disconnected"}`,
+        );
+        // Also stamp the transition into the recovery console log. A relay drop
+        // surfaces on the far side only as whatever request happened to be in
+        // flight ("The serial writer is not open."), which reads like a device
+        // fault; without this line the downloaded transcript gives no way to
+        // tell a dropped customer browser from a failing Case.
+        addLog(
+          message.online
+            ? `${peerLabel} connected to the remote-support relay.`
+            : `${peerLabel} disconnected from the remote-support relay; any operation in flight will fail until it reconnects.`,
+          message.online ? "success" : "warn",
         );
         if (
           message.role === "operator" &&
@@ -1394,7 +1404,7 @@ function App() {
         }));
       }
     },
-    [pogoResults, recordSupportEvent, report],
+    [addLog, pogoResults, recordSupportEvent, report],
   );
 
   const newSupportConnection = useCallback(() => {
@@ -1615,6 +1625,31 @@ function App() {
       active = false;
     };
   }, []);
+
+  // Warn when the served library is behind the images this build already
+  // trusts — the condition that let production offer only a legacy CFW while
+  // the bundle knew a newer one. Retired older images are ignored on purpose;
+  // see findUnservedPinnedImages for why the check is one-directional.
+  const catalogCoverageWarnedRef = useRef("");
+  useEffect(() => {
+    if (catalogState !== "ready") return;
+    const missing = findUnservedPinnedImages({
+      catalog,
+      targets: TEMPLE_FLASH_TARGETS,
+    });
+    const signature = missing.map((target) => target.imageSha256).join(",");
+    if (catalogCoverageWarnedRef.current === signature) return;
+    catalogCoverageWarnedRef.current = signature;
+    if (missing.length === 0) return;
+    addLog(
+      `Firmware library is missing ${missing.length} pinned image${
+        missing.length === 1 ? "" : "s"
+      } this build already trusts: ${missing
+        .map((target) => `${target.label} (${target.imageSha256.slice(0, 12)}…)`)
+        .join(", ")}. The served catalog is older than the running bundle, so those images cannot be selected here and a temple can end up on an older build than intended. Republish public/firmware-updates/ alongside the app bundle.`,
+      "warn",
+    );
+  }, [addLog, catalog, catalogState]);
 
   useEffect(
     () => () => {
@@ -2385,6 +2420,50 @@ function App() {
     [describeConnectedDevice, report],
   );
 
+  // A temple flash queries and verifies the version it just installed, but the
+  // Smart Glasses panels only ever filled from an explicit read-only probe —
+  // so immediately after a verified write they still read "Version not
+  // queried", and the operator had to re-probe a freshly written temple to see
+  // what the run already knew. Fold those replies into the same panel state.
+  const absorbTempleFlashVersions = useCallback((audit) => {
+    const routeResults = audit?.routeResults;
+    if (!Array.isArray(routeResults)) return;
+    const observedAt = new Date().toISOString();
+    const observed = routeResults
+      .map((routeResult) => {
+        const version =
+          routeResult?.postflightVersion ?? routeResult?.preflightVersion;
+        if (!routeResult?.route || !version?.firmware) return null;
+        return [
+          routeResult.route,
+          {
+            version: {
+              operation: "version",
+              route: routeResult.route,
+              decoded: {
+                kind: "version",
+                firmwareVersion: version.firmware,
+                hardwareRevision: version.hardware ?? null,
+              },
+              transportProof: {
+                restoredMask: routeResult.yhmRestoreVerified ? 0x3ff : null,
+              },
+              observedAt,
+            },
+          },
+        ];
+      })
+      .filter(Boolean);
+    if (observed.length === 0) return;
+    setPogoResults((current) => {
+      const next = { ...current };
+      for (const [route, value] of observed) {
+        next[route] = { ...current[route], ...value };
+      }
+      return next;
+    });
+  }, []);
+
   const connectedDevice = useMemo(
     () => describeConnectedDevice(),
     [describeConnectedDevice],
@@ -2392,6 +2471,18 @@ function App() {
   const connectedDeviceHistory = useMemo(
     () => summarizeDeviceHistory(deviceHistory[connectedDevice.deviceKey]),
     [connectedDevice.deviceKey, deviceHistory],
+  );
+  // A temple running an older image than this browser last recorded on it is
+  // the one thing a single session cannot see, and it changes the diagnosis:
+  // an image that does not stay installed is a different fault from one that
+  // will not write. Surfaced, never gating.
+  const templeFirmwareRegressions = useMemo(
+    () =>
+      detectTempleFirmwareRegression(deviceHistory[connectedDevice.deviceKey], {
+        left: pogoResults.left?.version?.decoded?.firmwareVersion ?? null,
+        right: pogoResults.right?.version?.decoded?.firmwareVersion ?? null,
+      }),
+    [connectedDevice.deviceKey, deviceHistory, pogoResults],
   );
 
   // Load the saved label whenever a different physical Case is connected.
@@ -2449,6 +2540,7 @@ function App() {
         );
         setTempleFlashAudit(audit);
         recordInstalledProvenance(audit);
+        absorbTempleFlashVersions(audit);
         recordDeviceRun("temple-flash", audit, audit?.outcome ?? "success");
         setTempleFlashText("");
         setTempleFlashSeated(false);
@@ -2461,6 +2553,7 @@ function App() {
         if (caught?.audit) {
           setTempleFlashAudit(caught.audit);
           recordInstalledProvenance(caught.audit);
+          absorbTempleFlashVersions(caught.audit);
           recordDeviceRun("temple-flash", caught.audit, "failed_or_uncertain");
         }
         throw caught;
@@ -3255,8 +3348,16 @@ function App() {
               >
                 {catalog.map((release) => (
                   <option value={release.id} key={release.id}>
+                    {/* Label the version this image actually installs. Showing
+                        baseVersion here made reviewed CFW 2.2.6.11 read as
+                        "CFW · G2 2.2.6.10", indistinguishable from the legacy
+                        2.2.6.10 CFW build. */}
                     {release.channel === "custom"
-                      ? `CFW · G2 ${release.baseVersion}`
+                      ? `CFW · G2 ${release.version}${
+                          release.baseVersion
+                            ? ` (stock ${release.baseVersion} base)`
+                            : ""
+                        }`
                       : `Stock · G2 ${release.version}`}
                   </option>
                 ))}
@@ -3591,6 +3692,26 @@ function App() {
                       device. Recording them here attaches them to this Case in
                       every later audit and history entry.
                     </small>
+                    {templeFirmwareRegressions.length ? (
+                      <small
+                        className="device-history-regression"
+                        role="status"
+                      >
+                        {templeFirmwareRegressions.map((finding) => (
+                          <span key={finding.route}>
+                            The {finding.route} temple now reports{" "}
+                            {finding.observedFirmware}, older than the{" "}
+                            {finding.previousFirmware} this browser last
+                            recorded on this Case
+                            {finding.previousRecordedAt
+                              ? ` on ${new Date(finding.previousRecordedAt).toLocaleString()}`
+                              : ""}
+                            . Confirm whether these are the same temples before
+                            treating it as an image that did not stay installed.
+                          </span>
+                        ))}
+                      </small>
+                    ) : null}
                     {connectedDeviceHistory.operations > 0 ? (
                       <small className="device-history-summary">
                         {connectedDeviceHistory.operations} recorded operation
@@ -3912,7 +4033,7 @@ function App() {
                     <option value={release.id} key={release.id}>
                       {release.caseRecoveryEligible
                         ? `Charging Case ${release.caseVersion} · G2 ${release.version}`
-                        : `Smart Glasses ${release.baseVersion ?? release.version} · CFW`}
+                        : `Smart Glasses ${release.version} · CFW`}
                     </option>
                   ))}
                 </select>

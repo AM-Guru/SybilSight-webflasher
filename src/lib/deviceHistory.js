@@ -110,6 +110,12 @@ export function buildDeviceHistoryEntry({
     transport: fingerprint?.transport?.kind ?? null,
     usbBridgeRevision: fingerprint?.transport?.usbBridgeRevision ?? null,
     caseFirmware: fingerprint?.case?.firmware ?? null,
+    // What each temple actually reported at the time, so a later session can
+    // ask whether an image it verified as installed is still there.
+    templeFirmware: {
+      left: fingerprint?.temples?.left?.firmware ?? null,
+      right: fingerprint?.temples?.right?.firmware ?? null,
+    },
     operatorLabel: fingerprint?.operatorLabel ?? null,
     imageSha256: audit?.imageSha256 ?? null,
     imageLabel: audit?.imageLabel ?? null,
@@ -200,5 +206,69 @@ export function summarizeDeviceHistory(entries) {
         },
       ]),
     ),
+    lastTempleFirmware: lastRecordedTempleFirmware(list),
   };
+}
+
+function compareFirmwareVersions(left, right) {
+  const parse = (version) => {
+    const text = String(version ?? "").trim();
+    if (!/^\d+(?:\.\d+)*$/.test(text)) return null;
+    return text.split(".").map((part) => Number.parseInt(part, 10));
+  };
+  const leftParts = parse(left);
+  const rightParts = parse(right);
+  if (!leftParts || !rightParts) return null;
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+    if (difference) return Math.sign(difference);
+  }
+  return 0;
+}
+
+// The newest version each temple was last seen running, preferring what a
+// route result proved after a write over what was merely observed on arrival.
+export function lastRecordedTempleFirmware(entries) {
+  const list = Array.isArray(entries) ? entries : [];
+  const latest = { left: null, right: null };
+  for (const entry of list) {
+    for (const route of ["left", "right"]) {
+      const fromRoute = (entry.routes ?? []).find(
+        (result) => result.route === route,
+      )?.postflightFirmware;
+      const observed = fromRoute ?? entry.templeFirmware?.[route] ?? null;
+      if (!observed) continue;
+      latest[route] = { firmware: observed, recordedAt: entry.recordedAt ?? null };
+    }
+  }
+  return latest;
+}
+
+// Did a temple come back running an OLDER image than this browser last saw on
+// it? Nothing in a single session can answer that, and the answer changes the
+// diagnosis completely: a temple that silently reverts is not the same problem
+// as a temple that refuses a write.
+//
+// Diagnostic only - like everything else in this file it must never gate a
+// write. An unknown or unparsable version yields no finding rather than a
+// guess, and a swapped-in different pair of temples looks identical to a
+// revert from here, so the finding says what was observed and leaves the
+// conclusion to the operator.
+export function detectTempleFirmwareRegression(entries, observed) {
+  const previous = lastRecordedTempleFirmware(entries);
+  const findings = [];
+  for (const route of ["left", "right"]) {
+    const before = previous[route]?.firmware ?? null;
+    const now = observed?.[route] ?? null;
+    if (!before || !now) continue;
+    if (compareFirmwareVersions(now, before) !== -1) continue;
+    findings.push({
+      route,
+      previousFirmware: before,
+      previousRecordedAt: previous[route]?.recordedAt ?? null,
+      observedFirmware: now,
+    });
+  }
+  return findings;
 }

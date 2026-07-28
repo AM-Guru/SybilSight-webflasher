@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { WebSocket } from "ws";
 import {
+  REMOTE_SERIAL_OPERATIONS,
   REMOTE_SUPPORT_PROTOCOL,
   createRemoteSupportServer,
 } from "../deploy/homeassistant-addon/server.mjs";
@@ -71,10 +72,14 @@ test("pairs an authenticated technician with one ephemeral device session", asyn
 
   const health = await fetch(`${baseUrl}/healthz`);
   assert.equal(health.status, 200);
+  // healthz carries the capability and expiry contract so an outdated relay
+  // is detectable with a plain GET, without opening a WebSocket.
   assert.deepEqual(await health.json(), {
     ok: true,
     protocol: REMOTE_SUPPORT_PROTOCOL,
     sessions: 0,
+    serialOperations: [...REMOTE_SERIAL_OPERATIONS],
+    sessionTtlMs: 24 * 60 * 60 * 1000,
   });
 
   const device = await openSocket(webSocketUrl);

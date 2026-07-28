@@ -164,6 +164,12 @@ export function createRemoteSupportServer({
           ok: true,
           protocol: REMOTE_SUPPORT_PROTOCOL,
           sessions: onlineSessions,
+          // Advertised here as well as in the ready message so an outdated
+          // relay is visible from a plain GET. A stale deployment silently
+          // disabled batched exchanges and kept the old 2-hour expiry, and
+          // neither was detectable without opening a WebSocket.
+          serialOperations: REMOTE_SERIAL_OPERATIONS,
+          sessionTtlMs,
         })}\n`,
       );
       return;

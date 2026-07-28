@@ -1469,6 +1469,27 @@ that the interface is already claimed, use Web Serial on that computer; native
 USB serial drivers can make the same interface unavailable to WebUSB. The
 WebUSB option is intentionally hidden outside that support state.
 
+**A remote transfer is far slower than expected**
+
+Keep the technician's WebFlasher tab in the foreground for the whole
+transfer. Browsers throttle timers in hidden tabs, and that throttling is
+paid once per record: the same link and firmware measured 372 ms per record
+foregrounded and 967 ms hidden, so a backgrounded tab roughly halves
+throughput. The console warns when the tab goes hidden, ACK samples measured
+while hidden are excluded from congestion decisions so they cannot escalate
+pacing, and the transfer itself remains correct either way.
+
+If records are slow with the tab in front, check the transfer's first log
+lines. Each component states whether its flow-control loop runs as one
+batched exchange in the person's browser, and when it does not it names the
+missing leg — the relay not advertising its serial operations, the relay not
+forwarding batches, or the person's browser not advertising batch support.
+`https://webflasher.sybilsight.com/remote-support/healthz` reports the
+relay's `serialOperations` and `sessionTtlMs`, so an outdated relay is
+visible without opening a WebSocket. Both the site and the relay app must be
+updated together; either one alone silently falls back to one relay round
+trip per 32-byte chunk.
+
 **Remote support cannot join**
 
 Confirm that the code still matches the person's open session, retrieve the

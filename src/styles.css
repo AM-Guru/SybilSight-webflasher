@@ -5580,3 +5580,11 @@ body {
   opacity: 0.85;
   line-height: 1.5;
 }
+
+.device-history-regression {
+  display: block;
+  line-height: 1.5;
+  color: var(--amber);
+  border-left: 2px solid var(--amber);
+  padding-left: 0.75rem;
+}
