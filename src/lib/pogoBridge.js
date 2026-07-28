@@ -2,9 +2,9 @@ import { equalBytes, hexBytes, readU32LE, sha256Hex } from "./firmware.js";
 import {
   YHM_PROFILE_OBSERVED_33,
   YHM_PROFILE_OBSERVED_45,
-  YHM_PROFILE_PATCH_BYTES,
   YHM_PROFILE_REVIEWED_22,
   requireYhmProfile,
+  yhmProfileRegister8,
 } from "./yhmProfiles.js";
 
 export const POGO_BRIDGE_ADDRESS = 0x20010000;
@@ -17,6 +17,10 @@ export const POGO_BRIDGE_OBSERVED_33_SHA256 =
   "3ca8ed1d8d37b2edef62dcb6915b5ec4b1d439160da0a89e93aa74901d760ef6";
 export const POGO_BRIDGE_OBSERVED_45_SHA256 =
   "1a4cde093bc804e1b7e176229b0af346b0423c3a1d85fc5c908f1e38233ed45c";
+// Regression pins for register-8 values already exercised end-to-end. Any
+// other observed profile is verified by construction instead: the reviewed
+// payload's pin is checked first, and the derivation touches only the four
+// baseline-table register-8 offsets.
 export const POGO_BRIDGE_PROFILE_SHA256 = Object.freeze({
   [YHM_PROFILE_REVIEWED_22]: POGO_BRIDGE_SHA256,
   [YHM_PROFILE_OBSERVED_33]: POGO_BRIDGE_OBSERVED_33_SHA256,
@@ -101,10 +105,11 @@ export async function getVerifiedPogoBridgePayload(
         "The pinned pogo bridge YHM profile table differs from the reviewed layout.",
       );
     }
-    payload[offset] = YHM_PROFILE_PATCH_BYTES[profile];
+    payload[offset] = yhmProfileRegister8(profile);
   }
   const digest = await sha256Hex(payload);
-  if (digest !== POGO_BRIDGE_PROFILE_SHA256[profile]) {
+  const regressionPin = POGO_BRIDGE_PROFILE_SHA256[profile];
+  if (regressionPin && digest !== regressionPin) {
     throw new Error(
       `The pinned ${profile} pogo bridge failed its SHA-256 check.`,
     );

@@ -3,11 +3,11 @@ import { findTempleFlashTarget } from "./templeFlashTargets.js";
 import {
   YHM_PROFILE_OBSERVED_33,
   YHM_PROFILE_OBSERVED_45,
-  YHM_PROFILE_PATCH_BYTES,
   YHM_PROFILE_REVIEWED_22,
   identifyYhmBaselineProfile,
   isYhmBaselineAllowed,
   requireYhmProfile,
+  yhmProfileRegister8,
 } from "./yhmProfiles.js";
 
 export { TEMPLE_FLASH_TARGETS, findTempleFlashTarget } from "./templeFlashTargets.js";
@@ -20,6 +20,9 @@ export const POGO_FLASH_BRIDGE_OBSERVED_33_SHA256 =
   "b341adc44630ffe87b572523ace82b2581785892fff6d7de4e3cf1b0c87861d2";
 export const POGO_FLASH_BRIDGE_OBSERVED_45_SHA256 =
   "12746a8c540cde92e893dced10b4c1ef5079410a59b18eef95cea10754b1a431";
+// Regression pins for register-8 values already exercised end-to-end; other
+// observed profiles verify by construction from the reviewed pin plus the
+// bounded four-offset patch.
 export const POGO_FLASH_BRIDGE_PROFILE_SHA256 = Object.freeze({
   [YHM_PROFILE_REVIEWED_22]: POGO_FLASH_BRIDGE_SHA256,
   [YHM_PROFILE_OBSERVED_33]: POGO_FLASH_BRIDGE_OBSERVED_33_SHA256,
@@ -172,10 +175,11 @@ export async function getVerifiedPogoFlashBridgePayload(
           "The volatile flash bridge YHM profile table differs from the reviewed layout.",
         );
       }
-      payload[offset] = YHM_PROFILE_PATCH_BYTES[profile];
+      payload[offset] = yhmProfileRegister8(profile);
     }
     const digest = await sha256Hex(payload);
-    if (digest !== POGO_FLASH_BRIDGE_PROFILE_SHA256[profile]) {
+    const regressionPin = POGO_FLASH_BRIDGE_PROFILE_SHA256[profile];
+    if (regressionPin && digest !== regressionPin) {
       throw new PogoFlashSafetyError(
         `The ${profile} volatile flash bridge differs from its trust pin (${digest}).`,
       );

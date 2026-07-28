@@ -1686,7 +1686,9 @@ class CasePogoFlashTransport {
 
   async openOnce() {
     const payload = await getVerifiedPogoFlashBridgePayload(this.yhmProfile);
-    const bridgeSha256 = POGO_FLASH_BRIDGE_PROFILE_SHA256[this.yhmProfile];
+    const bridgeSha256 =
+      POGO_FLASH_BRIDGE_PROFILE_SHA256[this.yhmProfile] ??
+      (await sha256Hex(payload));
     this.session.log(
       `${this.route}: loading the separately pinned ${this.yhmProfile} writer bridge · ${bridgeSha256.slice(0, 16)}….`,
     );
@@ -2668,7 +2670,8 @@ export class G2CaseSession {
 
     requireYhmProfile(yhmProfile);
     const payload = await getVerifiedPogoBridgePayload(yhmProfile);
-    const bridgeSha256 = POGO_BRIDGE_PROFILE_SHA256[yhmProfile];
+    const bridgeSha256 =
+      POGO_BRIDGE_PROFILE_SHA256[yhmProfile] ?? (await sha256Hex(payload));
     const zeroProof = new Uint8Array(POGO_BRIDGE_PROOF.length);
     const zeroResult = new Uint8Array(POGO_BRIDGE_RESULT_LENGTH);
     let loader = null;
@@ -3300,7 +3303,10 @@ export class G2CaseSession {
       progressSpan,
     });
     const bridgeSha256 =
-      POGO_FLASH_BRIDGE_PROFILE_SHA256[transport.yhmProfile];
+      POGO_FLASH_BRIDGE_PROFILE_SHA256[transport.yhmProfile] ??
+      (await sha256Hex(
+        await getVerifiedPogoFlashBridgePayload(transport.yhmProfile),
+      ));
     const result = {
       route,
       yhmProfile: transport.yhmProfile,

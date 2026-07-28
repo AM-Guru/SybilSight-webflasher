@@ -72,9 +72,11 @@ import {
 } from "../src/lib/serial.js";
 import {
   YHM_PROFILE_OBSERVED_33,
+  YHM_PROFILE_OBSERVED_45,
   YHM_PROFILE_REVIEWED_22,
   identifyYhmBaselineProfile,
 } from "../src/lib/yhmProfiles.js";
+import { getVerifiedPogoBridgePayload } from "../src/lib/pogoBridge.js";
 
 const REVIEWED_STOCK_IMAGE_SHA256 =
   "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa";
@@ -624,7 +626,10 @@ test("retries only a fail-closed read-only YHM idle-phase mismatch", async () =>
         "The pogo bridge stopped safely: YHM baseline was not an allowlisted seated-idle state.",
       );
       error.pogoBridgeEvidence = {
-        baselineHex: "811004aeaf03812044ff",
+        // The 0x8d table entry is never patched in a derived bridge, so a
+        // foreign register-8 on it is structurally non-derivable and must
+        // settle-retry rather than select a profile.
+        baselineHex: "811104afaf038d2044ff",
         transmitted: 0,
         zeroWriteBaselineStopVerified: true,
       };
@@ -642,7 +647,7 @@ test("retries only a fail-closed read-only YHM idle-phase mismatch", async () =>
   assert.deepEqual(waits, [15_000, 45_000]);
   assert.deepEqual(preflights, [["right"], ["right"]]);
   assert.equal(logs.length, 4);
-  assert.match(logs[0][0], /811004aeaf03812044ff/);
+  assert.match(logs[0][0], /811104afaf038d2044ff/);
   assert.match(logs[0][0], /zero YHM writes and zero temple bytes/);
 });
 
@@ -690,9 +695,11 @@ test("switches to the exact observed-33 bridge only from retained zero-write pro
   );
   assert.deepEqual(waits, []);
   assert.match(logs[0][0], /separately hash-pinned bridge/);
+  // Any register-8 variant of a patchable entry now derives its own profile
+  // from the protocol proof; only structural deviations stay fail-closed.
   assert.equal(
     identifyYhmBaselineProfile("811004aeaf03812044ff"),
-    null,
+    "observed-44",
   );
   // Observed on hardware 2026-07-28 with retained zero-write proof; the
   // register-8 0x33 counterpart of reviewed entry 2 now selects the
@@ -706,6 +713,122 @@ test("switches to the exact observed-33 bridge only from retained zero-write pro
   assert.equal(
     identifyYhmBaselineProfile("811104afaf03812022ff"),
     YHM_PROFILE_REVIEWED_22,
+  );
+});
+
+test("switches to the exact observed-45 bridge only from retained zero-write proof", async () => {
+  const profiles = [];
+  const waits = [];
+  const session = new G2CaseSession(null, {
+    wait: async (milliseconds) => waits.push(milliseconds),
+    log: () => {},
+  });
+  session.probeRunningTempleOnce = async (_operation, _route, options) => {
+    profiles.push(options.yhmProfile);
+    if (profiles.length === 1) {
+      const error = new Error(
+        "The pogo bridge stopped safely: YHM baseline was not an allowlisted seated-idle state.",
+      );
+      error.pogoBridgeEvidence = {
+        // Remote support 2026-07-28, case 001d00115845501820373941: six
+        // retained zero-write proofs held register-8 0x45 variants of the
+        // reviewed seated-idle entries while the charging bytes cycled
+        // normally, so this Case selects the observed-45 bridges.
+        baselineHex: "810004aeae03812045ff",
+        transmitted: 0,
+        zeroWriteBaselineStopVerified: true,
+      };
+      throw error;
+    }
+    return {
+      route: "left",
+      operation: "version",
+      yhmProfile: options.yhmProfile,
+    };
+  };
+  session.readTempleFlashPreflight = async () => ({
+    caseVersion: "1.2.57",
+  });
+
+  const result = await session.probeRunningTemple("version", "left");
+
+  assert.deepEqual(profiles, [
+    YHM_PROFILE_REVIEWED_22,
+    YHM_PROFILE_OBSERVED_45,
+  ]);
+  assert.equal(result.yhmProfile, YHM_PROFILE_OBSERVED_45);
+  assert.equal(
+    session.routeYhmProfiles.get("left"),
+    YHM_PROFILE_OBSERVED_45,
+  );
+  assert.deepEqual(waits, []);
+  assert.equal(
+    identifyYhmBaselineProfile("811104afaf03812045ff"),
+    YHM_PROFILE_OBSERVED_45,
+  );
+  // Structural deviations stay fail-closed: a foreign register-8 on the
+  // never-patched 0x8d entry, a non-ff terminator, and short frames are not
+  // derivable from the reviewed table.
+  assert.equal(identifyYhmBaselineProfile("811104afaf038d2045ff"), null);
+  assert.equal(identifyYhmBaselineProfile("811104afaf03812045fe"), null);
+  assert.equal(identifyYhmBaselineProfile("811104afaf038120"), null);
+});
+
+test("derives bridges for a never-before-seen register-8 value from the protocol proof", async () => {
+  // No enumerated allowlist: a Case reporting register-8 0x5a with retained
+  // zero-write proof derives its own pinned-base bridges the same way the
+  // observed-33 and observed-45 Cases did.
+  assert.equal(identifyYhmBaselineProfile("810004aeae0381205aff"), "observed-5a");
+  const reviewed = await getVerifiedPogoBridgePayload();
+  const derived = await getVerifiedPogoBridgePayload("observed-5a");
+  assert.deepEqual(
+    [...derived]
+      .map((value, index) => [index, reviewed[index], value])
+      .filter(([, reviewedByte, observedByte]) => reviewedByte !== observedByte)
+      .map(([index, reviewedByte, observedByte]) => [
+        index,
+        reviewedByte,
+        observedByte,
+      ]),
+    [
+      [1670, 0x22, 0x5a],
+      [1680, 0x22, 0x5a],
+      [1690, 0x22, 0x5a],
+      [1700, 0x22, 0x5a],
+    ],
+  );
+});
+
+test("derives the observed-45 bridges by patching only the four register-8 table bytes", async () => {
+  const reviewedReadOnly = await getVerifiedPogoBridgePayload();
+  const observed45ReadOnly = await getVerifiedPogoBridgePayload(
+    YHM_PROFILE_OBSERVED_45,
+  );
+  assert.deepEqual(
+    [...observed45ReadOnly]
+      .map((value, index) => [index, reviewedReadOnly[index], value])
+      .filter(([, reviewed, observed]) => reviewed !== observed),
+    [
+      [1670, 0x22, 0x45],
+      [1680, 0x22, 0x45],
+      [1690, 0x22, 0x45],
+      [1700, 0x22, 0x45],
+    ],
+  );
+  const reviewedWriter = await getVerifiedPogoFlashBridgePayload();
+  const observed45Writer = await getVerifiedPogoFlashBridgePayload(
+    YHM_PROFILE_OBSERVED_45,
+  );
+  assert.deepEqual(
+    [...observed45Writer]
+      .map((value, index) => [index, reviewedWriter[index], value])
+      .filter(([, reviewed, observed]) => reviewed !== observed),
+    [
+      [2826, 0x22, 0x45],
+      [2836, 0x22, 0x45],
+      [2846, 0x22, 0x45],
+      [2856, 0x22, 0x45],
+    ],
   );
 });
 
@@ -741,7 +864,9 @@ test("stops after bounded stock-app settling when the verified YHM baseline pers
       "The pogo bridge stopped safely: YHM baseline was not an allowlisted seated-idle state.",
     );
     error.pogoBridgeEvidence = {
-      baselineHex: "811004aeaf03812044ff",
+      // A foreign register-8 on the never-patched 0x8d entry cannot derive a
+      // profile, so the settle ladder must run to exhaustion.
+      baselineHex: "811104afaf038d2044ff",
       transmitted: 0,
       zeroWriteBaselineStopVerified: true,
     };

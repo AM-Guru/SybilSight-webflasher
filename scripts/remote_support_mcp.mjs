@@ -104,19 +104,32 @@ function textResult(value, isError = false) {
   };
 }
 
+// One remote Case means one serial conversation at a time. Concurrent MCP
+// tool calls otherwise interleave open/close on the shared port ("already
+// open" / missing-streams failures observed 2026-07-28), so every tool runs
+// through this per-process queue in arrival order.
+let toolQueue = Promise.resolve();
+
 function tool(handler) {
-  return async (input, extra) => {
-    try {
-      return await handler(input, extra);
-    } catch (error) {
-      record(error instanceof Error ? error.message : String(error), "error");
-      return textResult(
-        {
-          error: error instanceof Error ? error.message : String(error),
-        },
-        true,
-      );
-    }
+  return (input, extra) => {
+    const run = toolQueue.then(async () => {
+      try {
+        return await handler(input, extra);
+      } catch (error) {
+        record(error instanceof Error ? error.message : String(error), "error");
+        return textResult(
+          {
+            error: error instanceof Error ? error.message : String(error),
+          },
+          true,
+        );
+      }
+    });
+    toolQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
   };
 }
 

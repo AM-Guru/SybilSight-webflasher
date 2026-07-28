@@ -350,6 +350,27 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
       policy:
         "Select the exact observed-33 profile only from immutable retained zero-write/zero-transmission proof. Use separately SHA-256-pinned read-only and writer bridges whose only four byte changes are the four observed baseline-table register-8 values 0x22 to 0x33; retain fail-closed behavior for every unobserved baseline.",
     }),
+    observed45YhmProfile: Object.freeze({
+      observedAt: "2026-07-28",
+      transport: "remote-support relay",
+      caseFirmware: "1.2.57",
+      caseSerialNumber: "001d00115845501820373941",
+      rightChargingPercent: 100,
+      leftChargingPercent: 99,
+      baselines: Object.freeze([
+        "810004aeae03812045ff",
+        "811104afaf03812045ff",
+        "810104afae03812045ff",
+      ]),
+      differsFromReviewed22ProfileOnlyAtRegister: 8,
+      zeroWriteProofs: 6,
+      templeBytesTransmitted: 0,
+      firmwareBytesAccepted: 0,
+      offlineValidationPassed: true,
+      hardwareValidation: "pending first observed-45 profile run",
+      policy:
+        "Register 8 is a per-Case persistent identity byte, so profiles verify the protocol rather than enumerated devices or values: any register-8 variant proven by immutable retained zero-write/zero-transmission evidence whose other nine baseline bytes exactly match a patchable reviewed seated-idle entry derives its own bridges from the reviewed pinned build by patching only the four baseline-table register-8 offsets. Structural deviations - the never-patched 0x8d entry, a non-ff terminator, any other byte change - remain fail-closed, and no profile is ever selected from a Case or Smart Glasses serial number.",
+    }),
     browserDifferenceCfwTest: Object.freeze({
       mode: "Stock-to-reviewed-CFW component differences",
       imageSha256: LEGACY_HARDWARE_TESTED_CFW.sha256,

@@ -2,6 +2,8 @@ export const YHM_PROFILE_REVIEWED_22 = "reviewed-22";
 export const YHM_PROFILE_OBSERVED_33 = "observed-33";
 export const YHM_PROFILE_OBSERVED_45 = "observed-45";
 
+export const YHM_REVIEWED_REGISTER_8 = 0x22;
+
 const REVIEWED_22_BASELINES = Object.freeze([
   "811104afaf038d2022ff",
   "810004aeae03812022ff",
@@ -11,65 +13,92 @@ const REVIEWED_22_BASELINES = Object.freeze([
 ]);
 
 // This list mirrors the five-slot baseline table baked into the pinned SRAM
-// bridges byte-for-byte; the observed-33 bridges are derived from the reviewed
-// build by patching each listed entry's register-8 byte 0x22 -> 0x33.
-const OBSERVED_33_BASELINES = Object.freeze([
-  REVIEWED_22_BASELINES[0],
-  `${REVIEWED_22_BASELINES[1].slice(0, -4)}33ff`,
-  // Remote support 2026-07-28, case 00240024514250032037384b: both temples
-  // held this 33-suffix variant of seated-idle entry 2 through every settle
-  // attempt, with byte-for-byte retained-SRAM zero-write proof on each bridge
-  // run and clean version/status frames once the bridge proceeded.
-  `${REVIEWED_22_BASELINES[2].slice(0, -4)}33ff`,
-  `${REVIEWED_22_BASELINES[3].slice(0, -4)}33ff`,
-  `${REVIEWED_22_BASELINES[4].slice(0, -4)}33ff`,
-]);
+// bridges byte-for-byte. An observed profile is derived from the reviewed
+// build by patching the register-8 byte of entries 2-5 (the 0x8d entry 1 is
+// never patched), so every derived table keeps entry 1 verbatim.
+//
+// Register 8 is a per-Case persistent YHM2510 identity byte, not a protocol
+// byte: unrelated Cases have shipped 0x22, 0x33 (case 00240024514250032037384b,
+// 2026-07-28), and 0x45 (case 001d00115845501820373941, 2026-07-28), each held
+// constant through every settle attempt and bilateral reset while the charging
+// bytes cycled normally. Profiles therefore verify the PROTOCOL - retained
+// zero-write/zero-transmission proof plus an exact structural match of the
+// other nine baseline bytes - and accept any register-8 value that proof
+// produces. No profile is ever selected from a Case or Smart Glasses serial
+// number; structural deviations in the other bytes remain fail-closed.
 
-// Remote support 2026-07-28, case 001d00115845501820373941: six retained
-// zero-write proofs across two bilateral resets and the full settle ladder
-// held 45-suffix variants of seated-idle entries 2-4 while the charging bytes
-// cycled normally (00/01/11, ae/af), so register 8 is persistent for this
-// Case rather than a charging phase.
-const OBSERVED_45_BASELINES = Object.freeze([
-  REVIEWED_22_BASELINES[0],
-  `${REVIEWED_22_BASELINES[1].slice(0, -4)}45ff`,
-  `${REVIEWED_22_BASELINES[2].slice(0, -4)}45ff`,
-  `${REVIEWED_22_BASELINES[3].slice(0, -4)}45ff`,
-  `${REVIEWED_22_BASELINES[4].slice(0, -4)}45ff`,
-]);
+const OBSERVED_PROFILE_PATTERN = /^observed-([0-9a-f]{2})$/;
 
-export const YHM_PROFILE_BASELINES = Object.freeze({
-  [YHM_PROFILE_REVIEWED_22]: REVIEWED_22_BASELINES,
-  [YHM_PROFILE_OBSERVED_33]: OBSERVED_33_BASELINES,
-  [YHM_PROFILE_OBSERVED_45]: OBSERVED_45_BASELINES,
-});
+export function yhmObservedProfile(register8) {
+  if (
+    !Number.isInteger(register8) ||
+    register8 < 0 ||
+    register8 > 0xff ||
+    register8 === YHM_REVIEWED_REGISTER_8
+  ) {
+    throw new Error(
+      `An observed YHM profile needs a non-reviewed register-8 byte, not ${register8}.`,
+    );
+  }
+  return `observed-${register8.toString(16).padStart(2, "0")}`;
+}
 
-// Register-8 byte written into the four patchable baseline-table slots of the
-// pinned SRAM bridges when deriving an observed profile from the reviewed
-// build. The first (0x8d) table entry is never patched.
-export const YHM_PROFILE_PATCH_BYTES = Object.freeze({
-  [YHM_PROFILE_OBSERVED_33]: 0x33,
-  [YHM_PROFILE_OBSERVED_45]: 0x45,
-});
-
-export function requireYhmProfile(profile) {
-  if (!Object.hasOwn(YHM_PROFILE_BASELINES, profile)) {
+export function yhmProfileRegister8(profile) {
+  if (profile === YHM_PROFILE_REVIEWED_22) return YHM_REVIEWED_REGISTER_8;
+  const match = OBSERVED_PROFILE_PATTERN.exec(String(profile ?? ""));
+  if (!match) {
     throw new Error(`Unsupported YHM baseline profile ${profile ?? "unknown"}.`);
   }
+  const register8 = Number.parseInt(match[1], 16);
+  if (register8 === YHM_REVIEWED_REGISTER_8) {
+    throw new Error(
+      "The reviewed register-8 byte selects the reviewed-22 profile, not an observed one.",
+    );
+  }
+  return register8;
+}
+
+export function requireYhmProfile(profile) {
+  yhmProfileRegister8(profile);
   return profile;
 }
 
+export function yhmProfileBaselines(profile) {
+  const register8 = yhmProfileRegister8(profile);
+  if (register8 === YHM_REVIEWED_REGISTER_8) return REVIEWED_22_BASELINES;
+  const suffix = `${register8.toString(16).padStart(2, "0")}ff`;
+  return Object.freeze([
+    REVIEWED_22_BASELINES[0],
+    ...REVIEWED_22_BASELINES.slice(1).map(
+      (baseline) => `${baseline.slice(0, -4)}${suffix}`,
+    ),
+  ]);
+}
+
+export const YHM_PROFILE_BASELINES = Object.freeze({
+  [YHM_PROFILE_REVIEWED_22]: REVIEWED_22_BASELINES,
+  [YHM_PROFILE_OBSERVED_33]: yhmProfileBaselines(YHM_PROFILE_OBSERVED_33),
+  [YHM_PROFILE_OBSERVED_45]: yhmProfileBaselines(YHM_PROFILE_OBSERVED_45),
+});
+
 export function identifyYhmBaselineProfile(baselineHex) {
   const normalized = String(baselineHex ?? "").toLowerCase();
-  for (const [profile, baselines] of Object.entries(YHM_PROFILE_BASELINES)) {
-    if (baselines.includes(normalized)) return profile;
-  }
-  return null;
+  if (REVIEWED_22_BASELINES.includes(normalized)) return YHM_PROFILE_REVIEWED_22;
+  if (!/^[0-9a-f]{20}$/.test(normalized)) return null;
+  if (!normalized.endsWith("ff")) return null;
+  const register8 = Number.parseInt(normalized.slice(-4, -2), 16);
+  if (register8 === YHM_REVIEWED_REGISTER_8) return null;
+  const structural = `${normalized.slice(0, -4)}22ff`;
+  // Entry 1 (the 0x8d variant) is never patched in the derived bridge tables,
+  // so only register-8 variants of entries 2-5 can be served by a derived
+  // bridge; everything else stays fail-closed.
+  if (!REVIEWED_22_BASELINES.slice(1).includes(structural)) return null;
+  return yhmObservedProfile(register8);
 }
 
 export function isYhmBaselineAllowed(profile, baselineHex) {
   requireYhmProfile(profile);
-  return YHM_PROFILE_BASELINES[profile].includes(
+  return yhmProfileBaselines(profile).includes(
     String(baselineHex ?? "").toLowerCase(),
   );
 }
