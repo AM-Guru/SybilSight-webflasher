@@ -280,6 +280,7 @@ test("pins the physically reviewed read-only pogo bridge payload", async () => {
       .filter(([, reviewed, observed]) => reviewed !== observed),
     [
       [1670, 0x22, 0x33],
+      [1680, 0x22, 0x33],
       [1690, 0x22, 0x33],
       [1700, 0x22, 0x33],
     ],
@@ -528,6 +529,7 @@ test("records successful case-pogo transfers and enables only the guarded browse
       "811004aeaf03812033ff",
       "810104afae03812033ff",
       "810004aeae03812033ff",
+      "811104afaf03812033ff",
     ],
   );
   assert.equal(

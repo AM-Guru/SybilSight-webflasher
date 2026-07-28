@@ -10,15 +10,61 @@ export const REMOTE_SERIAL_OPERATIONS = Object.freeze([
   "write",
   "set_signals",
   "close",
+  "exchange_batch",
 ]);
 
 const SESSION_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const DEFAULT_SESSION_TTL_MS = 2 * 60 * 60 * 1000;
+// A complete remote firmware restoration runs about 40 minutes per attempt
+// and a session must survive a second attempt plus diagnosis between them,
+// so idle expiry allows a full support day. Activity still refreshes the
+// deadline, both sides can end the session at any time, and ending it (or
+// closing the person's tab) revokes access immediately.
+const DEFAULT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_PAYLOAD_BYTES = 64 * 1024;
 const DEFAULT_MAX_SESSIONS = 128;
 const DEFAULT_MAX_CONNECTIONS = 256;
 const MAX_PENDING_SERIAL_REQUESTS = 32;
 const MAX_BASE64_SERIAL_CHARS = 24 * 1024;
+// Mirrors the browser-side exchange-batch caps: bounded declarative steps
+// only, and the serialized list must stay well under the socket payload cap.
+const MAX_EXCHANGE_BATCH_STEPS = 640;
+const MAX_EXCHANGE_BATCH_CHARS = 48 * 1024;
+const EXCHANGE_BATCH_STEP_OPERATIONS = Object.freeze([
+  "write",
+  "expect",
+  "read",
+  "delay",
+  "drain",
+]);
+
+function validExchangeBatchSteps(steps) {
+  if (!Array.isArray(steps) || steps.length < 1) return false;
+  if (steps.length > MAX_EXCHANGE_BATCH_STEPS) return false;
+  let serializedChars = 2;
+  for (const step of steps) {
+    if (typeof step !== "object" || step === null || Array.isArray(step)) {
+      return false;
+    }
+    if (!EXCHANGE_BATCH_STEP_OPERATIONS.includes(step.op)) return false;
+    for (const [key, value] of Object.entries(step)) {
+      if (key === "op" || key === "data") {
+        if (typeof value !== "string" || value.length > MAX_BASE64_SERIAL_CHARS) {
+          return false;
+        }
+        serializedChars += value.length;
+      } else if (["count", "ms", "timeoutMs"].includes(key)) {
+        if (!Number.isInteger(value) || value < 0 || value > 1_000_000) {
+          return false;
+        }
+      } else {
+        return false;
+      }
+    }
+    serializedChars += 64;
+    if (serializedChars > MAX_EXCHANGE_BATCH_CHARS) return false;
+  }
+  return true;
+}
 const HELLO_TIMEOUT_MS = 10_000;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
@@ -190,6 +236,7 @@ export function createRemoteSupportServer({
       role: "device",
       session: publicSession(session),
       resumeToken: session.resumeToken,
+      serialOperations: REMOTE_SERIAL_OPERATIONS,
     });
     send(session.operator, {
       type: "peer",
@@ -223,6 +270,7 @@ export function createRemoteSupportServer({
       type: "ready",
       role: "operator",
       session: publicSession(session),
+      serialOperations: REMOTE_SERIAL_OPERATIONS,
     });
     send(session.device, {
       type: "peer",
@@ -309,6 +357,14 @@ export function createRemoteSupportServer({
     ) {
       throw new Error("The technician serial write is outside its size limit.");
     }
+    if (
+      message.op === "exchange_batch" &&
+      !validExchangeBatchSteps(message.steps)
+    ) {
+      throw new Error(
+        "The technician exchange batch is outside its declarative step bounds.",
+      );
+    }
     connection.session.pendingSerialRequests.add(message.id);
     touch(connection.session);
     send(connection.session.device, {
@@ -318,6 +374,7 @@ export function createRemoteSupportServer({
       ...(message.op === "open" ? { options: message.options } : {}),
       ...(message.op === "write" ? { data: message.data } : {}),
       ...(message.op === "set_signals" ? { signals: message.signals } : {}),
+      ...(message.op === "exchange_batch" ? { steps: message.steps } : {}),
     });
   };
 

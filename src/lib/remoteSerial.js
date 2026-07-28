@@ -6,9 +6,30 @@ export const REMOTE_SERIAL_OPERATIONS = Object.freeze([
   "write",
   "set_signals",
   "close",
+  "exchange_batch",
 ]);
 
 export const REMOTE_SERIAL_MAX_CHUNK_BYTES = 16 * 1024;
+
+// Capabilities the device browser reports in its `open` result so an operator
+// can tell whether the person's build executes batched exchanges locally.
+// Old device builds omit the field and old operators ignore it.
+export const REMOTE_SERIAL_CAPABILITIES = Object.freeze(["exchange_batch"]);
+
+// A batched exchange runs a bounded, declarative step list on the device
+// browser so latency-critical serial loops (flow-control tokens between
+// 32-byte flash-bridge chunks) do not pay one relay round trip per step.
+// Steps are data, never code, and every dimension is capped.
+export const EXCHANGE_BATCH_MAX_STEPS = 640;
+export const EXCHANGE_BATCH_MAX_WRITE_BYTES = 64 * 1024;
+export const EXCHANGE_BATCH_MAX_READ_BYTES = 32 * 1024;
+export const EXCHANGE_BATCH_MAX_EXPECT_BYTES = 64;
+export const EXCHANGE_BATCH_MAX_STEP_TIMEOUT_MS = 20_000;
+export const EXCHANGE_BATCH_MAX_DELAY_MS = 5_000;
+export const EXCHANGE_BATCH_MAX_TOTAL_MS = 120_000;
+// The relay socket rejects payloads over 64 KiB, so a serialized batch must
+// stay comfortably below it.
+export const EXCHANGE_BATCH_MAX_SERIALIZED_CHARS = 48 * 1024;
 
 const OPEN_TIMEOUT_MS = 20_000;
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -103,6 +124,113 @@ function normalizeSignals(signals = {}) {
   };
 }
 
+function boundedStepTimeout(value, fallback) {
+  const timeout = Number(value ?? fallback);
+  if (
+    !Number.isInteger(timeout) ||
+    timeout < 1 ||
+    timeout > EXCHANGE_BATCH_MAX_STEP_TIMEOUT_MS
+  ) {
+    throw new RangeError(
+      `Exchange steps allow timeouts of 1–${EXCHANGE_BATCH_MAX_STEP_TIMEOUT_MS} ms.`,
+    );
+  }
+  return timeout;
+}
+
+// Validates a declarative exchange-batch step list against every cap and
+// returns the normalized steps plus the total time budget they may consume.
+// Both sides of the relay run this: the operator before sending, the device
+// before executing.
+export function normalizeExchangeBatchSteps(steps) {
+  if (!Array.isArray(steps) || steps.length < 1) {
+    throw new TypeError("An exchange batch requires a non-empty step array.");
+  }
+  if (steps.length > EXCHANGE_BATCH_MAX_STEPS) {
+    throw new RangeError(
+      `Exchange batches allow at most ${EXCHANGE_BATCH_MAX_STEPS} steps.`,
+    );
+  }
+  const normalized = [];
+  let writeBytes = 0;
+  let readBytes = 0;
+  let budgetMs = 0;
+  for (const step of steps) {
+    const op = step?.op;
+    if (op === "write") {
+      const bytes = decodeRemoteBytes(step.data);
+      if (!bytes.byteLength) {
+        throw new RangeError("Exchange write steps require at least one byte.");
+      }
+      writeBytes += bytes.byteLength;
+      normalized.push({ op, data: encodeRemoteBytes(bytes) });
+    } else if (op === "expect") {
+      const bytes = decodeRemoteBytes(step.data);
+      if (
+        !bytes.byteLength ||
+        bytes.byteLength > EXCHANGE_BATCH_MAX_EXPECT_BYTES
+      ) {
+        throw new RangeError(
+          `Exchange expect steps compare 1–${EXCHANGE_BATCH_MAX_EXPECT_BYTES} bytes.`,
+        );
+      }
+      const timeoutMs = boundedStepTimeout(step.timeoutMs, 8000);
+      readBytes += bytes.byteLength;
+      budgetMs += timeoutMs;
+      normalized.push({ op, data: encodeRemoteBytes(bytes), timeoutMs });
+    } else if (op === "read") {
+      const count = Number(step.count);
+      if (
+        !Number.isInteger(count) ||
+        count < 1 ||
+        count > REMOTE_SERIAL_MAX_CHUNK_BYTES
+      ) {
+        throw new RangeError(
+          `Exchange read steps capture 1–${REMOTE_SERIAL_MAX_CHUNK_BYTES} bytes.`,
+        );
+      }
+      const timeoutMs = boundedStepTimeout(step.timeoutMs, 8000);
+      readBytes += count;
+      budgetMs += timeoutMs;
+      normalized.push({ op, count, timeoutMs });
+    } else if (op === "delay") {
+      const ms = Number(step.ms);
+      if (!Number.isInteger(ms) || ms < 1 || ms > EXCHANGE_BATCH_MAX_DELAY_MS) {
+        throw new RangeError(
+          `Exchange delay steps wait 1–${EXCHANGE_BATCH_MAX_DELAY_MS} ms.`,
+        );
+      }
+      budgetMs += ms;
+      normalized.push({ op, ms });
+    } else if (op === "drain") {
+      normalized.push({ op });
+    } else {
+      throw new TypeError(`Unsupported exchange step ${op ?? "(missing op)"}.`);
+    }
+  }
+  if (writeBytes > EXCHANGE_BATCH_MAX_WRITE_BYTES) {
+    throw new RangeError(
+      `Exchange batches write at most ${EXCHANGE_BATCH_MAX_WRITE_BYTES} bytes.`,
+    );
+  }
+  if (readBytes > EXCHANGE_BATCH_MAX_READ_BYTES) {
+    throw new RangeError(
+      `Exchange batches read at most ${EXCHANGE_BATCH_MAX_READ_BYTES} bytes.`,
+    );
+  }
+  if (budgetMs > EXCHANGE_BATCH_MAX_TOTAL_MS) {
+    throw new RangeError(
+      `Exchange batches allow a total budget of ${EXCHANGE_BATCH_MAX_TOTAL_MS} ms.`,
+    );
+  }
+  if (JSON.stringify(normalized).length > EXCHANGE_BATCH_MAX_SERIALIZED_CHARS) {
+    throw new RangeError(
+      `Exchange batches serialize to at most ${EXCHANGE_BATCH_MAX_SERIALIZED_CHARS} characters.`,
+    );
+  }
+  return { steps: normalized, writeBytes, readBytes, budgetMs };
+}
+
 function exactG2CaseInfo(port) {
   const info = port?.getInfo?.() ?? {};
   if (info.usbVendorId !== 0x1a86 || info.usbProductId !== 0x7523) {
@@ -129,6 +257,7 @@ export class RemoteSerialDeviceBridge {
     this.opened = false;
     this.closing = false;
     this.requestQueue = Promise.resolve();
+    this.captureSink = null;
   }
 
   handleMessage(message) {
@@ -165,7 +294,11 @@ export class RemoteSerialDeviceBridge {
         this.reader = this.port.readable.getReader();
         this.writer = this.port.writable.getWriter();
         this.opened = true;
-        result = { opened: true, options };
+        result = {
+          opened: true,
+          options,
+          capabilities: [...REMOTE_SERIAL_CAPABILITIES],
+        };
         startReadPump = true;
         this.log(
           `Technician opened the selected G2 Case at ${options.baudRate} baud.`,
@@ -190,6 +323,20 @@ export class RemoteSerialDeviceBridge {
         const signals = normalizeSignals(message.signals);
         await this.port.setSignals(signals);
         result = signals;
+      } else if (op === "exchange_batch") {
+        if (!this.writer || !this.opened) {
+          throw new DOMException(
+            "The remote G2 Case serial port is not open.",
+            "InvalidStateError",
+          );
+        }
+        if (this.captureSink) {
+          throw new DOMException(
+            "Another exchange batch is already executing.",
+            "InvalidStateError",
+          );
+        }
+        result = await this.executeExchangeBatch(message.steps);
       } else if (op === "close") {
         await this.closePort();
         result = { opened: false };
@@ -218,6 +365,170 @@ export class RemoteSerialDeviceBridge {
     }
   }
 
+  forwardSerialData(bytes) {
+    for (
+      let offset = 0;
+      offset < bytes.byteLength;
+      offset += REMOTE_SERIAL_MAX_CHUNK_BYTES
+    ) {
+      this.connection.send({
+        type: "serial_data",
+        data: encodeRemoteBytes(
+          bytes.subarray(offset, offset + REMOTE_SERIAL_MAX_CHUNK_BYTES),
+        ),
+      });
+    }
+  }
+
+  sinkTake(sink, count) {
+    const target = Math.min(count, sink.queuedBytes);
+    const result = new Uint8Array(target);
+    let written = 0;
+    while (written < target) {
+      const chunk = sink.queue[0];
+      const used = Math.min(target - written, chunk.byteLength);
+      result.set(chunk.subarray(0, used), written);
+      written += used;
+      sink.queuedBytes -= used;
+      if (used === chunk.byteLength) sink.queue.shift();
+      else sink.queue[0] = chunk.subarray(used);
+    }
+    return result;
+  }
+
+  async sinkReadExact(sink, count, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    while (sink.queuedBytes < count) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return null;
+      await new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          sink.waiters.delete(onData);
+          resolve();
+        }, remaining);
+        const onData = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        sink.waiters.add(onData);
+      });
+    }
+    return this.sinkTake(sink, count);
+  }
+
+  // Runs a validated declarative step list against the local port so paced
+  // exchanges do not pay a relay round trip per step. Bytes the steps consume
+  // stay in the batch result; anything left over is forwarded to the operator
+  // stream in arrival order when the batch ends, so a failed batch leaves the
+  // operator-side resynchronization logic with everything the port produced.
+  async executeExchangeBatch(steps) {
+    const { steps: normalized, budgetMs } = normalizeExchangeBatchSteps(steps);
+    const sink = { queue: [], queuedBytes: 0, waiters: new Set() };
+    this.captureSink = sink;
+    const startedAt = Date.now();
+    const deadline = startedAt + Math.min(
+      budgetMs + 5_000,
+      EXCHANGE_BATCH_MAX_TOTAL_MS,
+    );
+    const reads = [];
+    try {
+      for (let index = 0; index < normalized.length; index += 1) {
+        if (Date.now() > deadline) {
+          return {
+            ok: false,
+            failedStep: index,
+            reason: "budget-exhausted",
+            completedSteps: index,
+            reads,
+            durationMs: Date.now() - startedAt,
+          };
+        }
+        const step = normalized[index];
+        if (step.op === "write") {
+          await this.writer.write(decodeRemoteBytes(step.data));
+        } else if (step.op === "expect") {
+          const expected = decodeRemoteBytes(step.data);
+          const stepStartedAt = Date.now();
+          const captured = await this.sinkReadExact(
+            sink,
+            expected.byteLength,
+            Math.min(step.timeoutMs, Math.max(1, deadline - Date.now())),
+          );
+          if (!captured) {
+            return {
+              ok: false,
+              failedStep: index,
+              reason: "timeout",
+              receivedBytes: sink.queuedBytes,
+              expectedBytes: expected.byteLength,
+              completedSteps: index,
+              reads,
+              durationMs: Date.now() - startedAt,
+            };
+          }
+          for (let byte = 0; byte < expected.byteLength; byte += 1) {
+            if (captured[byte] !== expected[byte]) {
+              return {
+                ok: false,
+                failedStep: index,
+                reason: "expect-mismatch",
+                captured: encodeRemoteBytes(captured),
+                latencyMs: Date.now() - stepStartedAt,
+                completedSteps: index,
+                reads,
+                durationMs: Date.now() - startedAt,
+              };
+            }
+          }
+          reads.push({
+            step: index,
+            latencyMs: Date.now() - stepStartedAt,
+          });
+        } else if (step.op === "read") {
+          const stepStartedAt = Date.now();
+          const captured = await this.sinkReadExact(
+            sink,
+            step.count,
+            Math.min(step.timeoutMs, Math.max(1, deadline - Date.now())),
+          );
+          if (!captured) {
+            return {
+              ok: false,
+              failedStep: index,
+              reason: "timeout",
+              receivedBytes: sink.queuedBytes,
+              expectedBytes: step.count,
+              completedSteps: index,
+              reads,
+              durationMs: Date.now() - startedAt,
+            };
+          }
+          reads.push({
+            step: index,
+            data: encodeRemoteBytes(captured),
+            latencyMs: Date.now() - stepStartedAt,
+          });
+        } else if (step.op === "delay") {
+          await new Promise((resolve) => setTimeout(resolve, step.ms));
+        } else if (step.op === "drain") {
+          sink.queue.length = 0;
+          sink.queuedBytes = 0;
+        }
+      }
+      return {
+        ok: true,
+        completedSteps: normalized.length,
+        reads,
+        durationMs: Date.now() - startedAt,
+      };
+    } finally {
+      this.captureSink = null;
+      if (sink.queuedBytes) {
+        this.forwardSerialData(this.sinkTake(sink, sink.queuedBytes));
+      }
+    }
+  }
+
   startReadPump() {
     if (!this.reader || this.readPump) return;
     const reader = this.reader;
@@ -228,18 +539,14 @@ export class RemoteSerialDeviceBridge {
           if (done) break;
           if (value?.byteLength) {
             const bytes = bytesFrom(value);
-            for (
-              let offset = 0;
-              offset < bytes.byteLength;
-              offset += REMOTE_SERIAL_MAX_CHUNK_BYTES
-            ) {
-              this.connection.send({
-                type: "serial_data",
-                data: encodeRemoteBytes(
-                  bytes.subarray(offset, offset + REMOTE_SERIAL_MAX_CHUNK_BYTES),
-                ),
-              });
+            if (this.captureSink) {
+              this.captureSink.queue.push(bytes);
+              this.captureSink.queuedBytes += bytes.byteLength;
+              for (const waiter of this.captureSink.waiters) waiter();
+              this.captureSink.waiters.clear();
+              continue;
             }
+            this.forwardSerialData(bytes);
           }
         }
       } catch (error) {
@@ -325,9 +632,58 @@ export class RemoteG2CasePort {
     this.opened = false;
     this.readableStream = null;
     this.writableStream = null;
+    this.remoteCapabilities = [];
+    this.linkRttMs = null;
     this.removeMessageListener = connection.addMessageListener((message) =>
       this.handleMessage(message),
     );
+  }
+
+  // The batched-exchange fast path needs every hop to understand the op: the
+  // device build advertises it in the open result, and the relay advertises
+  // its forwardable operations in the ready message. Old builds simply omit
+  // the fields, so this degrades to per-operation round trips, never a probe.
+  supportsExchangeBatch() {
+    return (
+      this.opened &&
+      this.remoteCapabilities.includes("exchange_batch") &&
+      Array.isArray(this.connection?.serialOperations) &&
+      this.connection.serialOperations.includes("exchange_batch")
+    );
+  }
+
+  async exchangeBatch(steps) {
+    if (!this.opened) {
+      throw new DOMException(
+        "The remote G2 Case serial port is not open.",
+        "InvalidStateError",
+      );
+    }
+    const { steps: normalized, budgetMs } = normalizeExchangeBatchSteps(steps);
+    return this.request(
+      "exchange_batch",
+      { steps: normalized },
+      Math.min(budgetMs, EXCHANGE_BATCH_MAX_TOTAL_MS) + 15_000,
+    );
+  }
+
+  // Median of a few get_info round trips; the pacing controller subtracts
+  // this from ACK latencies so link distance is not mistaken for temple
+  // congestion.
+  async measureLinkRtt(samples = 3) {
+    const measured = [];
+    for (let index = 0; index < samples; index += 1) {
+      const startedAt = Date.now();
+      try {
+        await this.request("get_info", {}, 5_000);
+      } catch {
+        return this.linkRttMs;
+      }
+      measured.push(Date.now() - startedAt);
+    }
+    measured.sort((a, b) => a - b);
+    this.linkRttMs = measured[Math.floor(measured.length / 2)];
+    return this.linkRttMs;
   }
 
   getInfo() {
@@ -444,7 +800,14 @@ export class RemoteG2CasePort {
       },
     });
     try {
-      await this.request("open", { options: normalized }, OPEN_TIMEOUT_MS);
+      const result = await this.request(
+        "open",
+        { options: normalized },
+        OPEN_TIMEOUT_MS,
+      );
+      this.remoteCapabilities = Array.isArray(result?.capabilities)
+        ? result.capabilities.filter((value) => typeof value === "string")
+        : [];
       this.opened = true;
     } catch (error) {
       this.readableStream = null;
@@ -476,12 +839,16 @@ export class RemoteG2CasePort {
       this.readQueue = [];
       this.readableStream = null;
       this.writableStream = null;
+      this.remoteCapabilities = [];
     }
   }
 
   async dispose() {
     try {
       await this.close();
+    } catch {
+      // Disposal is best-effort: the support session (and with it the relay
+      // socket) may already be gone, which is exactly when disposal runs.
     } finally {
       this.removeMessageListener?.();
       this.removeMessageListener = null;

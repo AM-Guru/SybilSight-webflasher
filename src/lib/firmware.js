@@ -327,20 +327,28 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
         "811004aeaf03812033ff",
         "810104afae03812033ff",
         "810004aeae03812033ff",
+        // Remote support 2026-07-28, case 00240024514250032037384b: both
+        // temples idled in this register-8 0x33 counterpart of reviewed
+        // entry 2 through every settle attempt, each stop carrying
+        // byte-for-byte retained-SRAM zero-write/zero-transmission proof.
+        "811104afaf03812033ff",
       ]),
+      fourthBaselineObservedAt: "2026-07-28",
+      fourthBaselineCaseSerial: "00240024514250032037384b",
       differsFromReviewed22ProfileOnlyAtRegister: 8,
       zeroWriteProofs: 6,
       bilateralResetAttempts: 2,
       templeBytesTransmitted: 0,
       firmwareBytesAccepted: 0,
       readOnlyBridgeSha256:
-        "ce0b6825912d7006e8ddd7da70792bec1418bec03c28f6e6aa5bb928461dae53",
+        "3ca8ed1d8d37b2edef62dcb6915b5ec4b1d439160da0a89e93aa74901d760ef6",
       writerBridgeSha256:
-        "a14bfa58c4240fda30b924649aaa410f69255dbb210150a3f6fd9aa31b3e3fab",
+        "b341adc44630ffe87b572523ace82b2581785892fff6d7de4e3cf1b0c87861d2",
       offlineValidationPassed: true,
-      hardwareValidation: "pending first observed-33 profile run",
+      hardwareValidation:
+        "three-baseline bridges ran clean on hardware 2026-07-27/28; the four-baseline pins await their first hardware run",
       policy:
-        "Select the exact observed-33 profile only from immutable retained zero-write/zero-transmission proof. Use separately SHA-256-pinned read-only and writer bridges whose only three byte changes are the three observed baseline-table register-8 values 0x22 to 0x33; retain fail-closed behavior for every unobserved baseline.",
+        "Select the exact observed-33 profile only from immutable retained zero-write/zero-transmission proof. Use separately SHA-256-pinned read-only and writer bridges whose only four byte changes are the four observed baseline-table register-8 values 0x22 to 0x33; retain fail-closed behavior for every unobserved baseline.",
     }),
     browserDifferenceCfwTest: Object.freeze({
       mode: "Stock-to-reviewed-CFW component differences",

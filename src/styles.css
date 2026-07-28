@@ -5544,3 +5544,39 @@ body {
   font-size: 0.72rem;
   line-height: 1.4;
 }
+
+.device-label-block {
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--hairline, rgba(128, 128, 128, 0.25));
+  display: grid;
+  gap: 0.4rem;
+}
+
+.device-label-field {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.device-label-field > span {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.device-label-field input {
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--hairline, rgba(128, 128, 128, 0.35));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.device-history-summary {
+  opacity: 0.85;
+  line-height: 1.5;
+}

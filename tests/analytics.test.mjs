@@ -149,6 +149,7 @@ test("separates case shell data from left/right glasses analytics", () => {
       "811004aeaf03812033ff",
       "810104afae03812033ff",
       "810004aeae03812033ff",
+      "811104afaf03812033ff",
     ],
   );
   assert.equal(

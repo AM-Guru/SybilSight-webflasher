@@ -913,11 +913,28 @@ normal application and ROM-loader modes.
    WebFlasher now uses a serial-compatible remote port, so its analysis,
    backups, Case recovery, left/right probes, resets, and guarded Smart Glasses
    reinstall workflows operate exactly as they do with a local Case.
-6. Either side ends the session when finished. Sessions also expire after two
-   hours and the relay keeps no session database.
+6. Either side ends the session when finished. An idle session also expires
+   after 24 hours — long enough for repeated ~40-minute firmware
+   restorations — and the relay keeps no session database.
 
 The browser holding the physical Case performs every serial operation. The
 relay is a small authenticated rendezvous service; it never opens USB itself.
+
+For distant sessions, latency-critical serial loops are batched: the
+technician's WebFlasher sends the flash bridge's token-paced transaction
+(header, 32-byte chunks each acknowledged by a flow-control token, checksum)
+to the person's browser as one bounded, declarative `exchange_batch` step
+list, and the person's browser runs the loop against its local port. Steps
+are data, never code; every dimension (step count, bytes written and read,
+per-step timeouts, total time, serialized size) is capped, and the relay
+independently validates the same bounds. The fast path activates only when
+the relay advertises the operation in its ready message and the person's
+build advertises it in its open result, so mixed versions fall back to
+per-operation round trips without probing. Adaptive DATA pacing also
+measures the relay round trip and subtracts it from temple ACK latencies, so
+link distance is never mistaken for temple congestion, and each case's
+proven YHM bridge profiles are remembered per serial so a repeat session
+skips the settle ladders.
 The customer's one attended authorization covers the selected serial interface
 for the life of that session, so no per-command customer approval is required.
 The browser's origin and exact `1A86:7523` device check keep the capability
@@ -1456,8 +1473,8 @@ WebUSB option is intentionally hidden outside that support state.
 
 Confirm that the code still matches the person's open session, retrieve the
 configured technician key, and check
-`https://webflasher.sybilsight.com/remote-support/healthz`. A session expires
-after two hours, and only one technician can be connected at a time.
+`https://webflasher.sybilsight.com/remote-support/healthz`. An idle session
+expires after 24 hours, and only one technician can be connected at a time.
 
 **Analysis times out after a reset**
 

@@ -57,6 +57,10 @@ import {
   TEMPLE_DATA_PACING_STOCK_LEVEL,
   TempleDataPacingController,
   nextTempleDataPacingMemory,
+  readTempleDataPacingMemory,
+  writeTempleDataPacingMemory,
+  TEMPLE_DATA_PACING_DEFAULT_START_LEVEL,
+  readYhmRouteProfileMemory,
   resolveTempleDataPacingStartLevel,
   readPogoFlashResponseFrame,
   readPogoFlashResponseHeader,
@@ -64,6 +68,7 @@ import {
   retryReadOnlyBlock,
   templeDataSettleMilliseconds,
   writePogoFlashTransactionHeader,
+  writeYhmRouteProfileMemory,
 } from "../src/lib/serial.js";
 import {
   YHM_PROFILE_OBSERVED_33,
@@ -233,6 +238,74 @@ test("reports the packet boundary even when its re-synchronization fails", async
   assert.equal(result.packetBoundaryDetected, true);
 });
 
+test("a committed image that activates late resolves instead of failing the route", async () => {
+  const session = new G2CaseSession(null, { log: () => {} });
+  let resets = 0;
+  session.restartAndRecheck = async () => {
+    resets += 1;
+    return { caseVersion: "1.2.57" };
+  };
+  session.probeRunningTemple = async () => ({
+    decoded: {
+      // Still the old image on the first probe, the new one after a reset.
+      firmwareVersion: resets < 2 ? "2.2.6.10" : "2.2.6.11",
+      hardwareRevision: 5,
+    },
+  });
+  const activation = await session.resolveDeferredTempleActivation(
+    "left",
+    "2.2.6.11",
+    { observedFirmware: "2.2.6.10", observedHardware: 5 },
+  );
+  assert.deepEqual(activation.postflightVersion, {
+    firmware: "2.2.6.11",
+    hardware: 5,
+  });
+  assert.equal(activation.resolvedOnAttempt, 2);
+  assert.equal(activation.attempts.length, 2);
+});
+
+test("an image that never activates still fails the route after bounded resets", async () => {
+  const session = new G2CaseSession(null, { log: () => {} });
+  let resets = 0;
+  session.restartAndRecheck = async () => {
+    resets += 1;
+    return { caseVersion: "1.2.57" };
+  };
+  session.probeRunningTemple = async () => ({
+    decoded: { firmwareVersion: "2.2.6.10", hardwareRevision: 5 },
+  });
+  const activation = await session.resolveDeferredTempleActivation(
+    "left",
+    "2.2.6.11",
+    { observedFirmware: "2.2.6.10", observedHardware: 5 },
+    2,
+  );
+  assert.equal(activation.postflightVersion, undefined);
+  assert.equal(activation.attempts.length, 2);
+  assert.equal(resets, 2);
+});
+
+test("activation recovery survives a failed probe and keeps trying", async () => {
+  const session = new G2CaseSession(null, { log: () => {} });
+  let probes = 0;
+  session.restartAndRecheck = async () => ({ caseVersion: "1.2.57" });
+  session.probeRunningTemple = async () => {
+    probes += 1;
+    if (probes === 1) throw new Error("no framed temple response");
+    return {
+      decoded: { firmwareVersion: "2.2.6.11", hardwareRevision: 5 },
+    };
+  };
+  const activation = await session.resolveDeferredTempleActivation(
+    "right",
+    "2.2.6.11",
+    { observedFirmware: "2.2.6.10", observedHardware: 5 },
+  );
+  assert.equal(activation.resolvedOnAttempt, 2);
+  assert.match(activation.attempts[0].error, /no framed temple response/);
+});
+
 test("post-reset liveness accepts per-route versions during a cross-version update", async () => {
   const session = new G2CaseSession(null, { log: () => {} });
   const probed = [];
@@ -373,6 +446,44 @@ test("pacing start level honors escalated restarts and the automatic floor", () 
     resolveTempleDataPacingStartLevel(3, 1),
     TEMPLE_DATA_PACING_LEVELS.length - 1,
   );
+});
+
+test("pacing memory keeps each temple and Case separate", () => {
+  const store = new Map();
+  const originalLocalStorage = globalThis.localStorage;
+  globalThis.localStorage = {
+    getItem: (key) => store.get(key) ?? null,
+    setItem: (key, value) => store.set(key, value),
+  };
+  try {
+    const caseA = "uid:00310025514250052037384b";
+    const caseB = "uid:00240024514250032037384b";
+    // The measured asymmetry: one temple tolerant, the other conservative.
+    writeTempleDataPacingMemory({ level: 1, cleanStreak: 1 }, caseA, "right");
+    writeTempleDataPacingMemory({ level: 4, cleanStreak: 0 }, caseA, "left");
+
+    assert.deepEqual(readTempleDataPacingMemory(caseA, "right"), {
+      level: 1,
+      cleanStreak: 1,
+    });
+    assert.deepEqual(readTempleDataPacingMemory(caseA, "left"), {
+      level: 4,
+      cleanStreak: 0,
+    });
+    // A different Case must not inherit either level.
+    assert.equal(
+      readTempleDataPacingMemory(caseB, "left").level,
+      TEMPLE_DATA_PACING_DEFAULT_START_LEVEL,
+    );
+    // Neither may an unseen route on a known Case.
+    assert.equal(
+      readTempleDataPacingMemory(caseA, "both").level,
+      TEMPLE_DATA_PACING_DEFAULT_START_LEVEL,
+    );
+  } finally {
+    if (originalLocalStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = originalLocalStorage;
+  }
 });
 
 test("pacing memory probes faster only after consecutive clean components", () => {
@@ -583,9 +694,18 @@ test("switches to the exact observed-33 bridge only from retained zero-write pro
     identifyYhmBaselineProfile("811004aeaf03812044ff"),
     null,
   );
+  // Observed on hardware 2026-07-28 with retained zero-write proof; the
+  // register-8 0x33 counterpart of reviewed entry 2 now selects the
+  // observed-33 bridge instead of failing closed.
   assert.equal(
     identifyYhmBaselineProfile("811104afaf03812033ff"),
-    null,
+    YHM_PROFILE_OBSERVED_33,
+  );
+  // The raw entry-2 baseline stays reviewed-22 only: the observed-33 bridge
+  // table replaces its register-8 byte rather than accepting both states.
+  assert.equal(
+    identifyYhmBaselineProfile("811104afaf03812022ff"),
+    YHM_PROFILE_REVIEWED_22,
   );
 });
 
@@ -789,6 +909,7 @@ test("pins the hardware-validated volatile flash bridge", async () => {
       .filter(([, reviewed, observed]) => reviewed !== observed),
     [
       [2826, 0x22, 0x33],
+      [2836, 0x22, 0x33],
       [2846, 0x22, 0x33],
       [2856, 0x22, 0x33],
     ],
@@ -1961,4 +2082,115 @@ test("retries one transient intermediate-reset no-frame before a fresh START", a
   assert.equal(report.resetAttempts.length, 2);
   assert.equal(report.resetAttempts[0].outcome, "failed");
   assert.equal(report.resetAttempts[1].outcome, "success");
+});
+
+test("link-latency compensation keeps relay distance out of congestion decisions", () => {
+  const overhead = new TempleDataPacingController({
+    startLevel: 2,
+    totalBytes: 3_539_474,
+    linkOverheadMs: 600,
+  });
+  // 2,000 ms measured includes ~600 ms of relay round trip: effective
+  // 1,400 ms stays under the 1,500 ms absolute threshold, so no backoff.
+  assert.equal(overhead.noteAckLatency(0, 2_000), 0);
+  assert.equal(overhead.level, 2);
+  assert.equal(overhead.escalations, 0);
+  assert.equal(overhead.summary().linkOverheadMs, 600);
+
+  const local = new TempleDataPacingController({
+    startLevel: 2,
+    totalBytes: 3_539_474,
+  });
+  // The same measurement without compensation escalates immediately.
+  assert.equal(
+    local.noteAckLatency(0, 2_000),
+    TEMPLE_DATA_PACING_LEVELS[3].late,
+  );
+  assert.equal(local.level, 3);
+});
+
+function withFakeLocalStorage(run) {
+  const store = new Map();
+  const previous = globalThis.localStorage;
+  globalThis.localStorage = {
+    getItem: (key) => (store.has(key) ? store.get(key) : null),
+    setItem: (key, value) => store.set(key, String(value)),
+  };
+  try {
+    return run(store);
+  } finally {
+    if (previous === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previous;
+  }
+}
+
+test("route YHM profiles persist per exact case serial and reject unknown profiles", () => {
+  withFakeLocalStorage((store) => {
+    writeYhmRouteProfileMemory("case-a", "left", YHM_PROFILE_OBSERVED_33);
+    writeYhmRouteProfileMemory("case-a", "right", YHM_PROFILE_REVIEWED_22);
+    writeYhmRouteProfileMemory("case-b", "left", YHM_PROFILE_REVIEWED_22);
+    assert.deepEqual(readYhmRouteProfileMemory("case-a"), {
+      left: YHM_PROFILE_OBSERVED_33,
+      right: YHM_PROFILE_REVIEWED_22,
+    });
+    assert.deepEqual(readYhmRouteProfileMemory("case-b"), {
+      left: YHM_PROFILE_REVIEWED_22,
+    });
+    assert.deepEqual(readYhmRouteProfileMemory("case-unknown"), {});
+
+    // A tampered or outdated profile name is ignored rather than trusted.
+    const parsed = JSON.parse(store.get("g2wf.yhm-route-profiles.v1"));
+    parsed["case-a"].left = "unreviewed-99";
+    store.set("g2wf.yhm-route-profiles.v1", JSON.stringify(parsed));
+    assert.deepEqual(readYhmRouteProfileMemory("case-a"), {
+      right: YHM_PROFILE_REVIEWED_22,
+    });
+  });
+});
+
+test("route YHM profile memory prunes the oldest cases beyond its cap", () => {
+  withFakeLocalStorage((store) => {
+    for (let index = 0; index < 40; index += 1) {
+      writeYhmRouteProfileMemory(`case-${index}`, "left", YHM_PROFILE_OBSERVED_33);
+      const parsed = JSON.parse(store.get("g2wf.yhm-route-profiles.v1"));
+      parsed[`case-${index}`].updatedAt = index;
+      store.set("g2wf.yhm-route-profiles.v1", JSON.stringify(parsed));
+    }
+    const parsed = JSON.parse(store.get("g2wf.yhm-route-profiles.v1"));
+    assert.equal(Object.keys(parsed).length, 32);
+    assert.equal(parsed["case-0"], undefined);
+    assert.deepEqual(readYhmRouteProfileMemory("case-39"), {
+      left: YHM_PROFILE_OBSERVED_33,
+    });
+  });
+});
+
+test("a repeat session for the same case starts from its proven YHM profiles", () => {
+  withFakeLocalStorage(() => {
+    const first = new G2CaseSession(null, { log: () => {} });
+    first.adoptCaseIdentity("00240024514250032037384b");
+    first.rememberRouteYhmProfile("left", YHM_PROFILE_OBSERVED_33);
+    first.rememberRouteYhmProfile("right", YHM_PROFILE_OBSERVED_33);
+
+    const logs = [];
+    const second = new G2CaseSession(null, {
+      log: (message) => logs.push(message),
+    });
+    // Live evidence recorded before identity arrives is never overridden.
+    second.routeYhmProfiles.set("right", YHM_PROFILE_REVIEWED_22);
+    second.adoptCaseIdentity("00240024514250032037384b");
+    assert.equal(
+      second.routeYhmProfiles.get("left"),
+      YHM_PROFILE_OBSERVED_33,
+    );
+    assert.equal(
+      second.routeYhmProfiles.get("right"),
+      YHM_PROFILE_REVIEWED_22,
+    );
+    assert.match(logs.join("\n"), /proven for this exact Case/);
+
+    const other = new G2CaseSession(null, { log: () => {} });
+    other.adoptCaseIdentity("different-case-serial");
+    assert.equal(other.routeYhmProfiles.size, 0);
+  });
 });

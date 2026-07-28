@@ -30,6 +30,18 @@ import {
   validateGlassesRecoveryBundle,
 } from "./lib/backup.js";
 import { buildG2DeviceAnalytics } from "./lib/analytics.js";
+import {
+  buildDeviceFingerprint,
+  caseDeviceKey,
+  usbBridgeRevisionOf,
+} from "./lib/deviceIdentity.js";
+import {
+  readDeviceHistory,
+  readDeviceLabel,
+  recordDeviceOperation,
+  summarizeDeviceHistory,
+  writeDeviceLabel,
+} from "./lib/deviceHistory.js";
 import { decodeApollo510RecoveryConfig } from "./lib/recoveryConfig.js";
 import {
   buildBundleDifferencePlan,
@@ -1029,6 +1041,18 @@ function downloadBlob(blob, name) {
 // the device. It is persisted to localStorage and recovered on the next load.
 const CONSOLE_TRANSCRIPT_STORAGE_KEY = "g2wf.console-transcript.v1";
 const CONSOLE_TRANSCRIPT_ENTRY_LIMIT = 5000;
+const TRANSCRIPT_NOTICE_TIME = "--:--:--";
+
+// Lines the transcript writes about itself, rather than anything the device
+// did. They are shown once and never carried into the next session.
+function isTranscriptRecoveryNotice(entry) {
+  return Boolean(
+    entry?.time === TRANSCRIPT_NOTICE_TIME ||
+      /^Recovered \d+ console (entry|entries) from the previous session/.test(
+        entry?.message ?? "",
+      ),
+  );
+}
 
 function readStoredConsoleTranscript() {
   try {
@@ -1089,6 +1113,8 @@ function App() {
     "Select a Case, choose firmware, and Apply.",
   );
   const [installedProvenance, setInstalledProvenance] = useState({});
+  const [deviceHistory, setDeviceHistory] = useState(() => readDeviceHistory());
+  const [deviceLabelDraft, setDeviceLabelDraft] = useState("");
   const [activeSection, setActiveSection] = useState(SECTION_KEYS[0]);
   const pendingAnchorRef = useRef(null);
   const [confirmText, setConfirmText] = useState("");
@@ -1130,6 +1156,9 @@ function App() {
   const transcriptRef = useRef([]);
   const transcriptPersistTimerRef = useRef(null);
   const transcriptRecoveredRef = useRef(false);
+  // Set only once the previous transcript has been read and adopted, or shown
+  // to be absent. Until then this session must not overwrite what is stored.
+  const transcriptCustodyRef = useRef(false);
   const supportConnectionRef = useRef(null);
   const remoteDeviceBridgeRef = useRef(null);
   const remoteOperatorPortRef = useRef(null);
@@ -1139,6 +1168,12 @@ function App() {
       clearTimeout(transcriptPersistTimerRef.current);
       transcriptPersistTimerRef.current = null;
     }
+    // Saving replaces the whole stored transcript, so it may only happen once
+    // this session has actually taken custody of the previous one. Without
+    // this guard any load-time failure turns the next save into data loss:
+    // a broken build left recovery throwing, and the first save afterwards
+    // replaced a 1,727-entry history with a handful of new lines.
+    if (!transcriptCustodyRef.current) return;
     try {
       window.localStorage.setItem(
         CONSOLE_TRANSCRIPT_STORAGE_KEY,
@@ -1251,9 +1286,13 @@ function App() {
           progress: setSessionProgress,
         });
       }
+      // Keep the session pointed at the physical unit in front of us so
+      // per-device records (pacing memory, audit fingerprints) never blend
+      // two Cases together.
+      sessionRef.current.deviceKey = caseDeviceKey(report);
       return sessionRef.current;
     },
-    [addLog, setSessionProgress],
+    [addLog, report, setSessionProgress],
   );
 
   const recordSupportEvent = useCallback((label, value, ok = true) => {
@@ -1608,21 +1647,41 @@ function App() {
   useEffect(() => {
     if (transcriptRecoveredRef.current) return;
     transcriptRecoveredRef.current = true;
-    const stored = readStoredConsoleTranscript();
+    let stored = null;
+    try {
+      stored = readStoredConsoleTranscript();
+    } catch (error) {
+      // Custody stays false, so the stored transcript is left untouched
+      // rather than replaced by this session's few lines.
+      addLog(
+        `The previous console transcript could not be read (${error.message}); it has been left untouched and this session will not overwrite it.`,
+        "warn",
+      );
+      return;
+    }
+    transcriptCustodyRef.current = true;
     if (!stored) return;
+    // Drop the bookkeeping lines a previous recovery wrote. Persisting them
+    // made every reload add two permanent entries, so a tab reloaded often
+    // slowly filled its own transcript with recovery notices instead of
+    // device history.
+    const deviceEntries = stored.entries.filter(
+      (entry) => !isTranscriptRecoveryNotice(entry),
+    );
+    if (!deviceEntries.length) return;
     // Prepend the recovered entries so they persist again and appear in
     // downloads; the visible console only announces the recovery.
     transcriptRef.current = [
-      ...stored.entries,
+      ...deviceEntries,
       {
-        time: "--:--:--",
+        time: TRANSCRIPT_NOTICE_TIME,
         message: `———— end of previous session transcript${stored.savedAt ? ` (last saved ${stored.savedAt})` : ""} ————`,
         tone: "info",
       },
       ...transcriptRef.current,
     ].slice(-CONSOLE_TRANSCRIPT_ENTRY_LIMIT);
     addLog(
-      `Recovered ${stored.entries.length} console ${stored.entries.length === 1 ? "entry" : "entries"} from the previous session; Download log includes them.`,
+      `Recovered ${deviceEntries.length} console ${deviceEntries.length === 1 ? "entry" : "entries"} from the previous session; Download log includes them.`,
     );
     // Recover exactly once per load.
   }, []);
@@ -2281,6 +2340,65 @@ function App() {
     });
   };
 
+  // A fingerprint of the unit an operation ran against. Everything in it is
+  // observed rather than inferred; the operator label is the only place the
+  // things a human can see — case colour, frame fit, which unit this is —
+  // can be recorded, because the device reports none of them.
+  const describeConnectedDevice = useCallback(
+    (deviceReport = report) => {
+      const deviceKey = caseDeviceKey(deviceReport);
+      return buildDeviceFingerprint({
+        report: deviceReport,
+        transport: portRef.current
+          ? g2CaseTransportLabel(portRef.current)
+          : null,
+        usbBridgeRevision: usbBridgeRevisionOf(portRef.current),
+        templeVersions: {
+          left: pogoResults.left?.version?.decoded ?? null,
+          right: pogoResults.right?.version?.decoded ?? null,
+        },
+        operatorLabel: readDeviceLabel(deviceKey),
+      });
+    },
+    [pogoResults, report],
+  );
+
+  // File the outcome under the device so patterns across runs become visible:
+  // which route rejects, how often an image needed an extra activation reset,
+  // what pacing each side settled at.
+  const recordDeviceRun = useCallback(
+    (operation, audit, outcome) => {
+      try {
+        const fingerprint = describeConnectedDevice();
+        recordDeviceOperation({
+          report,
+          operation,
+          audit,
+          fingerprint,
+          outcome,
+        });
+        setDeviceHistory(readDeviceHistory());
+      } catch {
+        // History is diagnostic only and must never affect an operation.
+      }
+    },
+    [describeConnectedDevice, report],
+  );
+
+  const connectedDevice = useMemo(
+    () => describeConnectedDevice(),
+    [describeConnectedDevice],
+  );
+  const connectedDeviceHistory = useMemo(
+    () => summarizeDeviceHistory(deviceHistory[connectedDevice.deviceKey]),
+    [connectedDevice.deviceKey, deviceHistory],
+  );
+
+  // Load the saved label whenever a different physical Case is connected.
+  useEffect(() => {
+    setDeviceLabelDraft(readDeviceLabel(connectedDevice.deviceKey));
+  }, [connectedDevice.deviceKey]);
+
   const recordInstalledProvenance = (
     audit,
     caseSerial,
@@ -2331,6 +2449,7 @@ function App() {
         );
         setTempleFlashAudit(audit);
         recordInstalledProvenance(audit);
+        recordDeviceRun("temple-flash", audit, audit?.outcome ?? "success");
         setTempleFlashText("");
         setTempleFlashSeated(false);
         setTempleFlashRisk(false);
@@ -2342,6 +2461,7 @@ function App() {
         if (caught?.audit) {
           setTempleFlashAudit(caught.audit);
           recordInstalledProvenance(caught.audit);
+          recordDeviceRun("temple-flash", caught.audit, "failed_or_uncertain");
         }
         throw caught;
       }
@@ -2732,6 +2852,11 @@ function App() {
             fresh.console?.serialNumber,
             fresh.console?.identifier,
           );
+          recordDeviceRun(
+            "automatic-apply",
+            audit,
+            audit?.outcome ?? "success",
+          );
           setAutomaticStatus(
             `${automaticInstallMode === "update" ? "Update" : "Restore"} complete · both temples reset and verified.`,
           );
@@ -2746,6 +2871,11 @@ function App() {
               caught.audit,
               report?.console?.serialNumber,
               report?.console?.identifier,
+            );
+            recordDeviceRun(
+              "automatic-apply",
+              caught.audit,
+              "failed_or_uncertain",
             );
           }
           setAutomaticStatus(
@@ -3412,13 +3542,80 @@ function App() {
                     <StatusPill tone="quiet">Stays in browser</StatusPill>
                   </div>
                   <div className="field-grid">
-                    <Field label="Case serial" value={report.console.serialNumber} />
+                    <Field
+                      label="Case MCU device ID"
+                      value={report.console.serialNumber}
+                      detail={
+                        connectedDevice.case.uidDecoded
+                          ? `STM32 96-bit ID · lot ${connectedDevice.case.uidDecoded.lotAscii} · wafer ${connectedDevice.case.uidDecoded.waferNumber}. Identifies this unit, not its hardware revision.`
+                          : "Silicon identifier, not an Even Realities product serial"
+                      }
+                    />
                     <Field label="Factory identifier" value={report.console.identifier} />
+                    <Field
+                      label="USB bridge revision"
+                      value={connectedDevice.transport.usbBridgeRevision}
+                      detail={
+                        connectedDevice.transport.usbBridgeRevision
+                          ? "CH340 silicon revision, read over WebUSB"
+                          : "Only readable over direct WebUSB"
+                      }
+                    />
                     <Field
                       label="Frame-fit variant"
                       value="Not reported by device"
                       detail="Frame A/B is not inferred from the factory identifier"
                     />
+                  </div>
+                  <div className="device-label-block">
+                    <label className="device-label-field">
+                      <span>This unit</span>
+                      <input
+                        type="text"
+                        value={deviceLabelDraft}
+                        placeholder="e.g. Brown case · Frame B · daily pair"
+                        maxLength={120}
+                        onChange={(event) =>
+                          setDeviceLabelDraft(event.target.value)
+                        }
+                        onBlur={() => {
+                          writeDeviceLabel(
+                            connectedDevice.deviceKey,
+                            deviceLabelDraft,
+                          );
+                        }}
+                      />
+                    </label>
+                    <small>
+                      Case colour and frame fit are not readable from the
+                      device. Recording them here attaches them to this Case in
+                      every later audit and history entry.
+                    </small>
+                    {connectedDeviceHistory.operations > 0 ? (
+                      <small className="device-history-summary">
+                        {connectedDeviceHistory.operations} recorded operation
+                        {connectedDeviceHistory.operations === 1 ? "" : "s"} on
+                        this Case
+                        {Object.entries(connectedDeviceHistory.routes).map(
+                          ([route, stats]) => (
+                            <span key={route}>
+                              {" · "}
+                              {route}: {stats.successes}/{stats.attempts}{" "}
+                              clean
+                              {stats.dataRejections
+                                ? `, ${stats.dataRejections} rejection${stats.dataRejections === 1 ? "" : "s"}`
+                                : ""}
+                              {stats.activationResets
+                                ? `, ${stats.activationResets} activation reset${stats.activationResets === 1 ? "" : "s"}`
+                                : ""}
+                              {Number.isInteger(stats.typicalPacingLevel)
+                                ? `, pacing L${stats.typicalPacingLevel}`
+                                : ""}
+                            </span>
+                          ),
+                        )}
+                      </small>
+                    ) : null}
                     <Field
                       label="Electronic profile"
                       value={

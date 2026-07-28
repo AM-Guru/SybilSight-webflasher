@@ -1,5 +1,8 @@
 import { equalBytes, hexBytes, readU32LE, sha256Hex } from "./firmware.js";
 import {
+  YHM_PROFILE_OBSERVED_33,
+  YHM_PROFILE_OBSERVED_45,
+  YHM_PROFILE_PATCH_BYTES,
   YHM_PROFILE_REVIEWED_22,
   requireYhmProfile,
 } from "./yhmProfiles.js";
@@ -11,7 +14,14 @@ export const POGO_BRIDGE_PROOF_ADDRESS = 0x20011b00;
 export const POGO_BRIDGE_SHA256 =
   "e30e143d522e5a5d0b10a92a15610badcc6aef014333716a94eae183b14dc258";
 export const POGO_BRIDGE_OBSERVED_33_SHA256 =
-  "ce0b6825912d7006e8ddd7da70792bec1418bec03c28f6e6aa5bb928461dae53";
+  "3ca8ed1d8d37b2edef62dcb6915b5ec4b1d439160da0a89e93aa74901d760ef6";
+export const POGO_BRIDGE_OBSERVED_45_SHA256 =
+  "1a4cde093bc804e1b7e176229b0af346b0423c3a1d85fc5c908f1e38233ed45c";
+export const POGO_BRIDGE_PROFILE_SHA256 = Object.freeze({
+  [YHM_PROFILE_REVIEWED_22]: POGO_BRIDGE_SHA256,
+  [YHM_PROFILE_OBSERVED_33]: POGO_BRIDGE_OBSERVED_33_SHA256,
+  [YHM_PROFILE_OBSERVED_45]: POGO_BRIDGE_OBSERVED_45_SHA256,
+});
 export const POGO_BRIDGE_BANNER = new TextEncoder().encode("G2_POGO_BRIDGE_V1\n");
 export const POGO_BRIDGE_PROOF = new Uint8Array([
   0x47, 0x42, 0x52, 0x50, 0xde, 0xc0, 0xde, 0xc0,
@@ -50,7 +60,7 @@ Iv+BAQSvrgOBICL/gRAErq8DgSAi/wAAGAAAUCBOAAAM7QDgBAD6BQ==
 `;
 
 const POGO_BRIDGE_PROFILE_PATCH_OFFSETS = Object.freeze([
-  1670, 1690, 1700,
+  1670, 1680, 1690, 1700,
 ]);
 
 export const POGO_BRIDGE_STATUS = Object.freeze({
@@ -91,12 +101,12 @@ export async function getVerifiedPogoBridgePayload(
         "The pinned pogo bridge YHM profile table differs from the reviewed layout.",
       );
     }
-    payload[offset] = 0x33;
+    payload[offset] = YHM_PROFILE_PATCH_BYTES[profile];
   }
   const digest = await sha256Hex(payload);
-  if (digest !== POGO_BRIDGE_OBSERVED_33_SHA256) {
+  if (digest !== POGO_BRIDGE_PROFILE_SHA256[profile]) {
     throw new Error(
-      "The pinned observed-33 pogo bridge failed its SHA-256 check.",
+      `The pinned ${profile} pogo bridge failed its SHA-256 check.`,
     );
   }
   return payload;

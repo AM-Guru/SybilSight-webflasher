@@ -143,6 +143,13 @@ export class RemoteSupportConnection {
             settled = true;
             this.session = message.session;
             this.resumeToken = message.resumeToken ?? this.resumeToken;
+            // Older relays omit the field; a null list disables every
+            // capability-gated serial fast path without probing.
+            this.serialOperations = Array.isArray(message.serialOperations)
+              ? message.serialOperations.filter(
+                  (value) => typeof value === "string",
+                )
+              : null;
             this.onState({
               status: "connected",
               role: this.role,

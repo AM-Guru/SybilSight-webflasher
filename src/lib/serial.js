@@ -18,7 +18,7 @@ import {
   POGO_BRIDGE_BANNER,
   POGO_BRIDGE_PROOF,
   POGO_BRIDGE_PROOF_ADDRESS,
-  POGO_BRIDGE_OBSERVED_33_SHA256,
+  POGO_BRIDGE_PROFILE_SHA256,
   POGO_BRIDGE_RESULT_ADDRESS,
   POGO_BRIDGE_RESULT_LENGTH,
   POGO_BRIDGE_SHA256,
@@ -32,7 +32,7 @@ import {
 import {
   POGO_FLASH_BRIDGE_ADDRESS,
   POGO_FLASH_BRIDGE_BANNER,
-  POGO_FLASH_BRIDGE_OBSERVED_33_SHA256,
+  POGO_FLASH_BRIDGE_PROFILE_SHA256,
   POGO_FLASH_BRIDGE_SHA256,
   POGO_FLASH_PROOF,
   POGO_FLASH_PROOF_ADDRESS,
@@ -65,8 +65,10 @@ import {
   verifyPogoFlashZeroWriteSetupStop,
 } from "./pogoFlashBridge.js";
 import { buildBundleDifferencePlan } from "./differential.js";
+import { encodeRemoteBytes } from "./remoteSerial.js";
 import {
   YHM_PROFILE_OBSERVED_33,
+  YHM_PROFILE_OBSERVED_45,
   YHM_PROFILE_REVIEWED_22,
   identifyYhmBaselineProfile,
   requireYhmProfile,
@@ -107,6 +109,10 @@ const POGO_HOST_TIMEOUT_COMPONENT_RESTART_LIMIT = 3;
 const POGO_PERSISTENT_REJECTION_WINDOW_RECORDS = 64;
 const POGO_BILATERAL_ROUTE_ADAPTATION_LIMIT = 4;
 const POGO_SETUP_RESET_LIMIT = 2;
+// A temple can accept and commit an image (FINISH acknowledged) yet keep
+// reporting the previous version until a later reset. Measured on hardware
+// across a full postflight window plus an intervening analysis.
+const POGO_ACTIVATION_RESET_ATTEMPTS = 2;
 const POGO_INTERMEDIATE_RESET_ATTEMPTS = 2;
 const POGO_FINAL_RESET_ATTEMPTS = 2;
 // After a B0/DEB0 reset the seated temples renegotiate charging with the
@@ -250,7 +256,15 @@ const PACING_CONGESTION_BASELINE_FACTOR = 4;
 const PACING_BASELINE_WARMUP_RECORDS = 24;
 const PACING_CHANGE_COOLDOWN_RECORDS = 60;
 const PACING_CONGESTION_EVENT_LOG_LIMIT = 20;
-const PACING_MEMORY_KEY = "g2wf.temple-data-pacing.v2";
+// Pacing is remembered per temple, per Case. Hardware measurement forced this:
+// on one device the right temple carried 2,695 records with no settle at all
+// while the left rejected at record 866 under the same setting, and later
+// rejected again at the most conservative level. A single shared level is the
+// wrong model — it slows a good route to protect a bad one, and speeds a bad
+// route because a good one succeeded. Keying by Case as well keeps one unit's
+// characteristics from being applied to another.
+const PACING_MEMORY_KEY = "g2wf.temple-data-pacing.v3";
+const PACING_UNKNOWN_DEVICE_KEY = "unidentified-case";
 
 function clampAutomaticLevel(level) {
   return Math.min(
@@ -259,23 +273,31 @@ function clampAutomaticLevel(level) {
   );
 }
 
-export function readTempleDataPacingMemory() {
+function readPacingStore() {
   try {
     const parsed = JSON.parse(
       globalThis.localStorage?.getItem(PACING_MEMORY_KEY) ?? "null",
     );
-    if (
-      Number.isInteger(parsed?.level) &&
-      Number.isInteger(parsed?.cleanStreak) &&
-      parsed.cleanStreak >= 0
-    ) {
-      return {
-        level: clampAutomaticLevel(parsed.level),
-        cleanStreak: parsed.cleanStreak,
-      };
-    }
+    return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
-    // Storage may be unavailable or hold an older shape; use the default.
+    return {};
+  }
+}
+
+export function readTempleDataPacingMemory(
+  deviceKey = PACING_UNKNOWN_DEVICE_KEY,
+  route = "both",
+) {
+  const stored = readPacingStore()?.[deviceKey]?.[route];
+  if (
+    Number.isInteger(stored?.level) &&
+    Number.isInteger(stored?.cleanStreak) &&
+    stored.cleanStreak >= 0
+  ) {
+    return {
+      level: clampAutomaticLevel(stored.level),
+      cleanStreak: stored.cleanStreak,
+    };
   }
   return {
     level: TEMPLE_DATA_PACING_DEFAULT_START_LEVEL,
@@ -283,9 +305,15 @@ export function readTempleDataPacingMemory() {
   };
 }
 
-export function writeTempleDataPacingMemory(memory) {
+export function writeTempleDataPacingMemory(
+  memory,
+  deviceKey = PACING_UNKNOWN_DEVICE_KEY,
+  route = "both",
+) {
   try {
-    globalThis.localStorage?.setItem(PACING_MEMORY_KEY, JSON.stringify(memory));
+    const store = readPacingStore();
+    store[deviceKey] = { ...(store[deviceKey] ?? {}), [route]: memory };
+    globalThis.localStorage?.setItem(PACING_MEMORY_KEY, JSON.stringify(store));
   } catch {
     // Memory is an optimization, never a gate.
   }
@@ -313,6 +341,73 @@ export function nextTempleDataPacingMemory(memory, outcome, levelUsed) {
   return { level, cleanStreak };
 }
 
+const YHM_ROUTE_PROFILE_MEMORY_KEY = "g2wf.yhm-route-profiles.v1";
+const YHM_ROUTE_PROFILE_MEMORY_LIMIT = 32;
+
+// Last-proven YHM bridge profile per case serial and route. A repeat support
+// session for the same case then starts from the profile its temples actually
+// idle in, instead of walking the reviewed-22 settle ladder again. Memory is
+// an optimization, never a gate: it only reorders which separately pinned
+// bridge is tried first.
+export function readYhmRouteProfileMemory(serialNumber) {
+  const remembered = {};
+  try {
+    const parsed = JSON.parse(
+      globalThis.localStorage?.getItem(YHM_ROUTE_PROFILE_MEMORY_KEY) ?? "null",
+    );
+    for (const route of ["left", "right"]) {
+      const profile = parsed?.[serialNumber]?.[route];
+      if (typeof profile !== "string") continue;
+      try {
+        requireYhmProfile(profile);
+      } catch {
+        continue;
+      }
+      remembered[route] = profile;
+    }
+  } catch {
+    // Storage may be unavailable or hold an older shape; start fresh.
+  }
+  return remembered;
+}
+
+export function writeYhmRouteProfileMemory(serialNumber, route, profile) {
+  try {
+    const parsed = JSON.parse(
+      globalThis.localStorage?.getItem(YHM_ROUTE_PROFILE_MEMORY_KEY) ?? "null",
+    );
+    const store =
+      parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? parsed
+        : {};
+    store[serialNumber] = {
+      ...(store[serialNumber] && typeof store[serialNumber] === "object"
+        ? store[serialNumber]
+        : {}),
+      [route]: profile,
+      updatedAt: Date.now(),
+    };
+    const serials = Object.keys(store);
+    if (serials.length > YHM_ROUTE_PROFILE_MEMORY_LIMIT) {
+      serials.sort(
+        (a, b) => (store[a]?.updatedAt ?? 0) - (store[b]?.updatedAt ?? 0),
+      );
+      for (const stale of serials.slice(
+        0,
+        serials.length - YHM_ROUTE_PROFILE_MEMORY_LIMIT,
+      )) {
+        delete store[stale];
+      }
+    }
+    globalThis.localStorage?.setItem(
+      YHM_ROUTE_PROFILE_MEMORY_KEY,
+      JSON.stringify(store),
+    );
+  } catch {
+    // Memory is an optimization, never a gate.
+  }
+}
+
 export function resolveTempleDataPacingStartLevel(
   dataPacingMultiplier,
   rememberedLevel = readTempleDataPacingMemory().level,
@@ -327,10 +422,17 @@ export class TempleDataPacingController {
     startLevel = TEMPLE_DATA_PACING_DEFAULT_START_LEVEL,
     totalBytes,
     log = null,
+    linkOverheadMs = 0,
+    deviceKey = PACING_UNKNOWN_DEVICE_KEY,
+    route = "both",
   } = {}) {
     if (!Number.isInteger(totalBytes) || totalBytes <= 0) {
       throw new Error("Adaptive pacing requires the total payload size.");
     }
+    // What this level was learned from, so one temple's behaviour is never
+    // applied to the other, nor one Case's to another.
+    this.deviceKey = deviceKey || PACING_UNKNOWN_DEVICE_KEY;
+    this.route = route || "both";
     this.level = Math.min(
       Math.max(startLevel, 0),
       TEMPLE_DATA_PACING_LEVELS.length - 1,
@@ -338,6 +440,10 @@ export class TempleDataPacingController {
     this.startLevel = this.level;
     this.totalBytes = totalBytes;
     this.log = log;
+    // Measured transport round-trip overhead (a remote-support relay adds a
+    // full round trip on each side of a transact) subtracted from every ACK
+    // latency, so link distance is never mistaken for temple congestion.
+    this.linkOverheadMs = Math.max(0, Number(linkOverheadMs) || 0);
     this.baselineMs = null;
     this.warmupLatencies = [];
     this.cooldownRecords = 0;
@@ -360,6 +466,7 @@ export class TempleDataPacingController {
   // Returns an immediate extra settle in milliseconds when the ACK latency
   // signals congestion; 0 otherwise.
   noteAckLatency(recordIndex, latencyMs) {
+    latencyMs = Math.max(0, latencyMs - this.linkOverheadMs);
     this.ackCount += 1;
     this.ackTotalMs += latencyMs;
     if (latencyMs > this.ackMaxMs) this.ackMaxMs = latencyMs;
@@ -431,11 +538,11 @@ export class TempleDataPacingController {
   commitMemory(outcome) {
     const clean = outcome === "clean" && this.escalations === 0;
     const memory = nextTempleDataPacingMemory(
-      readTempleDataPacingMemory(),
+      readTempleDataPacingMemory(this.deviceKey, this.route),
       clean ? "clean" : "failed",
       this.level,
     );
-    writeTempleDataPacingMemory(memory);
+    writeTempleDataPacingMemory(memory, this.deviceKey, this.route);
     return memory;
   }
 
@@ -453,6 +560,7 @@ export class TempleDataPacingController {
       ackMaxMs: this.ackMaxMs,
       baselineMs:
         this.baselineMs == null ? null : Math.round(this.baselineMs),
+      linkOverheadMs: this.linkOverheadMs,
       settleTotalMs: this.settleTotalMs,
     };
   }
@@ -1272,6 +1380,23 @@ class Stm32Bootloader {
         await this.transport.setSignals(false, false);
         await delay(180 * attempt);
         this.transport.clear();
+        // Over a remote-support link, application output the reset spewed can
+        // still be in flight through the relay when the local queue clears;
+        // observed as "Unexpected 0x.." sync rejections on every first
+        // attempt. Give stragglers one generous link round trip to land,
+        // then clear again so the sync ACK read starts clean.
+        if (this.port?.transportKind === "remote") {
+          let rtt = this.port.linkRttMs;
+          if (rtt == null && typeof this.port.measureLinkRtt === "function") {
+            try {
+              rtt = await this.port.measureLinkRtt();
+            } catch {
+              rtt = null;
+            }
+          }
+          await delay(Math.max(250, Math.min(2000, Math.round((rtt ?? 300) * 1.5))));
+          this.transport.clear();
+        }
         await this.transport.write(new Uint8Array([SYNC]));
         await this.expectAck("bootloader synchronization", 3000);
         if (attempt > 1) {
@@ -1561,10 +1686,7 @@ class CasePogoFlashTransport {
 
   async openOnce() {
     const payload = await getVerifiedPogoFlashBridgePayload(this.yhmProfile);
-    const bridgeSha256 =
-      this.yhmProfile === YHM_PROFILE_OBSERVED_33
-        ? POGO_FLASH_BRIDGE_OBSERVED_33_SHA256
-        : POGO_FLASH_BRIDGE_SHA256;
+    const bridgeSha256 = POGO_FLASH_BRIDGE_PROFILE_SHA256[this.yhmProfile];
     this.session.log(
       `${this.route}: loading the separately pinned ${this.yhmProfile} writer bridge · ${bridgeSha256.slice(0, 16)}….`,
     );
@@ -1674,6 +1796,133 @@ class CasePogoFlashTransport {
     );
   }
 
+  // Writes one framed bridge request: the split 10-byte header, the payload
+  // in 32-byte chunks each acknowledged by a 0xC3 flow-control token, then
+  // the additive checksum byte. When the remote port, relay, and device
+  // build all understand exchange batches, the entire paced loop executes in
+  // the customer's browser as one declarative batch — one relay round trip
+  // instead of one per token — with identical failure semantics.
+  async writeTokenPacedRequest({
+    header,
+    payload,
+    checksumByte,
+    headerTokenLabel,
+    chunkTokenLabel,
+    headerRejectionMessage,
+    chunkRejectionMessage,
+  }) {
+    const port = this.port;
+    if (
+      typeof port?.supportsExchangeBatch !== "function" ||
+      !port.supportsExchangeBatch()
+    ) {
+      await writePogoFlashTransactionHeader(this.bridge, header);
+      const headerToken = await this.bridge.readExact(1, 8000, headerTokenLabel);
+      if (headerToken[0] !== 0xc3) {
+        throw new RetryablePogoFlashError(headerRejectionMessage);
+      }
+      for (let offset = 0; offset < payload.length; offset += 32) {
+        await this.bridge.write(
+          payload.subarray(offset, Math.min(offset + 32, payload.length)),
+        );
+        const token = await this.bridge.readExact(
+          1,
+          8000,
+          chunkTokenLabel(offset),
+        );
+        if (token[0] !== 0xc3) {
+          throw new RetryablePogoFlashError(chunkRejectionMessage(offset));
+        }
+      }
+      await this.bridge.write(new Uint8Array([checksumByte]));
+      return { offloaded: false };
+    }
+    // Tokens come from the bridge's tight SRAM loop within milliseconds of
+    // each local write; 2 s per token keeps the batch inside its total
+    // budget while remaining far above anything observed on hardware.
+    const token = encodeRemoteBytes(new Uint8Array([0xc3]));
+    const steps = [
+      { op: "write", data: encodeRemoteBytes(header.subarray(0, 5)) },
+      { op: "delay", ms: 5 },
+      { op: "write", data: encodeRemoteBytes(header.subarray(5)) },
+      { op: "expect", data: token, timeoutMs: 2000 },
+    ];
+    const tokenMeta = [
+      null,
+      null,
+      null,
+      { label: headerTokenLabel, rejection: headerRejectionMessage },
+    ];
+    for (let offset = 0; offset < payload.length; offset += 32) {
+      steps.push({
+        op: "write",
+        data: encodeRemoteBytes(
+          payload.subarray(offset, Math.min(offset + 32, payload.length)),
+        ),
+      });
+      tokenMeta.push(null);
+      steps.push({ op: "expect", data: token, timeoutMs: 2000 });
+      tokenMeta.push({
+        label: chunkTokenLabel(offset),
+        rejection: chunkRejectionMessage(offset),
+      });
+    }
+    steps.push({
+      op: "write",
+      data: encodeRemoteBytes(new Uint8Array([checksumByte])),
+    });
+    tokenMeta.push(null);
+    let batch;
+    try {
+      batch = await port.exchangeBatch(steps);
+    } catch (error) {
+      throw new RetryablePogoFlashError(
+        `The remote exchange batch failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+    if (batch?.ok === true) return { offloaded: true };
+    const failedToken = tokenMeta[batch?.failedStep] ?? null;
+    if (batch?.reason === "expect-mismatch" && failedToken) {
+      throw new RetryablePogoFlashError(failedToken.rejection);
+    }
+    if (batch?.reason === "timeout" && failedToken) {
+      throw new RetryablePogoFlashError(
+        `Timed out reading ${failedToken.label}: received ${
+          batch.receivedBytes ?? 0
+        } of ${batch.expectedBytes ?? 1} bytes.`,
+      );
+    }
+    throw new RetryablePogoFlashError(
+      `The remote exchange batch stopped at step ${
+        batch?.failedStep ?? "?"
+      } (${batch?.reason ?? "unknown"}).`,
+    );
+  }
+
+  // Median relay round trip doubled: a remote transact pays one round trip
+  // for the batched write and one for the streamed response. Zero for local
+  // transports.
+  async measureLinkOverheadMs() {
+    const port = this.port;
+    if (
+      port?.transportKind !== "remote" ||
+      typeof port.measureLinkRtt !== "function"
+    ) {
+      return 0;
+    }
+    let rtt = port.linkRttMs;
+    if (rtt == null) {
+      try {
+        rtt = await port.measureLinkRtt();
+      } catch {
+        return 0;
+      }
+    }
+    return rtt ? Math.min(4000, rtt * 2) : 0;
+  }
+
   async transact(request, timeoutMs) {
     if (!this.active || !this.bridge) {
       throw new PogoFlashSafetyError("The volatile flash bridge is not active.");
@@ -1684,35 +1933,18 @@ class CasePogoFlashTransport {
     }
     this.sequence = (this.sequence + 1) & 0xff;
     try {
-      await writePogoFlashTransactionHeader(
-        this.bridge,
-        makePogoFlashTransactionHeader(this.sequence, bytes.length),
-      );
-      const headerToken = await this.bridge.readExact(
-        1,
-        8000,
-        "transaction-header flow-control token",
-      );
-      if (headerToken[0] !== 0xc3) {
-        throw new RetryablePogoFlashError(
-          "The flash bridge rejected the transaction header.",
-        );
-      }
-      for (let offset = 0; offset < bytes.length; offset += 32) {
-        await this.bridge.write(bytes.subarray(offset, Math.min(offset + 32, bytes.length)));
-        const token = await this.bridge.readExact(
-          1,
-          8000,
-          `transaction flow-control token at ${offset}`,
-        );
-        if (token[0] !== 0xc3) {
-          throw new RetryablePogoFlashError(
-            `The flash bridge did not consume the payload chunk at ${offset}.`,
-          );
-        }
-      }
       const checksum = [...bytes].reduce((sum, value) => (sum + value) & 0xff, 0);
-      await this.bridge.write(new Uint8Array([checksum]));
+      await this.writeTokenPacedRequest({
+        header: makePogoFlashTransactionHeader(this.sequence, bytes.length),
+        payload: bytes,
+        checksumByte: checksum,
+        headerTokenLabel: "transaction-header flow-control token",
+        chunkTokenLabel: (offset) => `transaction flow-control token at ${offset}`,
+        headerRejectionMessage:
+          "The flash bridge rejected the transaction header.",
+        chunkRejectionMessage: (offset) =>
+          `The flash bridge did not consume the payload chunk at ${offset}.`,
+      });
       const response = await this.readBridgeResponse(timeoutMs);
       if (response.uartErrors) {
         throw new RetryablePogoFlashError(
@@ -1759,35 +1991,17 @@ class CasePogoFlashTransport {
     }
     this.sequence = (this.sequence + 1) & 0xff;
     const payload = new Uint8Array(payloadSize);
-    await writePogoFlashTransactionHeader(
-      this.bridge,
-      makePogoFlashHostStressHeader(this.sequence, payload.length),
-    );
-    const headerToken = await this.bridge.readExact(
-      1,
-      8000,
-      "host-only keepalive header token",
-    );
-    if (headerToken[0] !== 0xc3) {
-      throw new RetryablePogoFlashError(
+    await this.writeTokenPacedRequest({
+      header: makePogoFlashHostStressHeader(this.sequence, payload.length),
+      payload,
+      checksumByte: 0,
+      headerTokenLabel: "host-only keepalive header token",
+      chunkTokenLabel: () => "host-only keepalive payload token",
+      headerRejectionMessage:
         "The flash bridge rejected the host-only keepalive header.",
-      );
-    }
-    for (let offset = 0; offset < payload.length; offset += 32) {
-      const chunk = payload.subarray(offset, Math.min(offset + 32, payload.length));
-      await this.bridge.write(chunk);
-      const token = await this.bridge.readExact(
-        1,
-        8000,
-        "host-only keepalive payload token",
-      );
-      if (token[0] !== 0xc3) {
-        throw new RetryablePogoFlashError(
-          "The flash bridge did not consume the host-only keepalive payload.",
-        );
-      }
-    }
-    await this.bridge.write(new Uint8Array([0]));
+      chunkRejectionMessage: () =>
+        "The flash bridge did not consume the host-only keepalive payload.",
+    });
     const response = await this.readBridgeResponse(8000);
     if (
       response.status !== 0 ||
@@ -1914,7 +2128,7 @@ class CasePogoFlashTransport {
             setupStop.baselineProfile &&
             setupStop.baselineProfile !== this.yhmProfile
           ) {
-            this.session.routeYhmProfiles.set(
+            this.session.rememberRouteYhmProfile(
               this.route,
               setupStop.baselineProfile,
             );
@@ -2036,6 +2250,36 @@ export class G2CaseSession {
     this.openNormal = openNormal;
     this.wait = wait;
     this.routeYhmProfiles = new Map();
+    // Set once the Case has been analyzed so per-device records (pacing
+    // memory, audit fingerprints) attach to the right physical unit.
+    this.deviceKey = PACING_UNKNOWN_DEVICE_KEY;
+    this.caseStorageSerial = null;
+  }
+
+  // Called once telemetry identifies the exact case. Seeds this session's
+  // per-route YHM profile map from the profiles proven for this case in
+  // earlier sessions, but never overrides a profile this session has already
+  // established from live evidence.
+  adoptCaseIdentity(serialNumber) {
+    if (typeof serialNumber !== "string" || !serialNumber) return;
+    if (this.caseStorageSerial === serialNumber) return;
+    this.caseStorageSerial = serialNumber;
+    for (const [route, profile] of Object.entries(
+      readYhmRouteProfileMemory(serialNumber),
+    )) {
+      if (this.routeYhmProfiles.has(route)) continue;
+      this.routeYhmProfiles.set(route, profile);
+      this.log(
+        `${route}: starting with YHM profile ${profile}, proven for this exact Case in an earlier session.`,
+      );
+    }
+  }
+
+  rememberRouteYhmProfile(route, profile) {
+    this.routeYhmProfiles.set(route, profile);
+    if (this.caseStorageSerial) {
+      writeYhmRouteProfileMemory(this.caseStorageSerial, route, profile);
+    }
   }
 
   async analyze({ progressBase = 0, progressSpan = 1 } = {}) {
@@ -2063,6 +2307,7 @@ export class G2CaseSession {
     );
     reportProgress(0.32, "Factory telemetry captured");
     this.log("Factory telemetry and identifiers captured.");
+    this.adoptCaseIdentity(consoleReport.serialNumber);
 
     const loader = new Stm32Bootloader(this.port, this.log);
     try {
@@ -2325,7 +2570,7 @@ export class G2CaseSession {
           ...options,
           yhmProfile,
         });
-        this.routeYhmProfiles.set(route, yhmProfile);
+        this.rememberRouteYhmProfile(route, yhmProfile);
         return result;
       } catch (error) {
         const evidence = error?.pogoBridgeEvidence;
@@ -2366,7 +2611,7 @@ export class G2CaseSession {
             "warn",
           );
           yhmProfile = observedProfile;
-          this.routeYhmProfiles.set(route, yhmProfile);
+          this.rememberRouteYhmProfile(route, yhmProfile);
           continue;
         }
         if (settleIndex === POGO_READ_ONLY_PHASE_SETTLE_MS.length) {
@@ -2423,10 +2668,7 @@ export class G2CaseSession {
 
     requireYhmProfile(yhmProfile);
     const payload = await getVerifiedPogoBridgePayload(yhmProfile);
-    const bridgeSha256 =
-      yhmProfile === YHM_PROFILE_OBSERVED_33
-        ? POGO_BRIDGE_OBSERVED_33_SHA256
-        : POGO_BRIDGE_SHA256;
+    const bridgeSha256 = POGO_BRIDGE_PROFILE_SHA256[yhmProfile];
     const zeroProof = new Uint8Array(POGO_BRIDGE_PROOF.length);
     const zeroResult = new Uint8Array(POGO_BRIDGE_RESULT_LENGTH);
     let loader = null;
@@ -2902,6 +3144,55 @@ export class G2CaseSession {
     };
   }
 
+  // A temple that acknowledged FINISH holds the new image but may still be
+  // running the old one. Reset it a bounded number of times and re-probe;
+  // this is read-only apart from the traced reset and sends no firmware.
+  async resolveDeferredTempleActivation(
+    route,
+    expectedTargetVersion,
+    deferredActivation,
+    attempts = POGO_ACTIVATION_RESET_ATTEMPTS,
+  ) {
+    const activation = { ...deferredActivation, attempts: [] };
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        this.log(
+          `${route}: activation reset ${attempt}/${attempts} for the committed image.`,
+          "warn",
+        );
+        await this.restartAndRecheck();
+        const observed = (await this.probeRunningTemple("version", route))
+          .decoded;
+        activation.attempts.push({
+          attempt,
+          firmware: observed.firmwareVersion,
+          hardware: observed.hardwareRevision,
+        });
+        if (
+          observed.firmwareVersion === expectedTargetVersion &&
+          observed.hardwareRevision === 5
+        ) {
+          activation.postflightVersion = {
+            firmware: observed.firmwareVersion,
+            hardware: observed.hardwareRevision,
+          };
+          activation.resolvedOnAttempt = attempt;
+          this.log(
+            `${route}: the committed image activated after reset ${attempt}; postflight firmware=${observed.firmwareVersion}, hardware=${observed.hardwareRevision}.`,
+            "success",
+          );
+          return activation;
+        }
+      } catch (activationError) {
+        activation.attempts.push({
+          attempt,
+          error: activationError.message,
+        });
+      }
+    }
+    return activation;
+  }
+
   async resetTempleOtaReceiverForComponentRestart(
     routes,
     expectedVersion,
@@ -3009,9 +3300,7 @@ export class G2CaseSession {
       progressSpan,
     });
     const bridgeSha256 =
-      transport.yhmProfile === YHM_PROFILE_OBSERVED_33
-        ? POGO_FLASH_BRIDGE_OBSERVED_33_SHA256
-        : POGO_FLASH_BRIDGE_SHA256;
+      POGO_FLASH_BRIDGE_PROFILE_SHA256[transport.yhmProfile];
     const result = {
       route,
       yhmProfile: transport.yhmProfile,
@@ -3044,6 +3333,7 @@ export class G2CaseSession {
     let operationError = null;
     let cleanupError = null;
     let failureStage = "setup";
+    let deferredActivation = null;
 
     try {
       await transport.open();
@@ -3112,14 +3402,25 @@ export class G2CaseSession {
       const payload = component.payload;
       const totalRecords = Math.ceil(payload.length / 1000);
       const pacing = new TempleDataPacingController({
-        startLevel: resolveTempleDataPacingStartLevel(dataPacingMultiplier),
+        startLevel: resolveTempleDataPacingStartLevel(
+          dataPacingMultiplier,
+          readTempleDataPacingMemory(this.deviceKey, route).level,
+        ),
         totalBytes: payload.length,
         log: (message, tone) => this.log(`${route}: ${message}`, tone),
+        linkOverheadMs: await transport.measureLinkOverheadMs(),
+        deviceKey: this.deviceKey,
+        route,
       });
       result.dataPacingPolicy.startLevel = pacing.startLevel;
       this.log(
         `${route}: adaptive DATA pacing starts at level ${pacing.startLevel} (early ${TEMPLE_DATA_PACING_LEVELS[pacing.startLevel].early} ms / late ${TEMPLE_DATA_PACING_LEVELS[pacing.startLevel].late} ms per ${POGO_DEFERRED_BATCH_BYTES}-byte batch); temple ACK latency drives backoff.`,
       );
+      if (pacing.linkOverheadMs > 0) {
+        this.log(
+          `${route}: subtracting ${pacing.linkOverheadMs} ms of measured remote-relay round trip from temple ACK latencies before congestion decisions.`,
+        );
+      }
       let acceptedBytes = 0;
       let retries = 0;
       for (let index = 0; index < totalRecords; index += 1) {
@@ -3223,17 +3524,43 @@ export class G2CaseSession {
         }
       }
       if (!result.postflightVersion) {
-        throw new RetryablePogoFlashError(
-          lastVersion
-            ? `${route}: postflight reported ${lastVersion.firmware}/hardware ${lastVersion.hardware}.`
-            : `${route}: no checksum-valid postflight version arrived within 180 seconds.`,
+        // A checksum-valid reply carrying the *previous* version is not a
+        // failed write: FINISH was acknowledged, so the image is committed
+        // and the temple simply has not switched to it yet. Measured on
+        // hardware: a temple reported the old version through this whole
+        // window and through a later analysis, then reported the new one
+        // after a subsequent reset. Defer that case to a bounded reset and
+        // re-probe once the bridge is torn down and the Case app is back.
+        if (
+          lastVersion &&
+          lastVersion.hardware === preflight.hardware &&
+          lastVersion.firmware === preflight.firmware
+        ) {
+          deferredActivation = {
+            observedFirmware: lastVersion.firmware,
+            observedHardware: lastVersion.hardware,
+          };
+          this.log(
+            `${route}: FINISH was acknowledged and every byte accepted, but the temple still reports ${lastVersion.firmware}. The image is committed; giving it a bounded reset to activate before deciding.`,
+            "warn",
+          );
+        } else {
+          throw new RetryablePogoFlashError(
+            lastVersion
+              ? `${route}: postflight reported ${lastVersion.firmware}/hardware ${lastVersion.hardware}.`
+              : `${route}: no checksum-valid postflight version arrived within 180 seconds.`,
+          );
+        }
+      }
+      if (deferredActivation) {
+        transport.reportProgress(0.9, `${route}: awaiting image activation`);
+      } else {
+        transport.reportProgress(0.9, `${route}: postflight liveness verified`);
+        this.log(
+          `${route}: postflight firmware=${result.postflightVersion.firmware}, hardware=${result.postflightVersion.hardware}.`,
+          "success",
         );
       }
-      transport.reportProgress(0.9, `${route}: postflight liveness verified`);
-      this.log(
-        `${route}: postflight firmware=${result.postflightVersion.firmware}, hardware=${result.postflightVersion.hardware}.`,
-        "success",
-      );
     } catch (error) {
       operationError = error;
     } finally {
@@ -3261,6 +3588,29 @@ export class G2CaseSession {
           failureStage,
         );
         if (recoveryBoundary) result.recoveryBoundary = recoveryBoundary;
+      }
+    }
+
+    // The bridge is down and the Case application is back, so a traced reset
+    // is safe here. Give a temple that accepted every byte but had not yet
+    // switched images a bounded chance to come up on the new one before the
+    // route is called failed.
+    if (!operationError && !cleanupError && deferredActivation) {
+      const activation = await this.resolveDeferredTempleActivation(
+        route,
+        expectedTargetVersion,
+        deferredActivation,
+      );
+      result.deferredActivation = activation;
+      if (activation.postflightVersion) {
+        result.postflightVersion = activation.postflightVersion;
+      } else {
+        result.outcome = "failed_or_uncertain";
+        result.failureStage = "POSTFLIGHT";
+        result.error = `${route}: every byte was accepted and FINISH acknowledged, but the temple still reports ${deferredActivation.observedFirmware} after ${POGO_ACTIVATION_RESET_ATTEMPTS} activation resets.`;
+        const error = new PogoFlashSafetyError(result.error);
+        error.routeResult = result;
+        throw error;
       }
     }
 
@@ -3327,8 +3677,14 @@ export class G2CaseSession {
     const livenessRoutes = ["right", "left"];
 
     const audit = {
-      schemaVersion: 3,
+      schemaVersion: 4,
       startedAt: new Date().toISOString(),
+      // Which physical unit and link this ran against. Without it an audit
+      // cannot be compared with any other, and the transport materially
+      // changes read behaviour (a full Case backup took 39 short-read
+      // retries over Web Serial and none over WebUSB).
+      deviceKey: this.deviceKey,
+      transport: g2CaseTransportLabel(this.port),
       operation:
         mode === "differences"
           ? "g2_case_usb_bundle_component_differences"
@@ -3366,9 +3722,12 @@ export class G2CaseSession {
       bridgeSha256:
         POGO_FLASH_BRIDGE_SHA256,
       bridgeSha256ByYhmProfile: {
-        [YHM_PROFILE_REVIEWED_22]: POGO_FLASH_BRIDGE_SHA256,
+        [YHM_PROFILE_REVIEWED_22]:
+          POGO_FLASH_BRIDGE_PROFILE_SHA256[YHM_PROFILE_REVIEWED_22],
         [YHM_PROFILE_OBSERVED_33]:
-          POGO_FLASH_BRIDGE_OBSERVED_33_SHA256,
+          POGO_FLASH_BRIDGE_PROFILE_SHA256[YHM_PROFILE_OBSERVED_33],
+        [YHM_PROFILE_OBSERVED_45]:
+          POGO_FLASH_BRIDGE_PROFILE_SHA256[YHM_PROFILE_OBSERVED_45],
       },
       routes,
       routeOrderSetupStops: [],
