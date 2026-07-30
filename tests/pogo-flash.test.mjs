@@ -448,7 +448,7 @@ test("adaptive pacing settle amounts follow the active level", () => {
   assert.equal(controller.settleFor(24_000), 15_000);
 });
 
-test("maximum pacing serializes storage settling after every DATA record", () => {
+test("maximum pacing serializes records and protects true deferred commits", () => {
   const maximumLevel = TEMPLE_DATA_PACING_LEVELS.length - 1;
   const maximumPolicy = TEMPLE_DATA_PACING_LEVELS[maximumLevel];
   const controller = new TempleDataPacingController({
@@ -458,7 +458,11 @@ test("maximum pacing serializes storage settling after every DATA record", () =>
   assert.equal(maximumPolicy.batchBytes, 1_000);
   assert.equal(controller.settleFor(1_000), maximumPolicy.early);
   assert.equal(controller.settleFor(2_000), maximumPolicy.early);
-  assert.equal(controller.settleFor(18_000), maximumPolicy.late);
+  assert.equal(controller.settleFor(6_000), maximumPolicy.deferredEarly);
+  assert.ok(maximumPolicy.deferredEarly > maximumPolicy.early);
+  assert.equal(controller.settleFor(18_000), maximumPolicy.deferredLate);
+  assert.ok(maximumPolicy.deferredLate > maximumPolicy.late);
+  assert.equal(controller.settleFor(19_000), maximumPolicy.late);
 });
 
 test("pacing start level honors escalated restarts and the automatic floor", () => {

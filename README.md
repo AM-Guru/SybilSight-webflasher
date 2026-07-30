@@ -292,6 +292,19 @@ double to 2/4 seconds and the final settle becomes 30 seconds. It is valid only
 after exact cleanup, bilateral reset/contact/liveness proof, and a new START;
 the rejected DATA record is never replayed.
 
+Two 2026-07-30 production attempts isolated the remaining maximum-pacing
+mistake. Build `e8110e4` rejected record 800 two records after the 798,000-byte
+deferred boundary despite a three-second boundary settle. Build `449b15c`
+serialized every 1,000-byte record for one second, but rejected record 542 two
+records after the 540,000-byte boundary because that change granted the true
+six-record deferred commit only the same one-second pause. Both attempts
+retained zero temple-UART and host-transport errors, exact YHM restoration,
+Case 1.2.57 return, and checksum-valid bilateral 2.2.6.10 liveness after the
+final reset. Maximum pacing now keeps the per-record serialization while
+giving each actual 6-KiB storage boundary an uninterrupted eight-second early
+or twelve-second late settle. Host-only keepalives preserve the Case bridge
+during those longer windows without transmitting another temple command.
+
 A 2.0.7.16 cross-version run provided the clustered-boundary evidence. The
 right temple rejected record 2,184 after 2,183,000 accepted bytes, then
 rejected record 2,219 after a fresh START, exact cleanup, bilateral reset and

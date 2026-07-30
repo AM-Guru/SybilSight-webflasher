@@ -104,6 +104,8 @@ const POGO_SERIALIZED_BATCH_BYTES = 1000;
 const POGO_DATA_BATCH_SETTLE_MS = 1000;
 const POGO_DATA_LATE_BATCH_SETTLE_MS = 2000;
 const POGO_DATA_FINAL_SETTLE_MS = 15000;
+const POGO_MAXIMUM_DEFERRED_EARLY_SETTLE_MS = 8000;
+const POGO_MAXIMUM_DEFERRED_LATE_SETTLE_MS = 12000;
 const POGO_DATA_LATE_SETTLE_NUMERATOR = 3;
 const POGO_DATA_LATE_SETTLE_DENOMINATOR = 4;
 const POGO_COMPONENT_RESTART_LIMIT = 2;
@@ -274,14 +276,20 @@ export const TEMPLE_DATA_PACING_LEVELS = Object.freeze([
     late: 4000,
     batchBytes: POGO_DEFERRED_BATCH_BYTES,
   }),
-  // Build e8110e4 rejected record 800 with zero UART errors after starting at
-  // the former maximum of 3/6 seconds per six-record burst. At the maximum
-  // safety level, remove the burst entirely and let temple storage settle
-  // after each acknowledged 1,000-byte DATA record.
+  // Build e8110e4 rejected record 800 two records after the 798 KiB deferred
+  // storage boundary, with zero UART errors, after a three-second boundary
+  // settle. Build 449b15c then rejected record 542 two records after the
+  // 540 KiB boundary after serializing every record but granting the boundary
+  // itself only one second. The receiver queues its actual storage work only
+  // at six-record boundaries, so maximum pacing must preserve both properties:
+  // serialize ordinary records and grant the real deferred commit an
+  // uninterrupted, separately conservative window.
   Object.freeze({
     early: 1000,
     late: 2000,
     batchBytes: POGO_SERIALIZED_BATCH_BYTES,
+    deferredEarly: POGO_MAXIMUM_DEFERRED_EARLY_SETTLE_MS,
+    deferredLate: POGO_MAXIMUM_DEFERRED_LATE_SETTLE_MS,
   }),
 ]);
 export const TEMPLE_DATA_PACING_STOCK_LEVEL = 3;
@@ -605,13 +613,21 @@ export class TempleDataPacingController {
       this.settleTotalMs += finalMs;
       return finalMs;
     }
-    if (acceptedBytes % policy.batchBytes !== 0) return 0;
     const lateTransfer =
       acceptedBytes * POGO_DATA_LATE_SETTLE_DENOMINATOR >=
       this.totalBytes * POGO_DATA_LATE_SETTLE_NUMERATOR;
-    const settle = lateTransfer
-      ? policy.late
-      : policy.early;
+    const deferredBoundary =
+      acceptedBytes % POGO_DEFERRED_BATCH_BYTES === 0 &&
+      Number.isFinite(policy.deferredEarly) &&
+      Number.isFinite(policy.deferredLate);
+    if (!deferredBoundary && acceptedBytes % policy.batchBytes !== 0) return 0;
+    const settle = deferredBoundary
+      ? lateTransfer
+        ? policy.deferredLate
+        : policy.deferredEarly
+      : lateTransfer
+        ? policy.late
+        : policy.early;
     this.settleTotalMs += settle;
     return settle;
   }
@@ -3654,8 +3670,17 @@ export class G2CaseSession {
       result.dataPacingPolicy.startLevel = pacing.startLevel;
       const startPacingPolicy = TEMPLE_DATA_PACING_LEVELS[pacing.startLevel];
       result.dataPacingPolicy.startBatchBytes = startPacingPolicy.batchBytes;
+      result.dataPacingPolicy.startDeferredBoundaryEarlyMs =
+        startPacingPolicy.deferredEarly ?? null;
+      result.dataPacingPolicy.startDeferredBoundaryLateMs =
+        startPacingPolicy.deferredLate ?? null;
+      const deferredBoundaryDescription =
+        Number.isFinite(startPacingPolicy.deferredEarly) &&
+        Number.isFinite(startPacingPolicy.deferredLate)
+          ? `; true ${POGO_DEFERRED_BATCH_BYTES}-byte deferred commits settle ${startPacingPolicy.deferredEarly}/${startPacingPolicy.deferredLate} ms`
+          : "";
       this.log(
-        `${route}: adaptive DATA pacing starts at level ${pacing.startLevel} (early ${startPacingPolicy.early} ms / late ${startPacingPolicy.late} ms per ${startPacingPolicy.batchBytes}-byte batch); temple ACK latency drives backoff.`,
+        `${route}: adaptive DATA pacing starts at level ${pacing.startLevel} (early ${startPacingPolicy.early} ms / late ${startPacingPolicy.late} ms per ${startPacingPolicy.batchBytes}-byte batch${deferredBoundaryDescription}); temple ACK latency drives backoff.`,
       );
       if (pacing.linkOverheadMs > 0) {
         this.log(
