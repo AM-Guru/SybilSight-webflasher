@@ -3456,16 +3456,8 @@ function App() {
           id="easy"
           data-pane="easy"
         >
-          <div className="easy-mode-heading">
-            <div>
-              <div className="eyebrow">Easy Mode · Automatic bilateral recovery</div>
-              <h2>Choose it. Apply it. We handle the rest.</h2>
-              <p>
-                The WebFlasher validates the Case and image, handles both temples
-                right then left, verifies every transfer, restores the Case route,
-                and finishes with the required bilateral reset and liveness check.
-              </p>
-            </div>
+          <div className="easy-mode-toolbar">
+            <div className="eyebrow">Automatic bilateral recovery</div>
             <StatusPill
               tone={
                 report
@@ -3650,23 +3642,19 @@ function App() {
               <div className="eyebrow">Direct recovery fallback</div>
               <h3>Continue over fresh Bluetooth</h3>
               <p>
-                Use this after the Case safely restores its routes but a temple
-                explicitly rejects a wired DATA record. Chrome sends the complete
-                hash-pinned six-component package directly to each advertising
-                temple, with per-block ACKs and per-component END verification.
+                Chrome sends the complete hash-pinned package directly to both
+                advertising temples, with per-block ACKs and component verification.
               </p>
               <ol>
                 <li>Remove both temples from the Case and keep them powered nearby.</li>
                 <li>
-                  Close the Even app or turn off Bluetooth on the paired phone so
-                  both temples advertise.
+                  Disconnect the paired phone, then select Left and Right below.
                 </li>
-                <li>Select the right and left names in Chrome, then start recovery.</li>
               </ol>
             </div>
             <div className="ble-recovery-actions">
               <div className="ble-device-buttons">
-                {["right", "left"].map((side) => (
+                {["left", "right"].map((side) => (
                   <Button
                     key={side}
                     tone="secondary"
@@ -3674,8 +3662,8 @@ function App() {
                     disabled={!directBleSupported || Boolean(operation)}
                   >
                     {bleDevices[side]
-                      ? `${side} · ${bleDevices[side].name}`
-                      : `Select ${side} temple`}
+                      ? `${side === "left" ? "Left" : "Right"} · ${bleDevices[side].name}`
+                      : `Select ${side === "left" ? "Left" : "Right"} temple`}
                   </Button>
                 ))}
               </div>
