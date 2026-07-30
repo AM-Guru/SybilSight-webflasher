@@ -32,6 +32,7 @@ import {
 import { buildG2DeviceAnalytics } from "./lib/analytics.js";
 import {
   consoleTranscriptStorageKey,
+  formatBluetoothRecoveryTranscript,
   formatConsoleTranscriptDownload,
   formatShellEvidenceTranscript,
   pruneConsoleTranscripts,
@@ -699,6 +700,106 @@ function ShellEvidenceView({ analytics, onDownload }) {
   );
 }
 
+function BluetoothRecoveryCard({
+  variant = "easy",
+  directBleSupported,
+  operation,
+  bleDevices,
+  onSelectTemple,
+  bleReady,
+  onReadyChange,
+  bleFlashReady,
+  onFlash,
+  selectedRelease,
+  bleResults,
+  bleStatus,
+}) {
+  const advanced = variant === "advanced";
+  return (
+    <article
+      className={cx("ble-recovery-card", advanced && "is-advanced")}
+      id={advanced ? "advanced-bluetooth-recovery" : "bluetooth-recovery"}
+    >
+      <div className="ble-recovery-copy">
+        <div className="eyebrow">
+          {advanced ? "Direct Bluetooth recovery" : "Direct recovery fallback"}
+        </div>
+        <h3>Flash the complete package over Bluetooth</h3>
+        <p>
+          {advanced
+            ? "Use the proven fresh-Bluetooth path when the Case-to-pogo main writer is unsuitable or has stopped safely. Chrome transfers every hash-pinned package component directly to each advertising temple."
+            : "Chrome sends the complete hash-pinned package directly to both advertising temples, with per-block ACKs and component verification."}
+        </p>
+        <ol>
+          <li>Remove both temples from the Case and keep them powered nearby.</li>
+          <li>
+            Disconnect the paired phone, then select Left and Right below.
+          </li>
+        </ol>
+      </div>
+      <div className="ble-recovery-actions">
+        <div className="ble-device-buttons">
+          {["left", "right"].map((side) => (
+            <Button
+              key={side}
+              tone="secondary"
+              onClick={() => onSelectTemple(side)}
+              disabled={!directBleSupported || Boolean(operation)}
+            >
+              {bleDevices[side]
+                ? `${side === "left" ? "Left" : "Right"} · ${bleDevices[side].name}`
+                : `Select ${side === "left" ? "Left" : "Right"} temple`}
+            </Button>
+          ))}
+        </div>
+        <label className="ble-ready-confirm">
+          <input
+            type="checkbox"
+            checked={bleReady}
+            onChange={(event) => onReadyChange(event.target.checked)}
+            disabled={
+              !directBleSupported ||
+              !bleDevices.left ||
+              !bleDevices.right ||
+              Boolean(operation)
+            }
+          />
+          <span>
+            Both selected names match the physical sides; the phone is
+            disconnected and the temples will stay powered and nearby.
+          </span>
+        </label>
+        <Button
+          className="ble-recovery-start"
+          onClick={onFlash}
+          busy={operation === "ble-temple-flash"}
+          disabled={!bleFlashReady}
+        >
+          Flash{" "}
+          {selectedRelease
+            ? firmwareReleaseDisplayName(selectedRelease)
+            : "selected firmware"}{" "}
+          over Bluetooth
+        </Button>
+        <div className="automatic-status" role="status">
+          <span
+            className={cx(
+              "tiny-dot",
+              bleResults?.outcome === "success" ? "tiny-dot-success" : "",
+            )}
+          />
+          <span>{bleStatus}</span>
+        </div>
+        {!directBleSupported ? (
+          <small className="browser-note">
+            Direct recovery needs Web Bluetooth in current Chrome.
+          </small>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
 function OperationError({ error, onDismiss }) {
   if (!error) return null;
   const staleRelease = error.includes(
@@ -1336,6 +1437,7 @@ function App() {
       phase,
       recoveryConfigSnapshot = recoveryConfig,
       templeFlashAuditSnapshot = templeFlashAudit,
+      bluetoothFlashAuditSnapshot = bleResults,
     }) => {
       if (!caseReport) return null;
       const capturedAt = new Date().toISOString();
@@ -1344,6 +1446,7 @@ function App() {
         pogoResults: results,
         recoveryConfig: recoveryConfigSnapshot,
         templeFlashAudit: templeFlashAuditSnapshot,
+        bluetoothFlashAudit: bluetoothFlashAuditSnapshot,
         generatedAt: capturedAt,
       });
       addLog(
@@ -1354,6 +1457,7 @@ function App() {
     },
     [
       addLog,
+      bleResults,
       pogoResults,
       recoveryConfig,
       report,
@@ -2044,6 +2148,7 @@ function App() {
       evidencePhase = "smart-glasses-analysis",
       recoveryConfigSnapshot = recoveryConfig,
       templeFlashAuditSnapshot = templeFlashAudit,
+      bluetoothFlashAuditSnapshot = bleResults,
     } = {}) => {
       if (
         !caseReport?.console?.telemetry?.leftPresent ||
@@ -2101,6 +2206,7 @@ function App() {
             phase: `${evidencePhase}-partial`,
             recoveryConfigSnapshot,
             templeFlashAuditSnapshot,
+            bluetoothFlashAuditSnapshot,
           });
           throw error;
         }
@@ -2117,11 +2223,13 @@ function App() {
         phase: evidencePhase,
         recoveryConfigSnapshot,
         templeFlashAuditSnapshot,
+        bluetoothFlashAuditSnapshot,
       });
       return nextResults;
     },
     [
       addLog,
+      bleResults,
       getSession,
       pogoResults,
       recordShellEvidenceSnapshot,
@@ -2174,6 +2282,7 @@ function App() {
         phase: "charging-case-analysis",
         recoveryConfigSnapshot: null,
         templeFlashAuditSnapshot: null,
+        bluetoothFlashAuditSnapshot: null,
       });
       if (
         !result.console?.telemetry?.leftPresent ||
@@ -2200,6 +2309,7 @@ function App() {
         evidencePhase: "automatic-smart-glasses-analysis",
         recoveryConfigSnapshot: null,
         templeFlashAuditSnapshot: null,
+        bluetoothFlashAuditSnapshot: null,
       });
     });
   };
@@ -2242,6 +2352,7 @@ function App() {
         phase: "remote-charging-case-analysis",
         recoveryConfigSnapshot: null,
         templeFlashAuditSnapshot: null,
+        bluetoothFlashAuditSnapshot: null,
       });
       if (
         remoteReport.console?.telemetry?.leftPresent &&
@@ -2258,6 +2369,7 @@ function App() {
           evidencePhase: "remote-automatic-smart-glasses-analysis",
           recoveryConfigSnapshot: null,
           templeFlashAuditSnapshot: null,
+          bluetoothFlashAuditSnapshot: null,
         });
       } else {
         setSessionProgress(
@@ -2299,6 +2411,7 @@ function App() {
         phase: "refreshed-charging-case-analysis",
         recoveryConfigSnapshot: null,
         templeFlashAuditSnapshot: null,
+        bluetoothFlashAuditSnapshot: null,
       });
       if (
         result.console?.telemetry?.leftPresent &&
@@ -2315,6 +2428,7 @@ function App() {
           evidencePhase: "refreshed-automatic-smart-glasses-analysis",
           recoveryConfigSnapshot: null,
           templeFlashAuditSnapshot: null,
+          bluetoothFlashAuditSnapshot: null,
         });
       } else {
         setSessionProgress(
@@ -2689,16 +2803,41 @@ function App() {
             `Direct Bluetooth restore completed · ${routeSummary}. Re-seat both temples for the final Case DEB0 reset and ${prepared.g2Version} liveness proof.`,
             "success",
           );
+          addLog(
+            formatBluetoothRecoveryTranscript(result, {
+              phase: "bluetooth-smart-glasses-recovery",
+              buildLabel: WEBFLASHER_BUILD_LABEL,
+            }),
+            "evidence",
+          );
+          recordShellEvidenceSnapshot({
+            phase: "post-bluetooth-smart-glasses-recovery",
+            bluetoothFlashAuditSnapshot: result,
+          });
         } catch (caught) {
-          setBleResults({
+          const failureResult = {
             imageSha256: release.sha256,
             version: release.version,
             routes: { ...completedRoutes },
             outcome: "failed_or_partial",
-          });
+            error: caught?.message || String(caught),
+            stoppedAt: new Date().toISOString(),
+          };
+          setBleResults(failureResult);
           setBleStatus(
             `Bluetooth recovery stopped · ${caught?.message || String(caught)}`,
           );
+          addLog(
+            formatBluetoothRecoveryTranscript(failureResult, {
+              phase: "bluetooth-smart-glasses-recovery-partial",
+              buildLabel: WEBFLASHER_BUILD_LABEL,
+            }),
+            "evidence",
+          );
+          recordShellEvidenceSnapshot({
+            phase: "post-bluetooth-smart-glasses-recovery-partial",
+            bluetoothFlashAuditSnapshot: failureResult,
+          });
           throw caught;
         }
       },
@@ -3560,9 +3699,10 @@ function App() {
             pogoResults,
             recoveryConfig,
             templeFlashAudit,
+            bluetoothFlashAudit: bleResults,
           })
         : null,
-    [report, pogoResults, recoveryConfig, templeFlashAudit],
+    [bleResults, report, pogoResults, recoveryConfig, templeFlashAudit],
   );
   const fullGlassesAnalysisComplete = Boolean(
     pogoResults.left?.version &&
@@ -3895,81 +4035,19 @@ function App() {
               ) : null}
             </article>
           </div>
-          <article className="ble-recovery-card" id="bluetooth-recovery">
-            <div className="ble-recovery-copy">
-              <div className="eyebrow">Direct recovery fallback</div>
-              <h3>Continue over fresh Bluetooth</h3>
-              <p>
-                Chrome sends the complete hash-pinned package directly to both
-                advertising temples, with per-block ACKs and component verification.
-              </p>
-              <ol>
-                <li>Remove both temples from the Case and keep them powered nearby.</li>
-                <li>
-                  Disconnect the paired phone, then select Left and Right below.
-                </li>
-              </ol>
-            </div>
-            <div className="ble-recovery-actions">
-              <div className="ble-device-buttons">
-                {["left", "right"].map((side) => (
-                  <Button
-                    key={side}
-                    tone="secondary"
-                    onClick={() => selectBleTemple(side)}
-                    disabled={!directBleSupported || Boolean(operation)}
-                  >
-                    {bleDevices[side]
-                      ? `${side === "left" ? "Left" : "Right"} · ${bleDevices[side].name}`
-                      : `Select ${side === "left" ? "Left" : "Right"} temple`}
-                  </Button>
-                ))}
-              </div>
-              <label className="ble-ready-confirm">
-                <input
-                  type="checkbox"
-                  checked={bleReady}
-                  onChange={(event) => setBleReady(event.target.checked)}
-                  disabled={
-                    !directBleSupported ||
-                    !bleDevices.left ||
-                    !bleDevices.right ||
-                    Boolean(operation)
-                  }
-                />
-                <span>
-                  Both selected names match the physical sides; the phone is
-                  disconnected and the temples will stay powered and nearby.
-                </span>
-              </label>
-              <Button
-                className="ble-recovery-start"
-                onClick={flashBleTempleFirmware}
-                busy={operation === "ble-temple-flash"}
-                disabled={!bleFlashReady}
-              >
-                Flash {selectedRelease
-                  ? firmwareReleaseDisplayName(selectedRelease)
-                  : "selected firmware"} over Bluetooth
-              </Button>
-              <div className="automatic-status" role="status">
-                <span
-                  className={cx(
-                    "tiny-dot",
-                    bleResults?.outcome === "success"
-                      ? "tiny-dot-success"
-                      : "",
-                  )}
-                />
-                <span>{bleStatus}</span>
-              </div>
-              {!directBleSupported ? (
-                <small className="browser-note">
-                  Direct recovery needs Web Bluetooth in current Chrome.
-                </small>
-              ) : null}
-            </div>
-          </article>
+          <BluetoothRecoveryCard
+            directBleSupported={directBleSupported}
+            operation={operation}
+            bleDevices={bleDevices}
+            onSelectTemple={selectBleTemple}
+            bleReady={bleReady}
+            onReadyChange={setBleReady}
+            bleFlashReady={bleFlashReady}
+            onFlash={flashBleTempleFirmware}
+            selectedRelease={selectedRelease}
+            bleResults={bleResults}
+            bleStatus={bleStatus}
+          />
         </section>
 
         <section
@@ -4763,7 +4841,7 @@ function App() {
           <SectionHeading
             eyebrow="05 · Recovery Console"
             title="Recover the Case or Smart Glasses"
-            copy="Use dual-bank staging for the Charging Case, or the hardware-validated Case-to-pogo path to reinstall a pinned Apollo main on responsive Smart Glasses. Read-only temple probes, provisioning decode, and the recorded transfer evidence sit below."
+            copy="Use dual-bank staging for the Charging Case, the hardware-validated Case-to-pogo path for a pinned Apollo main, or direct Bluetooth for a complete six-component Smart Glasses package. Read-only probes and the recorded transfer evidence sit below."
           />
           <div className="recovery-target-heading">
             <div>
@@ -4886,8 +4964,8 @@ function App() {
                   and verifies contacts plus checksum-valid version liveness. If
                   START returns no frame with zero declared/accepted bytes, the
                   audit stops wired retries and points to the proven fresh-BLE
-                  full-package fallback; this Case-USB tool does not perform
-                  that BLE transfer.
+                  full-package fallback. The direct Bluetooth panel below
+                  performs that transfer with the same pinned library image.
                 </p>
               </div>
               <StatusPill tone={firmware?.templeFlashEligible ? "success" : "quiet"}>
@@ -5201,6 +5279,20 @@ function App() {
               </div>
             ) : null}
           </div>
+          <BluetoothRecoveryCard
+            variant="advanced"
+            directBleSupported={directBleSupported}
+            operation={operation}
+            bleDevices={bleDevices}
+            onSelectTemple={selectBleTemple}
+            bleReady={bleReady}
+            onReadyChange={setBleReady}
+            bleFlashReady={bleFlashReady}
+            onFlash={flashBleTempleFirmware}
+            selectedRelease={selectedRelease}
+            bleResults={bleResults}
+            bleStatus={bleStatus}
+          />
           <div className="recovery-target-heading">
             <div>
               <div className="eyebrow">Recovery boundary</div>
@@ -5223,7 +5315,8 @@ function App() {
                 sending firmware bytes. The reviewed CFW main has confirmed wired
                 left- and right-temple transfers. Stock is now proven by a complete
                 wired right-main restore and a complete fresh-BLE six-component
-                left restore; the browser remains a wired, main-only writer.
+                left restore. Case-USB remains a main-only writer; the direct
+                Bluetooth panel transfers the complete pinned package.
               </p>
             </div>
             <Button

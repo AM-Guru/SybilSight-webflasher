@@ -173,7 +173,36 @@ test("separates case shell data from left/right glasses analytics", () => {
     analytics.sessionRecoveryAuditState,
     "not-captured-in-current-page-session",
   );
+  assert.equal(
+    analytics.sessionBluetoothRecoveryAuditState,
+    "not-captured-in-current-page-session",
+  );
   assert.equal(analytics.smartGlasses.recoveryAssessment.bothRoutesReady, true);
+});
+
+test("preserves the current Bluetooth recovery audit in exported evidence", () => {
+  const bluetoothFlashAudit = {
+    imageSha256: "a".repeat(64),
+    version: "2.2.6.11",
+    outcome: "success",
+    routes: {
+      left: { outcome: "success", blockAcks: 865 },
+      right: { outcome: "success", skipped: true },
+    },
+  };
+  const analytics = buildG2DeviceAnalytics({
+    report: report(),
+    bluetoothFlashAudit,
+  });
+
+  assert.equal(
+    analytics.sessionBluetoothRecoveryAuditState,
+    "captured-current-page-session",
+  );
+  assert.deepEqual(
+    analytics.sessionBluetoothRecoveryAudit,
+    bluetoothFlashAudit,
+  );
 });
 
 test("fails the glasses recovery gate without the reviewed case version", () => {

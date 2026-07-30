@@ -5,6 +5,7 @@ import {
   CONSOLE_TRANSCRIPT_TAB_ID_KEY,
   LEGACY_CONSOLE_TRANSCRIPT_STORAGE_KEY,
   consoleTranscriptStorageKey,
+  formatBluetoothRecoveryTranscript,
   formatConsoleTranscriptDownload,
   formatShellEvidenceTranscript,
   pruneConsoleTranscripts,
@@ -157,7 +158,7 @@ test("pruning bounds how many transcripts accumulate", () => {
 
 test("Shell & Evidence snapshots are delimited, complete JSON records", () => {
   const analytics = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     chargingCase: {
       shell: { rawOutput: "DEA0\\r\\nB200 1.2.57" },
     },
@@ -185,7 +186,7 @@ test("download always contains the full transcript and a final evidence snapshot
       { time: "2:00:00 PM", tone: "success", message: "newest line" },
     ],
     {
-      analytics: { schemaVersion: 3, chargingCase: { firmwareVersion: "1.2.57" } },
+      analytics: { schemaVersion: 4, chargingCase: { firmwareVersion: "1.2.57" } },
       downloadedAt: "2026-07-30T21:30:00.000Z",
     },
   );
@@ -196,4 +197,27 @@ test("download always contains the full transcript and a final evidence snapshot
   assert.match(output, /\[success\] newest line/);
   assert.match(output, /"phase": "download-final"/);
   assert.match(output, /"firmwareVersion": "1\.2\.57"/);
+});
+
+test("Bluetooth recovery audits remain reproducible without a Case report", () => {
+  const output = formatBluetoothRecoveryTranscript(
+    {
+      outcome: "failed_or_partial",
+      imageSha256: "a".repeat(64),
+      routes: {
+        right: { outcome: "success", blockAcks: 1053 },
+        left: { outcome: "failed", error: "device disconnected" },
+      },
+    },
+    {
+      capturedAt: "2026-07-30T22:00:00.000Z",
+      buildLabel: "abc1234",
+    },
+  );
+
+  assert.match(output, /BEGIN BLUETOOTH RECOVERY JSON/);
+  assert.match(output, /"webFlasherBuild": "abc1234"/);
+  assert.match(output, /"blockAcks": 1053/);
+  assert.match(output, /device disconnected/);
+  assert.match(output, /END BLUETOOTH RECOVERY JSON/);
 });

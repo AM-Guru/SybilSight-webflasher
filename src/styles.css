@@ -3395,6 +3395,11 @@ code {
   gap: 18px;
 }
 
+.ble-recovery-card.is-advanced {
+  max-width: none;
+  margin: 24px 0;
+}
+
 .ble-recovery-copy h3 {
   margin: 5px 0 7px;
   font-size: 16px;

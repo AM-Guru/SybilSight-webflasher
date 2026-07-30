@@ -22,6 +22,8 @@ export const CONSOLE_TRANSCRIPT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 export const CONSOLE_TRANSCRIPT_MAX_STORED = 8;
 export const SHELL_EVIDENCE_RECORD_KIND =
   "g2-webflasher-shell-and-evidence-snapshot";
+export const BLUETOOTH_RECOVERY_RECORD_KIND =
+  "g2-webflasher-bluetooth-recovery-audit";
 
 // A tab that cannot reach sessionStorage still gets a working transcript; it
 // simply shares the fallback key, which is the old behavior and no worse.
@@ -84,6 +86,34 @@ export function formatConsoleTranscriptDownload(
     );
   }
   return `${lines.join("\n")}\n`;
+}
+
+export function formatBluetoothRecoveryTranscript(
+  audit,
+  {
+    phase = "bluetooth-smart-glasses-recovery",
+    capturedAt = new Date().toISOString(),
+    buildLabel = null,
+  } = {},
+) {
+  if (!audit || typeof audit !== "object") {
+    throw new TypeError(
+      "A Bluetooth recovery audit is required for transcript evidence.",
+    );
+  }
+  const record = {
+    recordKind: BLUETOOTH_RECOVERY_RECORD_KIND,
+    phase,
+    capturedAt,
+    webFlasherBuild: buildLabel,
+    audit,
+  };
+  return [
+    `Bluetooth recovery audit · ${audit.outcome ?? phase}`,
+    "----- BEGIN BLUETOOTH RECOVERY JSON -----",
+    JSON.stringify(record, null, 2),
+    "----- END BLUETOOTH RECOVERY JSON -----",
+  ].join("\n");
 }
 
 export function resolveConsoleTranscriptTabId(

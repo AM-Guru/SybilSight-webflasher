@@ -15,7 +15,7 @@ import {
   WEBFLASHER_BUILD_SHA,
 } from "./releaseIntegrity.js";
 
-export const DEVICE_ANALYTICS_SCHEMA_VERSION = 3;
+export const DEVICE_ANALYTICS_SCHEMA_VERSION = 4;
 
 const FACTORY_QUERIES = Object.freeze([
   Object.freeze({ command: "DEA0", scope: "case", data: "case firmware banner and serial" }),
@@ -219,6 +219,7 @@ export function buildG2DeviceAnalytics({
   pogoResults = {},
   recoveryConfig = null,
   templeFlashAudit = null,
+  bluetoothFlashAudit = null,
   generatedAt = new Date().toISOString(),
 }) {
   if (!report) throw new Error("Analyze the G2 case before building analytics.");
@@ -345,5 +346,9 @@ export function buildG2DeviceAnalytics({
       ? "captured-current-page-session"
       : "not-captured-in-current-page-session",
     sessionRecoveryAudit: templeFlashAudit,
+    sessionBluetoothRecoveryAuditState: bluetoothFlashAudit
+      ? "captured-current-page-session"
+      : "not-captured-in-current-page-session",
+    sessionBluetoothRecoveryAudit: bluetoothFlashAudit,
   };
 }
