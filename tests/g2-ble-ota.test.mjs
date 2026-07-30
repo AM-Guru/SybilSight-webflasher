@@ -8,6 +8,7 @@ import {
   G2BleOtaSession,
   assertPinnedG2BleBundle,
   crc16CcittFalse,
+  g2BleDeviceSide,
   makeBleControlFrames,
   makeBleEnvelopeFrames,
   parseBleAck,
@@ -239,4 +240,31 @@ test("the chooser rejects a temple from the wrong side", async () => {
     /Select the right temple/,
   );
   assert.equal(disconnected, true);
+});
+
+test("recognizes relaxed Chrome/CoreBluetooth G2 side-name variants", () => {
+  assert.equal(g2BleDeviceSide("Even G2_32_L_693CCB"), "left");
+  assert.equal(g2BleDeviceSide("Even G2 32 Right 693CCB"), "right");
+  assert.equal(g2BleDeviceSide("G2_7_r_00A19F "), "right");
+  assert.equal(g2BleDeviceSide("Even G2"), null);
+  assert.equal(g2BleDeviceSide("Unrelated_L_device"), null);
+});
+
+test("accepts a shortened Chrome G2 name and defers side proof to the UI", async () => {
+  const device = {
+    name: "Even G2",
+    id: "shortened-corebluetooth-id",
+  };
+  let options = null;
+  const selected = await requestG2BleDevice("right", {
+    requestDevice: async (value) => {
+      options = value;
+      return device;
+    },
+  });
+  assert.equal(selected, device);
+  assert.deepEqual(
+    options.filters.map((filter) => filter.namePrefix),
+    ["Even G2", "G2_"],
+  );
 });

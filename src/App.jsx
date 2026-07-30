@@ -97,6 +97,7 @@ import {
 import {
   G2BleOtaSession,
   assertPinnedG2BleBundle,
+  g2BleDeviceSide,
   g2BleSupported,
   requestG2BleDevice,
 } from "./lib/g2BleOta.js";
@@ -2253,16 +2254,34 @@ function App() {
     );
     try {
       const device = await requestG2BleDevice(side);
+      const otherSide = side === "left" ? "right" : "left";
+      if (
+        bleDevices[otherSide]?.id &&
+        bleDevices[otherSide].id === device.id
+      ) {
+        throw new Error(
+          `${device.name || "That G2 temple"} is already selected as ${otherSide}. Select the other physical temple for ${side}.`,
+        );
+      }
+      const observedSide = g2BleDeviceSide(device.name);
       setBleDevices((current) => ({
         ...current,
         [side]: device,
       }));
       setBleResults(null);
       setBleStatus(
-        `${side} selected · ${device.name}. Select the other temple before flashing.`,
+        `${side} selected · ${device.name || "unnamed G2"} · ${
+          observedSide
+            ? "advertised side marker verified"
+            : "Chrome exposed no side marker; distinct-device and final confirmation gates remain active"
+        }. Select the other temple before flashing.`,
       );
       addLog(
-        `${side}: selected direct Bluetooth device ${device.name}. No firmware bytes were sent.`,
+        `${side}: selected direct Bluetooth device ${JSON.stringify(device.name || "unnamed G2")} · ${
+          observedSide
+            ? `advertised side=${observedSide}`
+            : "advertised side unavailable"
+        }. No firmware bytes were sent.`,
         "success",
       );
     } catch (caught) {

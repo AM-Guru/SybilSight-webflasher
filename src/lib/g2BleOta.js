@@ -160,6 +160,20 @@ export function g2BleSupported(bluetooth = globalThis.navigator?.bluetooth) {
   return Boolean(bluetooth?.requestDevice);
 }
 
+export function g2BleDeviceSide(name) {
+  const normalized = String(name ?? "").trim().toUpperCase();
+  if (!/^(?:EVEN\s+)?G2(?:[\s_-]|$)/.test(normalized)) return null;
+  const longSide = normalized.match(
+    /(?:^|[\s_-])(LEFT|RIGHT)(?:[\s_-]|$)/,
+  )?.[1];
+  if (longSide) return longSide === "LEFT" ? "left" : "right";
+  const shortSide = normalized.match(
+    /(?:^|[\s_-])([LR])(?:[\s_-]|$)/,
+  )?.[1];
+  if (shortSide) return shortSide === "L" ? "left" : "right";
+  return null;
+}
+
 export async function requestG2BleDevice(
   side,
   bluetooth = globalThis.navigator?.bluetooth,
@@ -173,22 +187,25 @@ export async function requestG2BleDevice(
     );
   }
   const device = await bluetooth.requestDevice({
-    filters: [{ namePrefix: "Even G2_" }],
+    filters: [
+      { namePrefix: "Even G2" },
+      { namePrefix: "G2_" },
+    ],
     optionalServices: [
       G2_BLE_DATA_SERVICE,
       G2_BLE_CONTROL_SERVICE,
     ],
   });
-  const expectedLetter = side === "left" ? "L" : "R";
-  const match = /^Even G2_(\d+)_([LR])_([0-9a-f]{6})$/i.exec(
-    device?.name ?? "",
-  );
-  if (!match || match[2].toUpperCase() !== expectedLetter) {
+  const observedSide = g2BleDeviceSide(device?.name);
+  if (observedSide && observedSide !== side) {
     device?.gatt?.disconnect();
     throw new Error(
-      `Select the ${side} temple (an Even G2 name containing _${expectedLetter}_).`,
+      `Chrome returned ${JSON.stringify(device?.name ?? "unnamed G2")}, which identifies the ${observedSide} temple. Select the ${side} temple instead.`,
     );
   }
+  // Some Chrome/CoreBluetooth combinations expose only a shortened G2 name
+  // after selection. The explicit per-side button and the distinct-device
+  // gate in App remain authoritative when no L/R marker is observable.
   return device;
 }
 
