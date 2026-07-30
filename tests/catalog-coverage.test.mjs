@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  FirmwareCatalogCoverageError,
+  assertFirmwareCatalogCoversPinnedImages,
   compareFirmwareVersions,
   findUnservedPinnedImages,
   parseFirmwareVersion,
@@ -52,6 +54,25 @@ test("flags a pinned image the served library is too old to offer", () => {
   );
 });
 
+test("blocks firmware mutation when the served library is behind the build", () => {
+  assert.throws(
+    () =>
+      assertFirmwareCatalogCoversPinnedImages({
+        catalog: STALE_PRODUCTION_CATALOG,
+        targets: TEMPLE_FLASH_TARGETS,
+      }),
+    (error) => {
+      assert.equal(error instanceof FirmwareCatalogCoverageError, true);
+      assert.deepEqual(
+        error.missingPinnedImages.map((target) => target.imageSha256),
+        [REVIEWED_CFW_2_2_6_11_SHA256],
+      );
+      assert.match(error.message, /No device mutation was started/);
+      return true;
+    },
+  );
+});
+
 test("stays silent about images retired from the library for being old", async () => {
   // The shipped catalog no longer lists the legacy 2.2.6.10 CFW, which remains
   // pinned in the allowlist. That is deliberate retirement, not drift — warning
@@ -73,6 +94,13 @@ test("stays silent about images retired from the library for being old", async (
   assert.deepEqual(
     findUnservedPinnedImages({ catalog, targets: TEMPLE_FLASH_TARGETS }),
     [],
+  );
+  assert.deepEqual(
+    assertFirmwareCatalogCoversPinnedImages({
+      catalog,
+      targets: TEMPLE_FLASH_TARGETS,
+    }),
+    { verified: true, missingPinnedImages: [] },
   );
 });
 

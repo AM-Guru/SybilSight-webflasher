@@ -426,9 +426,27 @@ export function resolveTempleDataPacingStartLevel(
   dataPacingMultiplier,
   rememberedLevel = readTempleDataPacingMemory().level,
 ) {
-  if (dataPacingMultiplier >= 3) return TEMPLE_DATA_PACING_LEVELS.length - 1;
-  if (dataPacingMultiplier === 2) return TEMPLE_DATA_PACING_LEVELS.length - 2;
-  return clampAutomaticLevel(rememberedLevel);
+  const remembered = clampAutomaticLevel(rememberedLevel);
+  const restartFloor =
+    dataPacingMultiplier >= 3
+      ? TEMPLE_DATA_PACING_LEVELS.length - 1
+      : dataPacingMultiplier === 2
+        ? TEMPLE_DATA_PACING_LEVELS.length - 2
+        : TEMPLE_DATA_PACING_MIN_AUTOMATIC_LEVEL;
+  // A restart tier is a minimum, never permission to undo what the exact
+  // Case/temple learned from a previous explicit rejection. The 2026-07-30
+  // recovery committed level 5 after a level-4 rejection, then the tier-2
+  // resolver silently selected level 4 again for the third right attempt.
+  return Math.max(remembered, restartFloor);
+}
+
+export function templeDataPacingMultiplierForRestart(restartCount) {
+  if (!Number.isInteger(restartCount) || restartCount < 0) {
+    throw new Error("Temple component restart count must be a nonnegative integer.");
+  }
+  if (restartCount >= POGO_COMPONENT_RESTART_LIMIT) return 3;
+  if (restartCount > 0) return 2;
+  return 1;
 }
 
 // True when the browser is throttling this page's timers. Only the hidden
@@ -1143,6 +1161,33 @@ export function classifyPersistentTempleDataRejection(
     additionalWholeComponentRestartAllowed: false,
     recoveryRecommendation:
       "Repeated Case-USB full-component retries are blocked for this image region. Preserve the audit and use the reviewed fresh-BLE full-package recovery path or device service unless new hardware evidence justifies another wired attempt.",
+  };
+}
+
+export function classifyMaximumPacingTempleDataRejection(routeResult) {
+  const current = routeResult?.dataRejection;
+  const maximumLevel = TEMPLE_DATA_PACING_LEVELS.length - 1;
+  if (
+    !exactRestoredTempleDataFailure(routeResult) ||
+    current?.command !== 0x54 ||
+    current?.status !== 1 ||
+    routeResult?.dataPacingPolicy?.startLevel !== maximumLevel
+  ) {
+    return null;
+  }
+  return {
+    classification: "maximum_pacing_temple_data_rejection_boundary",
+    route: routeResult.route,
+    command: current.command,
+    status: current.status,
+    record: current.record,
+    acceptedBytes: current.acceptedBytes,
+    totalBytes: current.totalBytes,
+    pacingLevel: maximumLevel,
+    pacing: TEMPLE_DATA_PACING_LEVELS[maximumLevel],
+    additionalWholeComponentRestartAllowed: false,
+    recoveryRecommendation:
+      "The temple explicitly rejected DATA after this attempt began at the maximum reviewed Case-USB pacing. Preserve the audit and use the reviewed fresh-BLE full-package recovery path or device service; do not loop another wired START.",
   };
 }
 
@@ -3624,7 +3669,13 @@ export class G2CaseSession {
           // relay session expiring mid-DATA left the memory one level slower,
           // and the next run paid that penalty on every record.
           if (!isExplicitTempleDataRejection(error)) throw error;
-          pacing.commitMemory("failed");
+          const pacingMemory = pacing.commitMemory("failed");
+          result.dataPacingPolicy = {
+            ...result.dataPacingPolicy,
+            ...pacing.summary(),
+            nextStartLevel: pacingMemory.level,
+            nextCleanStreak: pacingMemory.cleanStreak,
+          };
           result.dataRejection = {
             command: error.command,
             status: error.status,
@@ -3634,7 +3685,7 @@ export class G2CaseSession {
             totalBytes: payload.length,
           };
           this.log(
-            `${route}: explicit rejection left DATA record ${index + 1} unadvanced; ending this component attempt so cleanup, reset, and a fresh START can occur without replaying the record.`,
+            `${route}: explicit rejection left DATA record ${index + 1} unadvanced; ending this component attempt without replaying the record. Any permitted fresh component attempt will retain at least pacing level ${pacingMemory.level}.`,
             "warn",
           );
           throw error;
@@ -3991,11 +4042,7 @@ export class G2CaseSession {
           componentRestartCounts.get(route) ?? 0;
         const setupResetCount = setupResetCounts.get(route) ?? 0;
         const dataPacingMultiplier =
-          componentRestartCount >= POGO_HOST_TIMEOUT_COMPONENT_RESTART_LIMIT
-            ? 3
-            : componentRestartCount > 0
-              ? 2
-              : 1;
+          templeDataPacingMultiplierForRestart(componentRestartCount);
         try {
           audit.routeResults.push(
             await this.flashPinnedTempleRoute(
@@ -4119,6 +4166,18 @@ export class G2CaseSession {
             if (error.routeResult) {
               audit.routeResults.push(error.routeResult);
             }
+            throw error;
+          }
+          const maximumPacingBoundary =
+            classifyMaximumPacingTempleDataRejection(error.routeResult);
+          if (maximumPacingBoundary) {
+            error.routeResult.recoveryBoundary = maximumPacingBoundary;
+            audit.persistentDataRejectionStops.push(maximumPacingBoundary);
+            this.log(
+              `${route}: explicit DATA status 1 rejected record ${maximumPacingBoundary.record} after the attempt began at maximum reviewed pacing (early ${maximumPacingBoundary.pacing.early} ms / late ${maximumPacingBoundary.pacing.late} ms per ${POGO_DEFERRED_BATCH_BYTES}-byte batch). No additional Case-USB component restart will be started.`,
+              "warn",
+            );
+            audit.routeResults.push(error.routeResult);
             throw error;
           }
           if (

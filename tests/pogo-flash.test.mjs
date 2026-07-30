@@ -45,6 +45,7 @@ import {
   canResetAfterZeroWriteSetupStop,
   canRestartFailedTempleComponent,
   canRunFinalResetAfterFailure,
+  classifyMaximumPacingTempleDataRejection,
   classifyPersistentTempleDataRejection,
   isExplicitTempleDataRejection,
   isPogoRoutePhaseMismatch,
@@ -64,6 +65,7 @@ import {
   TEMPLE_DATA_PACING_DEFAULT_START_LEVEL,
   readYhmRouteProfileMemory,
   resolveTempleDataPacingStartLevel,
+  templeDataPacingMultiplierForRestart,
   readPogoFlashResponseFrame,
   readPogoFlashResponseHeader,
   readRomBlockWithBoundaryRecovery,
@@ -458,8 +460,27 @@ test("pacing start level honors escalated restarts and the automatic floor", () 
     TEMPLE_DATA_PACING_LEVELS.length - 2,
   );
   assert.equal(
+    resolveTempleDataPacingStartLevel(
+      2,
+      TEMPLE_DATA_PACING_LEVELS.length - 1,
+    ),
+    TEMPLE_DATA_PACING_LEVELS.length - 1,
+    "a tier-2 restart must not lower the level learned from an explicit rejection",
+  );
+  assert.equal(
     resolveTempleDataPacingStartLevel(3, 1),
     TEMPLE_DATA_PACING_LEVELS.length - 1,
+  );
+});
+
+test("the third whole-component attempt starts at maximum pacing", () => {
+  assert.equal(templeDataPacingMultiplierForRestart(0), 1);
+  assert.equal(templeDataPacingMultiplierForRestart(1), 2);
+  assert.equal(templeDataPacingMultiplierForRestart(2), 3);
+  assert.equal(templeDataPacingMultiplierForRestart(3), 3);
+  assert.throws(
+    () => templeDataPacingMultiplierForRestart(-1),
+    /nonnegative integer/,
   );
 });
 
@@ -2166,6 +2187,59 @@ test("stops a third full component after repeated restored DATA rejections in on
       { ...repeated, caseRestoreVerified: false },
       [first],
     ),
+    null,
+  );
+});
+
+test("a restored DATA rejection at maximum pacing blocks another wired START", () => {
+  const failure = {
+    route: "right",
+    outcome: "failed_or_uncertain",
+    otaMutationAttempted: true,
+    failureStage: "DATA:530",
+    transfer: null,
+    caseRestoreVerified: true,
+    caseApplicationVersion: "1.2.57",
+    retainedResult: {
+      baselineMask: 0x3ff,
+      selectedMask: 0x3ff,
+      restoredMask: 0x3ff,
+      templeUartErrors: 0,
+    },
+    dataPacingPolicy: {
+      startLevel: TEMPLE_DATA_PACING_LEVELS.length - 1,
+      finalLevel: TEMPLE_DATA_PACING_LEVELS.length - 1,
+    },
+    dataRejection: {
+      command: 0x54,
+      status: 1,
+      record: 531,
+      acceptedBytes: 530_000,
+      totalBytes: 3_539_474,
+    },
+  };
+  assert.deepEqual(classifyMaximumPacingTempleDataRejection(failure), {
+    classification: "maximum_pacing_temple_data_rejection_boundary",
+    route: "right",
+    command: 0x54,
+    status: 1,
+    record: 531,
+    acceptedBytes: 530_000,
+    totalBytes: 3_539_474,
+    pacingLevel: TEMPLE_DATA_PACING_LEVELS.length - 1,
+    pacing: TEMPLE_DATA_PACING_LEVELS.at(-1),
+    additionalWholeComponentRestartAllowed: false,
+    recoveryRecommendation:
+      "The temple explicitly rejected DATA after this attempt began at the maximum reviewed Case-USB pacing. Preserve the audit and use the reviewed fresh-BLE full-package recovery path or device service; do not loop another wired START.",
+  });
+  assert.equal(
+    classifyMaximumPacingTempleDataRejection({
+      ...failure,
+      dataPacingPolicy: {
+        ...failure.dataPacingPolicy,
+        startLevel: TEMPLE_DATA_PACING_LEVELS.length - 2,
+      },
+    }),
     null,
   );
 });

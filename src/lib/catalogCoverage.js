@@ -67,3 +67,27 @@ export function findUnservedPinnedImages({ catalog, targets } = {}) {
     return compareFirmwareVersions(target?.version, newestServed) > 0;
   });
 }
+
+export class FirmwareCatalogCoverageError extends Error {
+  constructor(missing) {
+    const labels = missing
+      .map(
+        (target) =>
+          `${target.label} (${String(target.imageSha256).slice(0, 12)}…)`,
+      )
+      .join(", ");
+    super(
+      `The deployed firmware library is older than this WebFlasher build and is missing ${labels}. Reload after the firmware archive is republished. No device mutation was started.`,
+    );
+    this.name = "FirmwareCatalogCoverageError";
+    this.missingPinnedImages = missing;
+  }
+}
+
+export function assertFirmwareCatalogCoversPinnedImages(options = {}) {
+  const missing = findUnservedPinnedImages(options);
+  if (missing.length > 0) {
+    throw new FirmwareCatalogCoverageError(missing);
+  }
+  return { verified: true, missingPinnedImages: [] };
+}

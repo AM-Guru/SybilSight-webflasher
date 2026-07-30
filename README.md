@@ -1382,18 +1382,24 @@ then checksummed, staged over the runner's `homeassistant` SSH target, and
 atomically published to `/root/share/webflasher/` on that host. Home
 Assistant's Caddy container sees the same directory as `/share/webflasher`.
 The previous release is retained at `/root/share/.webflasher-previous`. Every
-build emits `release.json` with its full Git commit identity. The deploy job
-verifies that identity in the artifact and again from the production URL after
-publication.
+build emits `release.json` with its full Git commit identity and the SHA-256 of
+the catalog shipped with that build. The deploy job also stages any versioned
+firmware directories into the separate archive root, atomically publishes the
+catalog index last, and verifies the live catalog plus its newest reviewed
+custom binary. This preserves the larger historical archive while preventing
+the app and firmware menu from drifting across releases.
 
 Before Automatic Apply or any Advanced Case/Glasses firmware write, the
 running tab makes a cache-busted, `no-store` request for `release.json` and
-requires an exact commit match. An open tab from an older deployment therefore
-stops before resetting, erasing, selecting a bank, or transmitting firmware
-and asks for a reload. Operation logs and the footer include the running short
-commit so hardware reports identify the exact code that executed. The Caddy
-example disables caching for the app shell and release manifest while keeping
-fingerprinted assets immutable.
+requires an exact commit match and an exact hash match for the independently
+served firmware catalog. It also refuses temple mutation when the catalog is
+missing a newer image pinned by the running build. An open tab from an older
+deployment—or the narrow boundary between the site swap and final catalog
+rename—therefore stops before resetting, erasing, selecting a bank, or
+transmitting firmware and asks for a reload. Operation logs and the footer
+include the running short commit so hardware reports identify the exact code
+that executed. The Caddy example disables caching for the app shell and release
+manifest while keeping fingerprinted assets immutable.
 
 The example also applies a content security policy, security headers, SPA
 fallback, catalog revalidation, and immutable caching for versioned firmware

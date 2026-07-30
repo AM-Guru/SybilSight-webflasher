@@ -1,4 +1,5 @@
 const BUILD_SHA_PATTERN = /^[0-9a-f]{40}$/i;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/i;
 
 export const WEBFLASHER_BUILD_SHA =
   typeof __WEBFLASHER_BUILD_SHA__ === "string"
@@ -30,10 +31,37 @@ function requireBuildSha(value, label) {
   return normalized;
 }
 
+function requireSha256(value, label) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!SHA256_PATTERN.test(normalized)) {
+    throw new WebFlasherReleaseIntegrityError(
+      `${label} did not provide a valid SHA-256 digest. No device mutation was started.`,
+      { observed: normalized || null },
+    );
+  }
+  return normalized;
+}
+
+async function sha256Hex(bytes, cryptoImpl = globalThis.crypto) {
+  if (typeof cryptoImpl?.subtle?.digest !== "function") {
+    throw new WebFlasherReleaseIntegrityError(
+      "This browser cannot verify the deployed firmware catalog. No device mutation was started.",
+    );
+  }
+  const digest = new Uint8Array(
+    await cryptoImpl.subtle.digest("SHA-256", bytes),
+  );
+  return [...digest]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 export async function assertCurrentWebFlasherRelease({
   fetchImpl = globalThis.fetch,
+  cryptoImpl = globalThis.crypto,
   currentBuildSha = WEBFLASHER_BUILD_SHA,
   releaseUrl = "/release.json",
+  firmwareCatalogUrl = "/firmware-updates/source-files/index.json",
   cacheToken = Date.now(),
 } = {}) {
   if (typeof fetchImpl !== "function") {
@@ -97,10 +125,66 @@ export async function assertCurrentWebFlasherRelease({
       },
     );
   }
+  const expectedCatalogSha256 = requireSha256(
+    manifest.firmwareCatalogSha256,
+    "The deployed WebFlasher release manifest firmware catalog",
+  );
+  const catalogSeparator = firmwareCatalogUrl.includes("?") ? "&" : "?";
+  const catalogUrl =
+    `${firmwareCatalogUrl}${catalogSeparator}release=${encodeURIComponent(deployedSha)}` +
+    `&fresh=${encodeURIComponent(String(cacheToken))}`;
+  let catalogResponse;
+  try {
+    catalogResponse = await fetchImpl(catalogUrl, {
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+    });
+  } catch (error) {
+    throw new WebFlasherReleaseIntegrityError(
+      `The deployed firmware catalog could not be verified: ${error instanceof Error ? error.message : String(error)}. No device mutation was started.`,
+      { runningSha, deployedSha, expectedCatalogSha256 },
+    );
+  }
+  if (!catalogResponse?.ok) {
+    throw new WebFlasherReleaseIntegrityError(
+      `The deployed firmware catalog could not be verified (HTTP ${catalogResponse?.status ?? "unknown"}). No device mutation was started.`,
+      {
+        runningSha,
+        deployedSha,
+        expectedCatalogSha256,
+        httpStatus: catalogResponse?.status ?? null,
+      },
+    );
+  }
+  let observedCatalogSha256;
+  try {
+    const catalogBytes = await catalogResponse.arrayBuffer();
+    observedCatalogSha256 = await sha256Hex(catalogBytes, cryptoImpl);
+  } catch (error) {
+    if (error instanceof WebFlasherReleaseIntegrityError) throw error;
+    throw new WebFlasherReleaseIntegrityError(
+      `The deployed firmware catalog body could not be verified: ${error instanceof Error ? error.message : String(error)}. No device mutation was started.`,
+      { runningSha, deployedSha, expectedCatalogSha256 },
+    );
+  }
+  if (observedCatalogSha256 !== expectedCatalogSha256) {
+    throw new WebFlasherReleaseIntegrityError(
+      `WebFlasher ${deployedSha.slice(0, 7)} was deployed with firmware catalog ${expectedCatalogSha256.slice(0, 12)}…, but production served ${observedCatalogSha256.slice(0, 12)}…. Wait for the firmware archive publish to finish, then reload. No device mutation was started.`,
+      {
+        runningSha,
+        deployedSha,
+        expectedCatalogSha256,
+        observedCatalogSha256,
+        firmwareCatalogMismatch: true,
+      },
+    );
+  }
   return {
     schemaVersion: 1,
     runningSha,
     deployedSha,
+    firmwareCatalogSha256: expectedCatalogSha256,
+    firmwareCatalogVerified: true,
     verified: true,
   };
 }

@@ -52,7 +52,10 @@ import {
 } from "./lib/deviceHistory.js";
 import { decodeApollo510RecoveryConfig } from "./lib/recoveryConfig.js";
 import { TEMPLE_FLASH_TARGETS } from "./lib/templeFlashTargets.js";
-import { findUnservedPinnedImages } from "./lib/catalogCoverage.js";
+import {
+  assertFirmwareCatalogCoversPinnedImages,
+  findUnservedPinnedImages,
+} from "./lib/catalogCoverage.js";
 import {
   buildBundleDifferencePlan,
   findStockCfwCounterpartRelease,
@@ -119,6 +122,10 @@ const PERSISTENT_MUTATION_OPERATIONS = new Set([
   "temple-flash",
   "stage",
   "activate",
+]);
+const FIRMWARE_CATALOG_MUTATION_OPERATIONS = new Set([
+  "automatic-apply",
+  "temple-flash",
 ]);
 
 function cx(...values) {
@@ -1843,6 +1850,16 @@ function App() {
           `Release integrity passed · running and deployed WebFlasher ${release.deployedSha.slice(0, 7)} match.`,
           "success",
         );
+        if (FIRMWARE_CATALOG_MUTATION_OPERATIONS.has(name)) {
+          assertFirmwareCatalogCoversPinnedImages({
+            catalog,
+            targets: TEMPLE_FLASH_TARGETS,
+          });
+          addLog(
+            "Firmware library integrity passed · the served catalog covers this build's newest pinned temple images.",
+            "success",
+          );
+        }
       }
       const result = await task();
       addLog(`${OPERATION_LABELS[name] ?? name} finished.`, "success");
@@ -1867,7 +1884,7 @@ function App() {
         2200,
       );
     }
-  }, [addLog, handleWakeLockStatus]);
+  }, [addLog, catalog, handleWakeLockStatus]);
 
   useEffect(() => {
     let active = true;

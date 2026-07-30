@@ -1,6 +1,8 @@
-# Firmware assets are not covered by the deploy pipeline
+# Firmware assets are published and release-bound
 
-Status: open. Found 2026-07-28 while bringing both G2 temples to reviewed CFW 2.2.6.11.
+Status: resolved in the deployment workflow. Found 2026-07-28 while bringing
+both G2 temples to reviewed CFW 2.2.6.11; reproduced again by the 2026-07-30
+status-1 recovery log.
 
 ## Symptom
 
@@ -54,43 +56,28 @@ behind it.
 `public/firmware-updates/source-files/2.2.6.11/g2-2.2.6.11.bin`. This is purely a
 publish-path problem.
 
-## Options
+## Resolution
 
-### A. Publish the firmware library with the site (recommended)
+The larger historical archive remains under `/share/sybilsight`; moving Caddy
+to `/share/webflasher` would remove official restore binaries that are not
+checked into this repository. The workflow now automates the safe form of
+option B:
 
-Delete the `handle /firmware-updates/*` block so firmware is served from the same deployed
-root as the app. The pipeline then owns the whole surface, and the compiled-in writer
-allowlist and the served catalog can never drift again.
+- versioned directories present in `dist/firmware-updates/source-files/` are
+  copied to hidden incoming paths in the archive and renamed atomically;
+- the site release is swapped;
+- the catalog index is renamed last, so it never advertises a partial binary;
+- `release.json` binds the app commit to the exact catalog SHA-256;
+- the browser refuses any temple mutation when that hash or pinned-image
+  coverage differs; and
+- deployment verification downloads and hashes the live newest reviewed custom
+  target.
 
-```caddyfile
-# (remove the /firmware-updates/* handle entirely; the final `handle` block
-#  already serves it from /share/webflasher)
-```
-
-Check before switching: confirm nothing else depends on `/share/sybilsight`, and that
-`try_files {path} /index.html` will not mask a missing firmware file by returning the app
-shell. Firmware fetches should 404 honestly rather than receive HTML — worth an explicit
-`handle /firmware-updates/*` block rooted at `/share/webflasher` with `file_server` and no
-`try_files`.
-
-### B. Keep the split root and sync the library
-
-Leave routing alone and copy the archive across on release:
-
-```bash
-rsync -av --delete \
-  public/firmware-updates/source-files/ \
-  <host>:/share/sybilsight/firmware-updates/source-files/
-```
-
-This keeps the large binary archive out of the site artifact, but it stays a manual step —
-the one that was missed here.
-
-## Guard added in the app
+## Guard in the app
 
 `src/App.jsx` now compares the fetched catalog against the compiled-in
 `TEMPLE_FLASH_TARGETS` allowlist once the catalog loads, and logs a warning naming any
 pinned image the library does not offer. That would have surfaced this condition on the
 connect screen instead of silently offering only the legacy CFW.
 
-The guard reports the drift; it does not fix it. Either option above is still required.
+The guard now blocks temple mutation rather than only reporting the drift.
