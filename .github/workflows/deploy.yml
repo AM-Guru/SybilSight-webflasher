@@ -55,10 +55,30 @@ jobs:
           test -s dist/release.json
           test -d dist/assets
           node -e '
+            const crypto = require("node:crypto");
             const fs = require("node:fs");
             const release = JSON.parse(fs.readFileSync("dist/release.json", "utf8"));
             if (release.schemaVersion !== 1 || release.buildSha !== process.env.GITHUB_SHA) {
               throw new Error("Release manifest " + JSON.stringify(release) + " does not match " + process.env.GITHUB_SHA);
+            }
+            const catalogPath = "dist/firmware-updates/source-files/index.json";
+            const catalogBytes = fs.readFileSync(catalogPath);
+            const catalogSha256 = crypto.createHash("sha256").update(catalogBytes).digest("hex");
+            if (release.firmwareCatalogSha256 !== catalogSha256) {
+              throw new Error("Release firmware catalog digest does not match " + catalogPath);
+            }
+            const catalog = JSON.parse(catalogBytes);
+            const newestCustom = catalog.releases
+              .filter((entry) => entry.channel === "custom" && entry.trust === "reviewed-custom")
+              .sort((left, right) => right.internalVersion.localeCompare(left.internalVersion, undefined, { numeric: true }))[0];
+            if (!newestCustom?.url || !/^[0-9a-f]{64}$/.test(newestCustom.sha256 ?? "")) {
+              throw new Error("Catalog has no hash-pinned reviewed custom release");
+            }
+            const targetPath = "dist" + newestCustom.url;
+            const targetBytes = fs.readFileSync(targetPath);
+            const targetSha256 = crypto.createHash("sha256").update(targetBytes).digest("hex");
+            if (targetBytes.length !== newestCustom.size || targetSha256 !== newestCustom.sha256) {
+              throw new Error("Newest reviewed custom release does not match its catalog pin");
             }
           '
           if find dist -type l -print -quit | grep -q .; then
@@ -128,6 +148,7 @@ jobs:
           SSH_TARGET: homeassistant
           DEPLOY_ROOT: /root/share
           WEB_ROOT: /root/share/webflasher/
+          FIRMWARE_ROOT: /root/share/sybilsight/firmware-updates/source-files
           SITE_NAME: webflasher
         shell: bash
         run: |
@@ -169,16 +190,20 @@ jobs:
 
           ssh -G "${SSH_TARGET}" >/dev/null
           ssh "${ssh_options[@]}" "${SSH_TARGET}" sh -s -- \
-            "${DEPLOY_ROOT}" "${WEB_ROOT}" <<'PREFLIGHT_SCRIPT'
+            "${DEPLOY_ROOT}" "${WEB_ROOT}" "${FIRMWARE_ROOT}" <<'PREFLIGHT_SCRIPT'
           set -eu
           deploy_root="$1"
           web_root="$2"
+          firmware_root="$3"
           [ "${deploy_root}" = /root/share ]
           [ "${web_root}" = /root/share/webflasher/ ]
           [ "${web_root%/}" = "${deploy_root}/webflasher" ]
+          [ "${firmware_root}" = /root/share/sybilsight/firmware-updates/source-files ]
           [ -d "${deploy_root}" ]
           [ -w "${deploy_root}" ]
-          for required_command in tar stat chown chmod find mv; do
+          [ -d "${firmware_root}" ]
+          [ -w "${firmware_root}" ]
+          for required_command in tar stat chown chmod find mv cp diff; do
             command -v "${required_command}" >/dev/null
           done
           PREFLIGHT_SCRIPT
@@ -201,11 +226,14 @@ jobs:
               tar -xpf - -C "${remote_stage}"
 
           ssh "${ssh_options[@]}" "${SSH_TARGET}" sh -s -- \
-            "${remote_stage}" "${remote_target}" "${remote_backup}" <<'PUBLISH_SCRIPT'
+            "${remote_stage}" "${remote_target}" "${remote_backup}" \
+            "${FIRMWARE_ROOT}" "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" <<'PUBLISH_SCRIPT'
           set -eu
           stage="$1"
           target="$2"
           backup="$3"
+          firmware_root="$4"
+          publish_id="$5"
 
           case "${stage}" in
             /root/share/.webflasher-deploy-*) ;;
@@ -213,7 +241,10 @@ jobs:
           esac
           [ "${target}" = /root/share/webflasher ]
           [ "${backup}" = /root/share/.webflasher-previous ]
+          [ "${firmware_root}" = /root/share/sybilsight/firmware-updates/source-files ]
           [ -s "${stage}/index.html" ]
+          firmware_source="${stage}/firmware-updates/source-files"
+          [ -s "${firmware_source}/index.json" ]
           [ ! -L "${target}" ]
 
           owner_group="0:0"
@@ -223,6 +254,49 @@ jobs:
           chown -R "${owner_group}" "${stage}"
           chmod -R g+rwX "${stage}"
           find "${stage}" -type d -exec chmod g+s {} +
+
+          firmware_owner_group="$(stat -c '%u:%g' "${firmware_root}")"
+          catalog_incoming="${firmware_root}/.index.deploy-${publish_id}"
+          rm -f -- "${catalog_incoming}"
+          cp -p "${firmware_source}/index.json" "${catalog_incoming}"
+          chown "${firmware_owner_group}" "${catalog_incoming}"
+          chmod g+rw "${catalog_incoming}"
+
+          # Versioned firmware directories are immutable. Publish a missing
+          # directory before the index, but refuse to change bytes beneath a
+          # path an older catalog may already reference.
+          for firmware_source_dir in "${firmware_source}"/*; do
+            [ -d "${firmware_source_dir}" ] || continue
+            firmware_name="${firmware_source_dir##*/}"
+            case "${firmware_name}" in
+              2.*) ;;
+              *)
+                echo "Refusing unexpected firmware directory: ${firmware_name}" >&2
+                exit 1
+                ;;
+            esac
+            firmware_incoming="${firmware_root}/.${firmware_name}.deploy-${publish_id}"
+            firmware_target="${firmware_root}/${firmware_name}"
+            if [ -e "${firmware_target}" ]; then
+              if [ ! -d "${firmware_target}" ] || [ -L "${firmware_target}" ]; then
+                echo "Refusing non-directory firmware target: ${firmware_target}" >&2
+                exit 1
+              fi
+              if ! diff -qr "${firmware_source_dir}" "${firmware_target}" >/dev/null; then
+                echo "Refusing to replace immutable firmware directory: ${firmware_name}" >&2
+                exit 1
+              fi
+              continue
+            fi
+            rm -rf -- "${firmware_incoming}"
+            cp -a "${firmware_source_dir}" "${firmware_incoming}"
+            chown -R "${firmware_owner_group}" "${firmware_incoming}"
+            chmod -R g+rwX "${firmware_incoming}"
+            find "${firmware_incoming}" -type d -exec chmod g+s {} +
+            if ! mv "${firmware_incoming}" "${firmware_target}"; then
+              exit 1
+            fi
+          done
 
           if [ -e "${backup}" ]; then
             rm -rf -- "${backup}"
@@ -240,6 +314,18 @@ jobs:
             fi
             exit 1
           fi
+
+          # Publish the catalog last. A new app observed during this narrow
+          # boundary sees a digest mismatch and refuses mutation; old apps
+          # continue to see their old catalog until this atomic rename.
+          if ! mv "${catalog_incoming}" "${firmware_root}/index.json"; then
+            failed_target="${stage}.failed-publish"
+            mv "${target}" "${failed_target}" || true
+            if [ "${moved_previous}" = true ]; then
+              mv "${backup}" "${target}"
+            fi
+            exit 1
+          fi
           PUBLISH_SCRIPT
 
           trap - EXIT
@@ -250,12 +336,48 @@ jobs:
         run: |
           set -euo pipefail
           release_url="https://webflasher.sybilsight.com/release.json?verify=${GITHUB_SHA}&run=${GITHUB_RUN_ID}"
-          observed_release="$(curl --fail --silent --show-error \
+          observed_release_file="${RUNNER_TEMP}/observed-release.json"
+          observed_catalog_file="${RUNNER_TEMP}/observed-firmware-catalog.json"
+          observed_target_file="${RUNNER_TEMP}/observed-reviewed-custom.bin"
+          curl --fail --silent --show-error \
             --header 'Cache-Control: no-cache' \
-            "${release_url}")"
-          expected_release="$(printf '{"schemaVersion":1,"buildSha":"%s"}' "${GITHUB_SHA}")"
-          if [ "${observed_release}" != "${expected_release}" ]; then
-            echo "Production release ${observed_release} does not match ${expected_release}" >&2
+            --output "${observed_release_file}" \
+            "${release_url}"
+          catalog_url="https://webflasher.sybilsight.com/firmware-updates/source-files/index.json?verify=${GITHUB_SHA}&run=${GITHUB_RUN_ID}"
+          curl --fail --silent --show-error \
+            --header 'Cache-Control: no-cache' \
+            --output "${observed_catalog_file}" \
+            "${catalog_url}"
+          read -r target_url target_sha256 <<EOF
+          $(node -e '
+            const crypto = require("node:crypto");
+            const fs = require("node:fs");
+            const [releasePath, catalogPath, expectedBuild] = process.argv.slice(1);
+            const release = JSON.parse(fs.readFileSync(releasePath, "utf8"));
+            if (release.schemaVersion !== 1 || release.buildSha !== expectedBuild) {
+              throw new Error("Production release identity does not match " + expectedBuild);
+            }
+            const catalogBytes = fs.readFileSync(catalogPath);
+            const catalogSha256 = crypto.createHash("sha256").update(catalogBytes).digest("hex");
+            if (catalogSha256 !== release.firmwareCatalogSha256) {
+              throw new Error("Production firmware catalog does not match release.json");
+            }
+            const catalog = JSON.parse(catalogBytes);
+            const target = catalog.releases
+              .filter((entry) => entry.channel === "custom" && entry.trust === "reviewed-custom")
+              .sort((left, right) => right.internalVersion.localeCompare(left.internalVersion, undefined, { numeric: true }))[0];
+            if (!target?.url || !/^[0-9a-f]{64}$/.test(target.sha256 ?? "")) {
+              throw new Error("Production catalog has no newest reviewed custom target");
+            }
+            process.stdout.write(target.url + " " + target.sha256);
+          ' "${observed_release_file}" "${observed_catalog_file}" "${GITHUB_SHA}")
+          EOF
+          curl --fail --silent --show-error \
+            --output "${observed_target_file}" \
+            "https://webflasher.sybilsight.com${target_url}?verify=${GITHUB_SHA}&run=${GITHUB_RUN_ID}"
+          observed_target_sha256="$(sha256sum "${observed_target_file}" | cut -d ' ' -f 1)"
+          if [ "${observed_target_sha256}" != "${target_sha256}" ]; then
+            echo "Production reviewed custom target ${observed_target_sha256} does not match ${target_sha256}" >&2
             exit 1
           fi
-          echo "Verified production WebFlasher ${GITHUB_SHA}"
+          echo "Verified production WebFlasher ${GITHUB_SHA}, catalog, and ${target_url}"

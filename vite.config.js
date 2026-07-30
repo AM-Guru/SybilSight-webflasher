@@ -1,7 +1,8 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { execFileSync } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -26,10 +27,21 @@ function resolveBuildSha() {
   return "development";
 }
 
-function releaseManifest(buildSha) {
+function firmwareCatalogSha256() {
+  const catalogPath = fileURLToPath(
+    new URL(
+      "./public/firmware-updates/source-files/index.json",
+      import.meta.url,
+    ),
+  );
+  return createHash("sha256").update(readFileSync(catalogPath)).digest("hex");
+}
+
+function releaseManifest(buildSha, catalogSha256) {
   const source = `${JSON.stringify({
     schemaVersion: 1,
     buildSha,
+    firmwareCatalogSha256: catalogSha256,
   })}\n`;
   return {
     name: "webflasher-release-manifest",
@@ -56,9 +68,10 @@ function releaseManifest(buildSha) {
 }
 
 const buildSha = resolveBuildSha();
+const catalogSha256 = firmwareCatalogSha256();
 
 export default defineConfig({
-  plugins: [react(), releaseManifest(buildSha)],
+  plugins: [react(), releaseManifest(buildSha, catalogSha256)],
   define: {
     __WEBFLASHER_BUILD_SHA__: JSON.stringify(buildSha),
   },
