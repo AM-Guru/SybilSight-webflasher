@@ -766,7 +766,16 @@ function Console({
             displayedEntries.map((entry, index) => (
               <div className={cx("console-line", `console-${entry.tone}`)} key={index}>
                 <time>{entry.time}</time>
-                <span>{entry.message}</span>
+                {entry.tone === "evidence" ? (
+                  <details className="console-evidence-entry">
+                    <summary>
+                      {entry.message.split("\n", 1)[0]} · Complete JSON preserved
+                    </summary>
+                    <pre>{entry.message}</pre>
+                  </details>
+                ) : (
+                  <span>{entry.message}</span>
+                )}
               </div>
             ))
           ) : (

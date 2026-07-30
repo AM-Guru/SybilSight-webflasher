@@ -2280,6 +2280,8 @@ code {
 .console-line {
   display: grid;
   padding: 5px 0;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 27px;
   grid-template-columns: 78px 1fr;
   gap: 12px;
 }
@@ -2291,6 +2293,29 @@ code {
 .console-line span {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.console-evidence-entry {
+  min-width: 0;
+  color: #91cbb4;
+}
+
+.console-evidence-entry summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.console-evidence-entry pre {
+  max-height: 55vh;
+  margin: 10px 0 4px;
+  padding: 12px;
+  overflow: auto;
+  color: #b8c1bc;
+  border: 1px solid #27302b;
+  border-radius: 6px;
+  background: #070908;
+  font: inherit;
+  white-space: pre;
 }
 
 .console-success span {
