@@ -94,6 +94,12 @@ import {
   IDLE_WAKE_LOCK_STATUS,
   MutationWakeLock,
 } from "./lib/wakeLock.js";
+import {
+  G2BleOtaSession,
+  assertPinnedG2BleBundle,
+  g2BleSupported,
+  requestG2BleDevice,
+} from "./lib/g2BleOta.js";
 
 const EMPTY_PROGRESS = {
   fraction: 0,
@@ -114,6 +120,7 @@ const OPERATION_LABELS = Object.freeze({
   pogo: "Query temple",
   recheck: "Reset and recheck",
   "temple-flash": "Restore Smart Glasses",
+  "ble-temple-flash": "Restore Smart Glasses over Bluetooth",
   "automatic-apply": "Apply Smart Glasses firmware",
   stage: "Stage Case bank",
   activate: "Activate Case bank",
@@ -121,12 +128,14 @@ const OPERATION_LABELS = Object.freeze({
 
 const PERSISTENT_MUTATION_OPERATIONS = new Set([
   "automatic-apply",
+  "ble-temple-flash",
   "temple-flash",
   "stage",
   "activate",
 ]);
 const FIRMWARE_CATALOG_MUTATION_OPERATIONS = new Set([
   "automatic-apply",
+  "ble-temple-flash",
   "temple-flash",
 ]);
 
@@ -1156,6 +1165,15 @@ function App() {
   const [differenceSourceConfirmed, setDifferenceSourceConfirmed] =
     useState(false);
   const [templeFlashAudit, setTempleFlashAudit] = useState(null);
+  const [bleDevices, setBleDevices] = useState({
+    left: null,
+    right: null,
+  });
+  const [bleReady, setBleReady] = useState(false);
+  const [bleStatus, setBleStatus] = useState(
+    "Remove both temples from the Case, disconnect the Even app, then select each advertising temple.",
+  );
+  const [bleResults, setBleResults] = useState(null);
   const [recoveryDumps, setRecoveryDumps] = useState({});
   const [recoveryConfig, setRecoveryConfig] = useState(null);
   const [recoveryConfigError, setRecoveryConfigError] = useState("");
@@ -2224,6 +2242,141 @@ function App() {
     });
   };
 
+  const selectBleTemple = async (side) => {
+    if (operation) return;
+    setError("");
+    setBleStatus(
+      `Waiting for Chrome's Bluetooth chooser · select the ${side} Even G2 temple.`,
+    );
+    addLog(
+      `Waiting for the advertising ${side} G2 temple in Chrome's Bluetooth chooser.`,
+    );
+    try {
+      const device = await requestG2BleDevice(side);
+      setBleDevices((current) => ({
+        ...current,
+        [side]: device,
+      }));
+      setBleResults(null);
+      setBleStatus(
+        `${side} selected · ${device.name}. Select the other temple before flashing.`,
+      );
+      addLog(
+        `${side}: selected direct Bluetooth device ${device.name}. No firmware bytes were sent.`,
+        "success",
+      );
+    } catch (caught) {
+      const message =
+        caught?.name === "NotFoundError"
+          ? `The ${side} Bluetooth chooser was dismissed without selecting a temple.`
+          : caught?.message || String(caught);
+      setBleStatus(message);
+      if (caught?.name === "NotFoundError") {
+        addLog(message, "warn");
+      } else {
+        setError(message);
+        addLog(message, "error");
+      }
+    }
+  };
+
+  const flashBleTempleFirmware = async () => {
+    const release = catalog.find((item) => item.id === selectedReleaseId);
+    if (!release || !bleDevices.left || !bleDevices.right || !bleReady) return;
+    await run(
+      "ble-temple-flash",
+      async () => {
+        const completedRoutes =
+          bleResults?.imageSha256 === release.sha256
+            ? { ...(bleResults.routes ?? {}) }
+            : {};
+        try {
+          setBleStatus("Loading and re-validating the pinned Bluetooth package…");
+          const prepared = await fetchCatalogFirmware(release);
+          assertPinnedG2BleBundle(prepared);
+          acceptPreparedFirmware(prepared);
+          addLog(
+            `Direct Bluetooth gate passed · exact package ${prepared.fileSha256.slice(0, 16)}… · ${prepared.componentImages.length} component headers, payload CRC32Cs, and Apollo MRAM bounds verified.`,
+            "success",
+          );
+
+          for (const [index, side] of ["right", "left"].entries()) {
+            const device = bleDevices[side];
+            if (
+              completedRoutes[side]?.outcome === "success" &&
+              completedRoutes[side]?.deviceId === device.id
+            ) {
+              setSessionProgress(
+                (index + 1) / 2,
+                `${side}: retaining the already verified Bluetooth package result`,
+              );
+              addLog(
+                `${side}: this exact device already completed all six components in the current recovery attempt; it will not be rewritten.`,
+                "success",
+              );
+              continue;
+            }
+            setBleStatus(
+              `Flashing ${side} over direct Bluetooth · keep the temple powered and nearby.`,
+            );
+            const session = new G2BleOtaSession(device, {
+              side,
+              log: addLog,
+              progress: (fraction, detail) =>
+                setSessionProgress((index + fraction) / 2, detail),
+            });
+            try {
+              const result = await session.flashBundle(prepared);
+              completedRoutes[side] = {
+                ...result,
+                deviceId: device.id,
+              };
+              setBleResults({
+                imageSha256: prepared.fileSha256,
+                version: prepared.g2Version,
+                routes: { ...completedRoutes },
+                outcome: "in_progress",
+              });
+            } finally {
+              await session.disconnect();
+            }
+          }
+          const result = {
+            imageSha256: prepared.fileSha256,
+            version: prepared.g2Version,
+            routes: completedRoutes,
+            outcome: "success",
+          };
+          setBleResults(result);
+          setBleReady(false);
+          setSessionProgress(
+            1,
+            "Both temples verified all six direct Bluetooth components",
+          );
+          setBleStatus(
+            `Bluetooth package verified on right + left · ${prepared.templeFlashTarget.label}. Re-seat both temples in the Case for the final reset and version-liveness check.`,
+          );
+          addLog(
+            `Direct Bluetooth restore completed · right + left each verified all six pinned components. Re-seat both temples for the final Case DEB0 reset and 2.2.6.11 liveness proof.`,
+            "success",
+          );
+        } catch (caught) {
+          setBleResults({
+            imageSha256: release.sha256,
+            version: release.version,
+            routes: { ...completedRoutes },
+            outcome: "failed_or_partial",
+          });
+          setBleStatus(
+            `Bluetooth recovery stopped · ${caught?.message || String(caught)}`,
+          );
+          throw caught;
+        }
+      },
+      { total: 16 },
+    );
+  };
+
   const loadLocalFirmware = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -3093,6 +3246,15 @@ function App() {
   const latestCaseRelease = findLatestOfficialStockRelease(caseReleases);
   const latestCaseFirmwareRelease = findLatestCaseFirmwareRelease(catalog);
   const selectedRelease = catalog.find((item) => item.id === selectedReleaseId);
+  const directBleSupported = g2BleSupported();
+  const bleFlashReady = Boolean(
+    directBleSupported &&
+      selectedRelease &&
+      bleDevices.left &&
+      bleDevices.right &&
+      bleReady &&
+      !operation,
+  );
   const caseUpdateNeeded = Boolean(
     report?.console?.caseVersion &&
       latestCaseFirmwareRelease?.caseVersion &&
@@ -3464,6 +3626,85 @@ function App() {
               ) : null}
             </article>
           </div>
+          <article className="ble-recovery-card" id="bluetooth-recovery">
+            <div className="ble-recovery-copy">
+              <div className="eyebrow">Direct recovery fallback</div>
+              <h3>Continue over fresh Bluetooth</h3>
+              <p>
+                Use this after the Case safely restores its routes but a temple
+                explicitly rejects a wired DATA record. Chrome sends the complete
+                hash-pinned six-component package directly to each advertising
+                temple, with per-block ACKs and per-component END verification.
+              </p>
+              <ol>
+                <li>Remove both temples from the Case and keep them powered nearby.</li>
+                <li>
+                  Close the Even app or turn off Bluetooth on the paired phone so
+                  both temples advertise.
+                </li>
+                <li>Select the right and left names in Chrome, then start recovery.</li>
+              </ol>
+            </div>
+            <div className="ble-recovery-actions">
+              <div className="ble-device-buttons">
+                {["right", "left"].map((side) => (
+                  <Button
+                    key={side}
+                    tone="secondary"
+                    onClick={() => selectBleTemple(side)}
+                    disabled={!directBleSupported || Boolean(operation)}
+                  >
+                    {bleDevices[side]
+                      ? `${side} · ${bleDevices[side].name}`
+                      : `Select ${side} temple`}
+                  </Button>
+                ))}
+              </div>
+              <label className="ble-ready-confirm">
+                <input
+                  type="checkbox"
+                  checked={bleReady}
+                  onChange={(event) => setBleReady(event.target.checked)}
+                  disabled={
+                    !directBleSupported ||
+                    !bleDevices.left ||
+                    !bleDevices.right ||
+                    Boolean(operation)
+                  }
+                />
+                <span>
+                  Both selected names match the physical sides; the phone is
+                  disconnected and the temples will stay powered and nearby.
+                </span>
+              </label>
+              <Button
+                className="ble-recovery-start"
+                onClick={flashBleTempleFirmware}
+                busy={operation === "ble-temple-flash"}
+                disabled={!bleFlashReady}
+              >
+                Flash {selectedRelease
+                  ? firmwareReleaseDisplayName(selectedRelease)
+                  : "selected firmware"} over Bluetooth
+              </Button>
+              <div className="automatic-status" role="status">
+                <span
+                  className={cx(
+                    "tiny-dot",
+                    bleResults?.outcome === "success"
+                      ? "tiny-dot-success"
+                      : "",
+                  )}
+                />
+                <span>{bleStatus}</span>
+              </div>
+              {!directBleSupported ? (
+                <small className="browser-note">
+                  Direct recovery needs Web Bluetooth in current Chrome.
+                </small>
+              ) : null}
+            </div>
+          </article>
         </section>
 
         <section

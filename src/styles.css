@@ -3351,6 +3351,91 @@ code {
   line-height: 1.5;
 }
 
+.ble-recovery-card {
+  display: grid;
+  max-width: 1180px;
+  margin: 16px auto 0;
+  padding: 24px;
+  border: 1px solid rgba(95, 174, 255, 0.34);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(40, 126, 255, 0.09), transparent 58%),
+    #111;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.9fr);
+  gap: 28px;
+}
+
+.ble-recovery-copy h3 {
+  margin: 8px 0 10px;
+  font-size: 18px;
+}
+
+.ble-recovery-copy p,
+.ble-recovery-copy ol {
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.ble-recovery-copy p {
+  max-width: 660px;
+  margin: 0;
+}
+
+.ble-recovery-copy ol {
+  margin: 14px 0 0;
+  padding-left: 20px;
+}
+
+.ble-recovery-actions,
+.ble-device-buttons {
+  display: grid;
+  gap: 10px;
+}
+
+.ble-device-buttons {
+  grid-template-columns: 1fr 1fr;
+}
+
+.ble-device-buttons .button {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ble-device-buttons .button > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ble-ready-confirm {
+  display: flex;
+  padding: 12px;
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #0b0b0b;
+  cursor: pointer;
+  font-size: 10px;
+  line-height: 1.5;
+  gap: 9px;
+}
+
+.ble-ready-confirm input {
+  flex: none;
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+
+.ble-ready-confirm:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ble-recovery-start {
+  min-height: 46px;
+}
+
 .advanced-automatic-apply {
   display: grid;
   margin-top: 22px;
@@ -3397,6 +3482,10 @@ code {
   .easy-apply-card {
     grid-column: auto;
   }
+
+  .ble-recovery-card {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 600px) {
@@ -3427,6 +3516,10 @@ code {
 
   .install-mode-options {
     flex-direction: column;
+  }
+
+  .ble-device-buttons {
+    grid-template-columns: 1fr;
   }
 }
 

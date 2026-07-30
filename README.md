@@ -39,7 +39,7 @@ Production deployment:
 - Accepts official five- or six-component `EVENOTA` bundles, wrapped
   `firmware_box.bin` components, and validated raw case images.
 - Recognizes all 12 archived official G2 SHA-256 values and the exact reviewed
-  SybilSight 2.2.6.10 CFW SHA-256.
+  SybilSight CFW 2.2.6.11 SHA-256.
 - Validates the Apollo main application's independent preamble, CRC-32, target
   region, installed-image boundary, and vector.
 - Stages case firmware in the inactive bank and verifies a byte-for-byte
@@ -76,6 +76,14 @@ Production deployment:
 - Keeps the existing multi-pane console as **Advanced Mode**, including all
   manual analysis/recovery controls, and adds the same Update/Restore selector
   and automatic **Apply** action beneath its firmware menu.
+- Offers a direct Web Bluetooth fallback after a clean Case-USB stop. Chrome
+  selects the advertising right and left temples separately, then sends only
+  a complete six-component bundle whose package digest, topology, component
+  CRCs, and Apollo MRAM bounds already passed the browser's compiled-in pins.
+  Every 4-KiB block requires an explicit ACK and every component requires an
+  END verification. An explicit NAK permits a bounded in-place resend; a bare
+  ACK timeout is ambiguous and restarts the whole component from FILE_CHECK
+  without replaying the block.
 - Presents both recovery targets under Recover: three-step inactive-bank
   staging/activation for the charging case and a separately gated left,
   right, or both-temple reinstall for responsive Smart Glasses.
@@ -292,18 +300,21 @@ double to 2/4 seconds and the final settle becomes 30 seconds. It is valid only
 after exact cleanup, bilateral reset/contact/liveness proof, and a new START;
 the rejected DATA record is never replayed.
 
-Two 2026-07-30 production attempts isolated the remaining maximum-pacing
-mistake. Build `e8110e4` rejected record 800 two records after the 798,000-byte
+Three 2026-07-30 production attempts disproved pacing as a complete fix for
+this Case-to-temple route. Build `e8110e4` rejected record 800 two records after the 798,000-byte
 deferred boundary despite a three-second boundary settle. Build `449b15c`
 serialized every 1,000-byte record for one second, but rejected record 542 two
 records after the 540,000-byte boundary because that change granted the true
-six-record deferred commit only the same one-second pause. Both attempts
-retained zero temple-UART and host-transport errors, exact YHM restoration,
-Case 1.2.57 return, and checksum-valid bilateral 2.2.6.10 liveness after the
-final reset. Maximum pacing now keeps the per-record serialization while
-giving each actual 6-KiB storage boundary an uninterrupted eight-second early
-or twelve-second late settle. Host-only keepalives preserve the Case bridge
-during those longer windows without transmitting another temple command.
+six-record deferred commit only the same one-second pause. Build `e81844e`
+then retained that per-record serialization and gave every true 6-KiB
+boundary an uninterrupted eight-second early or twelve-second late settle,
+yet the right temple cleanly rejected record 494 after 493,000 accepted bytes.
+All three attempts retained zero temple-UART and host-transport errors, exact
+YHM restoration, Case 1.2.57 return, and checksum-valid bilateral 2.2.6.10
+liveness after the final reset. The non-clustered rejection points moved
+earlier as pacing increased, so the browser no longer escalates this signature
+with more Case-USB delay. It stops after verified cleanup and directs the
+operator to the fresh Bluetooth full-package path.
 
 A 2.0.7.16 cross-version run provided the clustered-boundary evidence. The
 right temple rejected record 2,184 after 2,183,000 accepted bytes, then
@@ -794,13 +805,15 @@ and requires the normal case 1.2.57 banner.
 
 If a running temple has an interrupted product-test session and repeated fresh
 `0x52` START requests receive no frame while accepting zero header/data bytes,
+or returns a clean explicit DATA rejection at the maximum reviewed pacing,
 stop retrying that state machine. Restore the Case/YHM state, issue the
-bilateral reset, and prefer a fresh BLE full-component session when the arm
+bilateral reset, and use a fresh BLE full-component session when the arm
 advertises. The July 25 left recovery established this fallback with the exact
-pinned stock package. Browser and Python audits now label this exact signature
-`wired_start_no_frame_zero_byte_boundary`, record that START/HEADER replay is
-forbidden, and retain the fresh-BLE recommendation in the downloadable result.
-The browser does not itself perform that BLE session.
+pinned stock package. Browser and Python audits label the zero-byte signature
+`wired_start_no_frame_zero_byte_boundary` and record that START/HEADER replay
+is forbidden. Easy Mode now performs the same reviewed direct-Bluetooth
+protocol after two explicit side selections, while keeping the package,
+component, retry, and memory-boundary gates local in the browser.
 
 Any missing transaction or cleanup proof is reported as
 `failed_or_uncertain`. The next selected route is not attempted. No bridge
@@ -1178,6 +1191,26 @@ verified, the flasher does not send the reset.
 This is an application-alive reinstall path. If the temple no longer answers
 the version preflight, do not attempt it repeatedly: use a separately proven
 SBL/MRAM-recovery or SWD route.
+
+### Continue a clean Case stop over direct Bluetooth
+
+1. Let the wired attempt finish its Case/YHM restoration, final bilateral
+   reset, and liveness checks. Do not interrupt its cleanup.
+2. Remove both temples from the Case. Close the Even app or turn off Bluetooth
+   on the paired phone so the arms advertise as `Even G2_*_R_*` and
+   `Even G2_*_L_*`.
+3. In Easy Mode, keep **SybilSight CFW (2.2.6.11)** selected. Under
+   **Continue over fresh Bluetooth**, select the right temple and then the
+   left temple in Chrome's native chooser.
+4. Confirm the side names and start the direct recovery. The browser writes
+   right first, then left, and retains a completed side if a later side stops,
+   so retrying does not rewrite an already verified temple.
+5. Wait for all six END verifications on both sides. Re-seat both temples in
+   the Case and use the normal reset/recheck path for final checksum-valid
+   `2.2.6.11`/hardware-5 liveness proof.
+
+This fallback still depends on the running G2 application and its BLE OTA
+service. It is not an application-dead, bootloader, or SWD recovery route.
 
 ### Inspect dead-temple recovery provisioning
 

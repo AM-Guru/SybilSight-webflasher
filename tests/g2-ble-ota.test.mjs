@@ -1,0 +1,242 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+import {
+  G2_BLE_BLOCK_BYTES,
+  G2BleOtaError,
+  G2BleOtaSession,
+  assertPinnedG2BleBundle,
+  crc16CcittFalse,
+  makeBleControlFrames,
+  makeBleEnvelopeFrames,
+  parseBleAck,
+  requestG2BleDevice,
+} from "../src/lib/g2BleOta.js";
+import {
+  EXPECTED_COMPONENTS,
+  EXPECTED_COMPONENT_TYPES,
+  parseFirmwareInput,
+} from "../src/lib/firmware.js";
+
+function hex(bytes) {
+  return Buffer.from(bytes).toString("hex");
+}
+
+test("matches the captured G2 AA21 CRC and envelope vectors", () => {
+  assert.equal(crc16CcittFalse(Buffer.from("123456789")), 0x29b1);
+  assert.equal(crc16CcittFalse(Uint8Array.of(0)), 0xe1f0);
+  assert.deepEqual(
+    makeBleControlFrames(0x00, new Uint8Array(), 1).map(hex),
+    ["aa2101030101c00000f0e1"],
+  );
+  assert.deepEqual(
+    makeBleEnvelopeFrames(
+      0x80,
+      Uint8Array.from([0x08, 0x0e, 0x10, 0x26, 0x6a, 0x00]),
+      { sequence: 2 },
+    ).map(hex),
+    ["aa21020801018000080e10266a00da07"],
+  );
+});
+
+test("splits a 233-byte payload exactly like the reviewed flasher", () => {
+  const frames = makeBleEnvelopeFrames(
+    0xc1,
+    Uint8Array.from({ length: 233 }, (_, index) => index),
+    { sequence: 0xfe },
+  );
+  assert.equal(frames.length, 2);
+  assert.deepEqual(
+    [...frames[0].subarray(0, 8)],
+    [0xaa, 0x21, 0xfe, 232, 2, 1, 0xc1, 0],
+  );
+  assert.equal(frames[0][8], 0);
+  assert.equal(frames[0].at(-1), 231);
+  assert.equal(hex(frames[1]), "aa21fe030202c100e83e4a");
+});
+
+test("unwraps AA12 acknowledgement payloads", () => {
+  const ack = parseBleAck(
+    Uint8Array.from([
+      0xaa, 0x12, 0x44, 0x04, 0x01, 0x01, 0xc0, 0x00,
+      0x02, 0x07, 0x00, 0x00,
+    ]),
+  );
+  assert.equal(ack.sequence, 0x44);
+  assert.equal(ack.sid, 0xc0);
+  assert.equal(ack.opcode, 0x02);
+  assert.equal(ack.status, 0x07);
+  assert.equal(parseBleAck(Uint8Array.of(0xaa, 0x21)), null);
+});
+
+test("uses one shared sequence for a block marker and all block fragments", async () => {
+  const written = [];
+  const characteristic = {
+    writeValueWithoutResponse: async (frame) => written.push(frame.slice()),
+  };
+  const session = new G2BleOtaSession(
+    { name: "Even G2_32_R_693CCB" },
+    { side: "right" },
+  );
+  session.dataWrite = characteristic;
+  session.waitForAck = async () => 0;
+  const status = await session.sendBlock(
+    new Uint8Array(G2_BLE_BLOCK_BYTES),
+  );
+  assert.equal(status, 0);
+  assert.equal(written.length, 19);
+  assert.equal(written[0][6], 0xc0);
+  assert.equal(written[1][6], 0xc1);
+  assert.ok(written.every((frame) => frame[2] === 1));
+});
+
+test("an explicit block NAK is safely resent in place", async () => {
+  const statuses = [3, 0];
+  const session = new G2BleOtaSession(
+    { name: "Even G2_32_R_693CCB" },
+    {
+      side: "right",
+      componentAttempts: 1,
+      blockNakAttempts: 3,
+    },
+  );
+  const controls = [];
+  let blockCalls = 0;
+  session.sendControl = async (opcode) => {
+    controls.push(opcode);
+    return opcode === 0x03 ? 8 : 0;
+  };
+  session.sendBlock = async () => {
+    blockCalls += 1;
+    return statuses.shift();
+  };
+  const totals = {
+    totalBytes: 4,
+    completedBeforeComponent: 0,
+    highWater: 0,
+  };
+  const result = await session.flashComponent(
+    {
+      name: "firmware/test.bin",
+      header: new Uint8Array(128),
+      payload: Uint8Array.of(1, 2, 3, 4),
+    },
+    0,
+    totals,
+  );
+  assert.equal(blockCalls, 2);
+  assert.deepEqual(controls, [0x01, 0x03]);
+  assert.equal(result.endStatus, 8);
+});
+
+test("an ambiguous block timeout restarts the component from FILE_CHECK", async () => {
+  const session = new G2BleOtaSession(
+    { name: "Even G2_32_R_693CCB" },
+    {
+      side: "right",
+      componentAttempts: 2,
+      componentRetrySettleMs: 0,
+    },
+  );
+  const controls = [];
+  let blockCalls = 0;
+  session.sendControl = async (opcode) => {
+    controls.push(opcode);
+    return opcode === 0x03 ? 8 : 0;
+  };
+  session.sendBlock = async () => {
+    blockCalls += 1;
+    if (blockCalls === 1) {
+      throw new G2BleOtaError("lost ack", {
+        code: "ACK_TIMEOUT",
+        opcode: 0x02,
+      });
+    }
+    return 0;
+  };
+  await session.flashComponent(
+    {
+      name: "firmware/test.bin",
+      header: new Uint8Array(128),
+      payload: Uint8Array.of(1, 2, 3, 4),
+    },
+    0,
+    {
+      totalBytes: 4,
+      completedBeforeComponent: 0,
+      highWater: 0,
+    },
+  );
+  assert.equal(blockCalls, 2);
+  assert.deepEqual(controls, [0x01, 0x01, 0x03]);
+});
+
+test("the direct BLE writer accepts only the complete pinned topology", () => {
+  const target = {
+    imageSha256: "a".repeat(64),
+  };
+  const firmware = {
+    templeFlashEligible: true,
+    templeFlashTarget: target,
+    fileSha256: target.imageSha256,
+    componentImages: EXPECTED_COMPONENTS.map((name, index) => ({
+      name,
+      typeId: EXPECTED_COMPONENT_TYPES[index],
+      header: new Uint8Array(128),
+      payload: Uint8Array.of(index),
+      payloadSize: 1,
+    })),
+  };
+  assert.equal(assertPinnedG2BleBundle(firmware), firmware);
+  assert.throws(
+    () =>
+      assertPinnedG2BleBundle({
+        ...firmware,
+        componentImages: firmware.componentImages.slice(1),
+      }),
+    /complete 6-component/,
+  );
+});
+
+test("the archived SybilSight CFW is a complete direct-BLE package", async () => {
+  const bytes = await readFile(
+    new URL(
+      "../public/firmware-updates/source-files/2.2.6.11/g2-2.2.6.11.bin",
+      import.meta.url,
+    ),
+  );
+  const firmware = await parseFirmwareInput(
+    bytes,
+    "g2-2.2.6.11.bin",
+  );
+  assert.equal(assertPinnedG2BleBundle(firmware), firmware);
+  assert.equal(firmware.g2Version, "2.2.6.11");
+  assert.equal(
+    firmware.componentImages.reduce(
+      (sum, component) =>
+        sum + Math.ceil(component.payload.length / G2_BLE_BLOCK_BYTES),
+      0,
+    ),
+    1057,
+  );
+});
+
+test("the chooser rejects a temple from the wrong side", async () => {
+  let disconnected = false;
+  const bluetooth = {
+    requestDevice: async () => ({
+      name: "Even G2_32_L_693CCB",
+      gatt: {
+        disconnect() {
+          disconnected = true;
+        },
+      },
+    }),
+  };
+  await assert.rejects(
+    requestG2BleDevice("right", bluetooth),
+    /Select the right temple/,
+  );
+  assert.equal(disconnected, true);
+});

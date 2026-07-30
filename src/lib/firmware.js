@@ -43,7 +43,7 @@ const LEGACY_HARDWARE_TESTED_CFW = Object.freeze({
     "38dea7dc05e832e6f5aea8fa726454b2ec44055af5d456b323448ee6989e53d1",
 });
 export const POGO_TRANSFER_RESEARCH = Object.freeze({
-  asOf: "2026-07-27",
+  asOf: "2026-07-30",
   directTempleHost: Object.freeze({
     status: "offline-validated",
     offlineTestsPassed: 8,
@@ -115,6 +115,23 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
         priorWiredAcceptedBytesBeforeFailure: 85000,
         firstReviewedCfwDifferenceOffset: 41642,
       }),
+    }),
+    maximumPacingExplicitRejection: Object.freeze({
+      observedAt: "2026-07-30",
+      route: "right",
+      profile: "observed-33",
+      imageSha256: REVIEWED_CFW.sha256,
+      rejectedRecord: 494,
+      acceptedBytes: 493000,
+      declaredBytes: 3542584,
+      templeUartErrors: 0,
+      hostTransportErrors: 0,
+      perRecordSettleMs: 1000,
+      deferredBoundarySettleMs: 8000,
+      retainedCaseRestoreVerified: true,
+      finalBilateralLivenessVerified: true,
+      conclusion:
+        "Maximum reviewed record and true 6-KiB boundary pacing still produced a clean explicit DATA status-1 rejection at a new non-clustered offset. Do not increase Case-USB pacing again; after verified cleanup use the exact pinned fresh-BLE six-component fallback.",
     }),
     dataContactFinding:
       "GLS_L/GLS_R presence and charging voltage do not prove a live pogo data path. Repeated read-only probes consume the short app-mode route: hardware lost START after a 10-query gate but acknowledged the identical START after one fresh checksum-valid version query, so use that single query immediately before OTA.",

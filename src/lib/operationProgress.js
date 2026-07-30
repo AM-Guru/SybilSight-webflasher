@@ -6,6 +6,7 @@ export const OPERATION_TOTALS = Object.freeze({
   pogo: 4,
   recheck: 6,
   "temple-flash": 14,
+  "ble-temple-flash": 16,
   stage: 4,
   activate: 6,
 });
@@ -26,4 +27,3 @@ export function operationProgress(name, fraction, totalOverride = null) {
     percent: Math.round(bounded * 100),
   };
 }
-
