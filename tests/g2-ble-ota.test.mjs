@@ -173,6 +173,142 @@ test("an ambiguous block timeout restarts the component from FILE_CHECK", async 
   assert.deepEqual(controls, [0x01, 0x01, 0x03]);
 });
 
+test("a final END 8 reboot reconnects instead of surfacing the heartbeat disconnect", async () => {
+  const target = {
+    imageSha256: "a".repeat(64),
+  };
+  const firmware = {
+    templeFlashEligible: true,
+    templeFlashTarget: target,
+    fileSha256: target.imageSha256,
+    g2Version: "2.2.6.11",
+    componentImages: EXPECTED_COMPONENTS.map((name, index) => ({
+      name,
+      typeId: EXPECTED_COMPONENT_TYPES[index],
+      header: new Uint8Array(128),
+      payload: Uint8Array.of(index),
+      payloadSize: 1,
+    })),
+  };
+  const session = new G2BleOtaSession(
+    {
+      name: "Even G2_32_R_693CCB",
+      gatt: { connected: false },
+    },
+    { side: "right" },
+  );
+  session.connect = async () => {};
+  session.startHeartbeat = () => {};
+  session.stopHeartbeat = () => {};
+  session.sendControl = async () => 0;
+  let finalSettles = 0;
+  session.settleFinalUpdate = async (endStatus) => {
+    finalSettles += 1;
+    assert.equal(endStatus, 8);
+    session.heartbeatError = null;
+    return {
+      expectedReboot: true,
+      reconnected: true,
+      reconnectAttempts: 2,
+    };
+  };
+  session.flashComponent = async (component, index, totals) => {
+    totals.completedBeforeComponent += component.payload.length;
+    totals.highWater = totals.completedBeforeComponent;
+    if (index === EXPECTED_COMPONENTS.length - 1) {
+      session.heartbeatError = new Error(
+        "Bluetooth Device is no longer in range.",
+      );
+    }
+    return {
+      name: component.name,
+      payloadBytes: component.payload.length,
+      blocks: 1,
+      endStatus: 8,
+      attempts: 1,
+    };
+  };
+
+  const result = await session.flashBundle(firmware);
+  assert.equal(result.outcome, "success");
+  assert.equal(result.components.length, EXPECTED_COMPONENTS.length);
+  assert.equal(finalSettles, 1);
+  assert.deepEqual(result.components.at(-1).postUpdate, {
+    expectedReboot: true,
+    reconnected: true,
+    reconnectAttempts: 2,
+  });
+});
+
+test("an explicit final END preserves the transfer when bounded reboot reconnect is delayed", async () => {
+  const logs = [];
+  let connectAttempts = 0;
+  const device = {
+    name: "Even G2_32_R_693CCB",
+    gatt: {
+      connected: false,
+      async connect() {
+        connectAttempts += 1;
+        throw new Error("Bluetooth Device is no longer in range.");
+      },
+      disconnect() {},
+    },
+  };
+  const session = new G2BleOtaSession(device, {
+    side: "right",
+    log: (message, tone) => logs.push({ message, tone }),
+    rebootSettleMs: 0,
+    reconnectIntervalMs: 0,
+    reconnectAttempts: 3,
+  });
+  session.writeTail = Promise.reject(
+    new Error("Bluetooth Device is no longer in range."),
+  );
+  session.heartbeatError = new Error(
+    "Bluetooth Device is no longer in range.",
+  );
+
+  const result = await session.settleFinalUpdate(8);
+  assert.equal(connectAttempts, 3);
+  assert.equal(result.expectedReboot, true);
+  assert.equal(result.reconnected, false);
+  assert.equal(result.reconnectAttempts, 3);
+  assert.match(result.reconnectError, /no longer in range/);
+  assert.match(logs.at(-1).message, /No firmware will be replayed/);
+});
+
+test("the final reboot reconnect is bounded and succeeds on the selected device handle", async () => {
+  let connectAttempts = 0;
+  const device = {
+    name: "Even G2_32_R_693CCB",
+    gatt: {
+      connected: false,
+      disconnect() {},
+    },
+  };
+  const session = new G2BleOtaSession(device, {
+    side: "right",
+    rebootSettleMs: 0,
+    reconnectIntervalMs: 0,
+    reconnectAttempts: 4,
+  });
+  session.connect = async () => {
+    connectAttempts += 1;
+    if (connectAttempts < 3) {
+      throw new Error("Bluetooth Device is no longer in range.");
+    }
+    device.gatt.connected = true;
+  };
+
+  const result = await session.settleFinalUpdate(8);
+  assert.equal(connectAttempts, 3);
+  assert.deepEqual(result, {
+    expectedReboot: true,
+    reconnected: true,
+    reconnectAttempts: 3,
+  });
+});
+
 test("the direct BLE writer accepts only the complete pinned topology", () => {
   const target = {
     imageSha256: "a".repeat(64),

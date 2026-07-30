@@ -23,6 +23,9 @@ export const G2_BLE_CONTROL_ACK_TIMEOUT_MS = 8000;
 export const G2_BLE_HEARTBEAT_INTERVAL_MS = 12000;
 export const G2_BLE_BLOCK_NAK_ATTEMPTS = 3;
 export const G2_BLE_COMPONENT_ATTEMPTS = 3;
+export const G2_BLE_REBOOT_SETTLE_MS = 2500;
+export const G2_BLE_RECONNECT_INTERVAL_MS = 2500;
+export const G2_BLE_RECONNECT_ATTEMPTS = 8;
 
 export const G2_BLE_OTA_STATUS = Object.freeze({
   0: "SUCCESS",
@@ -263,6 +266,9 @@ export class G2BleOtaSession {
       blockNakAttempts = G2_BLE_BLOCK_NAK_ATTEMPTS,
       componentAttempts = G2_BLE_COMPONENT_ATTEMPTS,
       componentRetrySettleMs = 1500,
+      rebootSettleMs = G2_BLE_REBOOT_SETTLE_MS,
+      reconnectIntervalMs = G2_BLE_RECONNECT_INTERVAL_MS,
+      reconnectAttempts = G2_BLE_RECONNECT_ATTEMPTS,
     } = {},
   ) {
     this.device = device;
@@ -275,6 +281,9 @@ export class G2BleOtaSession {
     this.blockNakAttempts = blockNakAttempts;
     this.componentAttempts = componentAttempts;
     this.componentRetrySettleMs = componentRetrySettleMs;
+    this.rebootSettleMs = rebootSettleMs;
+    this.reconnectIntervalMs = reconnectIntervalMs;
+    this.reconnectAttempts = reconnectAttempts;
     this.sequence = 0;
     this.ackQueue = [];
     this.ackWaiters = [];
@@ -463,6 +472,76 @@ export class G2BleOtaSession {
     this.heartbeatTimer = null;
   }
 
+  async settleFinalUpdate(endStatus) {
+    this.stopHeartbeat();
+    // A heartbeat may already be queued behind the final END write. Let that
+    // queue settle before deciding whether its failure was the expected reboot.
+    await this.writeTail.catch(() => {});
+    await new Promise((resolve) => setTimeout(resolve, this.rebootSettleMs));
+
+    if (this.device?.gatt?.connected) {
+      this.heartbeatError = null;
+      this.log(
+        `${this.side}: final END ${endStatus} (${g2BleStatusName(endStatus)}) completed and the Bluetooth link remained live.`,
+        "success",
+      );
+      return {
+        expectedReboot: true,
+        reconnected: false,
+        linkRemainedLive: true,
+      };
+    }
+
+    this.log(
+      `${this.side}: final END ${endStatus} (${g2BleStatusName(endStatus)}) triggered the expected temple reboot; waiting for the selected device to advertise again.`,
+      "warn",
+    );
+    let lastError = this.heartbeatError;
+    this.heartbeatError = null;
+    this.writeTail = Promise.resolve();
+    for (let attempt = 1; attempt <= this.reconnectAttempts; attempt += 1) {
+      if (attempt > 1) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, this.reconnectIntervalMs),
+        );
+      }
+      try {
+        await this.connect();
+        this.log(
+          `${this.side}: the temple returned after its firmware reboot · automatic Bluetooth reconnect ${attempt}/${this.reconnectAttempts} verified GATT liveness.`,
+          "success",
+        );
+        return {
+          expectedReboot: true,
+          reconnected: true,
+          reconnectAttempts: attempt,
+        };
+      } catch (error) {
+        lastError = error;
+        try {
+          this.device?.gatt?.disconnect();
+        } catch {
+          // The failed attempt may already have closed the transient link.
+        }
+      }
+    }
+
+    // All payload blocks and the final END response are unambiguous. Replaying
+    // the package here would be less safe than preserving that proof and using
+    // the required Case reset/version interrogation as the authoritative boot
+    // check after both temples have been transferred.
+    this.log(
+      `${this.side}: all final-image blocks and END ${endStatus} were verified, but the rebooted temple did not resume GATT within ${this.reconnectAttempts} bounded attempts${lastError?.message ? ` (${lastError.message})` : ""}. No firmware will be replayed; continuing to the other side and deferring version authority to the final Case check.`,
+      "warn",
+    );
+    return {
+      expectedReboot: true,
+      reconnected: false,
+      reconnectAttempts: this.reconnectAttempts,
+      reconnectError: lastError?.message ?? null,
+    };
+  }
+
   async flashComponent(component, componentIndex, totals) {
     const blockCount = Math.ceil(
       component.payload.length / G2_BLE_BLOCK_BYTES,
@@ -613,7 +692,16 @@ export class G2BleOtaSession {
           progressBase + localFraction * progressSpan,
           `${this.side}: verified ${index + 1}/${firmware.componentImages.length} components`,
         );
-        if (this.heartbeatError) throw this.heartbeatError;
+        const isFinalComponent =
+          index === firmware.componentImages.length - 1;
+        if (
+          isFinalComponent &&
+          (result.endStatus === 8 || result.endStatus === 9)
+        ) {
+          result.postUpdate = await this.settleFinalUpdate(result.endStatus);
+        } else if (this.heartbeatError) {
+          throw this.heartbeatError;
+        }
       }
     } finally {
       this.stopHeartbeat();
