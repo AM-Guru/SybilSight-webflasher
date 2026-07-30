@@ -9,6 +9,7 @@ import {
   assertPinnedG2BleBundle,
   crc16CcittFalse,
   g2BleDeviceSide,
+  g2BleTargetVersionProof,
   makeBleControlFrames,
   makeBleEnvelopeFrames,
   parseBleAck,
@@ -384,6 +385,62 @@ test("recognizes relaxed Chrome/CoreBluetooth G2 side-name variants", () => {
   assert.equal(g2BleDeviceSide("G2_7_r_00A19F "), "right");
   assert.equal(g2BleDeviceSide("Even G2"), null);
   assert.equal(g2BleDeviceSide("Unrelated_L_device"), null);
+});
+
+test("fresh restored Case proof skips a Bluetooth rewrite only at the exact target", () => {
+  const observedAt = "2026-07-30T21:00:00.000Z";
+  const results = {
+    version: {
+      decoded: {
+        firmwareVersion: "2.2.6.11",
+      },
+      transportProof: {
+        restoredMask: 0x3ff,
+      },
+      observedAt,
+    },
+    lastProbeFailure: null,
+  };
+  const now = Date.parse(observedAt) + 5 * 60 * 1000;
+  assert.equal(
+    g2BleTargetVersionProof(results, "2.2.6.11", { now }),
+    true,
+  );
+  assert.equal(
+    g2BleTargetVersionProof(results, "2.2.6.10", { now }),
+    false,
+  );
+  assert.equal(
+    g2BleTargetVersionProof(
+      {
+        ...results,
+        version: {
+          ...results.version,
+          transportProof: { restoredMask: 0 },
+        },
+      },
+      "2.2.6.11",
+      { now },
+    ),
+    false,
+  );
+  assert.equal(
+    g2BleTargetVersionProof(
+      {
+        ...results,
+        lastProbeFailure: { message: "no reply" },
+      },
+      "2.2.6.11",
+      { now },
+    ),
+    false,
+  );
+  assert.equal(
+    g2BleTargetVersionProof(results, "2.2.6.11", {
+      now: Date.parse(observedAt) + 16 * 60 * 1000,
+    }),
+    false,
+  );
 });
 
 test("accepts a shortened Chrome G2 name and defers side proof to the UI", async () => {

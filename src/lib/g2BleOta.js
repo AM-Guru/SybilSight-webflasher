@@ -26,6 +26,7 @@ export const G2_BLE_COMPONENT_ATTEMPTS = 3;
 export const G2_BLE_REBOOT_SETTLE_MS = 2500;
 export const G2_BLE_RECONNECT_INTERVAL_MS = 2500;
 export const G2_BLE_RECONNECT_ATTEMPTS = 8;
+export const G2_BLE_TARGET_PROOF_MAX_AGE_MS = 15 * 60 * 1000;
 
 export const G2_BLE_OTA_STATUS = Object.freeze({
   0: "SUCCESS",
@@ -175,6 +176,28 @@ export function g2BleDeviceSide(name) {
   )?.[1];
   if (shortSide) return shortSide === "L" ? "left" : "right";
   return null;
+}
+
+export function g2BleTargetVersionProof(
+  routeResults,
+  targetVersion,
+  {
+    now = Date.now(),
+    maxAgeMs = G2_BLE_TARGET_PROOF_MAX_AGE_MS,
+  } = {},
+) {
+  const version = routeResults?.version;
+  const observedAt = Date.parse(version?.observedAt ?? "");
+  const ageMs = now - observedAt;
+  return Boolean(
+    targetVersion &&
+      !routeResults?.lastProbeFailure &&
+      version?.decoded?.firmwareVersion === targetVersion &&
+      version?.transportProof?.restoredMask === 0x3ff &&
+      Number.isFinite(observedAt) &&
+      ageMs >= 0 &&
+      ageMs <= maxAgeMs,
+  );
 }
 
 export async function requestG2BleDevice(

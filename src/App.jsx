@@ -99,6 +99,7 @@ import {
   assertPinnedG2BleBundle,
   g2BleDeviceSide,
   g2BleSupported,
+  g2BleTargetVersionProof,
   requestG2BleDevice,
 } from "./lib/g2BleOta.js";
 
@@ -2322,6 +2323,40 @@ function App() {
           for (const [index, side] of ["right", "left"].entries()) {
             const device = bleDevices[side];
             if (
+              g2BleTargetVersionProof(
+                pogoResults[side],
+                prepared.g2Version,
+              )
+            ) {
+              completedRoutes[side] = {
+                side,
+                deviceId: device.id,
+                deviceName: device.name,
+                imageSha256: prepared.fileSha256,
+                version: prepared.g2Version,
+                components: [],
+                blockAcks: 0,
+                verifiedBy: "fresh-case-version-proof",
+                skipped: true,
+                outcome: "success",
+              };
+              setBleResults({
+                imageSha256: prepared.fileSha256,
+                version: prepared.g2Version,
+                routes: { ...completedRoutes },
+                outcome: "in_progress",
+              });
+              setSessionProgress(
+                (index + 1) / 2,
+                `${side}: retaining fresh Case proof of G2 ${prepared.g2Version}`,
+              );
+              addLog(
+                `${side}: fresh checksum-valid Case interrogation already proves G2 ${prepared.g2Version} with exact route restoration. Bluetooth will not rewrite this temple.`,
+                "success",
+              );
+              continue;
+            }
+            if (
               completedRoutes[side]?.outcome === "success" &&
               completedRoutes[side]?.deviceId === device.id
             ) {
@@ -2370,13 +2405,29 @@ function App() {
           setBleReady(false);
           setSessionProgress(
             1,
-            "Both temples verified all six direct Bluetooth components",
+            "Both temples proven at target by transfer or fresh Case version",
           );
+          const retainedSides = ["right", "left"].filter(
+            (side) => completedRoutes[side]?.skipped,
+          );
+          const transferredSides = ["right", "left"].filter(
+            (side) => !completedRoutes[side]?.skipped,
+          );
+          const routeSummary = [
+            retainedSides.length
+              ? `${retainedSides.join(" + ")} retained from fresh target-version proof`
+              : null,
+            transferredSides.length
+              ? `${transferredSides.join(" + ")} verified all six Bluetooth components`
+              : null,
+          ]
+            .filter(Boolean)
+            .join("; ");
           setBleStatus(
-            `Bluetooth package verified on right + left · ${prepared.templeFlashTarget.label}. Re-seat both temples in the Case for the final reset and version-liveness check.`,
+            `Bluetooth target established on right + left · ${routeSummary}. Re-seat both temples in the Case for the final reset and version-liveness check.`,
           );
           addLog(
-            `Direct Bluetooth restore completed · right + left each verified all six pinned components. Re-seat both temples for the final Case DEB0 reset and 2.2.6.11 liveness proof.`,
+            `Direct Bluetooth restore completed · ${routeSummary}. Re-seat both temples for the final Case DEB0 reset and ${prepared.g2Version} liveness proof.`,
             "success",
           );
         } catch (caught) {
