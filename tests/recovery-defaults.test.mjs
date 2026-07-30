@@ -3,8 +3,11 @@ import test from "node:test";
 import {
   DEFAULT_TEMPLE_FLASH_MODE,
   DEFAULT_TEMPLE_FLASH_ROUTE,
+  findDefaultFirmwareRelease,
   findLatestCaseFirmwareRelease,
   findLatestOfficialStockRelease,
+  findLatestReviewedCustomRelease,
+  firmwareReleaseDisplayName,
 } from "../src/lib/recoveryDefaults.js";
 
 test("defaults recovery to a complete bilateral temple restore", () => {
@@ -34,6 +37,39 @@ test("selects the newest official Stock release independent of catalog order", (
     },
   ];
   assert.equal(findLatestOfficialStockRelease(releases)?.id, "stock-new");
+});
+
+test("defaults the firmware selector to the newest reviewed SybilSight CFW", () => {
+  const releases = [
+    {
+      id: "stock",
+      channel: "official",
+      trust: "official-pinned",
+      version: "2.2.6.10",
+      caseRecoveryEligible: true,
+    },
+    {
+      id: "cfw-old",
+      channel: "custom",
+      trust: "reviewed-custom",
+      version: "2.2.6.10",
+      caseRecoveryEligible: false,
+    },
+    {
+      id: "cfw-current",
+      channel: "custom",
+      trust: "reviewed-custom",
+      version: "2.2.6.11",
+      displayName: "SybilSight CFW (2.2.6.11)",
+      caseRecoveryEligible: false,
+    },
+  ];
+  assert.equal(findLatestReviewedCustomRelease(releases)?.id, "cfw-current");
+  assert.equal(findDefaultFirmwareRelease(releases)?.id, "cfw-current");
+  assert.equal(
+    firmwareReleaseDisplayName(findDefaultFirmwareRelease(releases)),
+    "SybilSight CFW (2.2.6.11)",
+  );
 });
 
 test("selects the newest Case firmware before using glasses version as a tie-breaker", () => {

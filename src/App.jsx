@@ -67,8 +67,10 @@ import {
 import {
   DEFAULT_TEMPLE_FLASH_MODE,
   DEFAULT_TEMPLE_FLASH_ROUTE,
+  findDefaultFirmwareRelease,
   findLatestCaseFirmwareRelease,
   findLatestOfficialStockRelease,
+  firmwareReleaseDisplayName,
 } from "./lib/recoveryDefaults.js";
 import {
   DEFAULT_AUTOMATIC_CASE_UPDATE,
@@ -1621,8 +1623,7 @@ function App() {
             }))
           : [];
         setCatalog(releases);
-        const latestStockRelease = findLatestOfficialStockRelease(releases);
-        setSelectedReleaseId((latestStockRelease ?? releases[0])?.id ?? "");
+        setSelectedReleaseId(findDefaultFirmwareRelease(releases)?.id ?? "");
         setCatalogState("ready");
       })
       .catch(() => {
@@ -3369,13 +3370,7 @@ function App() {
                         baseVersion here made reviewed CFW 2.2.6.11 read as
                         "CFW · G2 2.2.6.10", indistinguishable from the legacy
                         2.2.6.10 CFW build. */}
-                    {release.channel === "custom"
-                      ? `CFW · G2 ${release.version}${
-                          release.baseVersion
-                            ? ` (stock ${release.baseVersion} base)`
-                            : ""
-                        }`
-                      : `Stock · G2 ${release.version}`}
+                    {firmwareReleaseDisplayName(release)}
                   </option>
                 ))}
               </select>
@@ -3383,7 +3378,7 @@ function App() {
                 <div className="easy-release-summary">
                   <strong>
                     {selectedRelease.channel === "custom"
-                      ? "Reviewed SybilSight CFW"
+                      ? firmwareReleaseDisplayName(selectedRelease)
                       : "Official Stock firmware"}
                   </strong>
                   <span>{formatBytes(selectedRelease.size)}</span>
@@ -4050,7 +4045,7 @@ function App() {
                     <option value={release.id} key={release.id}>
                       {release.caseRecoveryEligible
                         ? `Charging Case ${release.caseVersion} · G2 ${release.version}`
-                        : `Smart Glasses ${release.version} · CFW`}
+                        : firmwareReleaseDisplayName(release)}
                     </option>
                   ))}
                 </select>

@@ -100,6 +100,7 @@ const REVIEWED_CASE_ROM_COMMANDS = Object.freeze([
 const POGO_STABILITY_READ_QUERIES = 1;
 const POGO_STABILITY_INTERVAL_MS = 25;
 const POGO_DEFERRED_BATCH_BYTES = 6000;
+const POGO_SERIALIZED_BATCH_BYTES = 1000;
 const POGO_DATA_BATCH_SETTLE_MS = 1000;
 const POGO_DATA_LATE_BATCH_SETTLE_MS = 2000;
 const POGO_DATA_FINAL_SETTLE_MS = 15000;
@@ -252,12 +253,36 @@ export function delay(milliseconds) {
 // level is adopted only after repeated clean runs, and any rejection returns
 // pacing to the proven baseline.
 export const TEMPLE_DATA_PACING_LEVELS = Object.freeze([
-  Object.freeze({ early: 0, late: 250 }),
-  Object.freeze({ early: 250, late: 500 }),
-  Object.freeze({ early: 500, late: 1000 }),
-  Object.freeze({ early: 1000, late: 2000 }),
-  Object.freeze({ early: 2000, late: 4000 }),
-  Object.freeze({ early: 3000, late: 6000 }),
+  Object.freeze({ early: 0, late: 250, batchBytes: POGO_DEFERRED_BATCH_BYTES }),
+  Object.freeze({
+    early: 250,
+    late: 500,
+    batchBytes: POGO_DEFERRED_BATCH_BYTES,
+  }),
+  Object.freeze({
+    early: 500,
+    late: 1000,
+    batchBytes: POGO_DEFERRED_BATCH_BYTES,
+  }),
+  Object.freeze({
+    early: 1000,
+    late: 2000,
+    batchBytes: POGO_DEFERRED_BATCH_BYTES,
+  }),
+  Object.freeze({
+    early: 2000,
+    late: 4000,
+    batchBytes: POGO_DEFERRED_BATCH_BYTES,
+  }),
+  // Build e8110e4 rejected record 800 with zero UART errors after starting at
+  // the former maximum of 3/6 seconds per six-record burst. At the maximum
+  // safety level, remove the burst entirely and let temple storage settle
+  // after each acknowledged 1,000-byte DATA record.
+  Object.freeze({
+    early: 1000,
+    late: 2000,
+    batchBytes: POGO_SERIALIZED_BATCH_BYTES,
+  }),
 ]);
 export const TEMPLE_DATA_PACING_STOCK_LEVEL = 3;
 // Level 0 rejected 2 of 3 measured attempts; never select it automatically.
@@ -570,22 +595,23 @@ export class TempleDataPacingController {
 
   settleFor(acceptedBytes) {
     const final = acceptedBytes === this.totalBytes;
+    const policy = TEMPLE_DATA_PACING_LEVELS[this.level];
     if (final) {
       // Match the settle the previous fixed policy granted escalated runs.
       const finalMs = Math.max(
         POGO_DATA_FINAL_SETTLE_MS,
-        TEMPLE_DATA_PACING_LEVELS[this.level].late * 7.5,
+        policy.late * 7.5,
       );
       this.settleTotalMs += finalMs;
       return finalMs;
     }
-    if (acceptedBytes % POGO_DEFERRED_BATCH_BYTES !== 0) return 0;
+    if (acceptedBytes % policy.batchBytes !== 0) return 0;
     const lateTransfer =
       acceptedBytes * POGO_DATA_LATE_SETTLE_DENOMINATOR >=
       this.totalBytes * POGO_DATA_LATE_SETTLE_NUMERATOR;
     const settle = lateTransfer
-      ? TEMPLE_DATA_PACING_LEVELS[this.level].late
-      : TEMPLE_DATA_PACING_LEVELS[this.level].early;
+      ? policy.late
+      : policy.early;
     this.settleTotalMs += settle;
     return settle;
   }
@@ -3529,6 +3555,7 @@ export class G2CaseSession {
       acceptedFirmwareBytes: 0,
       dataPacingPolicy: {
         deferredBatchBytes: POGO_DEFERRED_BATCH_BYTES,
+        maximumPacingBatchBytes: POGO_SERIALIZED_BATCH_BYTES,
         multiplier: dataPacingMultiplier,
         mode: "adaptive",
         levels: TEMPLE_DATA_PACING_LEVELS,
@@ -3625,8 +3652,10 @@ export class G2CaseSession {
         route,
       });
       result.dataPacingPolicy.startLevel = pacing.startLevel;
+      const startPacingPolicy = TEMPLE_DATA_PACING_LEVELS[pacing.startLevel];
+      result.dataPacingPolicy.startBatchBytes = startPacingPolicy.batchBytes;
       this.log(
-        `${route}: adaptive DATA pacing starts at level ${pacing.startLevel} (early ${TEMPLE_DATA_PACING_LEVELS[pacing.startLevel].early} ms / late ${TEMPLE_DATA_PACING_LEVELS[pacing.startLevel].late} ms per ${POGO_DEFERRED_BATCH_BYTES}-byte batch); temple ACK latency drives backoff.`,
+        `${route}: adaptive DATA pacing starts at level ${pacing.startLevel} (early ${startPacingPolicy.early} ms / late ${startPacingPolicy.late} ms per ${startPacingPolicy.batchBytes}-byte batch); temple ACK latency drives backoff.`,
       );
       if (pacing.linkOverheadMs > 0) {
         this.log(
@@ -4174,7 +4203,7 @@ export class G2CaseSession {
             error.routeResult.recoveryBoundary = maximumPacingBoundary;
             audit.persistentDataRejectionStops.push(maximumPacingBoundary);
             this.log(
-              `${route}: explicit DATA status 1 rejected record ${maximumPacingBoundary.record} after the attempt began at maximum reviewed pacing (early ${maximumPacingBoundary.pacing.early} ms / late ${maximumPacingBoundary.pacing.late} ms per ${POGO_DEFERRED_BATCH_BYTES}-byte batch). No additional Case-USB component restart will be started.`,
+              `${route}: explicit DATA status 1 rejected record ${maximumPacingBoundary.record} after the attempt began at maximum reviewed pacing (early ${maximumPacingBoundary.pacing.early} ms / late ${maximumPacingBoundary.pacing.late} ms per ${maximumPacingBoundary.pacing.batchBytes}-byte batch). No additional Case-USB component restart will be started.`,
               "warn",
             );
             audit.routeResults.push(error.routeResult);

@@ -109,6 +109,7 @@ const RELEASES = [
   },
   {
     id: "g2-custom-2.2.6.11",
+    displayName: "SybilSight CFW (2.2.6.11)",
     version: "2.2.6.11",
     internalVersion: "2.2.6.11",
     baseVersion: "2.2.6.10",
@@ -386,6 +387,7 @@ async function saveRelease(root, release, fallbackRoots) {
 
   return {
     id: release.id ?? `g2-official-${release.version}`,
+    ...(release.displayName ? { displayName: release.displayName } : {}),
     channel: release.channel ?? "official",
     trust: release.trust ?? "official-pinned",
     version: release.version,
@@ -440,7 +442,7 @@ async function writeTempleFlashTargets(releases) {
       mainBytes: main.size,
       version: release.internalVersion ?? release.version,
       label: custom
-        ? `Reviewed SybilSight CFW ${release.version}`
+        ? release.displayName ?? `SybilSight CFW (${release.version})`
         : `Stock Even Realities G2 ${release.version}`,
       // Only images with a recorded successful hardware transfer may claim this.
       hardwareValidated: HARDWARE_VALIDATED_TEMPLE_IMAGES.has(release.sha256),

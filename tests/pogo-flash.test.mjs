@@ -448,6 +448,19 @@ test("adaptive pacing settle amounts follow the active level", () => {
   assert.equal(controller.settleFor(24_000), 15_000);
 });
 
+test("maximum pacing serializes storage settling after every DATA record", () => {
+  const maximumLevel = TEMPLE_DATA_PACING_LEVELS.length - 1;
+  const maximumPolicy = TEMPLE_DATA_PACING_LEVELS[maximumLevel];
+  const controller = new TempleDataPacingController({
+    startLevel: maximumLevel,
+    totalBytes: 24_000,
+  });
+  assert.equal(maximumPolicy.batchBytes, 1_000);
+  assert.equal(controller.settleFor(1_000), maximumPolicy.early);
+  assert.equal(controller.settleFor(2_000), maximumPolicy.early);
+  assert.equal(controller.settleFor(18_000), maximumPolicy.late);
+});
+
 test("pacing start level honors escalated restarts and the automatic floor", () => {
   assert.equal(resolveTempleDataPacingStartLevel(1, 2), 2);
   // Level 0 rejected 2 of 3 measured hardware attempts; never auto-selected.

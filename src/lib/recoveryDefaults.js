@@ -31,6 +31,39 @@ export function findLatestOfficialStockRelease(releases) {
     )[0] ?? null;
 }
 
+export function findLatestReviewedCustomRelease(releases) {
+  return [...(Array.isArray(releases) ? releases : [])]
+    .filter(
+      (release) =>
+        release?.channel === "custom" &&
+        release?.trust === "reviewed-custom" &&
+        release?.caseRecoveryEligible === false,
+    )
+    .sort((left, right) =>
+      compareVersionsDescending(left?.version, right?.version),
+    )[0] ?? null;
+}
+
+export function findDefaultFirmwareRelease(releases) {
+  return (
+    findLatestReviewedCustomRelease(releases) ??
+    findLatestOfficialStockRelease(releases) ??
+    (Array.isArray(releases) ? releases[0] : null) ??
+    null
+  );
+}
+
+export function firmwareReleaseDisplayName(release) {
+  if (!release) return "";
+  if (release.channel === "custom") {
+    return (
+      release.displayName ??
+      `SybilSight CFW (${release.version ?? "unknown version"})`
+    );
+  }
+  return `Stock · G2 ${release.version ?? "unknown version"}`;
+}
+
 export function findLatestCaseFirmwareRelease(releases) {
   return [...(Array.isArray(releases) ? releases : [])]
     .filter(

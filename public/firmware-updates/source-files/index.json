@@ -5,6 +5,7 @@
   "releases": [
     {
       "id": "g2-custom-2.2.6.11",
+      "displayName": "SybilSight CFW (2.2.6.11)",
       "channel": "custom",
       "trust": "reviewed-custom",
       "version": "2.2.6.11",
