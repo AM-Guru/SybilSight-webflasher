@@ -136,6 +136,11 @@ jobs:
           name: webflasher-site-${{ github.sha }}
           path: ${{ runner.temp }}/webflasher-release
 
+      - name: Set up Node.js for production verification
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
       - name: Verify deployment artifact
         shell: bash
         run: |
@@ -348,8 +353,7 @@ jobs:
             --header 'Cache-Control: no-cache' \
             --output "${observed_catalog_file}" \
             "${catalog_url}"
-          read -r target_url target_sha256 <<EOF
-          $(node -e '
+          target_metadata="$(node -e '
             const crypto = require("node:crypto");
             const fs = require("node:fs");
             const [releasePath, catalogPath, expectedBuild] = process.argv.slice(1);
@@ -370,8 +374,8 @@ jobs:
               throw new Error("Production catalog has no newest reviewed custom target");
             }
             process.stdout.write(target.url + " " + target.sha256);
-          ' "${observed_release_file}" "${observed_catalog_file}" "${GITHUB_SHA}")
-          EOF
+          ' "${observed_release_file}" "${observed_catalog_file}" "${GITHUB_SHA}")"
+          read -r target_url target_sha256 <<<"${target_metadata}"
           curl --fail --silent --show-error \
             --output "${observed_target_file}" \
             "https://webflasher.sybilsight.com${target_url}?verify=${GITHUB_SHA}&run=${GITHUB_RUN_ID}"
