@@ -2579,6 +2579,12 @@ export class G2CaseSession {
         usb: {
           vendorId: info.usbVendorId ?? null,
           productId: info.usbProductId ?? null,
+          transport: g2CaseTransportLabel(this.port),
+          bridgeRevision:
+            this.port?.transportKind === "webusb" &&
+            Number.isInteger(this.port?.version)
+              ? this.port.version
+              : null,
         },
         console: consoleReport,
         rom: {
@@ -4505,16 +4511,27 @@ export function g2CaseTransportLabel(port) {
   return port?.transportKind === "webusb" ? "WebUSB" : "Web Serial";
 }
 
+export function preferredG2CaseTransport({
+  webUsb = webUsbSupported(),
+  webSerial = webSerialSupported(),
+} = {}) {
+  if (webUsb) return "webusb";
+  if (webSerial) return "serial";
+  return null;
+}
+
 export async function requestG2CasePort({ transport = "auto" } = {}) {
   if (!["auto", "serial", "webusb"].includes(transport)) {
     throw new Error(`Unknown G2 Case transport ${transport}.`);
   }
-  if (transport === "webusb" || (transport === "auto" && !webSerialSupported())) {
+  const resolvedTransport =
+    transport === "auto" ? preferredG2CaseTransport() : transport;
+  if (resolvedTransport === "webusb") {
     return requestG2CaseUsbPort();
   }
-  if (!webSerialSupported()) {
+  if (resolvedTransport !== "serial" || !webSerialSupported()) {
     throw new Error(
-      "Web Serial is not available. Use WebUSB in a current Chromium-based browser.",
+      "Neither WebUSB nor Web Serial is available. Use a current Chromium-based browser.",
     );
   }
   const grantedPorts = await navigator.serial.getPorts();

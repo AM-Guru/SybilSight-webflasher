@@ -81,6 +81,7 @@ function report(caseVersion = "1.2.57") {
       userWord: 0x004000aa,
       complement: 0xffbfff55,
     },
+    optionBytes: Uint8Array.from([0xaa, 0x00, 0x40, 0x00]),
     banks: {
       active: { physicalBank: 2, version: caseVersion, vectorValid: true },
       inactive: { physicalBank: 1, version: caseVersion, vectorValid: true },
@@ -115,6 +116,12 @@ test("separates case shell data from left/right glasses analytics", () => {
     /do not identify.*Frame A\/Frame B/,
   );
   assert.match(analytics.chargingCase.shell.rawOutput, /B200/);
+  assert.equal(
+    analytics.chargingCase.shell.transport,
+    "Unknown USB transport at 1,000,000 baud, 8N1",
+  );
+  assert.equal(analytics.chargingCase.options.rawHex, "AA 00 40 00");
+  assert.equal(analytics.chargingCase.options.rawBase64, "qgBAAA==");
   assert.equal(
     analytics.smartGlasses.contactAssessment.state,
     "both-detected",

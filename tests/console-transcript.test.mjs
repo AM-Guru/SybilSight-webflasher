@@ -5,6 +5,8 @@ import {
   CONSOLE_TRANSCRIPT_TAB_ID_KEY,
   LEGACY_CONSOLE_TRANSCRIPT_STORAGE_KEY,
   consoleTranscriptStorageKey,
+  formatConsoleTranscriptDownload,
+  formatShellEvidenceTranscript,
   pruneConsoleTranscripts,
   readConsoleTranscript,
   resolveConsoleTranscriptTabId,
@@ -151,4 +153,47 @@ test("pruning bounds how many transcripts accumulate", () => {
   // The survivors are the most recently saved.
   assert.ok(remaining.includes(consoleTranscriptStorageKey("tab-0")));
   assert.ok(!remaining.includes(consoleTranscriptStorageKey("tab-11")));
+});
+
+test("Shell & Evidence snapshots are delimited, complete JSON records", () => {
+  const analytics = {
+    schemaVersion: 3,
+    chargingCase: {
+      shell: { rawOutput: "DEA0\\r\\nB200 1.2.57" },
+    },
+    smartGlasses: {
+      left: { version: { capturedFrameHex: "5a a5 24" } },
+      right: { status: { capturedFrameHex: "5a a5 13" } },
+    },
+  };
+  const output = formatShellEvidenceTranscript(analytics, {
+    phase: "automatic-smart-glasses-analysis",
+    capturedAt: "2026-07-30T21:00:00.000Z",
+  });
+
+  assert.match(output, /BEGIN SHELL & EVIDENCE JSON/);
+  assert.match(output, /automatic-smart-glasses-analysis/);
+  assert.match(output, /DEA0\\\\r\\\\nB200 1\.2\.57/);
+  assert.match(output, /5a a5 24/);
+  assert.match(output, /END SHELL & EVIDENCE JSON/);
+});
+
+test("download always contains the full transcript and a final evidence snapshot", () => {
+  const output = formatConsoleTranscriptDownload(
+    [
+      { time: "1:00:00 PM", tone: "info", message: "oldest retained line" },
+      { time: "2:00:00 PM", tone: "success", message: "newest line" },
+    ],
+    {
+      analytics: { schemaVersion: 3, chargingCase: { firmwareVersion: "1.2.57" } },
+      downloadedAt: "2026-07-30T21:30:00.000Z",
+    },
+  );
+
+  assert.match(output, /COMPLETE CONSOLE TRANSCRIPT/);
+  assert.match(output, /View: full transcript/);
+  assert.match(output, /oldest retained line/);
+  assert.match(output, /\[success\] newest line/);
+  assert.match(output, /"phase": "download-final"/);
+  assert.match(output, /"firmwareVersion": "1\.2\.57"/);
 });

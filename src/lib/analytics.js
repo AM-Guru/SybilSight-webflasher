@@ -15,7 +15,7 @@ import {
   WEBFLASHER_BUILD_SHA,
 } from "./releaseIntegrity.js";
 
-export const DEVICE_ANALYTICS_SCHEMA_VERSION = 2;
+export const DEVICE_ANALYTICS_SCHEMA_VERSION = 3;
 
 const FACTORY_QUERIES = Object.freeze([
   Object.freeze({ command: "DEA0", scope: "case", data: "case firmware banner and serial" }),
@@ -76,6 +76,9 @@ function templeAnalytics(side, present, results) {
     side,
     present: Boolean(present),
     analysisState,
+    lastProbeFailure: results?.lastProbeFailure
+      ? { ...results.lastProbeFailure }
+      : null,
     applicationResponsive,
     firmwareVersion,
     hardwareRevision,
@@ -288,6 +291,10 @@ export function buildG2DeviceAnalytics({
             inactivePhysicalBank: report.options.inactivePhysicalBank,
             userWord: hex(report.options.userWord),
             complement: hex(report.options.complement),
+            rawHex: report.optionBytes ? hexBytes(report.optionBytes) : null,
+            rawBase64: report.optionBytes
+              ? bytesToBase64(report.optionBytes)
+              : null,
           }
         : null,
       banks: report.banks
@@ -298,7 +305,7 @@ export function buildG2DeviceAnalytics({
         : null,
       variantAssessment: caseVariantAssessment(report),
       shell: {
-        transport: "Web Serial at 1,000,000 baud, 8N1",
+        transport: `${report.usb?.transport ?? "Unknown USB transport"} at 1,000,000 baud, 8N1`,
         allowlistedQueries: FACTORY_QUERIES.map((query) => ({ ...query })),
         rawOutput: report.console?.text ?? "",
       },

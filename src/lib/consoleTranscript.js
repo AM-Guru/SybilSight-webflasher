@@ -20,10 +20,71 @@ export const LEGACY_CONSOLE_TRANSCRIPT_STORAGE_KEY =
 export const CONSOLE_TRANSCRIPT_TAB_ID_KEY = "g2wf.console-transcript-tab";
 export const CONSOLE_TRANSCRIPT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 export const CONSOLE_TRANSCRIPT_MAX_STORED = 8;
+export const SHELL_EVIDENCE_RECORD_KIND =
+  "g2-webflasher-shell-and-evidence-snapshot";
 
 // A tab that cannot reach sessionStorage still gets a working transcript; it
 // simply shares the fallback key, which is the old behavior and no worse.
 const SHARED_FALLBACK_TAB_ID = "shared";
+
+export function formatShellEvidenceTranscript(
+  analytics,
+  {
+    phase = "analysis",
+    capturedAt = new Date().toISOString(),
+  } = {},
+) {
+  if (!analytics || typeof analytics !== "object") {
+    throw new TypeError(
+      "Complete device analytics are required for a Shell & Evidence snapshot.",
+    );
+  }
+  const record = {
+    recordKind: SHELL_EVIDENCE_RECORD_KIND,
+    phase,
+    capturedAt,
+    analytics,
+  };
+  return [
+    `Shell & Evidence snapshot · ${phase}`,
+    "----- BEGIN SHELL & EVIDENCE JSON -----",
+    JSON.stringify(record, null, 2),
+    "----- END SHELL & EVIDENCE JSON -----",
+  ].join("\n");
+}
+
+export function formatConsoleTranscriptDownload(
+  entries,
+  {
+    analytics = null,
+    downloadedAt = new Date().toISOString(),
+  } = {},
+) {
+  const safeEntries = Array.isArray(entries) ? entries : [];
+  const lines = [
+    "G2 WEBFLASHER COMPLETE CONSOLE TRANSCRIPT",
+    `Downloaded at: ${downloadedAt}`,
+    `Transcript entries: ${safeEntries.length}`,
+    "View: full transcript (the recent-only view is disabled)",
+    "",
+    ...safeEntries.map(
+      (entry) =>
+        `${entry?.time ?? "--:--:--"}  [${entry?.tone ?? "info"}] ${
+          entry?.message ?? ""
+        }`,
+    ),
+  ];
+  if (analytics) {
+    lines.push(
+      "",
+      formatShellEvidenceTranscript(analytics, {
+        phase: "download-final",
+        capturedAt: downloadedAt,
+      }),
+    );
+  }
+  return `${lines.join("\n")}\n`;
+}
 
 export function resolveConsoleTranscriptTabId(
   sessionStorage,

@@ -32,6 +32,8 @@ import {
 import { buildG2DeviceAnalytics } from "./lib/analytics.js";
 import {
   consoleTranscriptStorageKey,
+  formatConsoleTranscriptDownload,
+  formatShellEvidenceTranscript,
   pruneConsoleTranscripts,
   readConsoleTranscript,
   resolveConsoleTranscriptTabId,
@@ -729,7 +731,6 @@ function Console({
   onClear,
   onDownload,
 }) {
-  const [showFullTranscript, setShowFullTranscript] = useState(false);
   useEffect(() => {
     if (!open) return undefined;
     const closeOnEscape = (event) => {
@@ -739,10 +740,9 @@ function Console({
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [open, onClose]);
   if (!open) return null;
-  const fullTranscriptAvailable =
-    Array.isArray(fullTranscript) && fullTranscript.length > entries.length;
-  const displayedEntries =
-    showFullTranscript && fullTranscriptAvailable ? fullTranscript : entries;
+  const displayedEntries = Array.isArray(fullTranscript)
+    ? fullTranscript
+    : entries;
   return (
     <div className="console-backdrop" role="presentation" onMouseDown={onClose}>
       <section
@@ -774,20 +774,17 @@ function Console({
           )}
         </div>
         <div className="console-actions">
+          <span className="console-transcript-state">
+            Full transcript · {displayedEntries.length} entries
+          </span>
           <Button tone="ghost" onClick={onClear}>
             Clear
           </Button>
-          {fullTranscriptAvailable ? (
-            <Button
-              tone="ghost"
-              onClick={() => setShowFullTranscript((current) => !current)}
-            >
-              {showFullTranscript
-                ? "Show recent only"
-                : `Show full transcript (${fullTranscript.length})`}
-            </Button>
-          ) : null}
-          <Button tone="secondary" onClick={onDownload} disabled={!entries.length}>
+          <Button
+            tone="secondary"
+            onClick={onDownload}
+            disabled={!displayedEntries.length}
+          >
             Download log
           </Button>
         </div>
@@ -1066,10 +1063,10 @@ function downloadBlob(blob, name) {
   URL.revokeObjectURL(url);
 }
 
-// The transcript outlives the 300-entry console display so a crash or tab
-// close during a recovery cannot destroy the evidence of what was written to
-// the device. It is persisted per tab (see lib/consoleTranscript.js) and
-// recovered on that tab's next load.
+// The full transcript outlives the 300-entry React update window so a crash or
+// tab close during a recovery cannot destroy the evidence of what was written
+// to the device. The Console always renders this complete persisted copy; the
+// smaller state array only keeps high-frequency React updates bounded.
 const CONSOLE_TRANSCRIPT_STORAGE_KEY = consoleTranscriptStorageKey(
   resolveConsoleTranscriptTabId(
     typeof window === "undefined" ? null : window.sessionStorage,
@@ -1306,7 +1303,7 @@ function App() {
   }, [addLog]);
 
   const getSession = useCallback(
-    (port = portRef.current) => {
+    (port = portRef.current, caseReport = report) => {
       if (!port) throw new Error("Connect the G2 Case first.");
       if (!sessionRef.current || sessionRef.current.port !== port) {
         sessionRef.current = new G2CaseSession(port, {
@@ -1317,10 +1314,42 @@ function App() {
       // Keep the session pointed at the physical unit in front of us so
       // per-device records (pacing memory, audit fingerprints) never blend
       // two Cases together.
-      sessionRef.current.deviceKey = caseDeviceKey(report);
+      sessionRef.current.deviceKey = caseDeviceKey(caseReport);
       return sessionRef.current;
     },
     [addLog, report, setSessionProgress],
+  );
+
+  const recordShellEvidenceSnapshot = useCallback(
+    ({
+      caseReport = report,
+      results = pogoResults,
+      phase,
+      recoveryConfigSnapshot = recoveryConfig,
+      templeFlashAuditSnapshot = templeFlashAudit,
+    }) => {
+      if (!caseReport) return null;
+      const capturedAt = new Date().toISOString();
+      const analytics = buildG2DeviceAnalytics({
+        report: caseReport,
+        pogoResults: results,
+        recoveryConfig: recoveryConfigSnapshot,
+        templeFlashAudit: templeFlashAuditSnapshot,
+        generatedAt: capturedAt,
+      });
+      addLog(
+        formatShellEvidenceTranscript(analytics, { phase, capturedAt }),
+        "evidence",
+      );
+      return analytics;
+    },
+    [
+      addLog,
+      pogoResults,
+      recoveryConfig,
+      report,
+      templeFlashAudit,
+    ],
   );
 
   const recordSupportEvent = useCallback((label, value, ok = true) => {
@@ -1997,20 +2026,127 @@ function App() {
     templeFlashMode,
   ]);
 
+  const collectSmartGlassesAnalysis = useCallback(
+    async ({
+      caseReport = report,
+      initialResults = pogoResults,
+      progressBase = 0,
+      progressSpan = 1,
+      evidencePhase = "smart-glasses-analysis",
+      recoveryConfigSnapshot = recoveryConfig,
+      templeFlashAuditSnapshot = templeFlashAudit,
+    } = {}) => {
+      if (
+        !caseReport?.console?.telemetry?.leftPresent ||
+        !caseReport?.console?.telemetry?.rightPresent
+      ) {
+        throw new Error(
+          "Seat both Smart Glasses temples, refresh the Case analysis, and try again.",
+        );
+      }
+      const session = getSession(portRef.current, caseReport);
+      let nextResults = { ...initialResults };
+      const requests = [
+        ["left", "version"],
+        ["left", "status"],
+        ["right", "version"],
+        ["right", "status"],
+      ];
+      for (const [index, [route, request]] of requests.entries()) {
+        try {
+          const result = await session.probeRunningTemple(request, route, {
+            progressBase:
+              progressBase + (index / requests.length) * progressSpan,
+            progressSpan: progressSpan / requests.length,
+          });
+          nextResults = {
+            ...nextResults,
+            [route]: {
+              ...nextResults[route],
+              [request]: {
+                ...result,
+                observedAt: new Date().toISOString(),
+              },
+              lastProbeFailure: null,
+            },
+          };
+          setPogoResults(nextResults);
+        } catch (error) {
+          // Preserve every successful frame collected before the failure and
+          // make the failure itself part of the same downloadable evidence.
+          nextResults = {
+            ...nextResults,
+            [route]: {
+              ...nextResults[route],
+              lastProbeFailure: {
+                at: new Date().toISOString(),
+                operation: request,
+                message: error.message,
+              },
+            },
+          };
+          setPogoResults(nextResults);
+          recordShellEvidenceSnapshot({
+            caseReport,
+            results: nextResults,
+            phase: `${evidencePhase}-partial`,
+            recoveryConfigSnapshot,
+            templeFlashAuditSnapshot,
+          });
+          throw error;
+        }
+      }
+      setGlassesAnalyzeConfirm(false);
+      setSessionProgress(progressBase + progressSpan, "Both Smart Glasses temples analyzed");
+      addLog(
+        "Smart Glasses analysis complete · both version/status frames and route-restoration proofs captured.",
+        "success",
+      );
+      recordShellEvidenceSnapshot({
+        caseReport,
+        results: nextResults,
+        phase: evidencePhase,
+        recoveryConfigSnapshot,
+        templeFlashAuditSnapshot,
+      });
+      return nextResults;
+    },
+    [
+      addLog,
+      getSession,
+      pogoResults,
+      recordShellEvidenceSnapshot,
+      recoveryConfig,
+      report,
+      setSessionProgress,
+      templeFlashAudit,
+    ],
+  );
+
   const connectAndAnalyze = async (transportOrEvent = "auto") => {
     const transport =
       typeof transportOrEvent === "string" ? transportOrEvent : "auto";
     await run("analyze", async () => {
+      const preferredTransport =
+        transport === "auto"
+          ? webUsbSupported()
+            ? "recommended WebUSB"
+            : "Web Serial"
+          : transport === "webusb"
+            ? "WebUSB"
+            : "Web Serial";
       addLog(
-        `Waiting for a G2 Case ${
-          transport === "webusb" ? "WebUSB" : "USB Serial"
-        } selection.`,
+        `Waiting for a G2 Case ${preferredTransport} selection.`,
       );
       const port = await requestG2CasePort({ transport });
       portRef.current = port;
       sessionRef.current = null;
       addLog(`G2 Case ${g2CaseTransportLabel(port)} interface selected.`);
-      const result = await getSession(port).analyze();
+      const result = await getSession(port).analyze({
+        progressBase: 0,
+        progressSpan: 0.48,
+      });
+      getSession(port, result);
       setReport(result);
       setBackup(null);
       setStaged(null);
@@ -2019,7 +2155,43 @@ function App() {
       setGlassesAnalyzeConfirm(false);
       setAnalysisView("case");
       setTempleFlashAudit(null);
-      addLog("Analysis complete. No device memory was changed.", "success");
+      addLog(
+        "Charging Case analysis complete. No device memory was changed.",
+        "success",
+      );
+      recordShellEvidenceSnapshot({
+        caseReport: result,
+        results: {},
+        phase: "charging-case-analysis",
+        recoveryConfigSnapshot: null,
+        templeFlashAuditSnapshot: null,
+      });
+      if (
+        !result.console?.telemetry?.leftPresent ||
+        !result.console?.telemetry?.rightPresent
+      ) {
+        setSessionProgress(
+          1,
+          "Case analyzed; automatic Glasses analysis needs both temples",
+        );
+        addLog(
+          "Automatic Smart Glasses analysis skipped because the Case did not report both temples seated. The complete Charging Case Shell & Evidence snapshot was retained.",
+          "warn",
+        );
+        return;
+      }
+      addLog(
+        "Automatically collecting bilateral Smart Glasses version, status, captured-frame, and route-restoration evidence.",
+      );
+      await collectSmartGlassesAnalysis({
+        caseReport: result,
+        initialResults: {},
+        progressBase: 0.48,
+        progressSpan: 0.52,
+        evidencePhase: "automatic-smart-glasses-analysis",
+        recoveryConfigSnapshot: null,
+        templeFlashAuditSnapshot: null,
+      });
     });
   };
 
@@ -2038,7 +2210,11 @@ function App() {
       addLog(
         "Opening the customer's selected G2 Case through the remote serial interface.",
       );
-      const remoteReport = await getSession(remotePort).analyze();
+      const remoteReport = await getSession(remotePort).analyze({
+        progressBase: 0,
+        progressSpan: 0.48,
+      });
+      getSession(remotePort, remoteReport);
       setReport(remoteReport);
       setBackup(null);
       setStaged(null);
@@ -2048,7 +2224,44 @@ function App() {
       setAnalysisView("case");
       setTempleFlashAudit(null);
       addLog(
-        "Remote Case attached. The complete WebFlasher now operates through the customer's selected USB serial interface.",
+        "Remote Charging Case analysis complete. No device memory was changed.",
+        "success",
+      );
+      recordShellEvidenceSnapshot({
+        caseReport: remoteReport,
+        results: {},
+        phase: "remote-charging-case-analysis",
+        recoveryConfigSnapshot: null,
+        templeFlashAuditSnapshot: null,
+      });
+      if (
+        remoteReport.console?.telemetry?.leftPresent &&
+        remoteReport.console?.telemetry?.rightPresent
+      ) {
+        addLog(
+          "Automatically collecting bilateral Smart Glasses evidence through the remote Case session.",
+        );
+        await collectSmartGlassesAnalysis({
+          caseReport: remoteReport,
+          initialResults: {},
+          progressBase: 0.48,
+          progressSpan: 0.52,
+          evidencePhase: "remote-automatic-smart-glasses-analysis",
+          recoveryConfigSnapshot: null,
+          templeFlashAuditSnapshot: null,
+        });
+      } else {
+        setSessionProgress(
+          1,
+          "Remote Case analyzed; automatic Glasses analysis needs both temples",
+        );
+        addLog(
+          "Automatic Smart Glasses analysis skipped because the remote Case did not report both temples seated.",
+          "warn",
+        );
+      }
+      addLog(
+        "Remote Case attached. The complete WebFlasher now operates through the customer's selected USB interface.",
         "success",
       );
       return remoteReport;
@@ -2058,7 +2271,11 @@ function App() {
 
   const reanalyze = async () => {
     await run("analyze", async () => {
-      const result = await getSession().analyze();
+      const result = await getSession().analyze({
+        progressBase: 0,
+        progressSpan: 0.48,
+      });
+      getSession(portRef.current, result);
       setReport(result);
       setBackup(null);
       setStaged(null);
@@ -2067,6 +2284,39 @@ function App() {
       setGlassesAnalyzeConfirm(false);
       setTempleFlashAudit(null);
       addLog("Fresh analysis complete.", "success");
+      recordShellEvidenceSnapshot({
+        caseReport: result,
+        results: {},
+        phase: "refreshed-charging-case-analysis",
+        recoveryConfigSnapshot: null,
+        templeFlashAuditSnapshot: null,
+      });
+      if (
+        result.console?.telemetry?.leftPresent &&
+        result.console?.telemetry?.rightPresent
+      ) {
+        addLog(
+          "Automatically refreshing bilateral Smart Glasses analysis evidence.",
+        );
+        await collectSmartGlassesAnalysis({
+          caseReport: result,
+          initialResults: {},
+          progressBase: 0.48,
+          progressSpan: 0.52,
+          evidencePhase: "refreshed-automatic-smart-glasses-analysis",
+          recoveryConfigSnapshot: null,
+          templeFlashAuditSnapshot: null,
+        });
+      } else {
+        setSessionProgress(
+          1,
+          "Case refreshed; automatic Glasses analysis needs both temples",
+        );
+        addLog(
+          "Automatic Smart Glasses analysis skipped because the refreshed Case telemetry did not report both temples seated.",
+          "warn",
+        );
+      }
     });
   };
 
@@ -2514,64 +2764,7 @@ function App() {
   const analyzeSmartGlasses = async () => {
     if (!glassesAnalyzeConfirm) return;
     await run("glasses-analyze", async () => {
-      if (
-        !report?.console?.telemetry?.leftPresent ||
-        !report?.console?.telemetry?.rightPresent
-      ) {
-        throw new Error(
-          "Seat both Smart Glasses temples, refresh the Case analysis, and try again.",
-        );
-      }
-      const session = getSession();
-      let nextResults = { ...pogoResults };
-      const requests = [
-        ["left", "version"],
-        ["left", "status"],
-        ["right", "version"],
-        ["right", "status"],
-      ];
-      for (const [index, [route, request]] of requests.entries()) {
-        let result;
-        try {
-          result = await session.probeRunningTemple(request, route, {
-            progressBase: index / requests.length,
-            progressSpan: 1 / requests.length,
-          });
-        } catch (error) {
-          // Keep any previously captured values visible, but mark them
-          // stale so the panel cannot claim a responsive application from
-          // data that predates this failed probe.
-          setPogoResults((current) => ({
-            ...current,
-            [route]: {
-              ...current[route],
-              lastProbeFailure: {
-                at: new Date().toLocaleTimeString(),
-                message: error.message,
-              },
-            },
-          }));
-          throw error;
-        }
-        nextResults = {
-          ...nextResults,
-          [route]: {
-            ...nextResults[route],
-            [request]: {
-              ...result,
-              observedAt: new Date().toISOString(),
-            },
-            lastProbeFailure: null,
-          },
-        };
-        setPogoResults(nextResults);
-      }
-      setGlassesAnalyzeConfirm(false);
-      setSessionProgress(1, "Both Smart Glasses temples analyzed");
-      addLog(
-        "Smart Glasses analysis complete · both version/status frames and route-restoration proofs captured.",
-        "success",
-      );
+      await collectSmartGlassesAnalysis();
     });
   };
 
@@ -3340,14 +3533,15 @@ function App() {
   const directWebUsbVisible =
     directWebUsbSupported ||
     remoteSupportAllowsDirectWebUsb(supportState, directWebUsbSupported);
+  const directWebSerialSupported = webSerialSupported();
   const serialSupported =
-    webSerialSupported() || directWebUsbVisible;
+    directWebSerialSupported || directWebUsbVisible;
   const selectedTransport = portRef.current
     ? g2CaseTransportLabel(portRef.current)
-    : webSerialSupported()
-      ? "Web Serial"
-      : directWebUsbVisible
-        ? "WebUSB"
+    : directWebUsbVisible
+      ? "WebUSB (recommended)"
+      : directWebSerialSupported
+        ? "Web Serial"
         : "Unavailable";
   const deviceAnalytics = useMemo(
     () =>
@@ -3382,14 +3576,14 @@ function App() {
   }, []);
 
   const downloadConsoleTranscript = useCallback(() => {
-    const text = transcriptRef.current
-      .map((entry) => `${entry.time}  ${entry.message}`)
-      .join("\n");
+    const text = formatConsoleTranscriptDownload(transcriptRef.current, {
+      analytics: deviceAnalytics,
+    });
     downloadBlob(
-      new Blob([`${text}\n`], { type: "text/plain" }),
+      new Blob([text], { type: "text/plain" }),
       `g2-recovery-${new Date().toISOString().replaceAll(":", "-")}.log`,
     );
-  }, []);
+  }, [deviceAnalytics]);
 
   return (
     <div className={cx("app-shell", `is-${interfaceMode}`)}>
@@ -3406,7 +3600,9 @@ function App() {
           <small>G2 WebFlasher</small>
         </a>
         <div className="sidebar-intro">
-          <span className="hardware-label">DEVICE SERVICE · WEB SERIAL / WEBUSB</span>
+          <span className="hardware-label">
+            DEVICE SERVICE · WEBUSB PRIMARY · WEB SERIAL FALLBACK
+          </span>
           <h1>Recover with precision.<br />Protect every byte.</h1>
           <p>
             A guided, local-only console for the Even Realities G2 Charging Case
@@ -3494,7 +3690,7 @@ function App() {
             <button className="console-trigger" onClick={() => setConsoleOpen(true)}>
               <Icon name="terminal" />
               Console Log
-              <span>{logs.length}</span>
+              <span>{transcriptRef.current.length}</span>
             </button>
           </div>
         </header>
@@ -3536,9 +3732,9 @@ function App() {
                 <div>
                   <strong>Select your G2 Case</strong>
                   <small>
-                    Both transports stay local to this browser. Direct WebUSB
-                    bypasses the host serial driver and is faster and more
-                    reliable where CH340 reads arrive truncated.
+                    WebUSB is selected automatically because it bypasses the
+                    host CH340 serial driver. Web Serial remains a local
+                    compatibility fallback.
                   </small>
                 </div>
               </div>
@@ -3551,13 +3747,13 @@ function App() {
                   <Icon name="usb" />
                   {report ? "Choose another Case" : "Select Case"}
                 </Button>
-                {directWebUsbVisible ? (
+                {directWebUsbVisible && directWebSerialSupported ? (
                   <Button
                     tone="secondary"
-                    onClick={() => connectAndAnalyze("webusb")}
+                    onClick={() => connectAndAnalyze("serial")}
                     disabled={Boolean(operation)}
                   >
-                    Use WebUSB
+                    Use Web Serial fallback
                   </Button>
                 ) : null}
               </div>
@@ -3565,7 +3761,9 @@ function App() {
                 <span>{report ? caseDisplayIdentity : "No Case selected"}</span>
                 <strong>
                   {report
-                    ? `${telemetry?.leftPresent ? "L ready" : "L absent"} · ${telemetry?.rightPresent ? "R ready" : "R absent"}`
+                    ? fullGlassesAnalysisComplete
+                      ? `L ${pogoResults.left.version.decoded?.firmwareVersion ?? "captured"} · R ${pogoResults.right.version.decoded?.firmwareVersion ?? "captured"}`
+                      : `${telemetry?.leftPresent ? "L ready" : "L absent"} · ${telemetry?.rightPresent ? "R ready" : "R absent"}`
                     : "Both temples must be seated"}
                 </strong>
               </div>
@@ -3798,13 +3996,13 @@ function App() {
                 <Icon name="usb" />
                 {report ? "Choose another Case" : "Connect & analyze Case"}
               </Button>
-              {directWebUsbVisible ? (
+              {directWebUsbVisible && directWebSerialSupported ? (
                 <Button
                   tone="secondary"
-                  onClick={() => connectAndAnalyze("webusb")}
+                  onClick={() => connectAndAnalyze("serial")}
                   disabled={Boolean(operation)}
                 >
-                  Use direct WebUSB
+                  Use Web Serial fallback
                 </Button>
               ) : null}
               {report ? (
@@ -4679,7 +4877,7 @@ function App() {
                   and verifies contacts plus checksum-valid version liveness. If
                   START returns no frame with zero declared/accepted bytes, the
                   audit stops wired retries and points to the proven fresh-BLE
-                  full-package fallback; this Web Serial tool does not perform
+                  full-package fallback; this Case-USB tool does not perform
                   that BLE transfer.
                 </p>
               </div>
@@ -5138,8 +5336,8 @@ function App() {
             <small className="pogo-safety-note">
               A non-idle charging route is rejected before temple transmission. Wait
               for stock charging activity to settle, then retry if status 3 is reported.
-              The payload and protocol are physically verified; this Web Serial port
-              remains experimental until exercised on G2 hardware.
+              The payload and protocol are physically verified; this Case-USB
+              pogo route remains experimental until exercised on G2 hardware.
             </small>
           </div>
           <div className="transfer-research">
