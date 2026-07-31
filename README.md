@@ -1050,7 +1050,9 @@ panes.
 4. Confirm the assignments and click **Update … over Bluetooth**. When both
    sides require an update, SybilSight starts independent Left and Right OTA
    sessions simultaneously. If one side stops, the other is allowed to finish
-   and both outcomes are retained.
+   and both outcomes are retained. The footer shows separate Left and Right
+   status bars so connection, transfer, verification, and failure state remain
+   visible independently.
 5. Keep both temples powered and nearby, and keep the WebFlasher tab in front,
    until all six components have received their END verification on both sides.
 

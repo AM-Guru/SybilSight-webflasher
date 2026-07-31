@@ -915,16 +915,39 @@ export class G2BleOtaSession {
   }
 }
 
-export async function flashG2BleSessionsConcurrently(entries, firmware) {
+export async function flashG2BleSessionsConcurrently(
+  entries,
+  firmware,
+  { onSettled = () => {} } = {},
+) {
   const sessions = Array.isArray(entries) ? entries : [];
+  const notifySettled = (outcome) => {
+    try {
+      onSettled(outcome);
+    } catch {
+      // Status presentation must never change a hardware outcome.
+    }
+    return outcome;
+  };
   const settled = await Promise.allSettled(
-    sessions.map(async ({ session }) => {
-      try {
-        return await session.flashBundle(firmware);
-      } finally {
-        await session.disconnect();
-      }
-    }),
+    sessions.map(({ side, device, session }) =>
+      (async () => {
+        try {
+          return await session.flashBundle(firmware);
+        } finally {
+          await session.disconnect();
+        }
+      })().then(
+        (value) => {
+          notifySettled({ side, device, status: "fulfilled", value });
+          return value;
+        },
+        (reason) => {
+          notifySettled({ side, device, status: "rejected", reason });
+          throw reason;
+        },
+      ),
+    ),
   );
   return settled.map((outcome, index) => ({
     side: sessions[index]?.side ?? null,

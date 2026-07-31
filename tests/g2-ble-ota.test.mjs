@@ -299,6 +299,7 @@ test("left and right BLE sessions flash concurrently and settle independently", 
   });
   const started = [];
   const disconnected = [];
+  const settledSides = [];
   let completed = false;
   const entries = ["left", "right"].map((side) => ({
     side,
@@ -325,13 +326,16 @@ test("left and right BLE sessions flash concurrently and settle independently", 
     },
   }));
 
-  const pending = flashG2BleSessionsConcurrently(entries, {}).then((value) => {
+  const pending = flashG2BleSessionsConcurrently(entries, {}, {
+    onSettled: ({ side, status }) => settledSides.push({ side, status }),
+  }).then((value) => {
     completed = true;
     return value;
   });
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(started.sort(), ["left", "right"]);
   assert.equal(completed, false);
+  assert.deepEqual(settledSides, [{ side: "right", status: "rejected" }]);
 
   releaseLeft();
   const outcomes = await pending;
@@ -343,6 +347,10 @@ test("left and right BLE sessions flash concurrently and settle independently", 
   assert.equal(outcomes[1].side, "right");
   assert.equal(outcomes[1].status, "rejected");
   assert.equal(outcomes[1].reason.message, "right stopped");
+  assert.deepEqual(settledSides, [
+    { side: "right", status: "rejected" },
+    { side: "left", status: "fulfilled" },
+  ]);
   assert.equal(
     outcomes[1].reason.partialResult.components[0].endStatus,
     8,

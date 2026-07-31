@@ -121,6 +121,21 @@ const EMPTY_PROGRESS = {
   percent: 0,
 };
 
+const EMPTY_BLE_ROUTE_PROGRESS = Object.freeze({
+  left: Object.freeze({
+    fraction: 0,
+    percent: 0,
+    status: "preparing",
+    detail: "Waiting for the pinned package gate",
+  }),
+  right: Object.freeze({
+    fraction: 0,
+    percent: 0,
+    status: "preparing",
+    detail: "Waiting for the pinned package gate",
+  }),
+});
+
 const OPERATION_LABELS = Object.freeze({
   analyze: "Analyze Case",
   backup: "Preserve recovery backup",
@@ -1132,8 +1147,10 @@ function RemoteSupportDialog({
   );
 }
 
-function TaskProgress({ progress, wakeLockStatus }) {
+function TaskProgress({ progress, wakeLockStatus, bleRouteProgress }) {
   if (!progress.visible) return null;
+  const showBleRoutes =
+    progress.name === "ble-temple-flash" && bleRouteProgress;
   const wakeLockVisible = wakeLockStatus?.state !== "idle";
   const wakeLockActive = wakeLockStatus?.state === "active";
   const wakeLockPending = wakeLockStatus?.state === "requesting";
@@ -1157,17 +1174,54 @@ function TaskProgress({ progress, wakeLockStatus }) {
           Operation {progress.current} of {progress.total} · {progress.percent}%
         </strong>
       </div>
-      <div
-        className="footer-progress-track"
-        role="progressbar"
-        aria-valuemin="0"
-        aria-valuemax="100"
-        aria-valuenow={progress.percent}
-        aria-label={OPERATION_LABELS[progress.name] ?? "Recovery progress"}
-      >
-        <span style={{ width: `${progress.percent}%` }} />
-      </div>
-      <div className="footer-current-task">{progress.detail}</div>
+      {showBleRoutes ? (
+        <div className="footer-ble-route-progress">
+          {["left", "right"].map((side) => {
+            const route = bleRouteProgress[side];
+            return (
+              <div
+                className={cx(
+                  "footer-ble-route",
+                  `is-${side}`,
+                  `is-${route.status}`,
+                )}
+                key={side}
+              >
+                <div className="footer-ble-route-heading">
+                  <strong>{side.toUpperCase()}</strong>
+                  <span>{route.status.replaceAll("_", " ")}</span>
+                  <b>{route.percent}%</b>
+                </div>
+                <div
+                  className="footer-progress-track"
+                  role="progressbar"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  aria-valuenow={route.percent}
+                  aria-label={`${side} Bluetooth update progress`}
+                >
+                  <span style={{ width: `${route.percent}%` }} />
+                </div>
+                <div className="footer-current-task">{route.detail}</div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <>
+          <div
+            className="footer-progress-track"
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow={progress.percent}
+            aria-label={OPERATION_LABELS[progress.name] ?? "Recovery progress"}
+          >
+            <span style={{ width: `${progress.percent}%` }} />
+          </div>
+          <div className="footer-current-task">{progress.detail}</div>
+        </>
+      )}
       {wakeLockVisible ? (
         <div
           className={cx(
@@ -1307,6 +1361,9 @@ function App() {
     "Choose firmware, disconnect the Even app, then pair the explicitly labeled Left and Right temples.",
   );
   const [bleResults, setBleResults] = useState(null);
+  const [bleRouteProgress, setBleRouteProgress] = useState(
+    EMPTY_BLE_ROUTE_PROGRESS,
+  );
   const [usbRecoveryRequested, setUsbRecoveryRequested] = useState(false);
   const [recoveryDumps, setRecoveryDumps] = useState({});
   const [recoveryConfig, setRecoveryConfig] = useState(null);
@@ -2701,6 +2758,10 @@ function App() {
   const flashBleTempleFirmware = async () => {
     const release = catalog.find((item) => item.id === selectedReleaseId);
     if (!release || !bleDevices.left || !bleDevices.right || !bleReady) return;
+    setBleRouteProgress({
+      left: { ...EMPTY_BLE_ROUTE_PROGRESS.left },
+      right: { ...EMPTY_BLE_ROUTE_PROGRESS.right },
+    });
     await run(
       "ble-temple-flash",
       async () => {
@@ -2719,11 +2780,31 @@ function App() {
           );
 
           const routeProgress = { left: 0, right: 0 };
-          const setRouteProgress = (side, fraction, detail) => {
+          const setRouteProgress = (
+            side,
+            fraction,
+            detail,
+            explicitStatus = null,
+          ) => {
             const normalized = Math.min(Math.max(Number(fraction) || 0, 0), 1);
             routeProgress[side] = Math.max(routeProgress[side], normalized);
             const leftPercent = Math.round(routeProgress.left * 100);
             const rightPercent = Math.round(routeProgress.right * 100);
+            setBleRouteProgress((current) => ({
+              ...current,
+              [side]: {
+                fraction: routeProgress[side],
+                percent: Math.round(routeProgress[side] * 100),
+                status:
+                  explicitStatus ??
+                  (routeProgress[side] >= 1
+                    ? "verifying"
+                    : routeProgress[side] > 0
+                      ? "flashing"
+                      : "connecting"),
+                detail,
+              },
+            }));
             setSessionProgress(
               (routeProgress.left + routeProgress.right) / 2,
               `${detail} · Left ${leftPercent}% · Right ${rightPercent}%`,
@@ -2760,6 +2841,7 @@ function App() {
                 side,
                 1,
                 `${side}: retaining fresh Case proof of G2 ${prepared.g2Version}`,
+                "retained",
               );
               addLog(
                 `${side}: fresh checksum-valid Case interrogation already proves G2 ${prepared.g2Version} with exact route restoration. Bluetooth will not rewrite this temple.`,
@@ -2775,6 +2857,7 @@ function App() {
                 side,
                 1,
                 `${side}: retaining the already verified Bluetooth package result`,
+                "verified",
               );
               addLog(
                 `${side}: this exact device already completed all six components in the current recovery attempt; it will not be rewritten.`,
@@ -2784,6 +2867,12 @@ function App() {
             }
             delete completedRoutes[side];
             routesToFlash.push({ side, device });
+            setRouteProgress(
+              side,
+              0,
+              `${side}: connecting to the selected Bluetooth endpoint`,
+              "connecting",
+            );
           }
 
           if (routesToFlash.length) {
@@ -2815,6 +2904,25 @@ function App() {
           const routeOutcomes = await flashG2BleSessionsConcurrently(
             sessionEntries,
             prepared,
+            {
+              onSettled: ({ side, status, reason }) => {
+                if (status === "fulfilled") {
+                  setRouteProgress(
+                    side,
+                    1,
+                    `${side}: all six components and fresh post-END GATT liveness verified`,
+                    "verified",
+                  );
+                  return;
+                }
+                setRouteProgress(
+                  side,
+                  routeProgress[side],
+                  `${side}: ${reason?.message || String(reason)}`,
+                  "failed",
+                );
+              },
+            },
           );
           for (const outcome of routeOutcomes) {
             const { side, device } = outcome;
@@ -2827,6 +2935,7 @@ function App() {
                 side,
                 1,
                 `${side}: all six Bluetooth components verified`,
+                "verified",
               );
               continue;
             }
@@ -5831,6 +5940,7 @@ function App() {
           <TaskProgress
             progress={progress}
             wakeLockStatus={wakeLockStatus}
+            bleRouteProgress={bleRouteProgress}
           />
         </footer>
       </main>

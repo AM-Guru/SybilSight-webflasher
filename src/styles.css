@@ -5698,6 +5698,66 @@ body {
   font-size: 9px;
 }
 
+.footer-ble-route-progress {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.footer-ble-route {
+  --route-progress: var(--accent);
+  display: grid;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid #29312d;
+  border-radius: 8px;
+  background: rgba(8, 12, 10, 0.72);
+  gap: 7px;
+}
+
+.footer-ble-route.is-left {
+  --route-progress: #63d8ff;
+}
+
+.footer-ble-route.is-failed {
+  --route-progress: #ff6f78;
+  border-color: rgba(255, 111, 120, 0.36);
+}
+
+.footer-ble-route.is-verified,
+.footer-ble-route.is-retained {
+  border-color: rgba(0, 255, 136, 0.32);
+}
+
+.footer-ble-route-heading {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  color: #9da29f;
+  font-family: var(--mono);
+  font-size: 8px;
+  text-transform: uppercase;
+  gap: 8px;
+}
+
+.footer-ble-route-heading strong,
+.footer-ble-route-heading b {
+  color: var(--route-progress);
+  font-weight: 600;
+}
+
+.footer-ble-route-heading span,
+.footer-ble-route .footer-current-task {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.footer-ble-route .footer-progress-track span {
+  background: var(--route-progress);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--route-progress) 55%, transparent);
+}
+
 .footer-wake-lock {
   display: grid;
   grid-template-columns: auto auto 1fr;
@@ -5777,6 +5837,10 @@ body {
     align-items: flex-start;
     flex-direction: column;
     gap: 4px;
+  }
+
+  .footer-ble-route-progress {
+    grid-template-columns: 1fr;
   }
 
   .footer-wake-lock {
