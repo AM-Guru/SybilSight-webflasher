@@ -167,15 +167,15 @@ export function g2BleSupported(bluetooth = globalThis.navigator?.bluetooth) {
 export function g2BleDeviceSide(name) {
   const normalized = String(name ?? "").trim().toUpperCase();
   if (!/^(?:EVEN\s+)?G2(?:[\s_-]|$)/.test(normalized)) return null;
-  const longSide = normalized.match(
-    /(?:^|[\s_-])(LEFT|RIGHT)(?:[\s_-]|$)/,
-  )?.[1];
-  if (longSide) return longSide === "LEFT" ? "left" : "right";
-  const shortSide = normalized.match(
-    /(?:^|[\s_-])([LR])(?:[\s_-]|$)/,
-  )?.[1];
-  if (shortSide) return shortSide === "L" ? "left" : "right";
-  return null;
+  const markers = [
+    ...normalized.matchAll(
+      /(?:^|[\s_-])(LEFT|RIGHT|L|R)(?=[\s_-]|$)/g,
+    ),
+  ].map((match) =>
+    ["LEFT", "L"].includes(match[1]) ? "left" : "right",
+  );
+  const unique = [...new Set(markers)];
+  return unique.length === 1 ? unique[0] : null;
 }
 
 export function g2BleTargetVersionProof(
@@ -213,6 +213,11 @@ export async function requestG2BleDevice(
     );
   }
   const device = await bluetooth.requestDevice({
+    // G2 names put the side marker after a model-variant token
+    // (for example Even G2_32_L_…), so Web Bluetooth's prefix-only
+    // chooser filter cannot express the side safely. Narrow the chooser to
+    // G2 name prefixes, request access to only the two required services,
+    // then enforce one explicit matching side marker on the returned device.
     filters: [
       { namePrefix: "Even G2" },
       { namePrefix: "G2_" },
@@ -223,15 +228,14 @@ export async function requestG2BleDevice(
     ],
   });
   const observedSide = g2BleDeviceSide(device?.name);
-  if (observedSide && observedSide !== side) {
+  if (observedSide !== side) {
     device?.gatt?.disconnect();
     throw new Error(
-      `Chrome returned ${JSON.stringify(device?.name ?? "unnamed G2")}, which identifies the ${observedSide} temple. Select the ${side} temple instead.`,
+      observedSide
+        ? `Select the ${side} temple. Chrome returned ${JSON.stringify(device?.name ?? "unnamed G2")}, which identifies the ${observedSide} temple. The ${side} pairing accepts only an explicit ${side}-side name.`
+        : `Select the ${side} temple. Chrome returned ${JSON.stringify(device?.name ?? "unnamed G2")} without one unambiguous Left/Right marker. The ${side} pairing accepts only a G2 device whose advertised name explicitly identifies the ${side} side.`,
     );
   }
-  // Some Chrome/CoreBluetooth combinations expose only a shortened G2 name
-  // after selection. The explicit per-side button and the distinct-device
-  // gate in App remain authoritative when no L/R marker is observable.
   return device;
 }
 

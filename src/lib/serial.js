@@ -1261,6 +1261,44 @@ export function canResetAfterZeroWriteSetupStop(
   );
 }
 
+export function classifyExhaustedYhmSetupBoundary(
+  routeResult,
+  {
+    settleAttempts = 0,
+    settleLimit =
+      POGO_READ_ONLY_PHASE_SETTLE_MS.length -
+      POGO_SETUP_STOP_FIRST_SETTLE_INDEX,
+    resetAttempts = 0,
+    resetLimit = POGO_SETUP_RESET_LIMIT,
+  } = {},
+) {
+  if (
+    !canResetAfterZeroWriteSetupStop(routeResult, 0) ||
+    !Number.isInteger(settleAttempts) ||
+    !Number.isInteger(settleLimit) ||
+    !Number.isInteger(resetAttempts) ||
+    !Number.isInteger(resetLimit) ||
+    settleLimit < 1 ||
+    resetLimit < 1 ||
+    settleAttempts < settleLimit ||
+    resetAttempts < resetLimit
+  ) {
+    return null;
+  }
+  return {
+    classification: "yhm_setup_exhausted_zero_byte_boundary",
+    route: routeResult.route,
+    firmwareBytesAccepted: 0,
+    otaMutationAttempted: false,
+    settleAttempts,
+    resetAttempts,
+    additionalWiredSetupAllowed: false,
+    recommendedNextTransport: "fresh Bluetooth full-package recovery",
+    recoveryRecommendation:
+      "The Case-to-pogo writer exhausted its bounded settle and reset/recheck attempts before route selection, with immutable proof that no firmware bytes were sent on this route. Preserve every route already verified at the target and do not loop another wired Apply. Use the Direct recovery fallback to install the complete pinned package over a fresh Bluetooth connection; target-proven routes can be retained without rewriting them.",
+  };
+}
+
 function compactHex(input) {
   return [...(input ?? [])]
     .map((value) => value.toString(16).padStart(2, "0"))
@@ -4071,6 +4109,7 @@ export class G2CaseSession {
       routeSetupResetStops: [],
       routeSetupSettleStops: [],
       routeSetupResetResults: [],
+      terminalRecoveryStops: [],
       componentRestartLimit: POGO_COMPONENT_RESTART_LIMIT,
       hostTimeoutComponentRestartLimit:
         POGO_HOST_TIMEOUT_COMPONENT_RESTART_LIMIT,
@@ -4211,6 +4250,24 @@ export class G2CaseSession {
             setupResetCounts.set(route, setupResetCount + 1);
             index -= 1;
             continue;
+          }
+          const exhaustedSetupBoundary =
+            classifyExhaustedYhmSetupBoundary(error.routeResult, {
+              settleAttempts: setupSettleCount,
+              settleLimit: setupSettleLimit,
+              resetAttempts: setupResetCount,
+              resetLimit: POGO_SETUP_RESET_LIMIT,
+            });
+          if (exhaustedSetupBoundary) {
+            error.routeResult.recoveryBoundary =
+              exhaustedSetupBoundary;
+            audit.terminalRecoveryStops.push(exhaustedSetupBoundary);
+            this.log(
+              `${route}: the writer exhausted ${exhaustedSetupBoundary.settleAttempts} bounded settle probes and ${exhaustedSetupBoundary.resetAttempts} reset/rechecks before route selection. Retained SRAM proves zero firmware bytes were sent on this route; stop Case-USB retries and use the fresh Bluetooth full-package fallback.`,
+              "warn",
+            );
+            audit.routeResults.push(error.routeResult);
+            throw error;
           }
           const boundary = classifyPersistentTempleDataRejection(
             error.routeResult,

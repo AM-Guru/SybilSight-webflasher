@@ -65,21 +65,21 @@ Production deployment:
   five byte-identical components, and transfers the one changed Apollo-main
   component with the same complete CRC/finish/reset verification as a normal
   reinstall.
-- Opens in **Easy Mode** at the site root: select the Case, choose Stock or
-  CFW, leave the default **Update** mode selected (or choose **Restore**),
-  optionally update older Charging Case firmware first, and click **Apply**.
-  One shared automation pipeline reads both installed version numbers, issues
-  a clean-start `DEB0` reset, plans from the fresh post-reset identity,
-  validates the catalog/image, performs the bilateral right-then-left
-  operation, and finishes with boot/contact/checksum-valid liveness
-  verification without mid-process prompts.
+- Opens in **Easy Mode** at the site root with direct Web Bluetooth as the
+  primary Smart Glasses update: choose Stock or CFW, select the explicitly
+  labeled Left and Right temples, confirm the assignments, and update both
+  sides with the complete pinned package. The Case USB workflow stays hidden
+  unless Bluetooth is unavailable, a Bluetooth update fails, or the operator
+  explicitly opens it for a generally non-working or inaccessible device.
 - Keeps the existing multi-pane console as **Advanced Mode**, including all
   manual analysis/recovery controls, and adds the same Update/Restore selector
-  and automatic **Apply** action beneath its firmware menu.
-- Offers a direct Web Bluetooth fallback after a clean Case-USB stop. Chrome
-  selects the advertising right and left temples separately, then sends only
-  a complete six-component bundle whose package digest, topology, component
-  CRCs, and Apollo MRAM bounds already passed the browser's compiled-in pins.
+  and automatic Case-USB recovery action beneath its firmware menu.
+- Uses direct Web Bluetooth as the primary update transport. Chrome selects
+  the advertising Left and Right temples separately; the flasher rejects a
+  wrong-side, missing-side, or conflicting advertised name before connecting.
+  It then sends only a complete six-component bundle whose package digest,
+  topology, component CRCs, and Apollo MRAM bounds already passed the browser's
+  compiled-in pins.
   Every 4-KiB block requires an explicit ACK and every component requires an
   END verification. An explicit NAK permits a bounded in-place resend; a bare
   ACK timeout is ambiguous and restarts the whole component from FILE_CHECK
@@ -1035,21 +1035,39 @@ the tool reports a non-idle YHM baseline, let stock charging activity settle
 and retry. This control cannot emit arbitrary bytes or install official or CFW
 firmware.
 
-### Easy Mode and automatic Apply
+### Easy Mode Bluetooth Update and USB recovery
 
 The bare application URL opens in **Easy Mode**. **Advanced Mode** preserves
 the original Connect, Analyze, Preserve, Choose image, and Recovery Console
-panes. Both interfaces call the same automatic Apply implementation.
+panes.
 
-1. Click **Select Case** and choose the G2 Case USB Serial device.
-2. Choose official Stock or reviewed CFW.
-3. Leave **Update** selected, or choose **Restore**.
-4. Leave **Update Charging Case first** enabled. It is on by default; no Case
+1. Choose official Stock or reviewed CFW.
+2. Remove both temples from the Case, keep them powered nearby, and disconnect
+   the Even app or paired phone.
+3. Click **Select LEFT temple**, then choose only the device whose advertised
+   name explicitly identifies the Left side. Repeat with **Select RIGHT
+   temple**. A wrong, missing, or conflicting side marker is rejected.
+4. Confirm the assignments and click **Update … over Bluetooth**.
+5. Keep both temples powered and nearby until all six components have received
+   their END verification on both sides.
+
+Chrome's native chooser can display both sides because Web Bluetooth cannot
+filter on a middle-of-name side token. SybilSight therefore combines the G2
+name filter with a mandatory post-selection side check and disconnects any
+device that does not unambiguously match the requested side.
+
+If Bluetooth is unavailable, the Bluetooth update fails, or either device is
+generally non-working or inaccessible over Bluetooth, click **Open USB
+recovery**. This reveals the Case-based backup workflow:
+
+1. Click **Select Case** and choose the G2 Case USB device.
+2. Leave **Update** selected, or choose **Restore**.
+3. Leave **Update Charging Case first** enabled. It is on by default; no Case
    write occurs when the Case is already current, and the updater never
    downgrades a newer or unknown Case version.
-5. Click **Apply** and keep the Case, glasses, and cable still.
+4. Click **Recover … over USB** and keep the Case, glasses, and cable still.
 
-Every Apply begins with a fresh full Case analysis, including both physical
+Every USB recovery begins with a fresh full Case analysis, including both physical
 banks and all 128 option bytes. When enabled and needed, Apply validates the
 latest official Case component, stages only the inactive bank, verifies its
 complete readback, activates that bank, and re-analyzes the physical-bank
@@ -1129,7 +1147,7 @@ Automatic Apply handles the reviewed failure boundaries as follows:
 | Differential reaches `FINISH`, but target boot/version liveness fails | Require exact accepted size, FINISH, route cleanup, Case 1.2.57, bilateral application reachability, and a new recovery reset before retrying the complete target |
 | Differential failure leaves either temple application unreachable | Stop; do not start the complete fallback through an app-dependent OTA route |
 | Read-only YHM baseline is outside the active seated-idle profile | Retry only from exact retained zero-write/zero-transmission proof; switch once to a separately pinned exact profile when recognized, otherwise let the stock app settle for 15 then 45 seconds and re-confirm Case/contact before each probe |
-| Allowlisted zero-write YHM setup stop | Perform the existing bounded setup reset/recheck and retry the same route |
+| Allowlisted zero-write YHM setup stop | Perform the bounded settle and setup reset/recheck ladder; if every attempt stops before route selection with immutable zero-byte proof, preserve completed routes, stop wired retries, and direct the operator to fresh Bluetooth full-package recovery |
 | Incomplete cached `G2RX` header or payload | Passively scan for a complete same-sequence checksum-valid cached frame; never replay the temple request |
 | Exact retained status-16 DATA host timeout after normal retries | Prove byte-for-byte route cleanup, Case 1.2.57, bilateral reset/contact/liveness, then allow one final triple-paced full-component restart |
 | Two restored explicit DATA rejections recur within 64 records on the same route and target | Classify a persistent receiver/storage boundary, skip the third full-component attempt, restore the Case, and finish with bilateral liveness |
@@ -1192,25 +1210,25 @@ This is an application-alive reinstall path. If the temple no longer answers
 the version preflight, do not attempt it repeatedly: use a separately proven
 SBL/MRAM-recovery or SWD route.
 
-### Continue a clean Case stop over direct Bluetooth
+### Direct Bluetooth update
 
-1. Let the wired attempt finish its Case/YHM restoration, final bilateral
-   reset, and liveness checks. Do not interrupt its cleanup.
-2. Remove both temples from the Case. Close the Even app or turn off Bluetooth
+1. Remove both temples from the Case. Close the Even app or turn off Bluetooth
    on the paired phone so the arms advertise as `Even G2_*_R_*` and
    `Even G2_*_L_*`.
-3. In Easy Mode, keep **SybilSight CFW (2.2.6.11)** selected. Under
-   **Continue over fresh Bluetooth**, select the right temple and then the
-   left temple in Chrome's native chooser.
-4. Confirm the side names and start the direct recovery. The browser writes
+2. In Easy Mode, choose the target image, then select the Left temple with the
+   Left button and the Right temple with the Right button. SybilSight rejects
+   a selection unless its explicit advertised side matches the requested side.
+3. Confirm the side names and start the Bluetooth update. The browser writes
    right first, then left, and retains a completed side if a later side stops,
    so retrying does not rewrite an already verified temple.
-5. Wait for all six END verifications on both sides. Re-seat both temples in
+4. Wait for all six END verifications on both sides. Re-seat both temples in
    the Case and use the normal reset/recheck path for final checksum-valid
    `2.2.6.11`/hardware-5 liveness proof.
 
-This fallback still depends on the running G2 application and its BLE OTA
+This primary path still depends on the running G2 application and its BLE OTA
 service. It is not an application-dead, bootloader, or SWD recovery route.
+Use the Case USB recovery controls only when this Bluetooth path fails or a
+device is not wirelessly accessible.
 
 ### Inspect dead-temple recovery provisioning
 

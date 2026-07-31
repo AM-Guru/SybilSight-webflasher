@@ -529,6 +529,107 @@ export function mergeInstalledProvenance(current, audit) {
   return { ...next, ...provenanceFromSuccessfulAudit(audit) };
 }
 
+export function templeVersionObservationsFromFlashAudit(
+  audit,
+  { observedAt = new Date().toISOString() } = {},
+) {
+  if (!Array.isArray(audit?.routeResults)) return {};
+  return Object.fromEntries(
+    audit.routeResults
+      .map((routeResult) => {
+        const version =
+          routeResult?.postflightVersion ?? routeResult?.preflightVersion;
+        if (
+          !ROUTES.includes(routeResult?.route) ||
+          !version?.firmware
+        ) {
+          return null;
+        }
+        const exactWriterRestoration = Boolean(
+          routeResult?.caseRestoreVerified === true &&
+            routeResult?.retainedResult?.baselineMask === 0x3ff &&
+            routeResult?.retainedResult?.selectedMask === 0x3ff &&
+            routeResult?.retainedResult?.restoredMask === 0x3ff,
+        );
+        return [
+          routeResult.route,
+          {
+            version: {
+              operation: "version",
+              route: routeResult.route,
+              decoded: {
+                kind: "version",
+                firmwareVersion: version.firmware,
+                hardwareRevision: version.hardware ?? null,
+              },
+              transportProof: {
+                restoredMask: exactWriterRestoration ? 0x3ff : null,
+              },
+              observedAt,
+            },
+          },
+        ];
+      })
+      .filter(Boolean),
+  );
+}
+
+const DIRECT_BLUETOOTH_RECOVERY_BOUNDARIES = new Set([
+  "wired_start_no_frame_zero_byte_boundary",
+  "persistent_temple_data_rejection_boundary",
+  "maximum_pacing_temple_data_rejection_boundary",
+  "yhm_setup_exhausted_zero_byte_boundary",
+]);
+
+export function describeAutomaticApplyFailure(error) {
+  const fallbackResult = [...(error?.audit?.routeResults ?? [])]
+    .reverse()
+    .find((routeResult) =>
+      DIRECT_BLUETOOTH_RECOVERY_BOUNDARIES.has(
+        routeResult?.recoveryBoundary?.classification,
+      ),
+    );
+  if (!fallbackResult) {
+    return {
+      message: `Stopped safely · ${error?.message || String(error)}`,
+      directBluetoothRecommended: false,
+      failedRoute: null,
+      preservedRoutes: [],
+      classification: null,
+    };
+  }
+
+  const failedRoute = fallbackResult.route;
+  const preservedRoutes = (error.audit.routeResults ?? [])
+    .filter(
+      (routeResult) =>
+        routeResult?.route !== failedRoute &&
+        routeResult?.outcome === "success" &&
+        routeResult?.caseRestoreVerified === true &&
+        routeResult?.postflightVersion?.firmware,
+    )
+    .map((routeResult) => routeResult.route);
+  const beforeFirmware =
+    fallbackResult?.acceptedFirmwareBytes === 0 &&
+    fallbackResult?.otaMutationAttempted === false;
+  const stopDescription = beforeFirmware
+    ? `before any ${failedRoute}-side firmware was sent`
+    : "after the Case route was restored safely";
+  const preservation = preservedRoutes.length
+    ? ` The ${preservedRoutes.join(" + ")} target install remains verified and can be retained without rewriting it.`
+    : "";
+
+  return {
+    message:
+      `Stopped safely on the ${failedRoute} Case route ${stopDescription}.${preservation} ` +
+      "Use Direct recovery fallback below to finish the complete pinned package over Bluetooth.",
+    directBluetoothRecommended: true,
+    failedRoute,
+    preservedRoutes,
+    classification: fallbackResult.recoveryBoundary.classification,
+  };
+}
+
 function bothRoutesMatch(provenance, imageSha256) {
   const normalized = String(imageSha256 ?? "").toLowerCase();
   return Boolean(

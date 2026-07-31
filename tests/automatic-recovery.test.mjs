@@ -6,6 +6,7 @@ import {
   DEFAULT_AUTOMATIC_INSTALL_MODE,
   DEFAULT_INTERFACE_MODE,
   assessAutomaticTempleContacts,
+  describeAutomaticApplyFailure,
   executeAutomaticCaseUpdate,
   executeAutomaticApply,
   installedProvenanceStorageKey,
@@ -14,6 +15,7 @@ import {
   provenanceFromSuccessfulAudit,
   resolveAutomaticCaseUpdatePlan,
   resolveAutomaticApplyPlan,
+  templeVersionObservationsFromFlashAudit,
   verifyAutomaticCaseReadiness,
 } from "../src/lib/automaticRecovery.js";
 
@@ -208,6 +210,110 @@ test("defaults to Easy Mode, adaptive Update, and automatic Case repair", () => 
   assert.equal(DEFAULT_INTERFACE_MODE, "easy");
   assert.equal(DEFAULT_AUTOMATIC_INSTALL_MODE, "update");
   assert.equal(DEFAULT_AUTOMATIC_CASE_UPDATE, true);
+});
+
+test("retains the completed route and recommends Bluetooth after YHM setup exhaustion", () => {
+  const observedAt = "2026-07-31T12:00:00.000Z";
+  const audit = {
+    outcome: "failed_or_uncertain",
+    routeResults: [
+      {
+        route: "right",
+        outcome: "success",
+        caseRestoreVerified: true,
+        postflightVersion: {
+          firmware: "2.2.6.10",
+          hardware: 5,
+        },
+        retainedResult: {
+          baselineMask: 0x3ff,
+          selectedMask: 0x3ff,
+          restoredMask: 0x3ff,
+        },
+      },
+      {
+        route: "left",
+        outcome: "failed_or_uncertain",
+        otaMutationAttempted: false,
+        acceptedFirmwareBytes: 0,
+        caseRestoreVerified: true,
+        preflightVersion: {
+          firmware: "2.2.5.10",
+          hardware: 5,
+        },
+        retainedResult: {
+          baselineMask: 0x3ff,
+          selectedMask: 0,
+          restoredMask: 0,
+        },
+        recoveryBoundary: {
+          classification: "yhm_setup_exhausted_zero_byte_boundary",
+        },
+      },
+    ],
+  };
+  const error = new Error("low-level YHM setup stop");
+  error.audit = audit;
+
+  assert.deepEqual(
+    describeAutomaticApplyFailure(error),
+    {
+      message:
+        "Stopped safely on the left Case route before any left-side firmware was sent. The right target install remains verified and can be retained without rewriting it. Use Direct recovery fallback below to finish the complete pinned package over Bluetooth.",
+      directBluetoothRecommended: true,
+      failedRoute: "left",
+      preservedRoutes: ["right"],
+      classification: "yhm_setup_exhausted_zero_byte_boundary",
+    },
+  );
+  assert.deepEqual(
+    templeVersionObservationsFromFlashAudit(audit, { observedAt }),
+    {
+      right: {
+        version: {
+          operation: "version",
+          route: "right",
+          decoded: {
+            kind: "version",
+            firmwareVersion: "2.2.6.10",
+            hardwareRevision: 5,
+          },
+          transportProof: {
+            restoredMask: 0x3ff,
+          },
+          observedAt,
+        },
+      },
+      left: {
+        version: {
+          operation: "version",
+          route: "left",
+          decoded: {
+            kind: "version",
+            firmwareVersion: "2.2.5.10",
+            hardwareRevision: 5,
+          },
+          transportProof: {
+            restoredMask: null,
+          },
+          observedAt,
+        },
+      },
+    },
+  );
+});
+
+test("keeps the ordinary automatic failure message without a recovery boundary", () => {
+  assert.deepEqual(
+    describeAutomaticApplyFailure(new Error("Case preflight failed")),
+    {
+      message: "Stopped safely · Case preflight failed",
+      directBluetoothRecommended: false,
+      failedRoute: null,
+      preservedRoutes: [],
+      classification: null,
+    },
+  );
 });
 
 test("Automatic Update checks both versions before issuing the clean-start reset", async () => {

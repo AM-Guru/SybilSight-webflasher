@@ -384,6 +384,7 @@ test("recognizes relaxed Chrome/CoreBluetooth G2 side-name variants", () => {
   assert.equal(g2BleDeviceSide("Even G2 32 Right 693CCB"), "right");
   assert.equal(g2BleDeviceSide("G2_7_r_00A19F "), "right");
   assert.equal(g2BleDeviceSide("Even G2"), null);
+  assert.equal(g2BleDeviceSide("Even G2_32_L_RIGHT_693CCB"), null);
   assert.equal(g2BleDeviceSide("Unrelated_L_device"), null);
 });
 
@@ -443,21 +444,52 @@ test("fresh restored Case proof skips a Bluetooth rewrite only at the exact targ
   );
 });
 
-test("accepts a shortened Chrome G2 name and defers side proof to the UI", async () => {
+test("requires an explicit matching side marker after the chooser", async () => {
   const device = {
     name: "Even G2",
     id: "shortened-corebluetooth-id",
+    gatt: {
+      disconnect() {},
+    },
   };
   let options = null;
-  const selected = await requestG2BleDevice("right", {
-    requestDevice: async (value) => {
-      options = value;
-      return device;
-    },
-  });
-  assert.equal(selected, device);
+  await assert.rejects(
+    requestG2BleDevice("right", {
+      requestDevice: async (value) => {
+        options = value;
+        return device;
+      },
+    }),
+    /without one unambiguous Left\/Right marker.*explicitly identifies the right side/,
+  );
   assert.deepEqual(
     options.filters.map((filter) => filter.namePrefix),
     ["Even G2", "G2_"],
+  );
+  assert.deepEqual(
+    options.optionalServices,
+    [
+      "00002760-08c2-11e1-9073-0e8ac72e1001",
+      "00002760-08c2-11e1-9073-0e8ac72e5450",
+    ],
+  );
+});
+
+test("accepts only the requested explicit side", async () => {
+  const left = {
+    name: "Even G2_32_L_693CCB",
+    id: "left-id",
+  };
+  assert.equal(
+    await requestG2BleDevice("left", {
+      requestDevice: async () => left,
+    }),
+    left,
+  );
+  await assert.rejects(
+    requestG2BleDevice("right", {
+      requestDevice: async () => left,
+    }),
+    /identifies the left temple.*right pairing accepts only/,
   );
 });

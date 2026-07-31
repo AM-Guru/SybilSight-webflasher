@@ -80,12 +80,14 @@ import {
   DEFAULT_AUTOMATIC_INSTALL_MODE,
   DEFAULT_INTERFACE_MODE,
   assessAutomaticTempleContacts,
+  describeAutomaticApplyFailure,
   executeAutomaticCaseUpdate,
   executeAutomaticApply,
   installedProvenanceStorageKey,
   mergeInstalledProvenance,
   prepareAutomaticTempleUpdate,
   resolveAutomaticCaseUpdatePlan,
+  templeVersionObservationsFromFlashAudit,
   verifyAutomaticCaseReadiness,
 } from "./lib/automaticRecovery.js";
 import { REVIEWED_CASE_VERSION } from "./lib/pogoFlashBridge.js";
@@ -126,7 +128,7 @@ const OPERATION_LABELS = Object.freeze({
   recheck: "Reset and recheck",
   "temple-flash": "Restore Smart Glasses",
   "ble-temple-flash": "Restore Smart Glasses over Bluetooth",
-  "automatic-apply": "Apply Smart Glasses firmware",
+  "automatic-apply": "Recover Smart Glasses over USB",
   stage: "Stage Case bank",
   activate: "Activate Case bank",
 });
@@ -715,25 +717,37 @@ function BluetoothRecoveryCard({
   bleStatus,
 }) {
   const advanced = variant === "advanced";
+  const primary = variant === "primary";
   return (
     <article
-      className={cx("ble-recovery-card", advanced && "is-advanced")}
+      className={cx(
+        "ble-recovery-card",
+        primary && "is-primary",
+        advanced && "is-advanced",
+      )}
       id={advanced ? "advanced-bluetooth-recovery" : "bluetooth-recovery"}
     >
       <div className="ble-recovery-copy">
         <div className="eyebrow">
-          {advanced ? "Direct Bluetooth recovery" : "Direct recovery fallback"}
-        </div>
-        <h3>Flash the complete package over Bluetooth</h3>
-        <p>
           {advanced
-            ? "Use the proven fresh-Bluetooth path when the Case-to-pogo main writer is unsuitable or has stopped safely. Chrome transfers every hash-pinned package component directly to each advertising temple."
-            : "Chrome sends the complete hash-pinned package directly to both advertising temples, with per-block ACKs and component verification."}
+            ? "Primary Smart Glasses update"
+            : "02 · Pair + update over Bluetooth"}
+        </div>
+        <h3>Update both temples directly over Bluetooth</h3>
+        <p>
+          Chrome transfers every component in the selected hash-pinned package
+          directly to each temple, with per-block acknowledgements and
+          component verification. No Case USB connection is required.
         </p>
         <ol>
           <li>Remove both temples from the Case and keep them powered nearby.</li>
           <li>
-            Disconnect the paired phone, then select Left and Right below.
+            Disconnect the paired phone, then select the explicitly labeled
+            Left and Right devices below.
+          </li>
+          <li>
+            The chooser may list both sides, but SybilSight accepts only an
+            unambiguous side marker that matches the button you selected.
           </li>
         </ol>
       </div>
@@ -748,7 +762,7 @@ function BluetoothRecoveryCard({
             >
               {bleDevices[side]
                 ? `${side === "left" ? "Left" : "Right"} · ${bleDevices[side].name}`
-                : `Select ${side === "left" ? "Left" : "Right"} temple`}
+                : `Select ${side === "left" ? "LEFT" : "RIGHT"} temple`}
             </Button>
           ))}
         </div>
@@ -765,8 +779,9 @@ function BluetoothRecoveryCard({
             }
           />
           <span>
-            Both selected names match the physical sides; the phone is
-            disconnected and the temples will stay powered and nearby.
+            Both advertised names explicitly match their assigned physical
+            sides; the phone is disconnected and the temples will stay powered
+            and nearby.
           </span>
         </label>
         <Button
@@ -775,7 +790,7 @@ function BluetoothRecoveryCard({
           busy={operation === "ble-temple-flash"}
           disabled={!bleFlashReady}
         >
-          Flash{" "}
+          Update{" "}
           {selectedRelease
             ? firmwareReleaseDisplayName(selectedRelease)
             : "selected firmware"}{" "}
@@ -792,7 +807,8 @@ function BluetoothRecoveryCard({
         </div>
         {!directBleSupported ? (
           <small className="browser-note">
-            Direct recovery needs Web Bluetooth in current Chrome.
+            Primary updates need Web Bluetooth in current Chrome. USB recovery
+            is available below when Bluetooth cannot be used.
           </small>
         ) : null}
       </div>
@@ -1242,7 +1258,7 @@ function App() {
     DEFAULT_AUTOMATIC_CASE_UPDATE,
   );
   const [automaticStatus, setAutomaticStatus] = useState(
-    "Select a Case, choose firmware, and Apply.",
+    "Open USB recovery, select a Case, then choose the recovery method.",
   );
   const [installedProvenance, setInstalledProvenance] = useState({});
   const [deviceHistory, setDeviceHistory] = useState(() => readDeviceHistory());
@@ -1280,9 +1296,10 @@ function App() {
   });
   const [bleReady, setBleReady] = useState(false);
   const [bleStatus, setBleStatus] = useState(
-    "Remove both temples from the Case, disconnect the Even app, then select each advertising temple.",
+    "Choose firmware, disconnect the Even app, then pair the explicitly labeled Left and Right temples.",
   );
   const [bleResults, setBleResults] = useState(null);
+  const [usbRecoveryRequested, setUsbRecoveryRequested] = useState(false);
   const [recoveryDumps, setRecoveryDumps] = useState({});
   const [recoveryConfig, setRecoveryConfig] = useState(null);
   const [recoveryConfigError, setRecoveryConfigError] = useState("");
@@ -2028,7 +2045,8 @@ function App() {
       addLog(`${OPERATION_LABELS[name] ?? name} finished.`, "success");
       return result;
     } catch (caught) {
-      const message = caught?.message || String(caught);
+      const message =
+        caught?.operationMessage ?? caught?.message ?? String(caught);
       setError(message);
       addLog(message, "error");
       return null;
@@ -2644,18 +2662,10 @@ function App() {
       }));
       setBleResults(null);
       setBleStatus(
-        `${side} selected · ${device.name || "unnamed G2"} · ${
-          observedSide
-            ? "advertised side marker verified"
-            : "Chrome exposed no side marker; distinct-device and final confirmation gates remain active"
-        }. Select the other temple before flashing.`,
+        `${side} selected · ${device.name} · advertised ${observedSide} marker verified. Select the other temple before updating.`,
       );
       addLog(
-        `${side}: selected direct Bluetooth device ${JSON.stringify(device.name || "unnamed G2")} · ${
-          observedSide
-            ? `advertised side=${observedSide}`
-            : "advertised side unavailable"
-        }. No firmware bytes were sent.`,
+        `${side}: selected Bluetooth device ${JSON.stringify(device.name)} · advertised side=${observedSide}. No firmware bytes were sent.`,
         "success",
       );
     } catch (caught) {
@@ -2667,6 +2677,13 @@ function App() {
       if (caught?.name === "NotFoundError") {
         addLog(message, "warn");
       } else {
+        if (
+          /Web Bluetooth is unavailable|without one unambiguous Left\/Right marker/i.test(
+            message,
+          )
+        ) {
+          setUsbRecoveryRequested(true);
+        }
         setError(message);
         addLog(message, "error");
       }
@@ -2824,6 +2841,7 @@ function App() {
             stoppedAt: new Date().toISOString(),
           };
           setBleResults(failureResult);
+          setUsbRecoveryRequested(true);
           setBleStatus(
             `Bluetooth recovery stopped · ${caught?.message || String(caught)}`,
           );
@@ -3008,38 +3026,12 @@ function App() {
   // queried", and the operator had to re-probe a freshly written temple to see
   // what the run already knew. Fold those replies into the same panel state.
   const absorbTempleFlashVersions = useCallback((audit) => {
-    const routeResults = audit?.routeResults;
-    if (!Array.isArray(routeResults)) return;
-    const observedAt = new Date().toISOString();
-    const observed = routeResults
-      .map((routeResult) => {
-        const version =
-          routeResult?.postflightVersion ?? routeResult?.preflightVersion;
-        if (!routeResult?.route || !version?.firmware) return null;
-        return [
-          routeResult.route,
-          {
-            version: {
-              operation: "version",
-              route: routeResult.route,
-              decoded: {
-                kind: "version",
-                firmwareVersion: version.firmware,
-                hardwareRevision: version.hardware ?? null,
-              },
-              transportProof: {
-                restoredMask: routeResult.yhmRestoreVerified ? 0x3ff : null,
-              },
-              observedAt,
-            },
-          },
-        ];
-      })
-      .filter(Boolean);
-    if (observed.length === 0) return;
+    const observed =
+      templeVersionObservationsFromFlashAudit(audit);
+    if (Object.keys(observed).length === 0) return;
     setPogoResults((current) => {
       const next = { ...current };
-      for (const [route, value] of observed) {
+      for (const [route, value] of Object.entries(observed)) {
         next[route] = { ...current[route], ...value };
       }
       return next;
@@ -3166,7 +3158,7 @@ function App() {
         try {
           const session = getSession();
           addLog(
-            `Automatic Apply requested · Smart Glasses ${automaticInstallMode} · Update Charging Case first ${automaticCaseUpdate ? "enabled" : "disabled"}.`,
+            `Automatic USB recovery requested · Smart Glasses ${automaticInstallMode} · Update Charging Case first ${automaticCaseUpdate ? "enabled" : "disabled"}.`,
           );
           setSessionProgress(
             0.02,
@@ -3202,7 +3194,7 @@ function App() {
           }
           if (contactPreflight.resetRecoveryEligible) {
             addLog(
-              `${contactPreflight.reason} Automatic Apply will attempt the traced bilateral reset and require both temples to return before any firmware transfer.`,
+              `${contactPreflight.reason} Automatic USB recovery will attempt the traced bilateral reset and require both temples to return before any firmware transfer.`,
               "warn",
             );
           }
@@ -3376,7 +3368,7 @@ function App() {
           );
           if (changedAcrossReset.length > 0) {
             addLog(
-              `Temple identity changed across the clean-start reset on ${changedAcrossReset.join(" + ")}; Automatic Apply will plan from the fresh post-reset identity.`,
+              `Temple identity changed across the clean-start reset on ${changedAcrossReset.join(" + ")}; automatic USB recovery will plan from the fresh post-reset identity.`,
               "warn",
             );
           }
@@ -3522,6 +3514,7 @@ function App() {
 
           const audit = execution.audit;
           setTempleFlashAudit(audit);
+          absorbTempleFlashVersions(audit);
           recordInstalledProvenance(
             audit,
             fresh.console?.serialNumber,
@@ -3542,6 +3535,7 @@ function App() {
         } catch (caught) {
           if (caught?.audit) {
             setTempleFlashAudit(caught.audit);
+            absorbTempleFlashVersions(caught.audit);
             recordInstalledProvenance(
               caught.audit,
               report?.console?.serialNumber,
@@ -3553,9 +3547,12 @@ function App() {
               "failed_or_uncertain",
             );
           }
-          setAutomaticStatus(
-            `Stopped safely · ${caught?.message || String(caught)}`,
-          );
+          const failure = describeAutomaticApplyFailure(caught);
+          setAutomaticStatus(failure.message);
+          if (failure.directBluetoothRecommended) {
+            setBleStatus(failure.message);
+            caught.operationMessage = failure.message;
+          }
           throw caught;
         }
       },
@@ -3666,6 +3663,15 @@ function App() {
       bleReady &&
       !operation,
   );
+  const bluetoothUpdateComplete =
+    bleResults?.outcome === "success" &&
+    bleResults?.imageSha256 === selectedRelease?.sha256;
+  const bluetoothUpdateFailed =
+    bleResults?.outcome === "failed_or_partial";
+  const usbRecoveryVisible =
+    !directBleSupported ||
+    bluetoothUpdateFailed ||
+    usbRecoveryRequested;
   const caseUpdateNeeded = Boolean(
     report?.console?.caseVersion &&
       latestCaseFirmwareRelease?.caseVersion &&
@@ -3750,7 +3756,7 @@ function App() {
         </a>
         <div className="sidebar-intro">
           <span className="hardware-label">
-            DEVICE SERVICE · WEBUSB PRIMARY · WEB SERIAL FALLBACK
+            SMART GLASSES · BLUETOOTH PRIMARY · USB RECOVERY
           </span>
           <h1>Recover with precision.<br />Protect every byte.</h1>
           <p>
@@ -3765,26 +3771,40 @@ function App() {
           />
         ) : (
           <div className="easy-sidebar-guide" aria-label="Easy Mode workflow">
-            <div className={cx(report && "is-complete")}>
-              <span>01</span>
-              <strong>Select your Case</strong>
-            </div>
             <div className={cx(selectedRelease && "is-complete")}>
-              <span>02</span>
+              <span>01</span>
               <strong>Choose firmware</strong>
             </div>
-            <div className={cx(templeFlashAudit?.outcome === "success" && "is-complete")}>
+            <div
+              className={cx(
+                bleDevices.left && bleDevices.right && "is-complete",
+              )}
+            >
+              <span>02</span>
+              <strong>Pair Left + Right</strong>
+            </div>
+            <div className={cx(bluetoothUpdateComplete && "is-complete")}>
               <span>03</span>
-              <strong>Apply automatically</strong>
+              <strong>Update over Bluetooth</strong>
             </div>
           </div>
         )}
         <div className="sidebar-foot">
-          <span className={cx("support-dot", serialSupported && "is-supported")} />
+          <span
+            className={cx(
+              "support-dot",
+              (interfaceMode === "easy" ? directBleSupported : serialSupported) &&
+                "is-supported",
+            )}
+          />
           <span>
-            {serialSupported
-              ? `${selectedTransport} ready`
-              : "Chromium USB access required"}
+            {interfaceMode === "easy"
+              ? directBleSupported
+                ? "Chrome Bluetooth ready"
+                : "USB recovery available"
+              : serialSupported
+                ? `${selectedTransport} ready`
+                : "Chromium USB access required"}
           </span>
         </div>
       </aside>
@@ -3792,8 +3812,23 @@ function App() {
       <main className="main">
         <header className="topbar">
           <div className="topbar-status">
-            <span className={cx("connection-dot", report && "is-connected")} />
-            <span>{report ? "Case analyzed" : "No Case connected"}</span>
+            <span
+              className={cx(
+                "connection-dot",
+                (interfaceMode === "easy"
+                  ? bleDevices.left && bleDevices.right
+                  : report) && "is-connected",
+              )}
+            />
+            <span>
+              {interfaceMode === "easy"
+                ? bleDevices.left && bleDevices.right
+                  ? "Left + Right paired"
+                  : "Bluetooth temples not paired"
+                : report
+                  ? "Case analyzed"
+                  : "No Case connected"}
+            </span>
             {operation ? <strong>{progress.detail}</strong> : null}
           </div>
           <div className="topbar-actions">
@@ -3853,74 +3888,31 @@ function App() {
           data-pane="easy"
         >
           <div className="easy-mode-toolbar">
-            <div className="eyebrow">Automatic bilateral recovery</div>
+            <div className="eyebrow">Bluetooth Smart Glasses update</div>
             <StatusPill
               tone={
-                report
-                  ? !automaticContactAssessment.automaticApplyAllowed ||
-                    caseUpdateNeeded
-                    ? "warm"
-                    : "success"
-                  : "quiet"
+                !directBleSupported
+                  ? "warm"
+                  : bluetoothUpdateComplete ||
+                      (bleDevices.left && bleDevices.right)
+                    ? "success"
+                    : "quiet"
               }
             >
-              {report
-                ? !automaticContactAssessment.automaticApplyAllowed
-                  ? "No glasses detected"
-                  : caseUpdateNeeded
-                  ? `Case ${report.console?.caseVersion} · update available`
-                  : `Case ${report.console?.caseVersion} ready`
-                : "Case required"}
+              {!directBleSupported
+                ? "Bluetooth unavailable · use USB recovery"
+                : bluetoothUpdateComplete
+                  ? "Bluetooth update complete"
+                  : bleDevices.left && bleDevices.right
+                    ? "Left + Right paired"
+                    : "Pair both temples"}
             </StatusPill>
           </div>
 
-          <div className="easy-mode-grid">
-            <article className="easy-action-card">
-              <div className="easy-step-heading">
-                <span>01</span>
-                <div>
-                  <strong>Select your G2 Case</strong>
-                  <small>
-                    WebUSB is selected automatically because it bypasses the
-                    host CH340 serial driver. Web Serial remains a local
-                    compatibility fallback.
-                  </small>
-                </div>
-              </div>
-              <div className="case-transport-actions">
-                <Button
-                  onClick={connectAndAnalyze}
-                  busy={operation === "analyze"}
-                  disabled={!serialSupported || Boolean(operation)}
-                >
-                  <Icon name="usb" />
-                  {report ? "Choose another Case" : "Select Case"}
-                </Button>
-                {directWebUsbVisible && directWebSerialSupported ? (
-                  <Button
-                    tone="secondary"
-                    onClick={() => connectAndAnalyze("serial")}
-                    disabled={Boolean(operation)}
-                  >
-                    Use Web Serial fallback
-                  </Button>
-                ) : null}
-              </div>
-              <div className={cx("easy-case-result", report && "is-ready")}>
-                <span>{report ? caseDisplayIdentity : "No Case selected"}</span>
-                <strong>
-                  {report
-                    ? fullGlassesAnalysisComplete
-                      ? `L ${pogoResults.left.version.decoded?.firmwareVersion ?? "captured"} · R ${pogoResults.right.version.decoded?.firmwareVersion ?? "captured"}`
-                      : `${telemetry?.leftPresent ? "L ready" : "L absent"} · ${telemetry?.rightPresent ? "R ready" : "R absent"}`
-                    : "Both temples must be seated"}
-                </strong>
-              </div>
-            </article>
-
+          <div className="easy-mode-grid is-bluetooth-primary">
             <article className="easy-action-card easy-firmware-card">
               <div className="easy-step-heading">
-                <span>02</span>
+                <span>01</span>
                 <div>
                   <strong>Choose firmware</strong>
                   <small>Every library image is size- and SHA-256-pinned.</small>
@@ -3956,6 +3948,80 @@ function App() {
                   <code>{selectedRelease.sha256.slice(0, 16)}…</code>
                 </div>
               ) : null}
+            </article>
+
+            <BluetoothRecoveryCard
+              variant="primary"
+              directBleSupported={directBleSupported}
+              operation={operation}
+              bleDevices={bleDevices}
+              onSelectTemple={selectBleTemple}
+              bleReady={bleReady}
+              onReadyChange={setBleReady}
+              bleFlashReady={bleFlashReady}
+              onFlash={flashBleTempleFirmware}
+              selectedRelease={selectedRelease}
+              bleResults={bleResults}
+              bleStatus={bleStatus}
+            />
+
+            {usbRecoveryVisible ? (
+              <article className="easy-action-card easy-usb-card easy-case-card">
+                <div className="easy-step-heading">
+                  <span>USB · 01</span>
+                  <div>
+                    <strong>Select your G2 Case for recovery</strong>
+                    <small>
+                      Use only when Bluetooth failed, is unavailable, or a
+                      temple cannot be reached wirelessly. WebUSB is preferred
+                      over the host CH340 serial driver.
+                    </small>
+                  </div>
+                </div>
+                <div className="case-transport-actions">
+                  <Button
+                    onClick={connectAndAnalyze}
+                    busy={operation === "analyze"}
+                    disabled={!serialSupported || Boolean(operation)}
+                  >
+                    <Icon name="usb" />
+                    {report ? "Choose another Case" : "Select Case"}
+                  </Button>
+                  {directWebUsbVisible && directWebSerialSupported ? (
+                    <Button
+                      tone="secondary"
+                      onClick={() => connectAndAnalyze("serial")}
+                      disabled={Boolean(operation)}
+                    >
+                      Use Web Serial fallback
+                    </Button>
+                  ) : null}
+                </div>
+                <div className={cx("easy-case-result", report && "is-ready")}>
+                  <span>{report ? caseDisplayIdentity : "No Case selected"}</span>
+                  <strong>
+                    {report
+                      ? fullGlassesAnalysisComplete
+                        ? `L ${pogoResults.left.version.decoded?.firmwareVersion ?? "captured"} · R ${pogoResults.right.version.decoded?.firmwareVersion ?? "captured"}`
+                        : `${telemetry?.leftPresent ? "L ready" : "L absent"} · ${telemetry?.rightPresent ? "R ready" : "R absent"}`
+                      : "Both temples must be seated"}
+                  </strong>
+                </div>
+              </article>
+            ) : null}
+
+            {usbRecoveryVisible ? (
+              <article className="easy-action-card easy-apply-card easy-usb-card">
+              <div className="easy-step-heading">
+                <span>USB · 02</span>
+                <div>
+                  <strong>Recover automatically over USB</strong>
+                  <small>
+                    Backup path for inaccessible or non-working Bluetooth
+                    devices. No mid-process prompts.
+                  </small>
+                </div>
+              </div>
               <InstallModeSelector
                 idPrefix="easy"
                 value={automaticInstallMode}
@@ -3970,16 +4036,6 @@ function App() {
                 currentVersion={report?.console?.caseVersion}
                 targetVersion={latestCaseFirmwareRelease?.caseVersion}
               />
-            </article>
-
-            <article className="easy-action-card easy-apply-card">
-              <div className="easy-step-heading">
-                <span>03</span>
-                <div>
-                  <strong>Apply automatically</strong>
-                  <small>No confirmation phrases or mid-process prompts.</small>
-                </div>
-              </div>
               <div className="automatic-task-list">
                 <span>
                   <Icon name="check" />
@@ -4009,7 +4065,9 @@ function App() {
                   Boolean(operation)
                 }
               >
-                Apply {automaticInstallMode === "update" ? "Update" : "Restore"}
+                Recover{" "}
+                {automaticInstallMode === "update" ? "with update" : "fully"}{" "}
+                over USB
               </Button>
               <div className="automatic-status" role="status">
                 <span
@@ -4033,21 +4091,40 @@ function App() {
                   Case cleanup and bilateral application reachability are proven.
                 </small>
               ) : null}
-            </article>
+              </article>
+            ) : null}
           </div>
-          <BluetoothRecoveryCard
-            directBleSupported={directBleSupported}
-            operation={operation}
-            bleDevices={bleDevices}
-            onSelectTemple={selectBleTemple}
-            bleReady={bleReady}
-            onReadyChange={setBleReady}
-            bleFlashReady={bleFlashReady}
-            onFlash={flashBleTempleFirmware}
-            selectedRelease={selectedRelease}
-            bleResults={bleResults}
-            bleStatus={bleStatus}
-          />
+          <div className={cx("usb-recovery-toggle", usbRecoveryVisible && "is-open")}>
+            <div>
+              <strong>
+                {usbRecoveryVisible
+                  ? "USB backup / recovery"
+                  : "Can’t reach one or both temples over Bluetooth?"}
+              </strong>
+              <span>
+                {usbRecoveryVisible
+                  ? "These Case-based tools are the fallback for a failed or unavailable Bluetooth update, or for devices that are generally non-working or inaccessible over Bluetooth."
+                  : "Reveal the Case-based USB workflow only as a backup or recovery mechanism."}
+              </span>
+            </div>
+            {!usbRecoveryVisible ? (
+              <Button
+                tone="secondary"
+                onClick={() => setUsbRecoveryRequested(true)}
+                disabled={Boolean(operation)}
+              >
+                Open USB recovery
+              </Button>
+            ) : directBleSupported && !bluetoothUpdateFailed ? (
+              <Button
+                tone="ghost"
+                onClick={() => setUsbRecoveryRequested(false)}
+                disabled={Boolean(operation)}
+              >
+                Hide USB recovery
+              </Button>
+            ) : null}
+          </div>
         </section>
 
         <section
@@ -4662,7 +4739,23 @@ function App() {
                   ) : null}
                 </div>
               ) : null}
+              {usbRecoveryVisible ? (
               <div className="advanced-automatic-apply">
+                <div className="advanced-usb-recovery-heading">
+                  <div>
+                    <div className="eyebrow">USB backup / recovery</div>
+                    <strong>Case-based Smart Glasses recovery</strong>
+                  </div>
+                  {directBleSupported && !bluetoothUpdateFailed ? (
+                    <Button
+                      tone="ghost"
+                      onClick={() => setUsbRecoveryRequested(false)}
+                      disabled={Boolean(operation)}
+                    >
+                      Hide
+                    </Button>
+                  ) : null}
+                </div>
                 <InstallModeSelector
                   idPrefix="advanced"
                   value={automaticInstallMode}
@@ -4688,17 +4781,39 @@ function App() {
                     Boolean(operation)
                   }
                 >
-                  Apply {automaticInstallMode === "update" ? "Update" : "Restore"} automatically
+                  Recover{" "}
+                  {automaticInstallMode === "update" ? "with update" : "fully"}{" "}
+                  over USB
                 </Button>
                 <small>
-                  Applies to both temples, right then left, and always ends with
-                  route cleanup, a bilateral DEB0 reset, contact checks, and
-                  application-liveness verification.
+                  Backup path for a failed or unavailable Bluetooth update, or
+                  for temples that cannot be reached wirelessly. It applies to
+                  both temples, right then left, and ends with route cleanup, a
+                  bilateral DEB0 reset, contact checks, and application-liveness
+                  verification.
                 </small>
                 <div className="automatic-status" role="status">
                   {automaticStatus}
                 </div>
               </div>
+              ) : (
+                <div className="advanced-usb-recovery-toggle">
+                  <div>
+                    <strong>Need the Case-based USB recovery path?</strong>
+                    <small>
+                      Reveal it only if Bluetooth failed or the temples are
+                      non-working or inaccessible over Bluetooth.
+                    </small>
+                  </div>
+                  <Button
+                    tone="secondary"
+                    onClick={() => setUsbRecoveryRequested(true)}
+                    disabled={Boolean(operation)}
+                  >
+                    Open USB recovery
+                  </Button>
+                </div>
+              )}
               <div className="or-divider"><span>or</span></div>
               <label className="upload-zone">
                 <input
@@ -4840,13 +4955,27 @@ function App() {
         >
           <SectionHeading
             eyebrow="05 · Recovery Console"
-            title="Recover the Case or Smart Glasses"
-            copy="Use dual-bank staging for the Charging Case, the hardware-validated Case-to-pogo path for a pinned Apollo main, or direct Bluetooth for a complete six-component Smart Glasses package. Read-only probes and the recorded transfer evidence sit below."
+            title="Update Smart Glasses over Bluetooth, with USB recovery when needed"
+            copy="Direct Bluetooth is the primary Smart Glasses path and transfers the complete six-component package. Use the Charging Case and Case-to-pogo USB tools below only to recover a failed, inaccessible, or generally non-working device. Read-only probes and recorded transfer evidence sit below."
+          />
+          <BluetoothRecoveryCard
+            variant="advanced"
+            directBleSupported={directBleSupported}
+            operation={operation}
+            bleDevices={bleDevices}
+            onSelectTemple={selectBleTemple}
+            bleReady={bleReady}
+            onReadyChange={setBleReady}
+            bleFlashReady={bleFlashReady}
+            onFlash={flashBleTempleFirmware}
+            selectedRelease={selectedRelease}
+            bleResults={bleResults}
+            bleStatus={bleStatus}
           />
           <div className="recovery-target-heading">
             <div>
-              <div className="eyebrow">Charging Case</div>
-              <h3>Dual-bank Case recovery</h3>
+              <div className="eyebrow">USB backup / recovery · Charging Case</div>
+              <h3>Dual-bank Case recovery over USB</h3>
               <p>
                 The active bank remains untouched while the selected Case image is
                 written and byte-for-byte verified in the fallback bank.
@@ -4951,21 +5080,20 @@ function App() {
           <div className="smart-glasses-recovery" id="smart-glasses-recovery">
             <div className="smart-glasses-recovery-heading">
               <div>
-                <div className="eyebrow">Smart Glasses</div>
+                <div className="eyebrow">
+                  USB backup / recovery · Smart Glasses
+                </div>
                 <h3>Running-temple recovery through the Case</h3>
                 <p>
-                  Reinstalls the Apollo main from any image in the SybilSight
-                  verified library — stock or reviewed CFW — using the successful
-                  right- and left-temple procedure. The writer pins the Case SRAM
-                  bridge and re-hashes the main payload against its own compiled-in
-                  allowlist; requires finish and post-reboot replies; restores all
-                  ten YHM route registers; confirms Case firmware 1.2.57 returns;
-                  then makes the traced dual-temple reset the final temple mutation
-                  and verifies contacts plus checksum-valid version liveness. If
-                  START returns no frame with zero declared/accepted bytes, the
-                  audit stops wired retries and points to the proven fresh-BLE
-                  full-package fallback. The direct Bluetooth panel below
-                  performs that transfer with the same pinned library image.
+                  This backup path reinstalls the Apollo main when Bluetooth
+                  failed or a temple is not reachable wirelessly. The writer
+                  pins the Case SRAM bridge, re-hashes the selected main against
+                  its compiled-in allowlist, requires finish and post-reboot
+                  replies, restores all ten YHM route registers, confirms Case
+                  firmware 1.2.57 returns, and finishes with a dual-temple reset
+                  plus contact and version-liveness checks. If START reaches the
+                  terminal no-frame boundary, the audit stops wired retries
+                  instead of cycling a device whose state is uncertain.
                 </p>
               </div>
               <StatusPill tone={firmware?.templeFlashEligible ? "success" : "quiet"}>
@@ -5279,20 +5407,6 @@ function App() {
               </div>
             ) : null}
           </div>
-          <BluetoothRecoveryCard
-            variant="advanced"
-            directBleSupported={directBleSupported}
-            operation={operation}
-            bleDevices={bleDevices}
-            onSelectTemple={selectBleTemple}
-            bleReady={bleReady}
-            onReadyChange={setBleReady}
-            bleFlashReady={bleFlashReady}
-            onFlash={flashBleTempleFirmware}
-            selectedRelease={selectedRelease}
-            bleResults={bleResults}
-            bleStatus={bleStatus}
-          />
           <div className="recovery-target-heading">
             <div>
               <div className="eyebrow">Recovery boundary</div>

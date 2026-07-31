@@ -45,6 +45,7 @@ import {
   canResetAfterZeroWriteSetupStop,
   canRestartFailedTempleComponent,
   canRunFinalResetAfterFailure,
+  classifyExhaustedYhmSetupBoundary,
   classifyMaximumPacingTempleDataRejection,
   classifyPersistentTempleDataRejection,
   isExplicitTempleDataRejection,
@@ -1631,6 +1632,79 @@ test("classifies a bounded non-idle YHM setup as a zero-byte stop", () => {
       ),
       null,
       "PREFLIGHT",
+    ),
+    null,
+  );
+});
+
+test("promotes an exhausted zero-byte YHM setup to the Bluetooth fallback", () => {
+  const routeResult = {
+    route: "left",
+    outcome: "failed_or_uncertain",
+    failureStage: "setup",
+    otaMutationAttempted: false,
+    acceptedFirmwareBytes: 0,
+    caseRestoreVerified: true,
+    caseApplicationVersion: "1.2.57",
+    retainedResult: {
+      status: 3,
+      selectedMask: 0,
+      restoredMask: 0,
+      writeMask: 0,
+      declaredSize: 0,
+      acceptedSize: 0,
+      templeTxCount: 0,
+      templeRxCount: 0,
+      noMutationSetupStopVerified: true,
+    },
+    recoveryBoundary: {
+      classification: "yhm_setup_non_idle_zero_byte_boundary",
+    },
+  };
+  assert.deepEqual(
+    classifyExhaustedYhmSetupBoundary(routeResult, {
+      settleAttempts: 4,
+      settleLimit: 4,
+      resetAttempts: 2,
+      resetLimit: 2,
+    }),
+    {
+      classification: "yhm_setup_exhausted_zero_byte_boundary",
+      route: "left",
+      firmwareBytesAccepted: 0,
+      otaMutationAttempted: false,
+      settleAttempts: 4,
+      resetAttempts: 2,
+      additionalWiredSetupAllowed: false,
+      recommendedNextTransport: "fresh Bluetooth full-package recovery",
+      recoveryRecommendation:
+        "The Case-to-pogo writer exhausted its bounded settle and reset/recheck attempts before route selection, with immutable proof that no firmware bytes were sent on this route. Preserve every route already verified at the target and do not loop another wired Apply. Use the Direct recovery fallback to install the complete pinned package over a fresh Bluetooth connection; target-proven routes can be retained without rewriting them.",
+    },
+  );
+  assert.equal(
+    classifyExhaustedYhmSetupBoundary(routeResult, {
+      settleAttempts: 4,
+      settleLimit: 4,
+      resetAttempts: 1,
+      resetLimit: 2,
+    }),
+    null,
+  );
+  assert.equal(
+    classifyExhaustedYhmSetupBoundary(
+      {
+        ...routeResult,
+        retainedResult: {
+          ...routeResult.retainedResult,
+          templeTxCount: 1,
+        },
+      },
+      {
+        settleAttempts: 4,
+        settleLimit: 4,
+        resetAttempts: 2,
+        resetLimit: 2,
+      },
     ),
     null,
   );

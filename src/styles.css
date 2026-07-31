@@ -3136,6 +3136,10 @@ code {
   gap: 12px;
 }
 
+.easy-mode-grid.is-bluetooth-primary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .easy-action-card {
   display: flex;
   min-width: 0;
@@ -3153,6 +3157,16 @@ code {
   background:
     linear-gradient(145deg, rgba(0, 255, 136, 0.07), transparent 55%),
     #111;
+}
+
+.is-bluetooth-primary .easy-firmware-card {
+  min-height: 0;
+  grid-column: 1 / -1;
+  order: 1;
+}
+
+.is-bluetooth-primary .easy-usb-card {
+  order: 3;
 }
 
 .easy-step-heading {
@@ -3400,6 +3414,18 @@ code {
   margin: 24px 0;
 }
 
+.ble-recovery-card.is-primary {
+  width: auto;
+  max-width: none;
+  margin: 0;
+  border-color: rgba(0, 255, 136, 0.42);
+  background:
+    linear-gradient(135deg, rgba(0, 255, 136, 0.09), transparent 58%),
+    #111;
+  grid-column: 1 / -1;
+  order: 2;
+}
+
 .ble-recovery-copy h3 {
   margin: 5px 0 7px;
   font-size: 16px;
@@ -3487,6 +3513,86 @@ code {
   line-height: 1.5;
 }
 
+.advanced-usb-recovery-heading,
+.advanced-usb-recovery-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.advanced-usb-recovery-heading strong,
+.advanced-usb-recovery-toggle strong,
+.advanced-usb-recovery-toggle small {
+  display: block;
+}
+
+.advanced-usb-recovery-toggle {
+  margin-top: 22px;
+  padding: 16px;
+  color: var(--ink-soft);
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.advanced-usb-recovery-toggle strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.advanced-usb-recovery-toggle small {
+  max-width: 470px;
+  margin-top: 3px;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.advanced-usb-recovery-heading .button,
+.advanced-usb-recovery-toggle .button {
+  flex: none;
+}
+
+.usb-recovery-toggle {
+  display: flex;
+  max-width: 1180px;
+  margin: 12px auto 0;
+  padding: 14px 16px;
+  color: var(--ink-soft);
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.018);
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.usb-recovery-toggle.is-open {
+  border-color: rgba(255, 180, 71, 0.3);
+  background: rgba(255, 180, 71, 0.035);
+}
+
+.usb-recovery-toggle strong,
+.usb-recovery-toggle span {
+  display: block;
+}
+
+.usb-recovery-toggle strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.usb-recovery-toggle span {
+  max-width: 760px;
+  margin-top: 3px;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.usb-recovery-toggle .button {
+  flex: none;
+}
+
 @media (max-width: 1050px) {
   .easy-mode-grid {
     grid-template-columns: 1fr 1fr;
@@ -3495,6 +3601,11 @@ code {
   .easy-apply-card {
     min-height: 290px;
     grid-column: 1 / -1;
+  }
+
+  .is-bluetooth-primary .easy-apply-card {
+    min-height: 318px;
+    grid-column: auto;
   }
 }
 
@@ -3520,6 +3631,17 @@ code {
 
   .ble-recovery-card {
     grid-template-columns: 1fr;
+  }
+
+  .usb-recovery-toggle {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .advanced-usb-recovery-heading,
+  .advanced-usb-recovery-toggle {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 
