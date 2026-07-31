@@ -8,6 +8,7 @@ import {
   G2BleOtaSession,
   assertPinnedG2BleBundle,
   crc16CcittFalse,
+  flashG2BleSessionsConcurrently,
   g2BleDeviceSide,
   g2BleTargetVersionProof,
   makeBleControlFrames,
@@ -291,6 +292,100 @@ test("a failed BLE bundle retains every component with verified END evidence", a
   });
 });
 
+test("left and right BLE sessions flash concurrently and settle independently", async () => {
+  let releaseLeft;
+  const leftGate = new Promise((resolve) => {
+    releaseLeft = resolve;
+  });
+  const started = [];
+  const disconnected = [];
+  let completed = false;
+  const entries = ["left", "right"].map((side) => ({
+    side,
+    device: { id: `${side}-id`, name: `Even G2_32_${side[0].toUpperCase()}_TEST` },
+    session: {
+      async flashBundle() {
+        started.push(side);
+        if (side === "left") {
+          await leftGate;
+          return { side, outcome: "success" };
+        }
+        throw new G2BleOtaError("right stopped", {
+          code: "COMPONENT_FAILED",
+          partialResult: {
+            side,
+            components: [{ name: "firmware/codec.bin", endStatus: 8 }],
+            outcome: "failed_or_partial",
+          },
+        });
+      },
+      async disconnect() {
+        disconnected.push(side);
+      },
+    },
+  }));
+
+  const pending = flashG2BleSessionsConcurrently(entries, {}).then((value) => {
+    completed = true;
+    return value;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started.sort(), ["left", "right"]);
+  assert.equal(completed, false);
+
+  releaseLeft();
+  const outcomes = await pending;
+  assert.equal(completed, true);
+  assert.deepEqual(disconnected.sort(), ["left", "right"]);
+  assert.equal(outcomes[0].side, "left");
+  assert.equal(outcomes[0].status, "fulfilled");
+  assert.equal(outcomes[0].value.outcome, "success");
+  assert.equal(outcomes[1].side, "right");
+  assert.equal(outcomes[1].status, "rejected");
+  assert.equal(outcomes[1].reason.message, "right stopped");
+  assert.equal(
+    outcomes[1].reason.partialResult.components[0].endStatus,
+    8,
+  );
+});
+
+test("an initially unreachable selected temple gets bounded reconnect attempts", async () => {
+  const logs = [];
+  let connectAttempts = 0;
+  let disconnects = 0;
+  const session = new G2BleOtaSession(
+    {
+      name: "Even G2_32_L_ACD458",
+      gatt: {
+        disconnect() {
+          disconnects += 1;
+        },
+      },
+    },
+    {
+      side: "left",
+      initialConnectAttempts: 4,
+      reconnectIntervalMs: 0,
+      log: (message, tone) => logs.push({ message, tone }),
+    },
+  );
+  session.connect = async () => {
+    connectAttempts += 1;
+    if (connectAttempts < 3) {
+      throw Object.assign(
+        new Error("Bluetooth Device is no longer in range."),
+        { code: 19 },
+      );
+    }
+  };
+
+  assert.deepEqual(await session.connectForTransfer(), { attempts: 3 });
+  assert.equal(connectAttempts, 3);
+  assert.equal(disconnects, 2);
+  assert.match(logs[0].message, /Waiting for it to advertise/);
+  assert.match(logs.at(-1).message, /became reachable again/);
+});
+
 test("a final END 8 reboot reconnects instead of surfacing the heartbeat disconnect", async () => {
   const target = {
     imageSha256: "a".repeat(64),
@@ -389,6 +484,8 @@ test("an explicit final END preserves the transfer when bounded reboot reconnect
   const result = await session.settleFinalUpdate(8);
   assert.equal(connectAttempts, 3);
   assert.equal(result.expectedReboot, true);
+  assert.equal(result.rebootObserved, true);
+  assert.equal(result.freshReconnectAttempted, true);
   assert.equal(result.reconnected, false);
   assert.equal(result.reconnectAttempts, 3);
   assert.match(result.reconnectError, /no longer in range/);
@@ -422,8 +519,44 @@ test("the final reboot reconnect is bounded and succeeds on the selected device 
   assert.equal(connectAttempts, 3);
   assert.deepEqual(result, {
     expectedReboot: true,
+    rebootObserved: true,
+    freshReconnectAttempted: true,
     reconnected: true,
     reconnectAttempts: 3,
+  });
+});
+
+test("a live final-END link is closed and freshly reconnected without replay", async () => {
+  let disconnects = 0;
+  let connectAttempts = 0;
+  const device = {
+    name: "Even G2_32_R_693CCB",
+    gatt: { connected: true },
+  };
+  const session = new G2BleOtaSession(device, {
+    side: "right",
+    rebootSettleMs: 0,
+    reconnectIntervalMs: 0,
+    reconnectAttempts: 3,
+  });
+  session.disconnect = async () => {
+    disconnects += 1;
+    device.gatt.connected = false;
+  };
+  session.connect = async () => {
+    connectAttempts += 1;
+    device.gatt.connected = true;
+  };
+
+  const result = await session.settleFinalUpdate(8);
+  assert.equal(disconnects, 1);
+  assert.equal(connectAttempts, 1);
+  assert.deepEqual(result, {
+    expectedReboot: true,
+    rebootObserved: false,
+    freshReconnectAttempted: true,
+    reconnected: true,
+    reconnectAttempts: 1,
   });
 });
 

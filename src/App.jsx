@@ -103,6 +103,7 @@ import {
 import {
   G2BleOtaSession,
   assertPinnedG2BleBundle,
+  flashG2BleSessionsConcurrently,
   g2BleDeviceSide,
   g2BleSupported,
   g2BleTargetVersionProof,
@@ -737,8 +738,9 @@ function BluetoothRecoveryCard({
         <h3>Update both temples directly over Bluetooth</h3>
         <p>
           Chrome transfers every component in the selected hash-pinned package
-          directly to each temple, with per-block acknowledgements and
-          component verification. No Case USB connection is required.
+          to both temples simultaneously, using independent per-block
+          acknowledgements and component verification for each side. No Case
+          USB connection is required.
         </p>
         <ol>
           <li>Remove both temples from the Case and keep them powered nearby.</li>
@@ -2716,7 +2718,19 @@ function App() {
             "success",
           );
 
-          for (const [index, side] of ["right", "left"].entries()) {
+          const routeProgress = { left: 0, right: 0 };
+          const setRouteProgress = (side, fraction, detail) => {
+            const normalized = Math.min(Math.max(Number(fraction) || 0, 0), 1);
+            routeProgress[side] = Math.max(routeProgress[side], normalized);
+            const leftPercent = Math.round(routeProgress.left * 100);
+            const rightPercent = Math.round(routeProgress.right * 100);
+            setSessionProgress(
+              (routeProgress.left + routeProgress.right) / 2,
+              `${detail} · Left ${leftPercent}% · Right ${rightPercent}%`,
+            );
+          };
+          const routesToFlash = [];
+          for (const side of ["left", "right"]) {
             const device = bleDevices[side];
             if (
               g2BleTargetVersionProof(
@@ -2742,8 +2756,9 @@ function App() {
                 routes: { ...completedRoutes },
                 outcome: "in_progress",
               });
-              setSessionProgress(
-                (index + 1) / 2,
+              setRouteProgress(
+                side,
+                1,
                 `${side}: retaining fresh Case proof of G2 ${prepared.g2Version}`,
               );
               addLog(
@@ -2756,8 +2771,9 @@ function App() {
               completedRoutes[side]?.outcome === "success" &&
               completedRoutes[side]?.deviceId === device.id
             ) {
-              setSessionProgress(
-                (index + 1) / 2,
+              setRouteProgress(
+                side,
+                1,
                 `${side}: retaining the already verified Bluetooth package result`,
               );
               addLog(
@@ -2766,38 +2782,101 @@ function App() {
               );
               continue;
             }
+            delete completedRoutes[side];
+            routesToFlash.push({ side, device });
+          }
+
+          if (routesToFlash.length) {
+            const flashingSides = routesToFlash.map(({ side }) => side);
+            const simultaneous = routesToFlash.length === 2;
             setBleStatus(
-              `Flashing ${side} over direct Bluetooth · keep the temple powered nearby and this WebFlasher tab in front.`,
+              simultaneous
+                ? "Flashing Left + Right simultaneously over independent Bluetooth sessions · keep both temples powered nearby and this WebFlasher tab in front."
+                : `Flashing ${flashingSides[0]} over Bluetooth; the other side is already proven · keep this WebFlasher tab in front.`,
             );
-            const session = new G2BleOtaSession(device, {
+            addLog(
+              simultaneous
+                ? "left + right: starting simultaneous direct Bluetooth OTA sessions. Each side retains independent ACK, retry, heartbeat, and completion evidence."
+                : `${flashingSides[0]}: starting the only Bluetooth OTA session still required.`,
+              "info",
+            );
+          }
+
+          const sessionEntries = routesToFlash.map(({ side, device }) => ({
+            side,
+            device,
+            session: new G2BleOtaSession(device, {
               side,
               log: addLog,
               progress: (fraction, detail) =>
-                setSessionProgress((index + fraction) / 2, detail),
-            });
-            try {
-              const result = await session.flashBundle(prepared);
+                setRouteProgress(side, fraction, detail),
+            }),
+          }));
+          const routeOutcomes = await flashG2BleSessionsConcurrently(
+            sessionEntries,
+            prepared,
+          );
+          for (const outcome of routeOutcomes) {
+            const { side, device } = outcome;
+            if (outcome.status === "fulfilled") {
               completedRoutes[side] = {
-                ...result,
+                ...outcome.value,
                 deviceId: device.id,
               };
-              setBleResults({
-                imageSha256: prepared.fileSha256,
-                version: prepared.g2Version,
-                routes: { ...completedRoutes },
-                outcome: "in_progress",
-              });
-            } catch (caught) {
-              if (caught?.partialResult) {
-                completedRoutes[side] = {
-                  ...caught.partialResult,
-                  deviceId: device.id,
-                };
-              }
-              throw caught;
-            } finally {
-              await session.disconnect();
+              setRouteProgress(
+                side,
+                1,
+                `${side}: all six Bluetooth components verified`,
+              );
+              continue;
             }
+            const failure = outcome.reason;
+            completedRoutes[side] = failure?.partialResult
+              ? {
+                  ...failure.partialResult,
+                  deviceId: device.id,
+                }
+              : {
+                  side,
+                  deviceId: device.id,
+                  deviceName: device.name,
+                  imageSha256: prepared.fileSha256,
+                  version: prepared.g2Version,
+                  components: [],
+                  completedComponentCount: 0,
+                  blockAcks: 0,
+                  verifiedPayloadBytes: 0,
+                  outcome: "failed_before_transfer",
+                  failure: {
+                    message: failure?.message || String(failure),
+                    code: failure?.code ?? null,
+                  },
+                };
+          }
+          setBleResults({
+            imageSha256: prepared.fileSha256,
+            version: prepared.g2Version,
+            routes: { ...completedRoutes },
+            outcome: "in_progress",
+          });
+
+          const failedOutcomes = routeOutcomes.filter(
+            ({ status }) => status === "rejected",
+          );
+          if (failedOutcomes.length) {
+            const failureSummary = failedOutcomes
+              .map(
+                ({ side, reason }) =>
+                  `${side}: ${reason?.message || String(reason)}`,
+              )
+              .join("; ");
+            const sessionSummary =
+              routeOutcomes.length === 2
+                ? "The simultaneous Bluetooth sessions finished"
+                : "The Bluetooth session finished";
+            throw new Error(
+              `${sessionSummary} with ${failedOutcomes.length} failed side${failedOutcomes.length === 1 ? "" : "s"}. ${failureSummary}`,
+            );
           }
           const result = {
             imageSha256: prepared.fileSha256,

@@ -297,6 +297,7 @@ export class G2BleOtaSession {
       rebootSettleMs = G2_BLE_REBOOT_SETTLE_MS,
       reconnectIntervalMs = G2_BLE_RECONNECT_INTERVAL_MS,
       reconnectAttempts = G2_BLE_RECONNECT_ATTEMPTS,
+      initialConnectAttempts = G2_BLE_RECONNECT_ATTEMPTS,
       visibilityResumeSettleMs = G2_BLE_VISIBILITY_RESUME_SETTLE_MS,
       documentObject =
         typeof document === "undefined" ? null : document,
@@ -315,6 +316,7 @@ export class G2BleOtaSession {
     this.rebootSettleMs = rebootSettleMs;
     this.reconnectIntervalMs = reconnectIntervalMs;
     this.reconnectAttempts = reconnectAttempts;
+    this.initialConnectAttempts = initialConnectAttempts;
     this.visibilityResumeSettleMs = visibilityResumeSettleMs;
     this.documentObject = documentObject;
     this.foregroundPauses = 0;
@@ -429,6 +431,57 @@ export class G2BleOtaSession {
     this.log(
       `${this.side}: direct Bluetooth OTA services and notifications are ready.`,
       "success",
+    );
+  }
+
+  async connectForTransfer() {
+    let lastError = null;
+    for (
+      let attempt = 1;
+      attempt <= this.initialConnectAttempts;
+      attempt += 1
+    ) {
+      if (attempt > 1) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, this.reconnectIntervalMs),
+        );
+      }
+      try {
+        await this.connect();
+        if (attempt > 1) {
+          this.log(
+            `${this.side}: selected temple became reachable again · initial Bluetooth reconnect ${attempt}/${this.initialConnectAttempts}.`,
+            "success",
+          );
+        }
+        return { attempts: attempt };
+      } catch (error) {
+        lastError = error;
+        this.dataNotify?.removeEventListener?.(
+          "characteristicvaluechanged",
+          this.dataNotifyHandler,
+        );
+        try {
+          this.device?.gatt?.disconnect();
+        } catch {
+          // The failed connection attempt may already have closed the link.
+        }
+        this.writeTail = Promise.resolve();
+        if (attempt < this.initialConnectAttempts) {
+          this.log(
+            `${this.side}: selected temple is not reachable yet (${error?.message ?? String(error)}). Waiting for it to advertise · initial Bluetooth reconnect ${attempt + 1}/${this.initialConnectAttempts}.`,
+            "warn",
+          );
+        }
+      }
+    }
+    throw new G2BleOtaError(
+      `${this.side}: selected temple did not become reachable after ${this.initialConnectAttempts} bounded Bluetooth connection attempts: ${lastError?.message ?? "unknown connection error"}`,
+      {
+        code: "INITIAL_CONNECT_FAILED",
+        attempts: this.initialConnectAttempts,
+        cause: lastError,
+      },
     );
   }
 
@@ -559,24 +612,25 @@ export class G2BleOtaSession {
     await this.writeTail.catch(() => {});
     await new Promise((resolve) => setTimeout(resolve, this.rebootSettleMs));
 
-    if (this.device?.gatt?.connected) {
-      this.heartbeatError = null;
+    const rebootObserved = !this.device?.gatt?.connected;
+    const finalHeartbeatError = this.heartbeatError;
+    if (rebootObserved) {
       this.log(
-        `${this.side}: final END ${endStatus} (${g2BleStatusName(endStatus)}) completed and the Bluetooth link remained live.`,
-        "success",
+        `${this.side}: final END ${endStatus} (${g2BleStatusName(endStatus)}) triggered the expected temple reboot; waiting for the selected device to advertise again.`,
+        "warn",
       );
-      return {
-        expectedReboot: true,
-        reconnected: false,
-        linkRemainedLive: true,
-      };
+    } else {
+      this.log(
+        `${this.side}: final END ${endStatus} (${g2BleStatusName(endStatus)}) was verified before a reboot disconnect was observed. Closing the completed OTA link and performing a fresh GATT reconnect without replaying firmware.`,
+        "warn",
+      );
     }
-
-    this.log(
-      `${this.side}: final END ${endStatus} (${g2BleStatusName(endStatus)}) triggered the expected temple reboot; waiting for the selected device to advertise again.`,
-      "warn",
-    );
-    let lastError = this.heartbeatError;
+    // Clear the old notification subscriptions in both cases. A rebooted GATT
+    // server invalidates them, while a still-live server is deliberately
+    // disconnected so the selected Web Bluetooth handle must prove a fresh
+    // post-END connection.
+    await this.disconnect();
+    let lastError = finalHeartbeatError;
     this.heartbeatError = null;
     this.writeTail = Promise.resolve();
     for (let attempt = 1; attempt <= this.reconnectAttempts; attempt += 1) {
@@ -588,11 +642,13 @@ export class G2BleOtaSession {
       try {
         await this.connect();
         this.log(
-          `${this.side}: the temple returned after its firmware reboot · automatic Bluetooth reconnect ${attempt}/${this.reconnectAttempts} verified GATT liveness.`,
+          `${this.side}: fresh post-END Bluetooth reconnect ${attempt}/${this.reconnectAttempts} verified GATT liveness${rebootObserved ? " after the observed firmware reboot" : " after the completed OTA link was closed"}.`,
           "success",
         );
         return {
           expectedReboot: true,
+          rebootObserved,
+          freshReconnectAttempted: true,
           reconnected: true,
           reconnectAttempts: attempt,
         };
@@ -611,11 +667,13 @@ export class G2BleOtaSession {
     // the required Case reset/version interrogation as the authoritative boot
     // check after both temples have been transferred.
     this.log(
-      `${this.side}: all final-image blocks and END ${endStatus} were verified, but the rebooted temple did not resume GATT within ${this.reconnectAttempts} bounded attempts${lastError?.message ? ` (${lastError.message})` : ""}. No firmware will be replayed; continuing to the other side and deferring version authority to the final Case check.`,
+      `${this.side}: all final-image blocks and END ${endStatus} were verified, but the temple did not accept a fresh post-END GATT connection within ${this.reconnectAttempts} bounded attempts${lastError?.message ? ` (${lastError.message})` : ""}. No firmware will be replayed; deferring version authority to the final Case check.`,
       "warn",
     );
     return {
       expectedReboot: true,
+      rebootObserved,
+      freshReconnectAttempted: true,
       reconnected: false,
       reconnectAttempts: this.reconnectAttempts,
       reconnectError: lastError?.message ?? null,
@@ -760,7 +818,7 @@ export class G2BleOtaSession {
       `${this.side}: starting the pinned six-component Bluetooth package`,
     );
     try {
-      await this.connect();
+      await this.connectForTransfer();
       this.startHeartbeat();
       const beginStatus = await this.sendControl(0x00);
       if (!END_OK.has(beginStatus)) {
@@ -855,4 +913,22 @@ export class G2BleOtaSession {
       outcome: "success",
     };
   }
+}
+
+export async function flashG2BleSessionsConcurrently(entries, firmware) {
+  const sessions = Array.isArray(entries) ? entries : [];
+  const settled = await Promise.allSettled(
+    sessions.map(async ({ session }) => {
+      try {
+        return await session.flashBundle(firmware);
+      } finally {
+        await session.disconnect();
+      }
+    }),
+  );
+  return settled.map((outcome, index) => ({
+    side: sessions[index]?.side ?? null,
+    device: sessions[index]?.device ?? null,
+    ...outcome,
+  }));
 }
