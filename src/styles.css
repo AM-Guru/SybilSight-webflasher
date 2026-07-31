@@ -5724,6 +5724,12 @@ body {
   border-color: rgba(255, 111, 120, 0.36);
 }
 
+.footer-ble-route.is-reconnecting,
+.footer-ble-route.is-awaiting-verification {
+  --route-progress: #f4c477;
+  border-color: rgba(244, 196, 119, 0.38);
+}
+
 .footer-ble-route.is-verified,
 .footer-ble-route.is-retained {
   border-color: rgba(0, 255, 136, 0.32);

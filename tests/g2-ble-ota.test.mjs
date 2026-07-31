@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   G2_BLE_BLOCK_BYTES,
+  G2_BLE_LOSS_RECONNECT_DELAY_MS,
   G2BleOtaError,
   G2BleOtaSession,
   assertPinnedG2BleBundle,
@@ -11,6 +12,7 @@ import {
   flashG2BleSessionsConcurrently,
   g2BleDeviceSide,
   g2BleTargetVersionProof,
+  isG2BleConnectionLoss,
   makeBleControlFrames,
   makeBleEnvelopeFrames,
   parseBleAck,
@@ -355,6 +357,142 @@ test("left and right BLE sessions flash concurrently and settle independently", 
     outcomes[1].reason.partialResult.components[0].endStatus,
     8,
   );
+});
+
+test("connection-loss recovery waits 10 seconds by default and recognizes Chrome errors", () => {
+  const session = new G2BleOtaSession(
+    {
+      id: "left-id",
+      name: "Even G2_32_L_TEST",
+      gatt: { connected: true },
+    },
+    { side: "left" },
+  );
+  assert.equal(G2_BLE_LOSS_RECONNECT_DELAY_MS, 10_000);
+  assert.equal(session.lossReconnectDelayMs, 10_000);
+  assert.equal(session.rebootSettleMs, 10_000);
+  assert.equal(
+    isG2BleConnectionLoss(
+      Object.assign(
+        new Error("Bluetooth Device is no longer in range."),
+        { code: 19 },
+      ),
+      session.device,
+    ),
+    true,
+  );
+  assert.equal(
+    isG2BleConnectionLoss(new Error("CRC rejected"), session.device),
+    false,
+  );
+});
+
+test("a lost component connection reuses the selected endpoint and restarts at FILE_CHECK", async () => {
+  const device = {
+    id: "right-paired-id",
+    name: "Even G2_32_R_TEST",
+    gatt: { connected: true },
+  };
+  const session = new G2BleOtaSession(device, {
+    side: "right",
+    componentAttempts: 2,
+    componentRetrySettleMs: 0,
+  });
+  const controls = [];
+  const recoveryContexts = [];
+  let blockCalls = 0;
+  session.sendControl = async (opcode) => {
+    controls.push(opcode);
+    return opcode === 0x03 ? 8 : 0;
+  };
+  session.sendBlock = async () => {
+    blockCalls += 1;
+    if (blockCalls === 1) {
+      device.gatt.connected = false;
+      throw Object.assign(
+        new Error("Bluetooth Device is no longer in range."),
+        { code: 19 },
+      );
+    }
+    return 0;
+  };
+  session.reconnectAfterLoss = async (context) => {
+    recoveryContexts.push(context);
+    assert.equal(session.device, device);
+    assert.equal(session.selectedDeviceId, "right-paired-id");
+    device.gatt.connected = true;
+  };
+
+  const result = await session.flashComponent(
+    {
+      name: "ota/s200_firmware_ota.bin",
+      payload: Uint8Array.of(1, 2, 3),
+    },
+    5,
+    { totalBytes: 3, completedBeforeComponent: 0, highWater: 0 },
+  );
+
+  assert.equal(result.attempts, 2);
+  assert.deepEqual(controls, [0x01, 0x01, 0x03]);
+  assert.equal(blockCalls, 2);
+  assert.deepEqual(recoveryContexts, [
+    "ota/s200_firmware_ota.bin attempt 1/2",
+  ]);
+});
+
+test("reconnect after loss uses the original paired device ID without a chooser", async () => {
+  const logs = [];
+  const statuses = [];
+  let connectAttempts = 0;
+  let heartbeatStarts = 0;
+  const device = {
+    id: "left-paired-id",
+    name: "Even G2_32_L_TEST",
+    gatt: {
+      connected: false,
+      disconnect() {},
+    },
+  };
+  const session = new G2BleOtaSession(device, {
+    side: "left",
+    lossReconnectDelayMs: 0,
+    reconnectIntervalMs: 0,
+    reconnectAttempts: 3,
+    log: (message, tone) => logs.push({ message, tone }),
+    progress: (_fraction, detail, status) =>
+      statuses.push({ detail, status }),
+  });
+  session.disconnect = async () => {};
+  session.connect = async () => {
+    connectAttempts += 1;
+    assert.equal(session.device, device);
+    assert.equal(session.device.id, "left-paired-id");
+    if (connectAttempts === 1) {
+      throw new Error("Bluetooth Device is no longer in range.");
+    }
+    device.gatt.connected = true;
+  };
+  session.startHeartbeat = () => {
+    heartbeatStarts += 1;
+  };
+  session.sendControl = async (opcode) => {
+    assert.equal(opcode, 0x00);
+    return 0;
+  };
+
+  assert.deepEqual(await session.reconnectAfterLoss("test boundary"), {
+    attempts: 2,
+    deviceId: "left-paired-id",
+    beginStatus: 0,
+  });
+  assert.equal(connectAttempts, 2);
+  assert.equal(heartbeatStarts, 1);
+  assert.deepEqual(
+    statuses.map(({ status }) => status),
+    ["reconnecting", "flashing"],
+  );
+  assert.match(logs[0].message, /chooser will not reopen/);
+  assert.match(logs.at(-1).message, /left-paired-id/);
 });
 
 test("an initially unreachable selected temple gets bounded reconnect attempts", async () => {

@@ -23,7 +23,8 @@ export const G2_BLE_CONTROL_ACK_TIMEOUT_MS = 8000;
 export const G2_BLE_HEARTBEAT_INTERVAL_MS = 12000;
 export const G2_BLE_BLOCK_NAK_ATTEMPTS = 3;
 export const G2_BLE_COMPONENT_ATTEMPTS = 3;
-export const G2_BLE_REBOOT_SETTLE_MS = 2500;
+export const G2_BLE_LOSS_RECONNECT_DELAY_MS = 10000;
+export const G2_BLE_REBOOT_SETTLE_MS = G2_BLE_LOSS_RECONNECT_DELAY_MS;
 export const G2_BLE_RECONNECT_INTERVAL_MS = 2500;
 export const G2_BLE_RECONNECT_ATTEMPTS = 8;
 export const G2_BLE_VISIBILITY_RESUME_SETTLE_MS = 250;
@@ -161,6 +162,26 @@ export function g2BleStatusName(status) {
     .padStart(2, "0")}`;
 }
 
+export function isG2BleConnectionLoss(error, device = null) {
+  if (device?.gatt?.connected === false) return true;
+  const seen = new Set();
+  let current = error;
+  while (current && typeof current === "object" && !seen.has(current)) {
+    seen.add(current);
+    if (
+      current.code === 19 ||
+      current.name === "NetworkError" ||
+      /(?:bluetooth device is no longer in range|gatt.*disconnected|not connected to gatt|connection (?:is |was )?(?:lost|closed|unavailable)|device.*disconnected)/i.test(
+        current.message ?? "",
+      )
+    ) {
+      return true;
+    }
+    current = current.cause;
+  }
+  return false;
+}
+
 export function g2BleSupported(bluetooth = globalThis.navigator?.bluetooth) {
   return Boolean(bluetooth?.requestDevice);
 }
@@ -295,6 +316,7 @@ export class G2BleOtaSession {
       componentAttempts = G2_BLE_COMPONENT_ATTEMPTS,
       componentRetrySettleMs = 1500,
       rebootSettleMs = G2_BLE_REBOOT_SETTLE_MS,
+      lossReconnectDelayMs = G2_BLE_LOSS_RECONNECT_DELAY_MS,
       reconnectIntervalMs = G2_BLE_RECONNECT_INTERVAL_MS,
       reconnectAttempts = G2_BLE_RECONNECT_ATTEMPTS,
       initialConnectAttempts = G2_BLE_RECONNECT_ATTEMPTS,
@@ -314,6 +336,7 @@ export class G2BleOtaSession {
     this.componentAttempts = componentAttempts;
     this.componentRetrySettleMs = componentRetrySettleMs;
     this.rebootSettleMs = rebootSettleMs;
+    this.lossReconnectDelayMs = lossReconnectDelayMs;
     this.reconnectIntervalMs = reconnectIntervalMs;
     this.reconnectAttempts = reconnectAttempts;
     this.initialConnectAttempts = initialConnectAttempts;
@@ -326,6 +349,8 @@ export class G2BleOtaSession {
     this.writeTail = Promise.resolve();
     this.heartbeatTimer = null;
     this.heartbeatError = null;
+    this.connectionRecoveries = 0;
+    this.selectedDeviceId = device?.id ?? null;
     this.dataNotifyHandler = (event) => {
       const value = event?.target?.value;
       const ack = parseBleAck(value);
@@ -350,6 +375,33 @@ export class G2BleOtaSession {
 
   drainAcks() {
     this.ackQueue = [];
+  }
+
+  assertSelectedDeviceIdentity() {
+    if (
+      this.selectedDeviceId &&
+      this.device?.id !== this.selectedDeviceId
+    ) {
+      throw new G2BleOtaError(
+        `${this.side}: the Bluetooth device identity changed during recovery; refusing to connect to a different temple.`,
+        {
+          code: "DEVICE_ID_CHANGED",
+          expectedDeviceId: this.selectedDeviceId,
+          observedDeviceId: this.device?.id ?? null,
+        },
+      );
+    }
+    const observedSide = g2BleDeviceSide(this.device?.name);
+    if (observedSide && observedSide !== this.side) {
+      throw new G2BleOtaError(
+        `${this.side}: the saved Bluetooth device now advertises as ${observedSide}; refusing the mismatched endpoint.`,
+        {
+          code: "DEVICE_SIDE_CHANGED",
+          expectedSide: this.side,
+          observedSide,
+        },
+      );
+    }
   }
 
   async waitForForeground(boundary) {
@@ -397,6 +449,7 @@ export class G2BleOtaSession {
   }
 
   async connect() {
+    this.assertSelectedDeviceIdentity();
     if (!this.device?.gatt) {
       throw new G2BleOtaError(`The selected ${this.side} temple has no GATT interface.`);
     }
@@ -514,6 +567,94 @@ export class G2BleOtaSession {
     }
   }
 
+  async reconnectAfterLoss(context, { reenterPackage = true } = {}) {
+    const deviceId = this.selectedDeviceId ?? "unavailable";
+    this.log(
+      `${this.side}: Bluetooth connection was lost during ${context}. Waiting 10 seconds for the same paired temple to reboot and advertise before reconnecting with saved device ID ${deviceId}; the chooser will not reopen.`,
+      "warn",
+    );
+    this.progress(
+      undefined,
+      `${this.side}: connection lost · waiting 10 seconds to reconnect the saved endpoint`,
+      "reconnecting",
+    );
+    await this.disconnect();
+    this.heartbeatError = null;
+    this.writeTail = Promise.resolve();
+    if (this.lossReconnectDelayMs > 0) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, this.lossReconnectDelayMs),
+      );
+    }
+
+    let lastError = null;
+    for (let attempt = 1; attempt <= this.reconnectAttempts; attempt += 1) {
+      if (attempt > 1 && this.reconnectIntervalMs > 0) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, this.reconnectIntervalMs),
+        );
+      }
+      try {
+        this.assertSelectedDeviceIdentity();
+        await this.connect();
+        this.startHeartbeat();
+        let beginStatus = null;
+        if (reenterPackage) {
+          beginStatus = await this.sendControl(0x00);
+          if (!END_OK.has(beginStatus)) {
+            this.log(
+              `${this.side}: reconnect BEGIN returned ${beginStatus} (${g2BleStatusName(beginStatus)}); continuing because the next FILE_CHECK remains authoritative.`,
+              "warn",
+            );
+          }
+        }
+        this.connectionRecoveries += 1;
+        this.log(
+          `${this.side}: reconnected saved Bluetooth device ID ${deviceId} after the 10-second recovery pause · attempt ${attempt}/${this.reconnectAttempts}. Resuming from the last verified component boundary.`,
+          "success",
+        );
+        this.progress(
+          undefined,
+          `${this.side}: saved endpoint reconnected · resuming safely`,
+          "flashing",
+        );
+        return {
+          attempts: attempt,
+          deviceId: this.selectedDeviceId,
+          beginStatus,
+        };
+      } catch (error) {
+        lastError = error;
+        this.stopHeartbeat();
+        this.dataNotify?.removeEventListener?.(
+          "characteristicvaluechanged",
+          this.dataNotifyHandler,
+        );
+        try {
+          this.device?.gatt?.disconnect();
+        } catch {
+          // The failed attempt may already have closed its transient link.
+        }
+        this.writeTail = Promise.resolve();
+        if (attempt < this.reconnectAttempts) {
+          this.log(
+            `${this.side}: saved device ID ${deviceId} is not reachable yet (${error?.message ?? String(error)}) · reconnect attempt ${attempt + 1}/${this.reconnectAttempts} will follow.`,
+            "warn",
+          );
+        }
+      }
+    }
+    throw new G2BleOtaError(
+      `${this.side}: the saved Bluetooth device ID ${deviceId} did not reconnect after the 10-second recovery pause and ${this.reconnectAttempts} bounded attempts: ${lastError?.message ?? "unknown connection error"}`,
+      {
+        code: "RECONNECT_FAILED",
+        attempts: this.reconnectAttempts,
+        deviceId: this.selectedDeviceId,
+        cause: lastError,
+      },
+    );
+  }
+
   waitForAck(opcode, timeoutMs) {
     const queuedIndex = this.ackQueue.findIndex(
       (ack) => ack.opcode === opcode,
@@ -610,13 +751,22 @@ export class G2BleOtaSession {
     // A heartbeat may already be queued behind the final END write. Let that
     // queue settle before deciding whether its failure was the expected reboot.
     await this.writeTail.catch(() => {});
+    this.log(
+      `${this.side}: final END ${endStatus} (${g2BleStatusName(endStatus)}) is verified. Pausing 10 seconds for the temple reboot before reconnecting the same paired device ID ${this.selectedDeviceId ?? "unavailable"}.`,
+      "warn",
+    );
+    this.progress(
+      undefined,
+      `${this.side}: final END verified · waiting 10 seconds for reboot`,
+      "reconnecting",
+    );
     await new Promise((resolve) => setTimeout(resolve, this.rebootSettleMs));
 
     const rebootObserved = !this.device?.gatt?.connected;
     const finalHeartbeatError = this.heartbeatError;
     if (rebootObserved) {
       this.log(
-        `${this.side}: final END ${endStatus} (${g2BleStatusName(endStatus)}) triggered the expected temple reboot; waiting for the selected device to advertise again.`,
+        `${this.side}: final END ${endStatus} (${g2BleStatusName(endStatus)}) triggered the expected temple reboot. The 10-second reboot pause is complete; reconnecting the same paired device ID ${this.selectedDeviceId ?? "unavailable"}.`,
         "warn",
       );
     } else {
@@ -640,9 +790,10 @@ export class G2BleOtaSession {
         );
       }
       try {
+        this.assertSelectedDeviceIdentity();
         await this.connect();
         this.log(
-          `${this.side}: fresh post-END Bluetooth reconnect ${attempt}/${this.reconnectAttempts} verified GATT liveness${rebootObserved ? " after the observed firmware reboot" : " after the completed OTA link was closed"}.`,
+          `${this.side}: fresh post-END Bluetooth reconnect ${attempt}/${this.reconnectAttempts} verified GATT liveness on saved device ID ${this.selectedDeviceId ?? "unavailable"}${rebootObserved ? " after the observed firmware reboot and 10-second pause" : " after the completed OTA link was closed"}.`,
           "success",
         );
         return {
@@ -658,6 +809,12 @@ export class G2BleOtaSession {
           this.device?.gatt?.disconnect();
         } catch {
           // The failed attempt may already have closed the transient link.
+        }
+        if (attempt < this.reconnectAttempts) {
+          this.log(
+            `${this.side}: saved post-update device ID ${this.selectedDeviceId ?? "unavailable"} is not reachable yet (${error?.message ?? String(error)}) · reconnect attempt ${attempt + 1}/${this.reconnectAttempts} will follow.`,
+            "warn",
+          );
         }
       }
     }
@@ -772,6 +929,7 @@ export class G2BleOtaSession {
         };
       } catch (error) {
         lastError = error;
+        const connectionLost = isG2BleConnectionLoss(error, this.device);
         if (
           error?.code === "ACK_TIMEOUT" &&
           error?.opcode === 0x02
@@ -785,6 +943,16 @@ export class G2BleOtaSession {
             `${this.side}: ${component.name} attempt ${attempt}/${this.componentAttempts} stopped · ${error.message}`,
             "warn",
           );
+        }
+        if (connectionLost && attempt < this.componentAttempts) {
+          try {
+            await this.reconnectAfterLoss(
+              `${component.name} attempt ${attempt}/${this.componentAttempts}`,
+            );
+          } catch (reconnectError) {
+            lastError = reconnectError;
+            break;
+          }
         }
       }
     }
@@ -820,7 +988,16 @@ export class G2BleOtaSession {
     try {
       await this.connectForTransfer();
       this.startHeartbeat();
-      const beginStatus = await this.sendControl(0x00);
+      let beginStatus;
+      try {
+        beginStatus = await this.sendControl(0x00);
+      } catch (error) {
+        if (!isG2BleConnectionLoss(error, this.device)) throw error;
+        const recovery = await this.reconnectAfterLoss(
+          "the package BEGIN command",
+        );
+        beginStatus = recovery.beginStatus;
+      }
       if (!END_OK.has(beginStatus)) {
         this.log(
           `${this.side}: BEGIN returned ${beginStatus} (${g2BleStatusName(beginStatus)}); continuing because FILE_CHECK remains the authoritative per-component gate.`,
@@ -847,7 +1024,13 @@ export class G2BleOtaSession {
         ) {
           result.postUpdate = await this.settleFinalUpdate(result.endStatus);
         } else if (this.heartbeatError) {
-          throw this.heartbeatError;
+          const heartbeatError = this.heartbeatError;
+          if (!isG2BleConnectionLoss(heartbeatError, this.device)) {
+            throw heartbeatError;
+          }
+          await this.reconnectAfterLoss(
+            `the verified ${component.name} boundary`,
+          );
         }
       }
     } catch (error) {
@@ -869,6 +1052,7 @@ export class G2BleOtaSession {
         ),
         progressHighWaterBytes: totals.highWater,
         foregroundPauses: this.foregroundPauses,
+        connectionRecoveries: this.connectionRecoveries,
         failure: {
           message: error?.message ?? String(error),
           code: error?.code ?? null,
@@ -910,6 +1094,7 @@ export class G2BleOtaSession {
         0,
       ),
       foregroundPauses: this.foregroundPauses,
+      connectionRecoveries: this.connectionRecoveries,
       outcome: "success",
     };
   }
@@ -929,9 +1114,13 @@ export async function flashG2BleSessionsConcurrently(
     }
     return outcome;
   };
-  const settled = await Promise.allSettled(
-    sessions.map(({ side, device, session }) =>
+  let releaseStart;
+  const startGate = new Promise((resolve) => {
+    releaseStart = resolve;
+  });
+  const tasks = sessions.map(({ side, device, session }) =>
       (async () => {
+        await startGate;
         try {
           return await session.flashBundle(firmware);
         } finally {
@@ -947,8 +1136,12 @@ export async function flashG2BleSessionsConcurrently(
           throw reason;
         },
       ),
-    ),
   );
+  // Every side is registered and waiting before either endpoint begins its
+  // GATT connection. A failure in one task cannot prevent the other task from
+  // crossing this gate or continuing to completion.
+  releaseStart();
+  const settled = await Promise.allSettled(tasks);
   return settled.map((outcome, index) => ({
     side: sessions[index]?.side ?? null,
     device: sessions[index]?.device ?? null,

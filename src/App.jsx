@@ -1183,7 +1183,7 @@ function TaskProgress({ progress, wakeLockStatus, bleRouteProgress }) {
                 className={cx(
                   "footer-ble-route",
                   `is-${side}`,
-                  `is-${route.status}`,
+                  `is-${route.status.replaceAll(" ", "-")}`,
                 )}
                 key={side}
               >
@@ -2897,16 +2897,29 @@ function App() {
             session: new G2BleOtaSession(device, {
               side,
               log: addLog,
-              progress: (fraction, detail) =>
-                setRouteProgress(side, fraction, detail),
+              progress: (fraction, detail, status) =>
+                setRouteProgress(side, fraction, detail, status),
             }),
           }));
           const routeOutcomes = await flashG2BleSessionsConcurrently(
             sessionEntries,
             prepared,
             {
-              onSettled: ({ side, status, reason }) => {
+              onSettled: ({ side, status, value, reason }) => {
                 if (status === "fulfilled") {
+                  const postUpdate = value?.components?.at(-1)?.postUpdate;
+                  if (
+                    postUpdate?.freshReconnectAttempted &&
+                    !postUpdate.reconnected
+                  ) {
+                    setRouteProgress(
+                      side,
+                      1,
+                      `${side}: transfer verified; reboot reconnect exhausted, awaiting final Case version proof`,
+                      "awaiting verification",
+                    );
+                    return;
+                  }
                   setRouteProgress(
                     side,
                     1,
@@ -2927,16 +2940,29 @@ function App() {
           for (const outcome of routeOutcomes) {
             const { side, device } = outcome;
             if (outcome.status === "fulfilled") {
+              const postUpdate = outcome.value?.components?.at(-1)?.postUpdate;
               completedRoutes[side] = {
                 ...outcome.value,
                 deviceId: device.id,
               };
-              setRouteProgress(
-                side,
-                1,
-                `${side}: all six Bluetooth components verified`,
-                "verified",
-              );
+              if (
+                postUpdate?.freshReconnectAttempted &&
+                !postUpdate.reconnected
+              ) {
+                setRouteProgress(
+                  side,
+                  1,
+                  `${side}: all six component ENDs verified; awaiting final Case version proof`,
+                  "awaiting verification",
+                );
+              } else {
+                setRouteProgress(
+                  side,
+                  1,
+                  `${side}: all six Bluetooth components and post-reboot liveness verified`,
+                  "verified",
+                );
+              }
               continue;
             }
             const failure = outcome.reason;

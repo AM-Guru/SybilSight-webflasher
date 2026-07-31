@@ -1064,8 +1064,13 @@ the tab is visible again, then resumes automatically.
 Each selected side is connected immediately and gets bounded retries if its
 saved Web Bluetooth handle is temporarily not advertising. After the final
 component returns `END 8`/`END 9`, SybilSight never replays the verified image:
-it waits for the reboot transition, closes any old live OTA link, and uses the
-same selected handle for a bounded fresh GATT reconnect/liveness probe.
+it pauses for 10 seconds to allow the temple to reboot, closes any old live OTA
+link, and uses the same selected handle and device ID for a bounded fresh GATT
+reconnect/liveness probe without reopening Chrome's chooser. A connection loss
+during the package also enters the same 10-second recovery window; after the
+saved endpoint reconnects, the package re-enters `BEGIN` and only the current
+component restarts from its safe `FILE_CHECK` boundary while the other side
+continues independently.
 
 Chrome's native chooser can display both sides because Web Bluetooth cannot
 filter on a middle-of-name side token. SybilSight therefore combines the G2
