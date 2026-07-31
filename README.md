@@ -1048,8 +1048,13 @@ panes.
    name explicitly identifies the Left side. Repeat with **Select RIGHT
    temple**. A wrong, missing, or conflicting side marker is rejected.
 4. Confirm the assignments and click **Update … over Bluetooth**.
-5. Keep both temples powered and nearby until all six components have received
-   their END verification on both sides.
+5. Keep both temples powered and nearby, and keep the WebFlasher tab in front,
+   until all six components have received their END verification on both sides.
+
+Chrome throttles a hidden tab enough to disrupt a multi-fragment BLE block. If
+the tab becomes hidden, SybilSight now finishes the in-flight transaction and
+pauses at the next verified command boundary. It starts no new OTA command until
+the tab is visible again, then resumes automatically.
 
 Chrome's native chooser can display both sides because Web Bluetooth cannot
 filter on a middle-of-name side token. SybilSight therefore combines the G2
@@ -1218,10 +1223,13 @@ SBL/MRAM-recovery or SWD route.
 2. In Easy Mode, choose the target image, then select the Left temple with the
    Left button and the Right temple with the Right button. SybilSight rejects
    a selection unless its explicit advertised side matches the requested side.
-3. Confirm the side names and start the Bluetooth update. The browser writes
-   right first, then left, and retains a completed side if a later side stops,
-   so retrying does not rewrite an already verified temple.
-4. Wait for all six END verifications on both sides. Re-seat both temples in
+3. Confirm the side names and start the Bluetooth update. Keep the WebFlasher
+   tab in front. The browser writes right first, then left, and retains a
+   completed side if a later side stops, so retrying does not rewrite an
+   already verified temple.
+4. If the tab is hidden, the writer pauses before its next OTA command and
+   resumes automatically at that verified boundary when the tab is visible.
+   Wait for all six END verifications on both sides. Re-seat both temples in
    the Case and use the normal reset/recheck path for final checksum-valid
    `2.2.6.11`/hardware-5 liveness proof.
 

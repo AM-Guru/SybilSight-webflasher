@@ -174,6 +174,123 @@ test("an ambiguous block timeout restarts the component from FILE_CHECK", async 
   assert.deepEqual(controls, [0x01, 0x01, 0x03]);
 });
 
+test("a hidden WebFlasher pauses before starting the next BLE block", async () => {
+  const listeners = new Set();
+  const documentObject = {
+    visibilityState: "hidden",
+    addEventListener(type, listener) {
+      assert.equal(type, "visibilitychange");
+      listeners.add(listener);
+    },
+    removeEventListener(type, listener) {
+      assert.equal(type, "visibilitychange");
+      listeners.delete(listener);
+    },
+  };
+  const written = [];
+  const logs = [];
+  const session = new G2BleOtaSession(
+    { name: "Even G2_32_R_693CCB" },
+    {
+      side: "right",
+      documentObject,
+      visibilityResumeSettleMs: 0,
+      log: (message, tone) => logs.push({ message, tone }),
+    },
+  );
+  session.dataWrite = {
+    writeValueWithoutResponse: async (frame) => written.push(frame.slice()),
+  };
+  session.waitForAck = async () => 0;
+
+  const pending = session.sendBlock(new Uint8Array(G2_BLE_BLOCK_BYTES));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(written.length, 0);
+  assert.equal(listeners.size, 1);
+  assert.match(logs[0].message, /paused before the next 4 KB block/);
+
+  documentObject.visibilityState = "visible";
+  for (const listener of [...listeners]) listener();
+  assert.equal(await pending, 0);
+  assert.equal(written.length, 19);
+  assert.equal(listeners.size, 0);
+  assert.equal(session.foregroundPauses, 1);
+  assert.match(logs.at(-1).message, /resuming/);
+});
+
+test("a failed BLE bundle retains every component with verified END evidence", async () => {
+  const target = { imageSha256: "a".repeat(64) };
+  const firmware = {
+    templeFlashEligible: true,
+    templeFlashTarget: target,
+    fileSha256: target.imageSha256,
+    g2Version: "2.2.6.11",
+    componentImages: EXPECTED_COMPONENTS.map((name, index) => ({
+      name,
+      typeId: EXPECTED_COMPONENT_TYPES[index],
+      header: new Uint8Array(128),
+      payload: Uint8Array.of(index),
+      payloadSize: 1,
+    })),
+  };
+  const session = new G2BleOtaSession(
+    { name: "Even G2_32_R_693CCB" },
+    { side: "right" },
+  );
+  session.connect = async () => {};
+  session.startHeartbeat = () => {};
+  session.stopHeartbeat = () => {};
+  session.sendControl = async () => 0;
+  session.flashComponent = async (component, index, totals) => {
+    if (index === 1) {
+      throw new G2BleOtaError("component failed", {
+        code: "COMPONENT_FAILED",
+        componentIndex: index,
+        componentName: component.name,
+        attempts: 3,
+        cause: new G2BleOtaError("block rejected", {
+          code: "BLOCK_REJECTED",
+          status: 4,
+          blockIndex: 14,
+          blockAttempts: 3,
+        }),
+      });
+    }
+    totals.completedBeforeComponent += component.payload.length;
+    totals.highWater = totals.completedBeforeComponent;
+    return {
+      name: component.name,
+      payloadBytes: component.payload.length,
+      blocks: 1,
+      endStatus: 8,
+      attempts: 1,
+    };
+  };
+
+  let failure;
+  try {
+    await session.flashBundle(firmware);
+  } catch (error) {
+    failure = error;
+  }
+  assert.equal(failure?.code, "COMPONENT_FAILED");
+  assert.equal(failure.partialResult.outcome, "failed_or_partial");
+  assert.equal(failure.partialResult.completedComponentCount, 1);
+  assert.equal(failure.partialResult.components[0].name, EXPECTED_COMPONENTS[0]);
+  assert.equal(failure.partialResult.components[0].endStatus, 8);
+  assert.equal(failure.partialResult.blockAcks, 1);
+  assert.equal(failure.partialResult.verifiedPayloadBytes, 1);
+  assert.equal(failure.partialResult.failure.componentName, EXPECTED_COMPONENTS[1]);
+  assert.deepEqual(failure.partialResult.failure.cause, {
+    message: "block rejected",
+    code: "BLOCK_REJECTED",
+    status: 4,
+    blockIndex: 14,
+    blockAttempts: 3,
+    opcode: null,
+  });
+});
+
 test("a final END 8 reboot reconnects instead of surfacing the heartbeat disconnect", async () => {
   const target = {
     imageSha256: "a".repeat(64),

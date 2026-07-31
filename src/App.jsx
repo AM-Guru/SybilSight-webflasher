@@ -750,6 +750,11 @@ function BluetoothRecoveryCard({
             The chooser may list both sides, but SybilSight accepts only an
             unambiguous side marker that matches the button you selected.
           </li>
+          <li>
+            Keep this WebFlasher tab in front during the update. If it becomes
+            hidden, SybilSight pauses before the next OTA command and resumes
+            from that verified boundary when you return.
+          </li>
         </ol>
       </div>
       <div className="ble-recovery-actions">
@@ -782,7 +787,7 @@ function BluetoothRecoveryCard({
           <span>
             Both advertised names explicitly match their assigned physical
             sides; the phone is disconnected and the temples will stay powered
-            and nearby.
+            and nearby; this WebFlasher tab will stay in front.
           </span>
         </label>
         <Button
@@ -2762,7 +2767,7 @@ function App() {
               continue;
             }
             setBleStatus(
-              `Flashing ${side} over direct Bluetooth · keep the temple powered and nearby.`,
+              `Flashing ${side} over direct Bluetooth · keep the temple powered nearby and this WebFlasher tab in front.`,
             );
             const session = new G2BleOtaSession(device, {
               side,
@@ -2782,6 +2787,14 @@ function App() {
                 routes: { ...completedRoutes },
                 outcome: "in_progress",
               });
+            } catch (caught) {
+              if (caught?.partialResult) {
+                completedRoutes[side] = {
+                  ...caught.partialResult,
+                  deviceId: device.id,
+                };
+              }
+              throw caught;
             } finally {
               await session.disconnect();
             }

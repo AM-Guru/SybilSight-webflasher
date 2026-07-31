@@ -26,6 +26,7 @@ export const G2_BLE_COMPONENT_ATTEMPTS = 3;
 export const G2_BLE_REBOOT_SETTLE_MS = 2500;
 export const G2_BLE_RECONNECT_INTERVAL_MS = 2500;
 export const G2_BLE_RECONNECT_ATTEMPTS = 8;
+export const G2_BLE_VISIBILITY_RESUME_SETTLE_MS = 250;
 export const G2_BLE_TARGET_PROOF_MAX_AGE_MS = 15 * 60 * 1000;
 
 export const G2_BLE_OTA_STATUS = Object.freeze({
@@ -296,6 +297,9 @@ export class G2BleOtaSession {
       rebootSettleMs = G2_BLE_REBOOT_SETTLE_MS,
       reconnectIntervalMs = G2_BLE_RECONNECT_INTERVAL_MS,
       reconnectAttempts = G2_BLE_RECONNECT_ATTEMPTS,
+      visibilityResumeSettleMs = G2_BLE_VISIBILITY_RESUME_SETTLE_MS,
+      documentObject =
+        typeof document === "undefined" ? null : document,
     } = {},
   ) {
     this.device = device;
@@ -311,6 +315,9 @@ export class G2BleOtaSession {
     this.rebootSettleMs = rebootSettleMs;
     this.reconnectIntervalMs = reconnectIntervalMs;
     this.reconnectAttempts = reconnectAttempts;
+    this.visibilityResumeSettleMs = visibilityResumeSettleMs;
+    this.documentObject = documentObject;
+    this.foregroundPauses = 0;
     this.sequence = 0;
     this.ackQueue = [];
     this.ackWaiters = [];
@@ -341,6 +348,50 @@ export class G2BleOtaSession {
 
   drainAcks() {
     this.ackQueue = [];
+  }
+
+  async waitForForeground(boundary) {
+    const page = this.documentObject;
+    if (
+      page?.visibilityState !== "hidden" ||
+      typeof page.addEventListener !== "function"
+    ) {
+      return;
+    }
+
+    this.foregroundPauses += 1;
+    this.log(
+      `${this.side}: Bluetooth update paused before ${boundary} because the WebFlasher tab is hidden. No new OTA command will start until this tab is visible again.`,
+      "warn",
+    );
+    do {
+      await new Promise((resolve) => {
+        const handleVisibilityChange = () => {
+          if (page.visibilityState === "hidden") return;
+          page.removeEventListener?.(
+            "visibilitychange",
+            handleVisibilityChange,
+          );
+          resolve();
+        };
+        page.addEventListener(
+          "visibilitychange",
+          handleVisibilityChange,
+        );
+        // Avoid missing a transition that happened between the initial check
+        // and listener registration.
+        handleVisibilityChange();
+      });
+      if (this.visibilityResumeSettleMs > 0) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, this.visibilityResumeSettleMs),
+        );
+      }
+    } while (page.visibilityState === "hidden");
+    this.log(
+      `${this.side}: WebFlasher is visible; resuming the Bluetooth update from the verified command boundary.`,
+      "success",
+    );
   }
 
   async connect() {
@@ -458,6 +509,7 @@ export class G2BleOtaSession {
   }
 
   async sendControl(opcode, data = new Uint8Array(), timeoutMs) {
+    await this.waitForForeground("the next control command");
     this.drainAcks();
     const frames = makeBleControlFrames(
       opcode,
@@ -472,6 +524,7 @@ export class G2BleOtaSession {
   }
 
   async sendBlock(block) {
+    await this.waitForForeground("the next 4 KB block");
     const sequence = this.nextSequence();
     const frames = [
       ...makeBleControlFrames(0x02, new Uint8Array(), sequence),
@@ -602,25 +655,32 @@ export class G2BleOtaSession {
             (blockIndex + 1) * G2_BLE_BLOCK_BYTES,
           );
           let accepted = false;
+          let lastStatus = null;
           for (
             let blockAttempt = 1;
             blockAttempt <= this.blockNakAttempts;
             blockAttempt += 1
           ) {
             const status = await this.sendBlock(block);
+            lastStatus = status;
             if (status === 0) {
               accepted = true;
               break;
             }
             this.log(
-              `${this.side}: ${component.name} block ${blockIndex + 1}/${blockCount} explicitly rejected with ${status} (${g2BleStatusName(status)}) · safe resend ${blockAttempt}/${this.blockNakAttempts}.`,
+              `${this.side}: ${component.name} block ${blockIndex + 1}/${blockCount} explicitly rejected with ${status} (${g2BleStatusName(status)}) · block attempt ${blockAttempt}/${this.blockNakAttempts}. The rejected block did not advance and may be sent again.`,
               "warn",
             );
           }
           if (!accepted) {
             throw new G2BleOtaError(
-              `${this.side}: ${component.name} block ${blockIndex + 1} remained rejected after ${this.blockNakAttempts} safe resends.`,
-              { code: "BLOCK_REJECTED", blockIndex },
+              `${this.side}: ${component.name} block ${blockIndex + 1} remained rejected after ${this.blockNakAttempts} block attempts.`,
+              {
+                code: "BLOCK_REJECTED",
+                blockIndex,
+                blockAttempts: this.blockNakAttempts,
+                status: lastStatus,
+              },
             );
           }
           attemptAccepted += block.length;
@@ -676,6 +736,8 @@ export class G2BleOtaSession {
         code: "COMPONENT_FAILED",
         cause: lastError,
         componentIndex,
+        componentName: component.name,
+        attempts: this.componentAttempts,
       },
     );
   }
@@ -683,7 +745,6 @@ export class G2BleOtaSession {
   async flashBundle(firmware, { progressBase = 0, progressSpan = 1 } = {}) {
     assertPinnedG2BleBundle(firmware);
     this.sequence = 0;
-    await this.connect();
     const totalBytes = firmware.componentImages.reduce(
       (sum, component) => sum + component.payload.length,
       0,
@@ -698,8 +759,9 @@ export class G2BleOtaSession {
       progressBase,
       `${this.side}: starting the pinned six-component Bluetooth package`,
     );
-    this.startHeartbeat();
     try {
+      await this.connect();
+      this.startHeartbeat();
       const beginStatus = await this.sendControl(0x00);
       if (!END_OK.has(beginStatus)) {
         this.log(
@@ -730,6 +792,48 @@ export class G2BleOtaSession {
           throw this.heartbeatError;
         }
       }
+    } catch (error) {
+      const failureCause = error?.cause;
+      const partialResult = {
+        side: this.side,
+        deviceName: this.device.name,
+        imageSha256: firmware.fileSha256,
+        version: firmware.g2Version,
+        components: [...componentResults],
+        completedComponentCount: componentResults.length,
+        blockAcks: componentResults.reduce(
+          (sum, component) => sum + component.blocks,
+          0,
+        ),
+        verifiedPayloadBytes: componentResults.reduce(
+          (sum, component) => sum + component.payloadBytes,
+          0,
+        ),
+        progressHighWaterBytes: totals.highWater,
+        foregroundPauses: this.foregroundPauses,
+        failure: {
+          message: error?.message ?? String(error),
+          code: error?.code ?? null,
+          componentIndex: error?.componentIndex ?? null,
+          componentName: error?.componentName ?? null,
+          attempts: error?.attempts ?? null,
+          cause: failureCause
+            ? {
+                message: failureCause.message ?? String(failureCause),
+                code: failureCause.code ?? null,
+                status: failureCause.status ?? null,
+                blockIndex: failureCause.blockIndex ?? null,
+                blockAttempts: failureCause.blockAttempts ?? null,
+                opcode: failureCause.opcode ?? null,
+              }
+            : null,
+        },
+        outcome: "failed_or_partial",
+      };
+      if (error && typeof error === "object") {
+        error.partialResult = partialResult;
+      }
+      throw error;
     } finally {
       this.stopHeartbeat();
     }
@@ -747,6 +851,7 @@ export class G2BleOtaSession {
         (sum, component) => sum + component.blocks,
         0,
       ),
+      foregroundPauses: this.foregroundPauses,
       outcome: "success",
     };
   }
