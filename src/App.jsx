@@ -2807,7 +2807,7 @@ function App() {
             }));
             setSessionProgress(
               (routeProgress.left + routeProgress.right) / 2,
-              `${detail} · Left ${leftPercent}% · Right ${rightPercent}%`,
+              `Left ${leftPercent}% · Right ${rightPercent}%`,
             );
           };
           const routesToFlash = [];
