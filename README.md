@@ -1447,16 +1447,19 @@ atomically published to `/root/share/webflasher/` on that host. Home
 Assistant's Caddy container sees the same directory as `/share/webflasher`.
 The previous release is retained at `/root/share/.webflasher-previous`. Every
 build emits `release.json` with its full Git commit identity and the SHA-256 of
-the catalog shipped with that build. The deploy job also stages any versioned
-firmware directories into the separate archive root, atomically publishes the
-catalog index last, and verifies the live catalog plus its newest reviewed
-custom binary. This preserves the larger historical archive while preventing
-the app and firmware menu from drifting across releases.
+the catalog shipped with that build. The same atomic web-root swap publishes
+that exact catalog as `/firmware-catalog.json`; only the much larger versioned
+firmware archive remains separate. Caddy serves the tracked reviewed
+`2.2.6.11` directory from the atomic web root and falls back to the archive for
+historical official versions. The deploy job also stages any new versioned
+directories there and verifies the release-bound catalog plus its newest
+reviewed custom binary. This preserves the historical archive without allowing
+an external mirror refresh to change the running app's menu or reviewed target.
 
 Before Automatic Apply or any Advanced Case/Glasses firmware write, the
 running tab makes a cache-busted, `no-store` request for `release.json` and
 requires an exact commit match and an exact hash match for the independently
-served firmware catalog. It also refuses temple mutation when the catalog is
+published release catalog. It also refuses temple mutation when the catalog is
 missing a newer image pinned by the running build. An open tab from an older
 deployment—or the narrow boundary between the site swap and final catalog
 rename—therefore stops before resetting, erasing, selecting a bank, or

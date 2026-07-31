@@ -27,17 +27,20 @@ function resolveBuildSha() {
   return "development";
 }
 
-function firmwareCatalogSha256() {
+function firmwareCatalogSource() {
   const catalogPath = fileURLToPath(
     new URL(
       "./public/firmware-updates/source-files/index.json",
       import.meta.url,
     ),
   );
-  return createHash("sha256").update(readFileSync(catalogPath)).digest("hex");
+  return readFileSync(catalogPath);
 }
 
-function releaseManifest(buildSha, catalogSha256) {
+function releaseManifest(buildSha, catalogSource) {
+  const catalogSha256 = createHash("sha256")
+    .update(catalogSource)
+    .digest("hex");
   const source = `${JSON.stringify({
     schemaVersion: 1,
     buildSha,
@@ -47,7 +50,15 @@ function releaseManifest(buildSha, catalogSha256) {
     name: "webflasher-release-manifest",
     configureServer(server) {
       server.middlewares.use((request, response, next) => {
-        if (new URL(request.url, "http://localhost").pathname !== "/release.json") {
+        const pathname = new URL(request.url, "http://localhost").pathname;
+        if (pathname === "/firmware-catalog.json") {
+          response.statusCode = 200;
+          response.setHeader("Content-Type", "application/json; charset=utf-8");
+          response.setHeader("Cache-Control", "no-store");
+          response.end(catalogSource);
+          return;
+        }
+        if (pathname !== "/release.json") {
           next();
           return;
         }
@@ -63,15 +74,20 @@ function releaseManifest(buildSha, catalogSha256) {
         fileName: "release.json",
         source,
       });
+      this.emitFile({
+        type: "asset",
+        fileName: "firmware-catalog.json",
+        source: catalogSource,
+      });
     },
   };
 }
 
 const buildSha = resolveBuildSha();
-const catalogSha256 = firmwareCatalogSha256();
+const catalogSource = firmwareCatalogSource();
 
 export default defineConfig({
-  plugins: [react(), releaseManifest(buildSha, catalogSha256)],
+  plugins: [react(), releaseManifest(buildSha, catalogSource)],
   define: {
     __WEBFLASHER_BUILD_SHA__: JSON.stringify(buildSha),
   },

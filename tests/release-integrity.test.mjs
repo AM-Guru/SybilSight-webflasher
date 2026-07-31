@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  WEBFLASHER_FIRMWARE_CATALOG_URL,
   WebFlasherReleaseIntegrityError,
   assertCurrentWebFlasherRelease,
 } from "../src/lib/releaseIntegrity.js";
@@ -59,7 +60,9 @@ test("permits mutation only when the running and cache-busted deployed releases 
   assert.equal(requests[0][1].cache, "no-store");
   assert.match(requests[1][0], /release=aaaaaaaa/);
   assert.match(requests[1][0], /fresh=42/);
+  assert.match(requests[1][0], /^\/firmware-catalog\.json\?/);
   assert.equal(requests[1][1].cache, "no-store");
+  assert.equal(WEBFLASHER_FIRMWARE_CATALOG_URL, "/firmware-catalog.json");
 });
 
 test("blocks a stale open tab before any device mutation", async () => {

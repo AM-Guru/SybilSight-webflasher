@@ -44,7 +44,7 @@ import { G2CaseSession } from "../src/lib/serial.js";
 const DEFAULT_RELAY_URL =
   "wss://webflasher.sybilsight.com/remote-support/ws";
 const KEYCHAIN_SERVICE = "SybilSight WebFlasher Remote Support";
-const CATALOG_INDEX_PATH = "firmware-updates/source-files/index.json";
+const CATALOG_INDEX_PATH = "firmware-catalog.json";
 
 let connection = null;
 let remotePort = null;

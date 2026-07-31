@@ -93,6 +93,7 @@ import {
 import { REVIEWED_CASE_VERSION } from "./lib/pogoFlashBridge.js";
 import {
   WEBFLASHER_BUILD_LABEL,
+  WEBFLASHER_FIRMWARE_CATALOG_URL,
   assertCurrentWebFlasherRelease,
 } from "./lib/releaseIntegrity.js";
 import {
@@ -1786,7 +1787,7 @@ function App() {
 
   useEffect(() => {
     let active = true;
-    fetch("/firmware-updates/source-files/index.json", { cache: "no-store" })
+    fetch(WEBFLASHER_FIRMWARE_CATALOG_URL, { cache: "no-store" })
       .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json();

@@ -7,6 +7,8 @@ webflasher.sybilsight.com {
 
 	@releaseManifest path /release.json
 	header @releaseManifest Cache-Control "no-store, max-age=0"
+	@releaseCatalog path /firmware-catalog.json
+	header @releaseCatalog Cache-Control "no-store, max-age=0"
 
 	@appShell path / /index.html
 	header @appShell Cache-Control "no-store, max-age=0"
@@ -26,6 +28,17 @@ webflasher.sybilsight.com {
 	handle /remote-support/healthz {
 		rewrite * /healthz
 		reverse_proxy local-sybilsight-remote-support:8787
+	}
+	# The release-bound catalog and reviewed CFW are present in the same atomic
+	# web-root swap as release.json. Keep older official binaries in the larger
+	# shared archive without allowing an archive refresh to replace these files.
+	handle /firmware-updates/source-files/index.json {
+		root * /share/webflasher
+		file_server
+	}
+	handle /firmware-updates/source-files/2.2.6.11/* {
+		root * /share/webflasher
+		file_server
 	}
 	handle /firmware-updates/* {
 		root * /share/sybilsight

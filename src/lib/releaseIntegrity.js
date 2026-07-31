@@ -12,6 +12,12 @@ export const WEBFLASHER_BUILD_LABEL = BUILD_SHA_PATTERN.test(
   ? WEBFLASHER_BUILD_SHA.slice(0, 7)
   : WEBFLASHER_BUILD_SHA;
 
+// This catalog is emitted into the same atomically swapped web root as the
+// app and release.json. Versioned firmware binaries remain in the larger
+// shared archive, but an external mirror refresh can no longer change the
+// release-bound menu or invalidate a running WebFlasher.
+export const WEBFLASHER_FIRMWARE_CATALOG_URL = "/firmware-catalog.json";
+
 export class WebFlasherReleaseIntegrityError extends Error {
   constructor(message, details = {}) {
     super(message);
@@ -61,7 +67,7 @@ export async function assertCurrentWebFlasherRelease({
   cryptoImpl = globalThis.crypto,
   currentBuildSha = WEBFLASHER_BUILD_SHA,
   releaseUrl = "/release.json",
-  firmwareCatalogUrl = "/firmware-updates/source-files/index.json",
+  firmwareCatalogUrl = WEBFLASHER_FIRMWARE_CATALOG_URL,
   cacheToken = Date.now(),
 } = {}) {
   if (typeof fetchImpl !== "function") {

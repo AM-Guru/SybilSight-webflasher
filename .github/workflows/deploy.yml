@@ -53,6 +53,7 @@ jobs:
           set -euo pipefail
           test -s dist/index.html
           test -s dist/release.json
+          test -s dist/firmware-catalog.json
           test -d dist/assets
           node -e '
             const crypto = require("node:crypto");
@@ -61,11 +62,15 @@ jobs:
             if (release.schemaVersion !== 1 || release.buildSha !== process.env.GITHUB_SHA) {
               throw new Error("Release manifest " + JSON.stringify(release) + " does not match " + process.env.GITHUB_SHA);
             }
-            const catalogPath = "dist/firmware-updates/source-files/index.json";
+            const catalogPath = "dist/firmware-catalog.json";
             const catalogBytes = fs.readFileSync(catalogPath);
             const catalogSha256 = crypto.createHash("sha256").update(catalogBytes).digest("hex");
             if (release.firmwareCatalogSha256 !== catalogSha256) {
               throw new Error("Release firmware catalog digest does not match " + catalogPath);
+            }
+            const archiveCatalogPath = "dist/firmware-updates/source-files/index.json";
+            if (!catalogBytes.equals(fs.readFileSync(archiveCatalogPath))) {
+              throw new Error("Release-bound and archive firmware catalogs differ");
             }
             const catalog = JSON.parse(catalogBytes);
             const newestCustom = catalog.releases
@@ -348,7 +353,7 @@ jobs:
             --header 'Cache-Control: no-cache' \
             --output "${observed_release_file}" \
             "${release_url}"
-          catalog_url="https://webflasher.sybilsight.com/firmware-updates/source-files/index.json?verify=${GITHUB_SHA}&run=${GITHUB_RUN_ID}"
+          catalog_url="https://webflasher.sybilsight.com/firmware-catalog.json?verify=${GITHUB_SHA}&run=${GITHUB_RUN_ID}"
           curl --fail --silent --show-error \
             --header 'Cache-Control: no-cache' \
             --output "${observed_catalog_file}" \

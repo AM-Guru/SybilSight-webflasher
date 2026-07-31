@@ -65,13 +65,23 @@ option B:
 
 - versioned directories present in `dist/firmware-updates/source-files/` are
   copied to hidden incoming paths in the archive and renamed atomically;
-- the site release is swapped;
-- the catalog index is renamed last, so it never advertises a partial binary;
+- the site release is swapped with its exact catalog at
+  `/firmware-catalog.json`;
+- the shared archive index is still renamed last for older clients, but it is
+  no longer the WebFlasher's release authority;
 - `release.json` binds the app commit to the exact catalog SHA-256;
 - the browser refuses any temple mutation when that hash or pinned-image
   coverage differs; and
 - deployment verification downloads and hashes the live newest reviewed custom
   target.
+
+This split is intentional. The shared `/share/sybilsight` archive can be
+refreshed or restored independently and contains official historical binaries
+that are too large to keep in this repository. Its mutable `index.json` must
+not be able to change the menu or invalidate a WebFlasher already published by
+an atomic `/share/webflasher` release swap. Caddy also serves the tracked
+reviewed `2.2.6.11` directory from that atomic web root; other versioned paths
+fall back to the historical archive.
 
 ## Guard in the app
 
