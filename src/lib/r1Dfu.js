@@ -60,6 +60,8 @@ const OP_SELECT = 0x06;
 const OBJECT_COMMAND = 0x01;
 const OBJECT_DATA = 0x02;
 const PACKET_BYTES = 20;
+export const R1_DFU_PACKET_RECEIPT_INTERVAL = 12;
+const PACKET_RECEIPT_TIMEOUT_MS = 10000;
 
 function asBytes(value) {
   return value instanceof Uint8Array ? value : new Uint8Array(value);
@@ -241,20 +243,59 @@ export function parseDfuResponse(value, expectedOperation) {
 }
 
 export class R1SecureDfuSession {
-  constructor(device, { onProgress = () => {} } = {}) {
+  constructor(
+    device,
+    {
+      onProgress = () => {},
+      packetReceiptInterval = R1_DFU_PACKET_RECEIPT_INTERVAL,
+      packetReceiptTimeoutMs = PACKET_RECEIPT_TIMEOUT_MS,
+    } = {},
+  ) {
+    if (
+      !Number.isInteger(packetReceiptInterval)
+      || packetReceiptInterval < 1
+      || packetReceiptInterval > 0xffff
+    ) {
+      throw new Error("R1 DFU packet-receipt interval must be between 1 and 65535.");
+    }
+    if (!Number.isFinite(packetReceiptTimeoutMs) || packetReceiptTimeoutMs <= 0) {
+      throw new Error("R1 DFU packet-receipt timeout must be positive.");
+    }
     this.device = device;
     this.onProgress = onProgress;
+    this.configuredPacketReceiptInterval = packetReceiptInterval;
+    this.activePacketReceiptInterval = 0;
+    this.packetReceiptTimeoutMs = packetReceiptTimeoutMs;
     this.control = null;
     this.packet = null;
     this.pendingResponse = null;
+    this.pendingPacketReceipt = null;
     this.handleNotification = this.handleNotification.bind(this);
   }
 
   handleNotification(event) {
+    const value = event.target.value;
+    const bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    if (
+      this.pendingPacketReceipt
+      && bytes.length >= 2
+      && bytes[0] === RESPONSE
+      && bytes[1] === OP_CALCULATE_CRC
+    ) {
+      const pending = this.pendingPacketReceipt;
+      this.pendingPacketReceipt = null;
+      clearTimeout(pending.timeout);
+      try {
+        pending.resolve(parseDfuResponse(value, OP_CALCULATE_CRC));
+      } catch (error) {
+        pending.reject(error);
+      }
+      return;
+    }
     if (!this.pendingResponse) return;
     try {
       const payload = parseDfuResponse(
-        event.target.value,
+        value,
         this.pendingResponse.operation,
       );
       if (!payload) return;
@@ -282,7 +323,10 @@ export class R1SecureDfuSession {
     this.packet = await service.getCharacteristic(R1_DFU_PACKET_UUID);
     this.control.addEventListener("characteristicvaluechanged", this.handleNotification);
     await this.control.startNotifications();
-    await this.command(new Uint8Array([OP_SET_PRN, 0x00, 0x00]), OP_SET_PRN);
+    // Nordic's reference updater disables PRNs for the short command object,
+    // then enables them only after the signed init packet has executed. That
+    // keeps the packet counter aligned to the application data stream.
+    await this.setPacketReceiptNotifications(0);
   }
 
   command(bytes, operation, timeoutMs = 10000) {
@@ -321,28 +365,111 @@ export class R1SecureDfuSession {
     );
   }
 
-  async writePackets(bytes) {
-    for (let offset = 0; offset < bytes.length; offset += PACKET_BYTES) {
-      const chunk = bytes.subarray(offset, Math.min(offset + PACKET_BYTES, bytes.length));
-      if (typeof this.packet.writeValueWithoutResponse === "function") {
-        await this.packet.writeValueWithoutResponse(chunk);
-      } else {
-        await this.packet.writeValueWithResponse(chunk);
+  async setPacketReceiptNotifications(interval) {
+    if (!Number.isInteger(interval) || interval < 0 || interval > 0xffff) {
+      throw new Error("R1 DFU packet-receipt interval is invalid.");
+    }
+    await this.command(
+      new Uint8Array([OP_SET_PRN, interval & 0xff, (interval >>> 8) & 0xff]),
+      OP_SET_PRN,
+    );
+    this.activePacketReceiptInterval = interval;
+  }
+
+  waitForPacketReceipt() {
+    if (this.pendingPacketReceipt) {
+      throw new Error("An R1 DFU packet receipt is already pending.");
+    }
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        if (this.pendingPacketReceipt?.reject === reject) {
+          this.pendingPacketReceipt = null;
+        }
+        reject(new Error("R1 DFU packet-receipt notification timed out."));
+      }, this.packetReceiptTimeoutMs);
+      this.pendingPacketReceipt = { resolve, reject, timeout };
+    });
+  }
+
+  rejectPendingPacketReceipt(error) {
+    const pending = this.pendingPacketReceipt;
+    if (!pending) return;
+    this.pendingPacketReceipt = null;
+    clearTimeout(pending.timeout);
+    pending.reject(error);
+  }
+
+  verifyChecksumPayload(payload, expectedOffset, expectedCrc, label = "verification") {
+    if (payload.length < 8) throw new Error("R1 DFU returned a short CRC response.");
+    const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+    const actualOffset = view.getUint32(0, true);
+    const actualCrc = view.getUint32(4, true);
+    if (actualOffset !== expectedOffset || actualCrc !== expectedCrc) {
+      const detail = actualOffset === expectedOffset
+        ? `checksum mismatch at byte ${actualOffset}`
+        : `byte ${actualOffset} (expected ${expectedOffset})`;
+      throw new Error(
+        `R1 DFU ${label} failed at ${detail}. Re-enter DFU mode and retry.`,
+      );
+    }
+  }
+
+  async writePackets(bytes, { baseOffset = 0, checksumSource = bytes } = {}) {
+    const data = asBytes(bytes);
+    const source = asBytes(checksumSource);
+    if (
+      !Number.isInteger(baseOffset)
+      || baseOffset < 0
+      || baseOffset + data.length > source.length
+    ) {
+      throw new Error("R1 DFU packet checksum range is invalid.");
+    }
+
+    let packetsSinceReceipt = 0;
+    for (let offset = 0; offset < data.length; offset += PACKET_BYTES) {
+      const end = Math.min(offset + PACKET_BYTES, data.length);
+      const chunk = data.subarray(offset, end);
+      packetsSinceReceipt += 1;
+      const receiptExpected =
+        this.activePacketReceiptInterval > 0
+        && packetsSinceReceipt === this.activePacketReceiptInterval;
+      // Register before the boundary packet is written: a fast bootloader may
+      // notify before Chrome resolves writeValueWithoutResponse().
+      const receipt = receiptExpected ? this.waitForPacketReceipt() : null;
+      try {
+        const supportsWriteWithoutResponse =
+          typeof this.packet.writeValueWithoutResponse === "function"
+          && this.packet.properties?.writeWithoutResponse !== false;
+        if (supportsWriteWithoutResponse) {
+          await this.packet.writeValueWithoutResponse(chunk);
+        } else {
+          await this.packet.writeValueWithResponse(chunk);
+        }
+      } catch (error) {
+        if (receipt) {
+          this.rejectPendingPacketReceipt(error);
+          await receipt.catch(() => {});
+        }
+        throw error;
+      }
+
+      if (receipt) {
+        const expectedOffset = baseOffset + end;
+        const payload = await receipt;
+        this.verifyChecksumPayload(
+          payload,
+          expectedOffset,
+          crc32(source.subarray(0, expectedOffset)),
+          "packet-receipt verification",
+        );
+        packetsSinceReceipt = 0;
       }
     }
   }
 
   async verifyOffset(expectedOffset, expectedCrc) {
     const response = await this.command(new Uint8Array([OP_CALCULATE_CRC]), OP_CALCULATE_CRC);
-    if (response.length < 8) throw new Error("R1 DFU returned a short CRC response.");
-    const view = new DataView(response.buffer, response.byteOffset, response.byteLength);
-    const actualOffset = view.getUint32(0, true);
-    const actualCrc = view.getUint32(4, true);
-    if (actualOffset !== expectedOffset || actualCrc !== expectedCrc) {
-      throw new Error(
-        `R1 DFU verification failed at byte ${actualOffset} (expected ${expectedOffset}). Re-enter DFU mode and retry.`,
-      );
-    }
+    this.verifyChecksumPayload(response, expectedOffset, expectedCrc);
   }
 
   async transferInitPacket(initPacket) {
@@ -354,7 +481,10 @@ export class R1SecureDfuSession {
       const expectedCrc = crc32(initPacket.subarray(0, selected.offset));
       if (selected.crc === expectedCrc && selected.offset > 0) {
         if (selected.offset < initPacket.length) {
-          await this.writePackets(initPacket.subarray(selected.offset));
+          await this.writePackets(initPacket.subarray(selected.offset), {
+            baseOffset: selected.offset,
+            checksumSource: initPacket,
+          });
           await this.verifyOffset(initPacket.length, crc32(initPacket));
         }
         // A matching complete command may have disconnected before EXECUTE was
@@ -402,7 +532,10 @@ export class R1SecureDfuSession {
         application.length,
         offset + (selected.maximumSize - (offset % selected.maximumSize)),
       );
-      await this.writePackets(application.subarray(offset, boundary));
+      await this.writePackets(application.subarray(offset, boundary), {
+        baseOffset: offset,
+        checksumSource: application,
+      });
       offset = boundary;
       await this.verifyOffset(offset, crc32(application.subarray(0, offset)));
       await this.command(new Uint8Array([OP_EXECUTE]), OP_EXECUTE);
@@ -417,7 +550,10 @@ export class R1SecureDfuSession {
         // data object; without this pause initial packets can be discarded.
         await new Promise((resolve) => setTimeout(resolve, 400));
       }
-      await this.writePackets(application.subarray(offset, end));
+      await this.writePackets(application.subarray(offset, end), {
+        baseOffset: offset,
+        checksumSource: application,
+      });
       offset = end;
       await this.verifyOffset(offset, crc32(application.subarray(0, offset)));
       await this.command(new Uint8Array([OP_EXECUTE]), OP_EXECUTE);
@@ -434,6 +570,9 @@ export class R1SecureDfuSession {
       await this.connect();
       this.onProgress(0.01, "Sending the signed R1 init packet");
       await this.transferInitPacket(asBytes(initPacket));
+      await this.setPacketReceiptNotifications(
+        this.configuredPacketReceiptInterval,
+      );
       this.onProgress(0.02, "Transferring the reviewed R1 application");
       await this.transferApplication(asBytes(application));
       this.onProgress(1, "R1 update transferred; the ring is restarting");
@@ -445,6 +584,10 @@ export class R1SecureDfuSession {
         );
       }
       this.pendingResponse = null;
+      if (this.pendingPacketReceipt) {
+        clearTimeout(this.pendingPacketReceipt.timeout);
+        this.pendingPacketReceipt = null;
+      }
     }
   }
 }

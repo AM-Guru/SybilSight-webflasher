@@ -4,12 +4,22 @@ import test from "node:test";
 import {
   R1_PINNED_RELEASE,
   R1_PINNED_RELEASES,
+  R1_DFU_PACKET_RECEIPT_INTERVAL,
   R1SecureDfuSession,
   assertPinnedR1Release,
   crc32,
   parseDfuResponse,
   prepareR1DfuPackage,
 } from "../src/lib/r1Dfu.js";
+
+function checksumResponse(offset, checksum) {
+  const bytes = new Uint8Array(11);
+  bytes.set([0x60, 0x03, 0x01]);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(3, offset, true);
+  view.setUint32(7, checksum, true);
+  return view;
+}
 
 const archivePath = new URL(
   "../public/firmware-updates/source-files/r1/2.2.7.0005/r1-2.2.7.0005-be359b28954f8fe4a94ec21a58415d59.zip",
@@ -118,4 +128,125 @@ test("R1 DFU commits a matching boundary before creating the next data object", 
     ["verify", 8, crc32(application)],
     ["command", [0x04]],
   ]);
+});
+
+test("R1 DFU keeps PRNs disabled for init and enables the Nordic 12-packet window for data", async () => {
+  class OrderedDfuSession extends R1SecureDfuSession {
+    constructor() {
+      super({});
+      this.events = [];
+    }
+
+    async connect() {
+      this.events.push(["connect"]);
+      await this.setPacketReceiptNotifications(0);
+    }
+
+    async setPacketReceiptNotifications(interval) {
+      this.activePacketReceiptInterval = interval;
+      this.events.push(["prn", interval]);
+    }
+
+    async transferInitPacket() {
+      this.events.push(["init", this.activePacketReceiptInterval]);
+    }
+
+    async transferApplication() {
+      this.events.push(["application", this.activePacketReceiptInterval]);
+    }
+  }
+
+  const session = new OrderedDfuSession();
+  await session.flash({
+    initPacket: Uint8Array.from([1]),
+    application: Uint8Array.from([2]),
+  });
+
+  assert.equal(R1_DFU_PACKET_RECEIPT_INTERVAL, 12);
+  assert.deepEqual(session.events, [
+    ["connect"],
+    ["prn", 0],
+    ["init", 0],
+    ["prn", 12],
+    ["application", 12],
+  ]);
+});
+
+test("R1 DFU packet receipts bound write-without-response bursts below the observed queue limit", async () => {
+  const application = Uint8Array.from(
+    { length: 4096 },
+    (_unused, index) => index & 0xff,
+  );
+  const received = [];
+  let packetsSinceReceipt = 0;
+  let queuedPackets = 0;
+  let maximumQueuedPackets = 0;
+  let session;
+
+  const packet = {
+    properties: { writeWithoutResponse: true },
+    async writeValueWithoutResponse(chunk) {
+      queuedPackets += 1;
+      maximumQueuedPackets = Math.max(maximumQueuedPackets, queuedPackets);
+      assert.ok(queuedPackets < 63, "the browser queue must be drained before 63 packets");
+      received.push(...chunk);
+      packetsSinceReceipt += 1;
+      if (packetsSinceReceipt === R1_DFU_PACKET_RECEIPT_INTERVAL) {
+        packetsSinceReceipt = 0;
+        const offset = received.length;
+        const checksum = crc32(Uint8Array.from(received));
+        queueMicrotask(() => {
+          queuedPackets = 0;
+          session.handleNotification({
+            target: { value: checksumResponse(offset, checksum) },
+          });
+        });
+      }
+    },
+  };
+
+  session = new R1SecureDfuSession({}, { packetReceiptTimeoutMs: 100 });
+  session.packet = packet;
+  session.activePacketReceiptInterval = R1_DFU_PACKET_RECEIPT_INTERVAL;
+  await session.writePackets(application, { checksumSource: application });
+
+  assert.deepEqual(Uint8Array.from(received), application);
+  assert.equal(maximumQueuedPackets, R1_DFU_PACKET_RECEIPT_INTERVAL);
+  assert.equal(session.pendingPacketReceipt, null);
+});
+
+test("R1 DFU fails at the first packet receipt whose device offset loses bytes", async () => {
+  const application = Uint8Array.from(
+    { length: 4096 },
+    (_unused, index) => index & 0xff,
+  );
+  let writes = 0;
+  let session;
+  session = new R1SecureDfuSession({}, { packetReceiptTimeoutMs: 100 });
+  session.activePacketReceiptInterval = R1_DFU_PACKET_RECEIPT_INTERVAL;
+  session.packet = {
+    properties: { writeWithoutResponse: true },
+    async writeValueWithoutResponse() {
+      writes += 1;
+      if (writes === R1_DFU_PACKET_RECEIPT_INTERVAL) {
+        const reportedOffset = 220;
+        queueMicrotask(() => {
+          session.handleNotification({
+            target: {
+              value: checksumResponse(
+                reportedOffset,
+                crc32(application.subarray(0, reportedOffset)),
+              ),
+            },
+          });
+        });
+      }
+    },
+  };
+
+  await assert.rejects(
+    () => session.writePackets(application, { checksumSource: application }),
+    /packet-receipt verification failed at byte 220 \(expected 240\)/,
+  );
+  assert.equal(writes, R1_DFU_PACKET_RECEIPT_INTERVAL);
 });
