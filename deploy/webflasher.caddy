@@ -40,6 +40,12 @@ webflasher.sybilsight.com {
 		root * /share/webflasher
 		file_server
 	}
+	# R1 Secure DFU packages are small, release-bound assets carried by the
+	# WebFlasher build rather than the separate historical G2 archive.
+	handle /firmware-updates/source-files/r1/* {
+		root * /share/webflasher
+		file_server
+	}
 	handle /firmware-updates/* {
 		root * /share/sybilsight
 		file_server

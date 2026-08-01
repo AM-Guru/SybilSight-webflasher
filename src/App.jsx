@@ -109,6 +109,14 @@ import {
   g2BleTargetVersionProof,
   requestG2BleDevice,
 } from "./lib/g2BleOta.js";
+import {
+  assertPinnedR1Release,
+  enterR1DfuMode,
+  flashR1SecureDfu,
+  prepareR1DfuPackage,
+  requestR1ApplicationDevice,
+  requestR1DfuDevice,
+} from "./lib/r1Dfu.js";
 
 const EMPTY_PROGRESS = {
   fraction: 0,
@@ -146,6 +154,8 @@ const OPERATION_LABELS = Object.freeze({
   "temple-flash": "Restore Smart Glasses",
   "ble-temple-flash": "Restore Smart Glasses over Bluetooth",
   "automatic-apply": "Recover Smart Glasses over USB",
+  "ring-dfu-enter": "Restart R1 in update mode",
+  "ring-dfu": "Update R1 Ring",
   stage: "Stage Case bank",
   activate: "Activate Case bank",
 });
@@ -156,6 +166,8 @@ const PERSISTENT_MUTATION_OPERATIONS = new Set([
   "temple-flash",
   "stage",
   "activate",
+  "ring-dfu-enter",
+  "ring-dfu",
 ]);
 const FIRMWARE_CATALOG_MUTATION_OPERATIONS = new Set([
   "automatic-apply",
@@ -1289,11 +1301,23 @@ function App() {
     typeof window === "undefined"
       ? ""
       : new URLSearchParams(window.location.search).get("support") ?? "";
+  const linkedDevice =
+    typeof window === "undefined"
+      ? ""
+      : new URLSearchParams(window.location.search).get("device") ?? "";
   const [report, setReport] = useState(null);
   const [backup, setBackup] = useState(null);
   const [catalog, setCatalog] = useState([]);
   const [catalogState, setCatalogState] = useState("loading");
   const [selectedReleaseId, setSelectedReleaseId] = useState("");
+  const [ringCatalog, setRingCatalog] = useState([]);
+  const [selectedRingReleaseId, setSelectedRingReleaseId] = useState("");
+  const [ringApplicationDevice, setRingApplicationDevice] = useState(null);
+  const [ringDfuDevice, setRingDfuDevice] = useState(null);
+  const [ringReady, setRingReady] = useState(false);
+  const [ringStatus, setRingStatus] = useState(
+    "Select your connected R1, restart it into update mode, then select the R1 DFU device.",
+  );
   const [firmware, setFirmware] = useState(null);
   const [staged, setStaged] = useState(null);
   const [progress, setProgress] = useState(EMPTY_PROGRESS);
@@ -1868,6 +1892,11 @@ function App() {
           : [];
         setCatalog(releases);
         setSelectedReleaseId(findDefaultFirmwareRelease(releases)?.id ?? "");
+        const ringReleases = Array.isArray(value.ringReleases)
+          ? value.ringReleases
+          : [];
+        setRingCatalog(ringReleases);
+        setSelectedRingReleaseId(ringReleases[0]?.id ?? "");
         setCatalogState("ready");
       })
       .catch(() => {
@@ -1877,6 +1906,13 @@ function App() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (linkedDevice.toLowerCase() !== "r1" || catalogState !== "ready") return;
+    document
+      .getElementById("ring-update")
+      ?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [catalogState, linkedDevice]);
 
   // Warn when the served library is behind the images this build already
   // trusts — the condition that let production offer only a legacy CFW while
@@ -3882,7 +3918,74 @@ function App() {
   const latestCaseRelease = findLatestOfficialStockRelease(caseReleases);
   const latestCaseFirmwareRelease = findLatestCaseFirmwareRelease(catalog);
   const selectedRelease = catalog.find((item) => item.id === selectedReleaseId);
+  const selectedRingRelease = ringCatalog.find(
+    (item) => item.id === selectedRingReleaseId,
+  );
+  const selectRingApplication = async () => {
+    setError("");
+    try {
+      const device = await requestR1ApplicationDevice();
+      setRingApplicationDevice(device);
+      setRingDfuDevice(null);
+      setRingReady(false);
+      setRingStatus(`${device.name ?? "R1"} selected and ready to enter update mode.`);
+      addLog(`Selected R1 application device ${device.name ?? device.id}.`, "success");
+    } catch (caught) {
+      if (caught?.name === "NotFoundError") return;
+      setError(caught?.message ?? String(caught));
+    }
+  };
+  const restartRingForDfu = () =>
+    run("ring-dfu-enter", async () => {
+      assertPinnedR1Release(selectedRingRelease);
+      await enterR1DfuMode(ringApplicationDevice);
+      setRingApplicationDevice(null);
+      setRingStatus(
+        "R1 update mode is advertising. Select the R1 DFU device in the next chooser.",
+      );
+      addLog("R1 restarted into its signed Nordic Secure DFU bootloader.", "success");
+    });
+  const selectRingBootloader = async () => {
+    setError("");
+    try {
+      const device = await requestR1DfuDevice();
+      setRingDfuDevice(device);
+      setRingReady(false);
+      setRingStatus(`${device.name ?? "R1 DFU"} selected. Confirm the safety check to update.`);
+      addLog(`Selected R1 DFU device ${device.name ?? device.id}.`, "success");
+    } catch (caught) {
+      if (caught?.name === "NotFoundError") return;
+      setError(caught?.message ?? String(caught));
+    }
+  };
+  const flashRingFirmware = () =>
+    run("ring-dfu", async () => {
+      const release = assertPinnedR1Release(selectedRingRelease);
+      setSessionProgress(0.01, "Downloading and verifying the reviewed R1 package");
+      const response = await fetchCatalogRelease(release, "R1 firmware archive");
+      const prepared = await prepareR1DfuPackage(
+        new Uint8Array(await response.arrayBuffer()),
+        release,
+      );
+      addLog(
+        `R1 package integrity passed · ${release.version} · ${release.sha256.slice(0, 16)}…`,
+        "success",
+      );
+      await flashR1SecureDfu(ringDfuDevice, prepared, {
+        onProgress(fraction, detail) {
+          setSessionProgress(0.02 + fraction * 0.98, detail);
+        },
+      });
+      setRingDfuDevice(null);
+      setRingReady(false);
+      setRingStatus(
+        `R1 ${release.version} transferred successfully. Reconnect the ring in SybilSight after it restarts.`,
+      );
+    });
   const directBleSupported = g2BleSupported();
+  const ringFlashReady = Boolean(
+    selectedRingRelease && ringDfuDevice && ringReady && !operation,
+  );
   const bleFlashReady = Boolean(
     directBleSupported &&
       selectedRelease &&
@@ -4322,6 +4425,95 @@ function App() {
               </article>
             ) : null}
           </div>
+          <article className="ring-update-panel" id="ring-update">
+            <div className="ring-update-copy">
+              <div className="eyebrow">R1 Ring firmware update</div>
+              <h3>Update the R1 with its signed Nordic package</h3>
+              <p>
+                Keep the ring charged and close to this computer. The archive,
+                signed init packet, and application image are SHA-256 verified
+                before the ring receives firmware bytes.
+              </p>
+              <label className="select-label" htmlFor="ring-firmware-version">
+                Firmware to install
+              </label>
+              <select
+                id="ring-firmware-version"
+                value={selectedRingReleaseId}
+                onChange={(event) => setSelectedRingReleaseId(event.target.value)}
+                disabled={catalogState !== "ready" || Boolean(operation)}
+              >
+                {ringCatalog.map((release) => (
+                  <option value={release.id} key={release.id}>
+                    {release.displayName ?? `Official R1 ${release.version}`}
+                  </option>
+                ))}
+              </select>
+              {selectedRingRelease ? (
+                <div className="easy-release-summary">
+                  <strong>{selectedRingRelease.displayName}</strong>
+                  <span>{formatBytes(selectedRingRelease.size)}</span>
+                  <code>{selectedRingRelease.sha256.slice(0, 16)}…</code>
+                </div>
+              ) : (
+                <div className="automatic-status">R1 catalog unavailable.</div>
+              )}
+            </div>
+            <div className="ring-update-steps">
+              <div className="ring-device-actions">
+                <Button
+                  tone="secondary"
+                  onClick={selectRingApplication}
+                  disabled={!navigator.bluetooth || Boolean(operation)}
+                >
+                  {ringApplicationDevice
+                    ? `R1 · ${ringApplicationDevice.name ?? "selected"}`
+                    : "1. Select connected R1"}
+                </Button>
+                <Button
+                  tone="secondary"
+                  onClick={restartRingForDfu}
+                  busy={operation === "ring-dfu-enter"}
+                  disabled={!ringApplicationDevice || !selectedRingRelease || Boolean(operation)}
+                >
+                  2. Restart in update mode
+                </Button>
+                <Button
+                  tone="secondary"
+                  onClick={selectRingBootloader}
+                  disabled={!navigator.bluetooth || Boolean(operation)}
+                >
+                  {ringDfuDevice
+                    ? `DFU · ${ringDfuDevice.name ?? "selected"}`
+                    : "3. Select R1 DFU device"}
+                </Button>
+              </div>
+              <label className="ble-ready-confirm">
+                <input
+                  type="checkbox"
+                  checked={ringReady}
+                  onChange={(event) => setRingReady(event.target.checked)}
+                  disabled={!ringDfuDevice || Boolean(operation)}
+                />
+                <span>
+                  The ring is charged, will stay nearby, and this tab will stay
+                  open and visible until the update finishes.
+                </span>
+              </label>
+              <Button
+                className="ring-update-start"
+                onClick={flashRingFirmware}
+                busy={operation === "ring-dfu"}
+                disabled={!ringFlashReady}
+              >
+                Update R1 to {selectedRingRelease?.version ?? "reviewed firmware"}
+              </Button>
+              <div className="automatic-status" role="status" aria-live="polite">
+                <span className={cx("tiny-dot", ringDfuDevice && "tiny-dot-success")} />
+                <span>{ringStatus}</span>
+              </div>
+            </div>
+          </article>
           <div className={cx("usb-recovery-toggle", usbRecoveryVisible && "is-open")}>
             <div>
               <strong>

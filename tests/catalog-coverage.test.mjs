@@ -17,6 +17,8 @@ const REVIEWED_CFW_2_2_6_11_SHA256 =
   "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86";
 const REVIEWED_CFW_2_2_6_12_SHA256 =
   "4df14a0d7cf4ac6af6f16ed18f5cda7d782c73e07e6269f9b09062fe01ab3d36";
+const OFFICIAL_G2_2_2_7_14_SHA256 =
+  "0fced0aebcc6c88db6f76dba34f91b805d842a5fc297bfd7fa6d6a34ec83cecb";
 
 // The catalog production actually served on 2026-07-28: newest CFW is the
 // legacy 2.2.6.10 build; both current reviewed CFW releases are absent.
@@ -51,8 +53,12 @@ test("flags a pinned image the served library is too old to offer", () => {
   });
   assert.deepEqual(
     missing.map((target) => target.imageSha256),
-    [REVIEWED_CFW_2_2_6_12_SHA256, REVIEWED_CFW_2_2_6_11_SHA256],
-    "reviewed CFW releases are newer than anything the stale catalog serves",
+    [
+      OFFICIAL_G2_2_2_7_14_SHA256,
+      REVIEWED_CFW_2_2_6_12_SHA256,
+      REVIEWED_CFW_2_2_6_11_SHA256,
+    ],
+    "the new official and reviewed CFW releases are newer than anything the stale catalog serves",
   );
 });
 
@@ -67,7 +73,11 @@ test("blocks firmware mutation when the served library is behind the build", () 
       assert.equal(error instanceof FirmwareCatalogCoverageError, true);
       assert.deepEqual(
         error.missingPinnedImages.map((target) => target.imageSha256),
-        [REVIEWED_CFW_2_2_6_12_SHA256, REVIEWED_CFW_2_2_6_11_SHA256],
+        [
+          OFFICIAL_G2_2_2_7_14_SHA256,
+          REVIEWED_CFW_2_2_6_12_SHA256,
+          REVIEWED_CFW_2_2_6_11_SHA256,
+        ],
       );
       assert.match(error.message, /No device mutation was started/);
       return true;

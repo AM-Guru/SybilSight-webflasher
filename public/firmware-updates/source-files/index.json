@@ -1,8 +1,80 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-01T13:55:48.911Z",
-  "source": "Even Realities CDN plus SybilSight/SybilSight-v2 release evidence",
+  "generatedAt": "2026-08-01T16:21:54.131Z",
+  "source": "Even Realities G2/R1 CDN plus SybilSight release evidence",
   "releases": [
+    {
+      "id": "g2-official-2.2.7.14",
+      "channel": "official",
+      "trust": "official-pinned",
+      "version": "2.2.7.14",
+      "internalVersion": "2.2.7.14",
+      "baseVersion": null,
+      "notes": "Enhanced Bluetooth connection stability and Teleprompt AI noise reduction; fixed Teleprompt Remote Control and earlier-version firmware update failures in specific scenarios.",
+      "capabilities": [],
+      "recoveryTarget": "case-and-glasses-bundle",
+      "caseRecoveryEligible": true,
+      "caseVersion": "1.2.57",
+      "url": "/firmware-updates/source-files/2.2.7.14/ededa3729ef16cb2948fa54c44e1dd09.bin",
+      "sourceUrl": "https://cdn.evenreal.co/firmware/ededa3729ef16cb2948fa54c44e1dd09.bin",
+      "fileName": "ededa3729ef16cb2948fa54c44e1dd09.bin",
+      "size": 4335715,
+      "md5": "ededa3729ef16cb2948fa54c44e1dd09",
+      "sha256": "0fced0aebcc6c88db6f76dba34f91b805d842a5fc297bfd7fa6d6a34ec83cecb",
+      "patchUrl": null,
+      "patchSha256": null,
+      "archivedFrom": "Even Realities CDN",
+      "mainFirmware": {
+        "runBase": "0x00438000",
+        "installedImageSize": 3557852,
+        "installedImageEnd": "0x0079c9dc",
+        "crc32": "aa5bbf14"
+      },
+      "components": [
+        {
+          "name": "firmware/codec.bin",
+          "typeId": 4,
+          "size": 326092,
+          "crc32c": "bdcfeeac",
+          "sha256": "b06dfef7faa2f1e52d2aacd07958d4b96ffc36dca5077ac9149e48f19fc9c4d0"
+        },
+        {
+          "name": "firmware/ble_em9305.bin",
+          "typeId": 5,
+          "size": 211948,
+          "crc32c": "c074baf7",
+          "sha256": "91a38f7fc05555f86181ecb22b363e3239bfcaaa2ff6171e98524ae64821eca9"
+        },
+        {
+          "name": "firmware/touch.bin",
+          "typeId": 3,
+          "size": 34464,
+          "crc32c": "ba63bc61",
+          "sha256": "0d13d8bb1337bf22989dc16143e3d5eca29a31cc1ed753ff624668750ea9470d"
+        },
+        {
+          "name": "firmware/box.bin",
+          "typeId": 6,
+          "size": 55784,
+          "crc32c": "7d443be0",
+          "sha256": "36ca0c13558f252af286ae2b36b5e576d087d21d37b15d778e7da9f502a70374"
+        },
+        {
+          "name": "ota/s200_bootloader.bin",
+          "typeId": 1,
+          "size": 148599,
+          "crc32c": "3529e0e2",
+          "sha256": "45e87ebf66f4836087e97a942f4e5e63be8378e78ad052fee6c7204db39ff633"
+        },
+        {
+          "name": "ota/s200_firmware_ota.bin",
+          "typeId": 0,
+          "size": 3557884,
+          "crc32c": "68582516",
+          "sha256": "8e25fcdadac1efadf8ef97e35086487b673d079f5fd229e56443ac42a5d55c31"
+        }
+      ]
+    },
     {
       "id": "g2-custom-2.2.6.12",
       "displayName": "SybilSight CFW (2.2.6.12)",
@@ -32,7 +104,7 @@
       "sha256": "4df14a0d7cf4ac6af6f16ed18f5cda7d782c73e07e6269f9b09062fe01ab3d36",
       "patchUrl": "/firmware-updates/source-files/2.2.6.12/cfw_patches-2.2.6.12.json",
       "patchSha256": "0300ea0ba5a9090191bd4e791acd871486a41c8c6020f610570c094df4a67535",
-      "archivedFrom": "SybilSight local evidence",
+      "archivedFrom": "WebFlasher local evidence",
       "mainFirmware": {
         "runBase": "0x00438000",
         "installedImageSize": 3541524,
@@ -112,7 +184,7 @@
       "sha256": "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86",
       "patchUrl": "/firmware-updates/source-files/2.2.6.11/cfw_patches-2.2.6.11.json",
       "patchSha256": "47b33307da30d08480f226ee519a0c10d20288cbb411695e9a3fc45eaee5a0a2",
-      "archivedFrom": "SybilSight local evidence",
+      "archivedFrom": "SybilSight reviewed CFW mirror",
       "mainFirmware": {
         "runBase": "0x00438000",
         "installedImageSize": 3542552,
@@ -1013,6 +1085,74 @@
           "sha256": "ad951aec8e4140392c12715d2d1f8d575c8e288ab35331a635e2277cfb2b56fc"
         }
       ]
+    }
+  ],
+  "ringReleases": [
+    {
+      "id": "r1-official-2.2.7.0005",
+      "displayName": "Official R1 2.2.7.0005",
+      "channel": "official",
+      "trust": "official-pinned",
+      "version": "2.2.7.0005",
+      "format": "nordic-secure-dfu",
+      "url": "/firmware-updates/source-files/r1/2.2.7.0005/r1-2.2.7.0005-be359b28954f8fe4a94ec21a58415d59.zip",
+      "sourceUrl": "https://cdn.evenreal.co/firmware/be359b28954f8fe4a94ec21a58415d59.zip",
+      "fileName": "r1-2.2.7.0005-be359b28954f8fe4a94ec21a58415d59.zip",
+      "size": 650007,
+      "md5": "be359b28954f8fe4a94ec21a58415d59",
+      "sha256": "6222e4bb334b531c3d2cfedfae2a26f609f0ffd99bd60a50bc8cced645c9eba5",
+      "archivedFrom": "Even Realities CDN",
+      "minAppVersion": "2.2.7",
+      "notes": "Enhanced Bluetooth connection stability and fixed health data collection failures in specific scenarios.",
+      "application": {
+        "binFile": "application.bin",
+        "binSize": 649376,
+        "binSha256": "2d38253e00b887ced3f1e2c049db21254b0974091bc954a82c13e21c48b064c2",
+        "datFile": "application.dat",
+        "datSize": 141,
+        "datSha256": "68447d4dfc0ad7d77270797fe0dbf4311faef7eb5e275342033e5b373be93be9"
+      },
+      "initPacket": {
+        "applicationVersion": 3,
+        "hardwareVersion": 52,
+        "softDeviceFirmwareIds": [
+          256
+        ],
+        "signed": true
+      }
+    },
+    {
+      "id": "r1-official-2.2.6.0009",
+      "displayName": "Official R1 2.2.6.0009",
+      "channel": "official",
+      "trust": "official-pinned",
+      "version": "2.2.6.0009",
+      "format": "nordic-secure-dfu",
+      "url": "/firmware-updates/source-files/r1/2.2.6.0009/r1-2.2.6.0009-9eca8ae9d5117abda4f72f39bdb44ad2.zip",
+      "sourceUrl": "https://cdn.evenreal.co/firmware/r1-2.2.6.0009-9eca8ae9d5117abda4f72f39bdb44ad2.zip",
+      "fileName": "r1-2.2.6.0009-9eca8ae9d5117abda4f72f39bdb44ad2.zip",
+      "size": 647039,
+      "md5": "9eca8ae9d5117abda4f72f39bdb44ad2",
+      "sha256": "492baf487734720732f82f404624e0c3b3af3b01d30727366238e154164ad0dd",
+      "archivedFrom": "SybilSight local evidence",
+      "minAppVersion": null,
+      "notes": null,
+      "application": {
+        "binFile": "application.bin",
+        "binSize": 646408,
+        "binSha256": "0e788d433ea50fd36edb8f21a9c18b6062211e4a36dbc5bd7695ea5827f3aa1a",
+        "datFile": "application.dat",
+        "datSize": 141,
+        "datSha256": "305da36784e527b3e434f2cf45019a290bf5c14cbceb2e57c9e61dcdfdb1f253"
+      },
+      "initPacket": {
+        "applicationVersion": 3,
+        "hardwareVersion": 52,
+        "softDeviceFirmwareIds": [
+          256
+        ],
+        "signed": true
+      }
     }
   ]
 }

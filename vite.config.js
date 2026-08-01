@@ -101,7 +101,7 @@ export default defineConfig({
       // archive separately from this source tree. Keep the local catalog file
       // local, but resolve its versioned binary/metadata paths from production
       // so hardware tests never receive Vite's index.html fallback.
-      "/firmware-updates/source-files/2": {
+      "/firmware-updates/source-files": {
         target: "https://webflasher.sybilsight.com",
         changeOrigin: true,
         // Locally staged artifacts (for example a new CFW bundle) must win

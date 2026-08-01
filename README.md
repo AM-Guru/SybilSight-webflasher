@@ -1362,15 +1362,16 @@ and both routes receive read-only liveness verification.
 
 ## Firmware archive
 
-The archive builder knows about all 12 official G2 releases evidenced by the
+The archive builder knows about all 13 official G2 releases evidenced by the
 SybilSight research plus reviewed CFW `2.2.6.11` and Faceclaw-free CFW
-`2.2.6.12`, both built from Stock `2.2.6.10`:
+`2.2.6.12`, both built from Stock `2.2.6.10`. It also verifies and archives
+the signed R1 `2.2.7.0005` and prior `2.2.6.0009` Secure DFU packages:
 
 ```text
 2.0.1.14  2.0.3.20  2.0.5.12  2.0.6.14
 2.0.7.16  2.0.8.20  2.0.9.20  2.1.1.8
 2.1.1.12  2.2.0.24  2.2.4.34  2.2.6.10
-2.2.6.11  2.2.6.12
+2.2.6.11  2.2.6.12  2.2.7.14
 ```
 
 It retrieves each original bundle from the Even Realities CDN. If a known CDN
@@ -1389,6 +1390,25 @@ component, a raw case image, `metadata.json`, and `SHA256SUMS`:
 ```text
 source-files/
   index.json
+  r1/
+    2.2.7.0005/
+      r1-2.2.7.0005-be359b28954f8fe4a94ec21a58415d59.zip
+      application.bin
+      application.dat
+      manifest.json
+      metadata.json
+      SHA256SUMS
+  2.2.7.14/
+    ededa3729ef16cb2948fa54c44e1dd09.bin
+    firmware_codec.bin
+    firmware_ble_em9305.bin
+    firmware_touch.bin
+    firmware_box.bin
+    firmware_box.raw.bin
+    ota_s200_bootloader.bin
+    ota_s200_firmware_ota.bin
+    metadata.json
+    SHA256SUMS
   2.2.6.10/
     e28738432d7b612d625331b00383149b.bin
     firmware_codec.bin

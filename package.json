@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
+    "fflate": "^0.8.2",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "ws": "8.21.1"

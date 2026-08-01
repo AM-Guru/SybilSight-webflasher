@@ -6,6 +6,7 @@ import {
   APOLLO_BOOTLOADER_BASE,
   EXPECTED_COMPONENTS,
   EXPECTED_COMPONENT_TYPES,
+  OFFICIAL_G2_SHA256,
   POGO_TRANSFER_RESEARCH,
   REVIEWED_CFW,
   additiveBigEndianWordSum,
@@ -733,12 +734,33 @@ test("ships the complete official and reviewed-CFW development catalog", async (
   assert.equal(
     catalog.releases.filter((release) => (release.channel ?? "official") === "official")
       .length,
-    12,
+    13,
   );
+  const latestOfficial = catalog.releases.find(
+    (release) => release.id === "g2-official-2.2.7.14",
+  );
+  assert.equal(latestOfficial.sha256, OFFICIAL_G2_SHA256["2.2.7.14"]);
+  assert.equal(latestOfficial.caseVersion, "1.2.57");
   const cfw = catalog.releases.find((release) => release.channel === "custom");
   assert.equal(cfw.version, "2.2.6.12");
   assert.equal(cfw.sha256, REVIEWED_CFW.sha256);
   assert.equal(cfw.caseRecoveryEligible, false);
+});
+
+test("ships the exact official G2 2.2.7.14 bundle and six components", async () => {
+  const releaseDirectory = new URL(
+    "../public/firmware-updates/source-files/2.2.7.14/",
+    import.meta.url,
+  );
+  const firmware = await parseFirmwareInput(
+    await readFile(new URL("ededa3729ef16cb2948fa54c44e1dd09.bin", releaseDirectory)),
+    "ededa3729ef16cb2948fa54c44e1dd09.bin",
+  );
+  assert.equal(firmware.fileSha256, OFFICIAL_G2_SHA256["2.2.7.14"]);
+  assert.equal(firmware.g2Version, "2.2.7.14");
+  assert.equal(firmware.componentImages.length, 6);
+  assert.equal(firmware.caseVersion, "1.2.57");
+  assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
 });
 
 test("ships Faceclaw-free CFW 2.2.6.12 with the stock Even AI entry", async () => {

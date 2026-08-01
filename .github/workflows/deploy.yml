@@ -85,6 +85,17 @@ jobs:
             if (targetBytes.length !== newestCustom.size || targetSha256 !== newestCustom.sha256) {
               throw new Error("Newest reviewed custom release does not match its catalog pin");
             }
+            const newestRing = [...(catalog.ringReleases ?? [])]
+              .sort((left, right) => right.version.localeCompare(left.version, undefined, { numeric: true }))[0];
+            if (!newestRing?.url || !/^[0-9a-f]{64}$/.test(newestRing.sha256 ?? "")) {
+              throw new Error("Catalog has no hash-pinned R1 release");
+            }
+            const ringPath = "dist" + newestRing.url;
+            const ringBytes = fs.readFileSync(ringPath);
+            const ringSha256 = crypto.createHash("sha256").update(ringBytes).digest("hex");
+            if (ringBytes.length !== newestRing.size || ringSha256 !== newestRing.sha256) {
+              throw new Error("Newest R1 release does not match its catalog pin");
+            }
           '
           if find dist -type l -print -quit | grep -q .; then
             echo "The deployable site must not contain symbolic links." >&2

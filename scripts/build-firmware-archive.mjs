@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { unzipSync } from "fflate";
 import { parseEvenOTA } from "../src/lib/firmware.js";
 
 const CDN_BASE = "https://cdn.evenreal.co/firmware";
@@ -17,6 +18,75 @@ const REVIEWED_CFW_BASE_SHA256 =
   "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa";
 const LEGACY_HARDWARE_VALIDATED_CFW_SHA256 =
   "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0";
+const R1_RELEASES = [
+  {
+    id: "r1-official-2.2.7.0005",
+    displayName: "Official R1 2.2.7.0005",
+    version: "2.2.7.0005",
+    channel: "official",
+    trust: "official-pinned",
+    format: "nordic-secure-dfu",
+    fileName: "r1-2.2.7.0005-be359b28954f8fe4a94ec21a58415d59.zip",
+    size: 650007,
+    md5: "be359b28954f8fe4a94ec21a58415d59",
+    sha256: "6222e4bb334b531c3d2cfedfae2a26f609f0ffd99bd60a50bc8cced645c9eba5",
+    sourceUrl:
+      "https://cdn.evenreal.co/firmware/be359b28954f8fe4a94ec21a58415d59.zip",
+    minAppVersion: "2.2.7",
+    notes:
+      "Enhanced Bluetooth connection stability and fixed health data collection failures in specific scenarios.",
+    application: {
+      binFile: "application.bin",
+      binSize: 649376,
+      binSha256:
+        "2d38253e00b887ced3f1e2c049db21254b0974091bc954a82c13e21c48b064c2",
+      datFile: "application.dat",
+      datSize: 141,
+      datSha256:
+        "68447d4dfc0ad7d77270797fe0dbf4311faef7eb5e275342033e5b373be93be9",
+    },
+    initPacket: {
+      applicationVersion: 3,
+      hardwareVersion: 52,
+      softDeviceFirmwareIds: [0x0100],
+      signed: true,
+    },
+  },
+  {
+    id: "r1-official-2.2.6.0009",
+    displayName: "Official R1 2.2.6.0009",
+    version: "2.2.6.0009",
+    channel: "official",
+    trust: "official-pinned",
+    format: "nordic-secure-dfu",
+    fileName: "r1-2.2.6.0009-9eca8ae9d5117abda4f72f39bdb44ad2.zip",
+    size: 647039,
+    md5: "9eca8ae9d5117abda4f72f39bdb44ad2",
+    sha256: "492baf487734720732f82f404624e0c3b3af3b01d30727366238e154164ad0dd",
+    sourceUrl:
+      "https://cdn.evenreal.co/firmware/r1-2.2.6.0009-9eca8ae9d5117abda4f72f39bdb44ad2.zip",
+    fallbacks: [[
+      "current",
+      "firmware/ota/2026-07-22/r1-2.2.6.0009-9eca8ae9d5117abda4f72f39bdb44ad2.zip",
+    ]],
+    application: {
+      binFile: "application.bin",
+      binSize: 646408,
+      binSha256:
+        "0e788d433ea50fd36edb8f21a9c18b6062211e4a36dbc5bd7695ea5827f3aa1a",
+      datFile: "application.dat",
+      datSize: 141,
+      datSha256:
+        "305da36784e527b3e434f2cf45019a290bf5c14cbceb2e57c9e61dcdfdb1f253",
+    },
+    initPacket: {
+      applicationVersion: 3,
+      hardwareVersion: 52,
+      softDeviceFirmwareIds: [0x0100],
+      signed: true,
+    },
+  },
+];
 // Reviewed CFW 2.2.6.11. Case-USB temple transfer exercised end to end on
 // 2026-07-28: right temple Stock 2.2.6.10 -> CFW 2.2.6.11, all 3,543 records
 // and FINISH accepted, image activated on the first activation reset, and the
@@ -106,6 +176,14 @@ const RELEASES = [
       "current",
       "firmware/ota/2026-07-22/g2-2.2.6.10-e28738432d7b612d625331b00383149b.bin",
     ]],
+  },
+  {
+    version: "2.2.7.14",
+    hash: "ededa3729ef16cb2948fa54c44e1dd09",
+    sha256: "0fced0aebcc6c88db6f76dba34f91b805d842a5fc297bfd7fa6d6a34ec83cecb",
+    size: 4335715,
+    notes:
+      "Enhanced Bluetooth connection stability and Teleprompt AI noise reduction; fixed Teleprompt Remote Control and earlier-version firmware update failures in specific scenarios.",
   },
   {
     id: "g2-custom-2.2.6.12",
@@ -465,6 +543,107 @@ async function saveRelease(root, release, fallbackRoots) {
   };
 }
 
+async function saveRingRelease(root, release, fallbackRoots) {
+  const directory = path.join(root, "r1", release.version);
+  await mkdir(directory, { recursive: true });
+  process.stdout.write(`Acquiring official R1 ${release.version}… `);
+  const { bytes, archivedFrom } = await acquireRelease(
+    release,
+    release.sourceUrl,
+    fallbackRoots,
+  );
+  if (
+    bytes.length !== release.size ||
+    digest("md5", bytes) !== release.md5 ||
+    digest("sha256", bytes) !== release.sha256
+  ) {
+    throw new Error(`R1 ${release.version} ZIP does not match its pinned size and digests`);
+  }
+
+  const files = unzipSync(bytes);
+  const fileNames = Object.keys(files).sort();
+  if (
+    JSON.stringify(fileNames) !==
+    JSON.stringify(["application.bin", "application.dat", "manifest.json"])
+  ) {
+    throw new Error(`R1 ${release.version} ZIP contains an unexpected file set`);
+  }
+  const manifest = JSON.parse(Buffer.from(files["manifest.json"]).toString("utf8"));
+  const declared = manifest?.manifest?.application;
+  if (
+    declared?.bin_file !== release.application.binFile ||
+    declared?.dat_file !== release.application.datFile
+  ) {
+    throw new Error(`R1 ${release.version} manifest does not select the pinned application`);
+  }
+  const application = Buffer.from(files[release.application.binFile]);
+  const initPacket = Buffer.from(files[release.application.datFile]);
+  if (
+    application.length !== release.application.binSize ||
+    digest("sha256", application) !== release.application.binSha256 ||
+    initPacket.length !== release.application.datSize ||
+    digest("sha256", initPacket) !== release.application.datSha256
+  ) {
+    throw new Error(`R1 ${release.version} application components failed verification`);
+  }
+
+  await writeFile(path.join(directory, release.fileName), bytes);
+  await writeFile(path.join(directory, release.application.binFile), application);
+  await writeFile(path.join(directory, release.application.datFile), initPacket);
+  await writeFile(path.join(directory, "manifest.json"), files["manifest.json"]);
+  const metadata = {
+    schemaVersion: 2,
+    device: "Even Realities R1",
+    version: release.version,
+    channel: release.channel,
+    trust: release.trust,
+    format: release.format,
+    sourceUrl: release.sourceUrl,
+    archivedFrom,
+    archivedAt: new Date().toISOString(),
+    sourceFile: release.fileName,
+    sourceMd5: release.md5,
+    sourceSha256: release.sha256,
+    sourceSize: release.size,
+    minAppVersion: release.minAppVersion ?? null,
+    notes: release.notes ?? null,
+    application: release.application,
+    initPacket: release.initPacket,
+  };
+  await writeFile(
+    path.join(directory, "metadata.json"),
+    `${JSON.stringify(metadata, null, 2)}\n`,
+  );
+  await writeFile(
+    path.join(directory, "SHA256SUMS"),
+    [
+      `${release.application.binSha256}  ${release.application.binFile}`,
+      `${release.application.datSha256}  ${release.application.datFile}`,
+      `${release.sha256}  ${release.fileName}`,
+    ].join("\n") + "\n",
+  );
+  process.stdout.write("verified (signed Nordic Secure DFU)\n");
+  return {
+    id: release.id,
+    displayName: release.displayName,
+    channel: release.channel,
+    trust: release.trust,
+    version: release.version,
+    format: release.format,
+    url: `/firmware-updates/source-files/r1/${release.version}/${release.fileName}`,
+    sourceUrl: release.sourceUrl,
+    fileName: release.fileName,
+    size: release.size,
+    md5: release.md5,
+    sha256: release.sha256,
+    archivedFrom,
+    minAppVersion: release.minAppVersion ?? null,
+    notes: release.notes ?? null,
+    application: release.application,
+    initPacket: release.initPacket,
+  };
+}
+
 // Emits the temple writer's compiled-in allowlist. It is deliberately a source
 // file rather than something read from index.json at runtime: the writer's final
 // trust gate must not be widenable by a tampered catalog.
@@ -568,10 +747,14 @@ async function main() {
   for (const release of RELEASES) {
     catalog.push(await saveRelease(output, release, fallbackRoots));
   }
+  const ringCatalog = [];
+  for (const release of R1_RELEASES) {
+    ringCatalog.push(await saveRingRelease(output, release, fallbackRoots));
+  }
   const index = {
     schemaVersion: 2,
     generatedAt: new Date().toISOString(),
-    source: "Even Realities CDN plus SybilSight/SybilSight-v2 release evidence",
+    source: "Even Realities G2/R1 CDN plus SybilSight release evidence",
     releases: catalog.sort((left, right) => {
       const versionOrder = right.version.localeCompare(left.version, undefined, {
         numeric: true,
@@ -579,6 +762,9 @@ async function main() {
       if (versionOrder !== 0) return versionOrder;
       return left.channel === "custom" ? -1 : 1;
     }),
+    ringReleases: ringCatalog.sort((left, right) =>
+      right.version.localeCompare(left.version, undefined, { numeric: true }),
+    ),
   };
   await writeFile(
     path.join(output, "index.json"),
@@ -586,6 +772,7 @@ async function main() {
   );
   const targets = await writeTempleFlashTargets(index.releases);
   process.stdout.write(`Archived ${catalog.length} verified G2 releases in ${output}\n`);
+  process.stdout.write(`Archived ${ringCatalog.length} verified R1 release(s)\n`);
   process.stdout.write(
     `Pinned ${targets} temple-flash Apollo-main target(s) in src/lib/templeFlashTargets.js\n`,
   );

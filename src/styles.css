@@ -3204,6 +3204,55 @@ code {
   min-height: 42px;
 }
 
+.ring-update-panel {
+  display: grid;
+  max-width: 1180px;
+  margin: 12px auto 0;
+  padding: 18px;
+  border: 1px solid rgba(0, 255, 136, 0.34);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(0, 255, 136, 0.06), transparent 55%),
+    #111;
+  grid-template-columns: minmax(240px, 0.8fr) minmax(320px, 1.2fr);
+  gap: 20px;
+  scroll-margin-top: 18px;
+}
+
+.ring-update-copy,
+.ring-update-steps,
+.ring-device-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ring-update-copy h3,
+.ring-update-copy p {
+  margin: 0;
+}
+
+.ring-update-copy p {
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ring-update-copy .easy-release-summary {
+  margin-top: 4px;
+}
+
+.ring-update-start {
+  width: 100%;
+  min-height: 44px;
+}
+
+@media (max-width: 760px) {
+  .ring-update-panel {
+    grid-template-columns: 1fr;
+  }
+}
+
 .easy-case-result,
 .easy-release-summary {
   display: grid;
