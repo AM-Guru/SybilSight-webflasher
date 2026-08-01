@@ -224,7 +224,7 @@ jobs:
           [ -w "${deploy_root}" ]
           [ -d "${firmware_root}" ]
           [ -w "${firmware_root}" ]
-          for required_command in tar stat chown chmod find mv cp diff; do
+          for required_command in tar stat chown chmod find mkdir mv cp diff; do
             command -v "${required_command}" >/dev/null
           done
           PREFLIGHT_SCRIPT
@@ -283,31 +283,52 @@ jobs:
           chown "${firmware_owner_group}" "${catalog_incoming}"
           chmod g+rw "${catalog_incoming}"
 
-          # Versioned firmware directories are immutable. Publish a missing
-          # directory before the index, but refuse to change bytes beneath a
-          # path an older catalog may already reference.
-          for firmware_source_dir in "${firmware_source}"/*; do
-            [ -d "${firmware_source_dir}" ] || continue
-            firmware_name="${firmware_source_dir##*/}"
-            case "${firmware_name}" in
-              2.*) ;;
+          # Versioned firmware directories are immutable. G2 releases live at
+          # 2.*, while R1 Secure DFU releases live at r1/2.*. Publish missing
+          # leaf directories before the index, but refuse every other layout
+          # and refuse to change bytes beneath a path an older catalog may
+          # already reference.
+          publish_firmware_directory() {
+            firmware_source_dir="$1"
+            firmware_relative="$2"
+            firmware_key="$3"
+
+            case "${firmware_relative}" in
+              2.*)
+                firmware_parent="${firmware_root}"
+                ;;
+              r1/2.*)
+                firmware_parent="${firmware_root}/r1"
+                ;;
               *)
-                echo "Refusing unexpected firmware directory: ${firmware_name}" >&2
+                echo "Refusing unexpected firmware path: ${firmware_relative}" >&2
                 exit 1
                 ;;
             esac
-            firmware_incoming="${firmware_root}/.${firmware_name}.deploy-${publish_id}"
-            firmware_target="${firmware_root}/${firmware_name}"
+
+            if [ -e "${firmware_parent}" ]; then
+              if [ ! -d "${firmware_parent}" ] || [ -L "${firmware_parent}" ]; then
+                echo "Refusing non-directory firmware parent: ${firmware_parent}" >&2
+                exit 1
+              fi
+            else
+              mkdir "${firmware_parent}"
+              chown "${firmware_owner_group}" "${firmware_parent}"
+              chmod g+rwX,g+s "${firmware_parent}"
+            fi
+
+            firmware_incoming="${firmware_root}/.${firmware_key}.deploy-${publish_id}"
+            firmware_target="${firmware_root}/${firmware_relative}"
             if [ -e "${firmware_target}" ]; then
               if [ ! -d "${firmware_target}" ] || [ -L "${firmware_target}" ]; then
                 echo "Refusing non-directory firmware target: ${firmware_target}" >&2
                 exit 1
               fi
               if ! diff -qr "${firmware_source_dir}" "${firmware_target}" >/dev/null; then
-                echo "Refusing to replace immutable firmware directory: ${firmware_name}" >&2
+                echo "Refusing to replace immutable firmware directory: ${firmware_relative}" >&2
                 exit 1
               fi
-              continue
+              return
             fi
             rm -rf -- "${firmware_incoming}"
             cp -a "${firmware_source_dir}" "${firmware_incoming}"
@@ -317,6 +338,60 @@ jobs:
             if ! mv "${firmware_incoming}" "${firmware_target}"; then
               exit 1
             fi
+          }
+
+          for firmware_source_entry in "${firmware_source}"/*; do
+            [ -e "${firmware_source_entry}" ] || continue
+            firmware_name="${firmware_source_entry##*/}"
+            case "${firmware_name}" in
+              index.json)
+                if [ ! -f "${firmware_source_entry}" ] || [ -L "${firmware_source_entry}" ]; then
+                  echo "Refusing invalid firmware catalog source" >&2
+                  exit 1
+                fi
+                ;;
+              2.*)
+                if [ ! -d "${firmware_source_entry}" ] || [ -L "${firmware_source_entry}" ]; then
+                  echo "Refusing non-directory firmware source: ${firmware_name}" >&2
+                  exit 1
+                fi
+                publish_firmware_directory \
+                  "${firmware_source_entry}" "${firmware_name}" "${firmware_name}"
+                ;;
+              r1)
+                if [ ! -d "${firmware_source_entry}" ] || [ -L "${firmware_source_entry}" ]; then
+                  echo "Refusing non-directory R1 firmware source" >&2
+                  exit 1
+                fi
+                ring_release_count=0
+                for ring_source_dir in "${firmware_source_entry}"/*; do
+                  [ -e "${ring_source_dir}" ] || continue
+                  ring_name="${ring_source_dir##*/}"
+                  case "${ring_name}" in
+                    2.*) ;;
+                    *)
+                      echo "Refusing unexpected R1 firmware directory: ${ring_name}" >&2
+                      exit 1
+                      ;;
+                  esac
+                  if [ ! -d "${ring_source_dir}" ] || [ -L "${ring_source_dir}" ]; then
+                    echo "Refusing non-directory R1 firmware source: ${ring_name}" >&2
+                    exit 1
+                  fi
+                  publish_firmware_directory \
+                    "${ring_source_dir}" "r1/${ring_name}" "r1-${ring_name}"
+                  ring_release_count=$((ring_release_count + 1))
+                done
+                if [ "${ring_release_count}" -eq 0 ]; then
+                  echo "Refusing empty R1 firmware directory" >&2
+                  exit 1
+                fi
+                ;;
+              *)
+                echo "Refusing unexpected firmware directory: ${firmware_name}" >&2
+                exit 1
+                ;;
+            esac
           done
 
           if [ -e "${backup}" ]; then
