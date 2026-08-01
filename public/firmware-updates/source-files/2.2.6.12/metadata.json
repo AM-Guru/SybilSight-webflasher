@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 2,
+  "device": "Even Realities G2",
+  "version": "2.2.6.12",
+  "internalVersion": "2.2.6.12",
+  "channel": "custom",
+  "trust": "reviewed-custom",
+  "baseVersion": "2.2.6.10",
+  "notes": "SybilSight CFW built from official G2 2.2.6.10 with Faceclaw's wake lease, idle double-tap takeover, and Even AI interception removed. Native Hey Even retains the stock path. The image is reproducibly built and statically reviewed but not yet hardware-flashed.",
+  "capabilities": [
+    "576×288 image containers",
+    "Zlib and RLE image payloads",
+    "8bpp XOR-delta frame updates",
+    "Per-lens stereo image pairs",
+    "576×480 virtual canvas with a 576×288 viewport",
+    "Settings capability field 100",
+    "Ring long-press and release events"
+  ],
+  "caseVersion": "1.2.57",
+  "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.6.12/g2-2.2.6.12.bin",
+  "archivedFrom": "SybilSight local evidence",
+  "sourceFile": "g2-2.2.6.12.bin",
+  "sourceMd5": "46c2d38063d0f3b51fb7cba0d76dab6d",
+  "sourceSha256": "4df14a0d7cf4ac6af6f16ed18f5cda7d782c73e07e6269f9b09062fe01ab3d36",
+  "sourceSize": 4319387,
+  "patchUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.6.12/cfw_patches-2.2.6.12.json",
+  "patchFile": "cfw_patches-2.2.6.12.json",
+  "patchSha256": "0300ea0ba5a9090191bd4e791acd871486a41c8c6020f610570c094df4a67535",
+  "archivedAt": "2026-08-01T13:55:48.387Z",
+  "mainFirmware": {
+    "runBase": "0x00438000",
+    "installedImageSize": 3541524,
+    "installedImageEnd": "0x00798a14",
+    "crc32": "7dc763cd"
+  },
+  "components": [
+    {
+      "name": "firmware/codec.bin",
+      "typeId": 4,
+      "size": 326092,
+      "crc32c": "bdcfeeac",
+      "sha256": "b06dfef7faa2f1e52d2aacd07958d4b96ffc36dca5077ac9149e48f19fc9c4d0"
+    },
+    {
+      "name": "firmware/ble_em9305.bin",
+      "typeId": 5,
+      "size": 211948,
+      "crc32c": "c074baf7",
+      "sha256": "91a38f7fc05555f86181ecb22b363e3239bfcaaa2ff6171e98524ae64821eca9"
+    },
+    {
+      "name": "firmware/touch.bin",
+      "typeId": 3,
+      "size": 34464,
+      "crc32c": "ba63bc61",
+      "sha256": "0d13d8bb1337bf22989dc16143e3d5eca29a31cc1ed753ff624668750ea9470d"
+    },
+    {
+      "name": "firmware/box.bin",
+      "typeId": 6,
+      "size": 55784,
+      "crc32c": "7d443be0",
+      "sha256": "36ca0c13558f252af286ae2b36b5e576d087d21d37b15d778e7da9f502a70374"
+    },
+    {
+      "name": "ota/s200_bootloader.bin",
+      "typeId": 1,
+      "size": 148599,
+      "crc32c": "27d2eb10",
+      "sha256": "f89a4c4657537cec6bfc572bdb8318866309b90a5d180c4307680d39824167b5"
+    },
+    {
+      "name": "ota/s200_firmware_ota.bin",
+      "typeId": 0,
+      "size": 3541556,
+      "crc32c": "2c363854",
+      "sha256": "c392e91c22511249eed39375eeb81740aa289bb7a4b6498c7babb04f5cf3781b"
+    }
+  ],
+  "files": [
+    {
+      "name": "g2-2.2.6.12.bin",
+      "size": 4319387,
+      "sha256": "4df14a0d7cf4ac6af6f16ed18f5cda7d782c73e07e6269f9b09062fe01ab3d36"
+    },
+    {
+      "name": "cfw_patches-2.2.6.12.json",
+      "size": 39345,
+      "sha256": "0300ea0ba5a9090191bd4e791acd871486a41c8c6020f610570c094df4a67535"
+    },
+    {
+      "name": "firmware_codec.bin",
+      "size": 326092,
+      "sha256": "b06dfef7faa2f1e52d2aacd07958d4b96ffc36dca5077ac9149e48f19fc9c4d0"
+    },
+    {
+      "name": "firmware_ble_em9305.bin",
+      "size": 211948,
+      "sha256": "91a38f7fc05555f86181ecb22b363e3239bfcaaa2ff6171e98524ae64821eca9"
+    },
+    {
+      "name": "firmware_touch.bin",
+      "size": 34464,
+      "sha256": "0d13d8bb1337bf22989dc16143e3d5eca29a31cc1ed753ff624668750ea9470d"
+    },
+    {
+      "name": "firmware_box.bin",
+      "size": 55784,
+      "sha256": "36ca0c13558f252af286ae2b36b5e576d087d21d37b15d778e7da9f502a70374"
+    },
+    {
+      "name": "firmware_box.raw.bin",
+      "size": 55752,
+      "sha256": "773b6d4cfdaf0a5a74a557e3babe8222a0ae813436b76a7437c1096d2c60d677"
+    },
+    {
+      "name": "ota_s200_bootloader.bin",
+      "size": 148599,
+      "sha256": "f89a4c4657537cec6bfc572bdb8318866309b90a5d180c4307680d39824167b5"
+    },
+    {
+      "name": "ota_s200_firmware_ota.bin",
+      "size": 3541556,
+      "sha256": "c392e91c22511249eed39375eeb81740aa289bb7a4b6498c7babb04f5cf3781b"
+    }
+  ]
+}

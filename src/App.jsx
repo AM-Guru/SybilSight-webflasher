@@ -2149,7 +2149,7 @@ function App() {
       setDifferencePlan(null);
       setDifferenceState("blocked");
       setDifferenceError(
-        "Load the reviewed Stock 2.2.6.10 or CFW 2.2.6.11 bundle before preparing differences.",
+        "Load the reviewed Stock 2.2.6.10 or a compatible reviewed CFW bundle before preparing differences.",
       );
       return () => {
         active = false;
@@ -2162,7 +2162,7 @@ function App() {
       setDifferencePlan(null);
       setDifferenceState("blocked");
       setDifferenceError(
-        "Flash differences is available only for the reviewed Stock 2.2.6.10 ↔ CFW 2.2.6.11 pair.",
+        "Flash differences is available only for a reviewed Stock 2.2.6.10 ↔ compatible CFW pair.",
       );
       return () => {
         active = false;
@@ -4783,8 +4783,8 @@ function App() {
                       <span>
                         Requires Case 1.2.57, a checksum-valid running
                         hardware-5 application on each temple, and both
-                        contacts responsive. Only exact 2.2.6.10 ↔ 2.2.6.11
-                        transitions use differential mode; the Apollo
+                        contacts responsive. Only exact Stock 2.2.6.10 ↔
+                        compatible reviewed-CFW transitions use differential mode; the Apollo
                         bootloader is never transferred.
                       </span>
                     </div>

@@ -103,11 +103,11 @@ export function buildBundleDifferencePlan(sourceFirmware, targetFirmware) {
     sourceTarget.imageSha256 === targetTarget.imageSha256 ||
     new Set([sourceTarget.version, targetTarget.version]).size !== 2 ||
     ![sourceTarget.version, targetTarget.version].every((version) =>
-      ["2.2.6.10", "2.2.6.11"].includes(version),
+      ["2.2.6.10", "2.2.6.11", "2.2.6.12"].includes(version),
     )
   ) {
     throw new Error(
-      "Flash differences is limited to the reviewed Stock 2.2.6.10 ↔ CFW 2.2.6.11 pair.",
+      "Flash differences is limited to a reviewed Stock 2.2.6.10 ↔ compatible CFW pair.",
     );
   }
 

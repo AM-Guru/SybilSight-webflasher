@@ -9,7 +9,9 @@ import { fileURLToPath } from "node:url";
 import { parseEvenOTA } from "../src/lib/firmware.js";
 
 const CDN_BASE = "https://cdn.evenreal.co/firmware";
-const REVIEWED_CFW_SHA256 =
+const REVIEWED_CFW_2_2_6_12_SHA256 =
+  "4df14a0d7cf4ac6af6f16ed18f5cda7d782c73e07e6269f9b09062fe01ab3d36";
+const REVIEWED_CFW_2_2_6_11_SHA256 =
   "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86";
 const REVIEWED_CFW_BASE_SHA256 =
   "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa";
@@ -19,8 +21,6 @@ const LEGACY_HARDWARE_VALIDATED_CFW_SHA256 =
 // 2026-07-28: right temple Stock 2.2.6.10 -> CFW 2.2.6.11, all 3,543 records
 // and FINISH accepted, image activated on the first activation reset, and the
 // post-reset version reply verified on both temples.
-const REVIEWED_CFW_2_2_6_11_SHA256 =
-  "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86";
 const HARDWARE_VALIDATED_TEMPLE_IMAGES = new Set([
   LEGACY_HARDWARE_VALIDATED_CFW_SHA256,
   REVIEWED_CFW_BASE_SHA256,
@@ -108,15 +108,54 @@ const RELEASES = [
     ]],
   },
   {
+    id: "g2-custom-2.2.6.12",
+    displayName: "SybilSight CFW (2.2.6.12)",
+    version: "2.2.6.12",
+    internalVersion: "2.2.6.12",
+    baseVersion: "2.2.6.10",
+    baseSha256: REVIEWED_CFW_BASE_SHA256,
+    channel: "custom",
+    trust: "reviewed-custom",
+    hash: "46c2d38063d0f3b51fb7cba0d76dab6d",
+    sha256: REVIEWED_CFW_2_2_6_12_SHA256,
+    size: 4319387,
+    fileName: "g2-2.2.6.12.bin",
+    sourceUrl:
+      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.6.12/g2-2.2.6.12.bin",
+    fallbacks: [[
+      "webflasher",
+      "public/firmware-updates/source-files/2.2.6.12/g2-2.2.6.12.bin",
+    ]],
+    patchUrl:
+      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.6.12/cfw_patches-2.2.6.12.json",
+    patchFallbackRoot: "webflasher",
+    patchFallback:
+      "public/firmware-updates/source-files/2.2.6.12/cfw_patches-2.2.6.12.json",
+    patchFileName: "cfw_patches-2.2.6.12.json",
+    patchCount: 18,
+    notes:
+      "SybilSight CFW built from official G2 2.2.6.10 with Faceclaw's wake lease, idle double-tap takeover, and Even AI interception removed. Native Hey Even retains the stock path. The image is reproducibly built and statically reviewed but not yet hardware-flashed.",
+    capabilities: [
+      "576×288 image containers",
+      "Zlib and RLE image payloads",
+      "8bpp XOR-delta frame updates",
+      "Per-lens stereo image pairs",
+      "576×480 virtual canvas with a 576×288 viewport",
+      "Settings capability field 100",
+      "Ring long-press and release events",
+    ],
+  },
+  {
     id: "g2-custom-2.2.6.11",
     displayName: "SybilSight CFW (2.2.6.11)",
     version: "2.2.6.11",
     internalVersion: "2.2.6.11",
     baseVersion: "2.2.6.10",
+    baseSha256: REVIEWED_CFW_BASE_SHA256,
     channel: "custom",
     trust: "reviewed-custom",
     hash: "8a7d12c38c07e43469e266df3055e874",
-    sha256: REVIEWED_CFW_SHA256,
+    sha256: REVIEWED_CFW_2_2_6_11_SHA256,
     size: 4320415,
     fileName: "g2-2.2.6.11.bin",
     sourceUrl:
@@ -130,6 +169,7 @@ const RELEASES = [
     patchFallback:
       "firmware-updates/patches/cfw_patches-2.2.6.11.json",
     patchFileName: "cfw_patches-2.2.6.11.json",
+    patchCount: 23,
     notes:
       "Reviewed SybilSight CFW built from official G2 2.2.6.10. It reports 2.2.6.11 and EVENCFW/3 so Stock/CFW identity is available before OTA.",
     capabilities: [
@@ -211,7 +251,12 @@ async function acquireRelease(release, sourceUrl, fallbackRoots) {
       try {
         return {
           bytes: await readFile(fallbackPath),
-          archivedFrom: `${rootName === "v2" ? "SybilSight-v2" : "SybilSight"} local evidence`,
+          archivedFrom: `${{
+            v2: "SybilSight-v2",
+            current: "SybilSight",
+            website: "SybilSight website",
+            webflasher: "WebFlasher",
+          }[rootName] ?? rootName} local evidence`,
         };
       } catch {
         // Continue through every known local preservation path.
@@ -280,36 +325,42 @@ async function saveRelease(root, release, fallbackRoots) {
     } catch (downloadError) {
       if (!release.patchFallback) throw downloadError;
       patchBytes = await readFile(
-        path.join(fallbackRoots.website, release.patchFallback),
+        path.join(
+          fallbackRoots[release.patchFallbackRoot ?? "website"],
+          release.patchFallback,
+        ),
       );
     }
     const patchSet = JSON.parse(patchBytes.toString("utf8"));
-    if (
-      patchSet.base_sha256 !== REVIEWED_CFW_BASE_SHA256 ||
-      patchSet.output_sha256 !== REVIEWED_CFW_SHA256 ||
-      patchSet.version !== release.version ||
-      patchSet.base_version !== release.baseVersion ||
-      !Array.isArray(patchSet.patches) ||
-      patchSet.patches.length !== 23
-    ) {
-      throw new Error("The reviewed CFW patch recipe does not match its pinned trust boundary");
-    }
+    const patchVersion = patchSet.release_version ?? patchSet.version;
+    const patchBaseVersion =
+      patchSet.vendor_base_version ?? patchSet.base_version;
     const baseRelease = RELEASES.find(
       (candidate) =>
         candidate.version === release.baseVersion &&
         (candidate.channel ?? "official") === "official",
     );
     if (!baseRelease) throw new Error("The reviewed CFW stock base is not in the archive");
+    if (
+      patchSet.base_sha256 !== release.baseSha256 ||
+      patchSet.output_sha256 !== release.sha256 ||
+      patchVersion !== release.version ||
+      patchBaseVersion !== release.baseVersion ||
+      !Array.isArray(patchSet.patches) ||
+      patchSet.patches.length !== release.patchCount
+    ) {
+      throw new Error("The reviewed CFW patch recipe does not match its pinned trust boundary");
+    }
     const baseFile = baseRelease.fileName ?? `${baseRelease.hash}.bin`;
     const stockBytes = await readFile(
       path.join(root, release.baseVersion, baseFile),
     );
-    if (digest("sha256", stockBytes) !== REVIEWED_CFW_BASE_SHA256) {
+    if (digest("sha256", stockBytes) !== release.baseSha256) {
       throw new Error("The archived CFW stock base does not match its pinned SHA-256");
     }
     const rebuiltCFW = applyReviewedPatchSet(stockBytes, patchSet);
     if (
-      digest("sha256", rebuiltCFW) !== REVIEWED_CFW_SHA256 ||
+      digest("sha256", rebuiltCFW) !== release.sha256 ||
       !rebuiltCFW.equals(bytes)
     ) {
       throw new Error(
@@ -495,6 +546,10 @@ async function main() {
   );
   const output = path.resolve(argument("--output", defaultOutput));
   const fallbackRoots = {
+    webflasher: path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "..",
+    ),
     v2: path.resolve(
       argument("--sybilsight-v2", path.join(os.homedir(), "Repo/SybilSight-v2")),
     ),

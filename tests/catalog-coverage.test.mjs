@@ -15,9 +15,11 @@ const LEGACY_CFW_SHA256 =
   "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0";
 const REVIEWED_CFW_2_2_6_11_SHA256 =
   "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86";
+const REVIEWED_CFW_2_2_6_12_SHA256 =
+  "4df14a0d7cf4ac6af6f16ed18f5cda7d782c73e07e6269f9b09062fe01ab3d36";
 
 // The catalog production actually served on 2026-07-28: newest CFW is the
-// legacy 2.2.6.10 build, and reviewed CFW 2.2.6.11 is absent entirely.
+// legacy 2.2.6.10 build; both current reviewed CFW releases are absent.
 const STALE_PRODUCTION_CATALOG = [
   { id: "g2-custom-2.2.6.10", version: "2.2.6.10-cfw", sha256: LEGACY_CFW_SHA256 },
   {
@@ -49,8 +51,8 @@ test("flags a pinned image the served library is too old to offer", () => {
   });
   assert.deepEqual(
     missing.map((target) => target.imageSha256),
-    [REVIEWED_CFW_2_2_6_11_SHA256],
-    "reviewed CFW 2.2.6.11 is newer than anything the stale catalog serves",
+    [REVIEWED_CFW_2_2_6_12_SHA256, REVIEWED_CFW_2_2_6_11_SHA256],
+    "reviewed CFW releases are newer than anything the stale catalog serves",
   );
 });
 
@@ -65,7 +67,7 @@ test("blocks firmware mutation when the served library is behind the build", () 
       assert.equal(error instanceof FirmwareCatalogCoverageError, true);
       assert.deepEqual(
         error.missingPinnedImages.map((target) => target.imageSha256),
-        [REVIEWED_CFW_2_2_6_11_SHA256],
+        [REVIEWED_CFW_2_2_6_12_SHA256, REVIEWED_CFW_2_2_6_11_SHA256],
       );
       assert.match(error.message, /No device mutation was started/);
       return true;
@@ -86,6 +88,10 @@ test("stays silent about images retired from the library for being old", async (
   assert.ok(
     catalog.some((release) => release.sha256 === REVIEWED_CFW_2_2_6_11_SHA256),
     "the shipped catalog should serve reviewed CFW 2.2.6.11",
+  );
+  assert.ok(
+    catalog.some((release) => release.sha256 === REVIEWED_CFW_2_2_6_12_SHA256),
+    "the shipped catalog should serve reviewed CFW 2.2.6.12",
   );
   assert.ok(
     !catalog.some((release) => release.sha256 === LEGACY_CFW_SHA256),

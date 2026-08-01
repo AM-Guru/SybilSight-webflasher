@@ -80,8 +80,8 @@ refreshed or restored independently and contains official historical binaries
 that are too large to keep in this repository. Its mutable `index.json` must
 not be able to change the menu or invalidate a WebFlasher already published by
 an atomic `/share/webflasher` release swap. Caddy also serves the tracked
-reviewed `2.2.6.11` directory from that atomic web root; other versioned paths
-fall back to the historical archive.
+reviewed `2.2.6.11` and Faceclaw-free `2.2.6.12` directories from that atomic
+web root; other versioned paths fall back to the historical archive.
 
 ## Guard in the app
 

@@ -20,6 +20,14 @@ export const TEMPLE_FLASH_TARGETS = Object.freeze([
     hardwareValidated: true,
   }),
   Object.freeze({
+    imageSha256: "4df14a0d7cf4ac6af6f16ed18f5cda7d782c73e07e6269f9b09062fe01ab3d36",
+    mainSha256: "c392e91c22511249eed39375eeb81740aa289bb7a4b6498c7babb04f5cf3781b",
+    mainBytes: 3541556,
+    version: "2.2.6.12",
+    label: "SybilSight CFW (2.2.6.12)",
+    hardwareValidated: false,
+  }),
+  Object.freeze({
     imageSha256: "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86",
     mainSha256: "be8f5459e32065fbe3038accea49d418ba81884fc8ec4ed8927f37e219407dcf",
     mainBytes: 3542584,

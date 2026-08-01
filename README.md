@@ -38,8 +38,8 @@ Production deployment:
   Smart Glasses firmware bundle.
 - Accepts official five- or six-component `EVENOTA` bundles, wrapped
   `firmware_box.bin` components, and validated raw case images.
-- Recognizes all 12 archived official G2 SHA-256 values and the exact reviewed
-  SybilSight CFW 2.2.6.11 SHA-256.
+- Recognizes all 12 archived official G2 SHA-256 values, the hardware-validated
+  SybilSight CFW 2.2.6.11 image, and the current Faceclaw-free CFW 2.2.6.12 image.
 - Validates the Apollo main application's independent preamble, CRC-32, target
   region, installed-image boundary, and vector.
 - Stages case firmware in the inactive bank and verifies a byte-for-byte
@@ -175,23 +175,25 @@ control:
 - The case selects the left or right path through its YHM2510 front end and
   time-separates TX-only and RX-only operation.
 
-The reviewed CFW is an exact, machine-described transformation of official
+The current reviewed CFW is an exact, machine-described transformation of official
 2.2.6.10:
 
 - stock SHA-256:
   `f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa`
 - CFW SHA-256:
-  `d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86`
+  `4df14a0d7cf4ac6af6f16ed18f5cda7d782c73e07e6269f9b09062fe01ab3d36`
 - patch-manifest SHA-256:
-  `47b33307da30d08480f226ee519a0c10d20288cbb411695e9a3fc45eaee5a0a2`
-- 23 expected-byte-gated operations, including one appended code blob,
-  three same-length `2.2.6.10` → `2.2.6.11` identity fields, and
+  `0300ea0ba5a9090191bd4e791acd871486a41c8c6020f610570c094df4a67535`
+- 18 expected-byte-gated operations, including one appended code blob,
+  three same-length `2.2.6.10` → `2.2.6.12` identity fields, and
   the required inner/outer size and checksum updates
 
-It reports numeric version `2.2.6.11` while retaining `2.2.6.10` as its Stock
-base, and advertises `EVENCFW/3 img576 imgz rle wakelease`. The version is a
-Stock/CFW routing gate; the marker and pinned hashes remain the authenticity
-gates.
+It reports numeric version `2.2.6.12` while retaining `2.2.6.10` as its Stock
+base, and advertises `EVENCFW/4 img576 imgz rle xordelta stereo canvas480`.
+The Faceclaw settings lease, idle double-tap takeover, and native Even AI
+trampoline are absent, so “Hey Even” follows the stock entry path. The prior
+2.2.6.11 image remains archived with its hardware-transfer evidence; 2.2.6.12
+is hash-pinned and statically reviewed but does not claim a completed hardware flash.
 
 ### Application-alive pogo OTA
 
@@ -289,7 +291,7 @@ and final bilateral reset/liveness. It took 1,571 seconds. Consequently:
 
 - Update uses the complete changed-component plan and transmits zero unchanged
   components when installed provenance is trusted;
-- Stock 2.2.6.10 ↔ CFW 2.2.6.11 sends only the complete target Apollo main;
+- Stock 2.2.6.10 ↔ compatible reviewed CFW sends only the complete target Apollo main;
 - Restore remains the complete reviewed-image operation;
 - Case USB retains the 6-KiB deferred-write boundary; and
 - `balanced-lab` remains explicit-risk research, not a faster default.
@@ -1125,11 +1127,11 @@ component and transfers the one changed, complete CRC-gated Apollo main. The
 receiver has no safe sparse-write offset, so Update never transmits arbitrary
 changed byte ranges inside that component.
 
-Stock reports version 2.2.6.10 and the reviewed CFW reports 2.2.6.11; installed
+Stock reports version 2.2.6.10 and current reviewed CFW reports 2.2.6.12; installed
 Apollo MRAM readback is unavailable. Saved recovery audits remain useful
 source proof, but they are browser-origin-local and are not portable from a
 localhost hardware test to the hosted site. For the exact reviewed Stock
-2.2.6.10 ↔ CFW 2.2.6.11 pair, Automatic Update uses the difference plan only
+2.2.6.10 ↔ compatible reviewed-CFW pair, Automatic Update uses the difference plan only
 when the fresh bilateral preflight reports the exact source version and
 hardware. The plan omits five byte-identical components and transfers the
 **complete** pinned target Apollo main, not sparse byte ranges. Every route
@@ -1361,14 +1363,14 @@ and both routes receive read-only liveness verification.
 ## Firmware archive
 
 The archive builder knows about all 12 official G2 releases evidenced by the
-SybilSight research plus the reviewed CFW `2.2.6.11` image built from Stock
-`2.2.6.10`:
+SybilSight research plus reviewed CFW `2.2.6.11` and Faceclaw-free CFW
+`2.2.6.12`, both built from Stock `2.2.6.10`:
 
 ```text
 2.0.1.14  2.0.3.20  2.0.5.12  2.0.6.14
 2.0.7.16  2.0.8.20  2.0.9.20  2.1.1.8
 2.1.1.12  2.2.0.24  2.2.4.34  2.2.6.10
-2.2.6.11
+2.2.6.11  2.2.6.12
 ```
 
 It retrieves each original bundle from the Even Realities CDN. If a known CDN
@@ -1401,6 +1403,18 @@ source-files/
   2.2.6.11/
     g2-2.2.6.11.bin
     cfw_patches-2.2.6.11.json
+    firmware_codec.bin
+    firmware_ble_em9305.bin
+    firmware_touch.bin
+    firmware_box.bin
+    firmware_box.raw.bin
+    ota_s200_bootloader.bin
+    ota_s200_firmware_ota.bin
+    metadata.json
+    SHA256SUMS
+  2.2.6.12/
+    g2-2.2.6.12.bin
+    cfw_patches-2.2.6.12.json
     firmware_codec.bin
     firmware_ble_em9305.bin
     firmware_touch.bin
@@ -1474,8 +1488,8 @@ The previous release is retained at `/root/share/.webflasher-previous`. Every
 build emits `release.json` with its full Git commit identity and the SHA-256 of
 the catalog shipped with that build. The same atomic web-root swap publishes
 that exact catalog as `/firmware-catalog.json`; only the much larger versioned
-firmware archive remains separate. Caddy serves the tracked reviewed
-`2.2.6.11` directory from the atomic web root and falls back to the archive for
+firmware archive remains separate. Caddy serves the tracked reviewed CFW
+directories from the atomic web root and falls back to the archive for
 historical official versions. The deploy job also stages any new versioned
 directories there and verifies the release-bound catalog plus its newest
 reviewed custom binary. This preserves the historical archive without allowing

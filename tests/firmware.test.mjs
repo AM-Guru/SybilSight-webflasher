@@ -175,7 +175,8 @@ test("recognizes the exact reviewed CFW trust pin", () => {
   const trust = classifyG2Firmware(REVIEWED_CFW.sha256);
   assert.equal(trust.trust, "reviewed-custom");
   assert.equal(trust.baseVersion, "2.2.6.10");
-  assert.equal(trust.capabilities.length, 6);
+  assert.equal(trust.capabilities.length, 7);
+  assert.equal(trust.capabilities.some((value) => /wake lease/i.test(value)), false);
 });
 
 test("decodes and safely toggles a complemented option word", () => {
@@ -735,7 +736,48 @@ test("ships the complete official and reviewed-CFW development catalog", async (
     12,
   );
   const cfw = catalog.releases.find((release) => release.channel === "custom");
-  assert.equal(cfw.version, "2.2.6.11");
+  assert.equal(cfw.version, "2.2.6.12");
   assert.equal(cfw.sha256, REVIEWED_CFW.sha256);
   assert.equal(cfw.caseRecoveryEligible, false);
+});
+
+test("ships Faceclaw-free CFW 2.2.6.12 with the stock Even AI entry", async () => {
+  const releaseDirectory = new URL(
+    "../public/firmware-updates/source-files/2.2.6.12/",
+    import.meta.url,
+  );
+  const bundle = await readFile(new URL("g2-2.2.6.12.bin", releaseDirectory));
+  const firmware = await parseFirmwareInput(bundle, "g2-2.2.6.12.bin");
+  assert.equal(firmware.fileSha256, REVIEWED_CFW.sha256);
+  assert.equal(firmware.g2Version, "2.2.6.12");
+  assert.equal(firmware.mainComponent.payload.length, REVIEWED_CFW.mainPayloadBytes);
+  assert.equal(firmware.mainComponent.payloadSha256, REVIEWED_CFW.mainPayloadSha256);
+  assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
+
+  const stockFaceclawSites = new Map([
+    [1183983, "f4f75aff"],
+    [926945, "08f068fa"],
+    [927137, "08f008fa"],
+    [1474137, "7fb50600"],
+  ]);
+  for (const [offset, expectedHex] of stockFaceclawSites) {
+    assert.equal(bundle.subarray(offset, offset + 4).toString("hex"), expectedHex);
+  }
+  assert.equal(bundle.includes(Buffer.from("wakelease", "ascii")), false);
+  assert.equal(
+    bundle.includes(Buffer.from(REVIEWED_CFW.capabilityMarker, "ascii")),
+    true,
+  );
+
+  const patchSet = JSON.parse(
+    await readFile(new URL("cfw_patches-2.2.6.12.json", releaseDirectory), "utf8"),
+  );
+  assert.equal(patchSet.release_version, "2.2.6.12");
+  assert.equal(patchSet.vendor_base_version, "2.2.6.10");
+  assert.equal(patchSet.output_sha256, REVIEWED_CFW.sha256);
+  assert.equal(patchSet.patches.length, 18);
+  assert.deepEqual(
+    patchSet.patches.filter((operation) => stockFaceclawSites.has(operation.offset)),
+    [],
+  );
 });
