@@ -181,17 +181,19 @@ The current reviewed CFW is an exact, machine-described transformation of offici
 - stock SHA-256:
   `f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa`
 - CFW SHA-256:
-  `4df14a0d7cf4ac6af6f16ed18f5cda7d782c73e07e6269f9b09062fe01ab3d36`
+  `b4de0cd3ffce5b0c756a7625b5250378d7680637e82849b15291a56a279fb4cd`
 - patch-manifest SHA-256:
-  `0300ea0ba5a9090191bd4e791acd871486a41c8c6020f610570c094df4a67535`
-- 18 expected-byte-gated operations, including one appended code blob,
+  `af9f93c6e48638c90c607b19631ebcc8a091c23efb0e0ba4c41cf1fa244789bc`
+- 20 expected-byte-gated operations, including one appended code blob,
   three same-length `2.2.6.10` → `2.2.6.12` identity fields, and
   the required inner/outer size and checksum updates
 
 It reports numeric version `2.2.6.12` while retaining `2.2.6.10` as its Stock
-base, and advertises `EVENCFW/4 img576 imgz rle xordelta stereo canvas480`.
-The Faceclaw settings lease, idle double-tap takeover, and native Even AI
-trampoline are absent, so “Hey Even” follows the stock entry path. The prior
+base, and advertises `EVENCFW/6 img576 img640 imgz rle directfb`. This carries
+the current full-panel direct-framebuffer, compressed-image, gesture, buzzer,
+snapshot, and timing patches. The Faceclaw settings controls, wake takeover,
+native Even AI trampoline, and persistent framebuffer lease are absent, so
+“Hey Even” follows the stock entry path and stock repaints remain stock. The prior
 2.2.6.11 image remains archived with its hardware-transfer evidence; 2.2.6.12
 is hash-pinned and statically reviewed but does not claim a completed hardware flash.
 
@@ -1385,7 +1387,9 @@ npm run archive:firmware -- --output ./firmware-archive/source-files
 ```
 
 Each version directory contains the original bundle, every extracted
-component, a raw case image, `metadata.json`, and `SHA256SUMS`:
+component, a raw case image, `metadata.json`, and `SHA256SUMS`. The current CFW
+directory also contains `manifest.json`, which identifies every hardware-flash
+artifact and its digest:
 
 ```text
 source-files/
@@ -1435,6 +1439,7 @@ source-files/
   2.2.6.12/
     g2-2.2.6.12.bin
     cfw_patches-2.2.6.12.json
+    manifest.json
     firmware_codec.bin
     firmware_ble_em9305.bin
     firmware_touch.bin
@@ -1447,7 +1452,7 @@ source-files/
 ```
 
 The CFW entry is accepted only when its full digest, the patch recipe's
-stock/output digests, and all 16 reviewed operations match the pinned trust
+stock/output digests, and all reviewed operations match the pinned trust
 boundary.
 
 The archive itself is intentionally excluded from Git.

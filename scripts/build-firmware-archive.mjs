@@ -11,7 +11,7 @@ import { parseEvenOTA } from "../src/lib/firmware.js";
 
 const CDN_BASE = "https://cdn.evenreal.co/firmware";
 const REVIEWED_CFW_2_2_6_12_SHA256 =
-  "4df14a0d7cf4ac6af6f16ed18f5cda7d782c73e07e6269f9b09062fe01ab3d36";
+  "b4de0cd3ffce5b0c756a7625b5250378d7680637e82849b15291a56a279fb4cd";
 const REVIEWED_CFW_2_2_6_11_SHA256 =
   "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86";
 const REVIEWED_CFW_BASE_SHA256 =
@@ -194,9 +194,9 @@ const RELEASES = [
     baseSha256: REVIEWED_CFW_BASE_SHA256,
     channel: "custom",
     trust: "reviewed-custom",
-    hash: "46c2d38063d0f3b51fb7cba0d76dab6d",
+    hash: "af10fac70eb60f158ac6ba98eef7f54c",
     sha256: REVIEWED_CFW_2_2_6_12_SHA256,
-    size: 4319387,
+    size: 4316319,
     fileName: "g2-2.2.6.12.bin",
     sourceUrl:
       "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.6.12/g2-2.2.6.12.bin",
@@ -210,15 +210,19 @@ const RELEASES = [
     patchFallback:
       "public/firmware-updates/source-files/2.2.6.12/cfw_patches-2.2.6.12.json",
     patchFileName: "cfw_patches-2.2.6.12.json",
-    patchCount: 18,
+    patchCount: 20,
+    manifestFileName: "manifest.json",
     notes:
-      "SybilSight CFW built from official G2 2.2.6.10 with Faceclaw's wake lease, idle double-tap takeover, and Even AI interception removed. Native Hey Even retains the stock path. The image is reproducibly built and statically reviewed but not yet hardware-flashed.",
+      "SybilSight CFW 2.2.6.12 built from official G2 2.2.6.10 with the current CFW image, gesture, timing, and full-panel direct-framebuffer patches. The Faceclaw settings controls, wake takeover, Even AI interception, and framebuffer lease are excluded. The image is reproducibly built and statically reviewed but not yet hardware-flashed.",
     capabilities: [
       "576×288 image containers",
+      "640×480 full-panel custom image surface",
       "Zlib and RLE image payloads",
-      "8bpp XOR-delta frame updates",
-      "Per-lens stereo image pairs",
-      "576×480 virtual canvas with a 576×288 viewport",
+      "Direct packed-4bpp framebuffer presentation",
+      "Atomic multi-segment and rectangle-copy updates",
+      "Per-lens stereo image operations",
+      "Snapshot FIFO and on-device timing diagnostics",
+      "Buzzer presets, notes, raw tones, and sequences",
       "Settings capability field 100",
       "Ring long-press and release events",
     ],
@@ -396,6 +400,7 @@ async function saveRelease(root, release, fallbackRoots) {
   await put(sourceFile, bytes);
   let patchFile = null;
   let patchSha256 = null;
+  let patchSet = null;
   if (release.patchUrl) {
     let patchBytes;
     try {
@@ -409,7 +414,7 @@ async function saveRelease(root, release, fallbackRoots) {
         ),
       );
     }
-    const patchSet = JSON.parse(patchBytes.toString("utf8"));
+    patchSet = JSON.parse(patchBytes.toString("utf8"));
     const patchVersion = patchSet.release_version ?? patchSet.version;
     const patchBaseVersion =
       patchSet.vendor_base_version ?? patchSet.base_version;
@@ -456,6 +461,76 @@ async function saveRelease(root, release, fallbackRoots) {
     }
   }
 
+  let manifestFile = null;
+  let manifestSha256 = null;
+  if (release.manifestFileName) {
+    manifestFile = release.manifestFileName;
+    const firmwareFiles = parsed.components.map((component) => ({
+      componentName: component.name,
+      archiveFile: component.name.replaceAll("/", "_"),
+      typeId: component.typeId,
+      size: component.payloadSize,
+      crc32c: component.crc32c.toString(16).padStart(8, "0"),
+      sha256: digest("sha256", component.payload),
+      role:
+        component.typeId === 0
+          ? "glasses-application"
+          : component.typeId === 1
+            ? "glasses-bootloader"
+            : component.typeId === 6
+              ? "charging-case"
+              : "device-component",
+    }));
+    const manifest = {
+      schemaVersion: 1,
+      format: "evenota-hardware-flash-manifest-v1",
+      device: "Even Realities G2",
+      release: {
+        version: release.version,
+        internalVersion: parsed.version,
+        channel: release.channel ?? "official",
+        trust: release.trust ?? "official-pinned",
+        baseVersion: release.baseVersion ?? null,
+        hardwareValidated: HARDWARE_VALIDATED_TEMPLE_IMAGES.has(sha256),
+      },
+      package: {
+        file: sourceFile,
+        size: bytes.length,
+        md5,
+        sha256,
+        componentCount: parsed.components.length,
+      },
+      patchRecipe: patchFile
+        ? {
+            file: patchFile,
+            sha256: patchSha256,
+            baseVersion: release.baseVersion,
+            baseSha256: release.baseSha256,
+            operationCount: patchSet.patches.length,
+          }
+        : null,
+      capabilityMarker: patchSet?.capability_marker ?? null,
+      sourceProvenance: patchSet?.source_provenance ?? null,
+      excludedFeature: patchSet?.source_provenance?.excluded_feature ?? null,
+      firmwareFiles,
+      chargingCaseRawImage: {
+        file: "firmware_box.raw.bin",
+        size: parsed.chargingCase.rawImage.length,
+        sha256: digest("sha256", parsed.chargingCase.rawImage),
+      },
+      flashTargets: {
+        completeBundle: sourceFile,
+        glassesApplication: "ota_s200_firmware_ota.bin",
+        glassesBootloader: "ota_s200_bootloader.bin",
+        chargingCaseWrapped: "firmware_box.bin",
+        chargingCaseRaw: "firmware_box.raw.bin",
+      },
+    };
+    const manifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`);
+    manifestSha256 = digest("sha256", manifestBytes);
+    await put(manifestFile, manifestBytes);
+  }
+
   const metadata = {
     schemaVersion: 2,
     device: "Even Realities G2",
@@ -476,6 +551,8 @@ async function saveRelease(root, release, fallbackRoots) {
     patchUrl: release.patchUrl ?? null,
     patchFile,
     patchSha256,
+    manifestFile,
+    manifestSha256,
     archivedAt: new Date().toISOString(),
     mainFirmware: parsed.mainFirmware
       ? {
@@ -537,6 +614,12 @@ async function saveRelease(root, release, fallbackRoots) {
       ? `/firmware-updates/source-files/${release.version}/${patchFile}`
       : null,
     patchSha256,
+    ...(manifestFile
+      ? {
+          manifestUrl: `/firmware-updates/source-files/${release.version}/${manifestFile}`,
+          manifestSha256,
+        }
+      : {}),
     archivedFrom,
     mainFirmware: metadata.mainFirmware,
     components: metadata.components,

@@ -176,7 +176,7 @@ test("recognizes the exact reviewed CFW trust pin", () => {
   const trust = classifyG2Firmware(REVIEWED_CFW.sha256);
   assert.equal(trust.trust, "reviewed-custom");
   assert.equal(trust.baseVersion, "2.2.6.10");
-  assert.equal(trust.capabilities.length, 7);
+  assert.equal(trust.capabilities.length, 10);
   assert.equal(trust.capabilities.some((value) => /wake lease/i.test(value)), false);
 });
 
@@ -786,6 +786,7 @@ test("ships Faceclaw-free CFW 2.2.6.12 with the stock Even AI entry", async () =
     assert.equal(bundle.subarray(offset, offset + 4).toString("hex"), expectedHex);
   }
   assert.equal(bundle.includes(Buffer.from("wakelease", "ascii")), false);
+  assert.equal(bundle.includes(Buffer.from("fbguard", "ascii")), false);
   assert.equal(
     bundle.includes(Buffer.from(REVIEWED_CFW.capabilityMarker, "ascii")),
     true,
@@ -797,9 +798,31 @@ test("ships Faceclaw-free CFW 2.2.6.12 with the stock Even AI entry", async () =
   assert.equal(patchSet.release_version, "2.2.6.12");
   assert.equal(patchSet.vendor_base_version, "2.2.6.10");
   assert.equal(patchSet.output_sha256, REVIEWED_CFW.sha256);
-  assert.equal(patchSet.patches.length, 18);
+  assert.equal(patchSet.patches.length, 20);
   assert.deepEqual(
     patchSet.patches.filter((operation) => stockFaceclawSites.has(operation.offset)),
     [],
   );
+
+  const manifest = JSON.parse(
+    await readFile(new URL("manifest.json", releaseDirectory), "utf8"),
+  );
+  assert.equal(manifest.format, "evenota-hardware-flash-manifest-v1");
+  assert.equal(manifest.release.baseVersion, "2.2.6.10");
+  assert.equal(manifest.release.hardwareValidated, false);
+  assert.equal(manifest.package.sha256, REVIEWED_CFW.sha256);
+  assert.equal(manifest.package.componentCount, 6);
+  assert.equal(manifest.patchRecipe.operationCount, 20);
+  assert.equal(manifest.capabilityMarker, REVIEWED_CFW.capabilityMarker);
+  assert.equal(manifest.firmwareFiles.length, 6);
+  for (const file of manifest.firmwareFiles) {
+    const bytes = await readFile(new URL(file.archiveFile, releaseDirectory));
+    const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+    assert.equal(bytes.length, file.size);
+    assert.equal(
+      Buffer.from(digest).toString("hex"),
+      file.sha256,
+      `${file.archiveFile} must match the flash manifest`,
+    );
+  }
 });

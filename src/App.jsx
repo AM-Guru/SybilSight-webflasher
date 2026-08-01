@@ -5157,6 +5157,11 @@ function App() {
                       Reviewed patch recipe
                     </a>
                   ) : null}
+                  {selectedRelease.manifestUrl ? (
+                    <a href={selectedRelease.manifestUrl} download>
+                      Flash manifest
+                    </a>
+                  ) : null}
                 </div>
               ) : null}
               {usbRecoveryVisible ? (
@@ -5299,10 +5304,10 @@ function App() {
                       <strong>Reviewed CFW targets the Glasses; do not stage it as Case firmware.</strong>
                       <span>
                         Its Case component is byte-identical to the stock 1.2.57 component.
-                        The exact reviewed Apollo main payload has successful left- and
-                        right-temple transfers through SybilSight’s volatile Case bridge.
-                        It is eligible only for the guarded running-temple writer in Recover,
-                        never for Case-bank staging.
+                        The exact Apollo main payload is digest-pinned and eligible only for
+                        the guarded running-temple writer in Recover, never for Case-bank
+                        staging. Hardware-transfer validation is tracked separately for each
+                        exact release hash.
                       </span>
                       <ul>
                         {firmware.provenance.capabilities.map((capability) => (

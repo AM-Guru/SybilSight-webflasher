@@ -6,32 +6,37 @@
   "channel": "custom",
   "trust": "reviewed-custom",
   "baseVersion": "2.2.6.10",
-  "notes": "SybilSight CFW built from official G2 2.2.6.10 with Faceclaw's wake lease, idle double-tap takeover, and Even AI interception removed. Native Hey Even retains the stock path. The image is reproducibly built and statically reviewed but not yet hardware-flashed.",
+  "notes": "SybilSight CFW 2.2.6.12 built from official G2 2.2.6.10 with the current CFW image, gesture, timing, and full-panel direct-framebuffer patches. The Faceclaw settings controls, wake takeover, Even AI interception, and framebuffer lease are excluded. The image is reproducibly built and statically reviewed but not yet hardware-flashed.",
   "capabilities": [
     "576×288 image containers",
+    "640×480 full-panel custom image surface",
     "Zlib and RLE image payloads",
-    "8bpp XOR-delta frame updates",
-    "Per-lens stereo image pairs",
-    "576×480 virtual canvas with a 576×288 viewport",
+    "Direct packed-4bpp framebuffer presentation",
+    "Atomic multi-segment and rectangle-copy updates",
+    "Per-lens stereo image operations",
+    "Snapshot FIFO and on-device timing diagnostics",
+    "Buzzer presets, notes, raw tones, and sequences",
     "Settings capability field 100",
     "Ring long-press and release events"
   ],
   "caseVersion": "1.2.57",
   "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.6.12/g2-2.2.6.12.bin",
-  "archivedFrom": "SybilSight local evidence",
+  "archivedFrom": "WebFlasher local evidence",
   "sourceFile": "g2-2.2.6.12.bin",
-  "sourceMd5": "46c2d38063d0f3b51fb7cba0d76dab6d",
-  "sourceSha256": "4df14a0d7cf4ac6af6f16ed18f5cda7d782c73e07e6269f9b09062fe01ab3d36",
-  "sourceSize": 4319387,
+  "sourceMd5": "af10fac70eb60f158ac6ba98eef7f54c",
+  "sourceSha256": "b4de0cd3ffce5b0c756a7625b5250378d7680637e82849b15291a56a279fb4cd",
+  "sourceSize": 4316319,
   "patchUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.6.12/cfw_patches-2.2.6.12.json",
   "patchFile": "cfw_patches-2.2.6.12.json",
-  "patchSha256": "0300ea0ba5a9090191bd4e791acd871486a41c8c6020f610570c094df4a67535",
-  "archivedAt": "2026-08-01T13:55:48.387Z",
+  "patchSha256": "af9f93c6e48638c90c607b19631ebcc8a091c23efb0e0ba4c41cf1fa244789bc",
+  "manifestFile": "manifest.json",
+  "manifestSha256": "8cfd8ea6b8f95f3f1b8e7f8bf97a8dc992650197cc683f937ad67ee9f7116a40",
+  "archivedAt": "2026-08-01T22:38:19.354Z",
   "mainFirmware": {
     "runBase": "0x00438000",
-    "installedImageSize": 3541524,
-    "installedImageEnd": "0x00798a14",
-    "crc32": "7dc763cd"
+    "installedImageSize": 3538456,
+    "installedImageEnd": "0x00797e18",
+    "crc32": "4f2156b9"
   },
   "components": [
     {
@@ -72,21 +77,21 @@
     {
       "name": "ota/s200_firmware_ota.bin",
       "typeId": 0,
-      "size": 3541556,
-      "crc32c": "2c363854",
-      "sha256": "c392e91c22511249eed39375eeb81740aa289bb7a4b6498c7babb04f5cf3781b"
+      "size": 3538488,
+      "crc32c": "e2400543",
+      "sha256": "81e979487d70af05fa88ae5cf1475fe183b01a14c2d8b6506585d22c0e854bcb"
     }
   ],
   "files": [
     {
       "name": "g2-2.2.6.12.bin",
-      "size": 4319387,
-      "sha256": "4df14a0d7cf4ac6af6f16ed18f5cda7d782c73e07e6269f9b09062fe01ab3d36"
+      "size": 4316319,
+      "sha256": "b4de0cd3ffce5b0c756a7625b5250378d7680637e82849b15291a56a279fb4cd"
     },
     {
       "name": "cfw_patches-2.2.6.12.json",
-      "size": 39345,
-      "sha256": "0300ea0ba5a9090191bd4e791acd871486a41c8c6020f610570c094df4a67535"
+      "size": 34930,
+      "sha256": "af9f93c6e48638c90c607b19631ebcc8a091c23efb0e0ba4c41cf1fa244789bc"
     },
     {
       "name": "firmware_codec.bin",
@@ -120,8 +125,13 @@
     },
     {
       "name": "ota_s200_firmware_ota.bin",
-      "size": 3541556,
-      "sha256": "c392e91c22511249eed39375eeb81740aa289bb7a4b6498c7babb04f5cf3781b"
+      "size": 3538488,
+      "sha256": "81e979487d70af05fa88ae5cf1475fe183b01a14c2d8b6506585d22c0e854bcb"
+    },
+    {
+      "name": "manifest.json",
+      "size": 3477,
+      "sha256": "8cfd8ea6b8f95f3f1b8e7f8bf97a8dc992650197cc683f937ad67ee9f7116a40"
     }
   ]
 }
