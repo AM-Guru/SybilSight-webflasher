@@ -434,6 +434,7 @@ jobs:
           release_url="https://webflasher.sybilsight.com/release.json?verify=${GITHUB_SHA}&run=${GITHUB_RUN_ID}"
           observed_release_file="${RUNNER_TEMP}/observed-release.json"
           observed_catalog_file="${RUNNER_TEMP}/observed-firmware-catalog.json"
+          observed_archive_catalog_file="${RUNNER_TEMP}/observed-archive-catalog.json"
           observed_target_file="${RUNNER_TEMP}/observed-reviewed-custom.bin"
           curl --fail --silent --show-error \
             --header 'Cache-Control: no-cache' \
@@ -444,6 +445,15 @@ jobs:
             --header 'Cache-Control: no-cache' \
             --output "${observed_catalog_file}" \
             "${catalog_url}"
+          archive_catalog_url="https://webflasher.sybilsight.com/firmware-updates/source-files/index.json?verify=${GITHUB_SHA}&run=${GITHUB_RUN_ID}"
+          curl --fail --silent --show-error \
+            --header 'Cache-Control: no-cache' \
+            --output "${observed_archive_catalog_file}" \
+            "${archive_catalog_url}"
+          if ! cmp --silent "${observed_catalog_file}" "${observed_archive_catalog_file}"; then
+            echo "Production source-files catalog does not match the release-bound catalog" >&2
+            exit 1
+          fi
           target_metadata="$(node -e '
             const crypto = require("node:crypto");
             const fs = require("node:fs");
