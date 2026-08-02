@@ -11,7 +11,7 @@ import { parseEvenOTA } from "../src/lib/firmware.js";
 
 const CDN_BASE = "https://cdn.evenreal.co/firmware";
 const REVIEWED_CFW_2_2_7_16_SHA256 =
-  "408e48d29f9937fb9efe6a17ddb5766768dcb9d68fc057e9a90bbcbad685a6bb";
+  "6c0fdfed0eabfc40ba718ec1eec6b0728e9794a8abdb6079ebdcee2c56f58127";
 const REVIEWED_CFW_2_2_7_14_BASE_SHA256 =
   "0fced0aebcc6c88db6f76dba34f91b805d842a5fc297bfd7fa6d6a34ec83cecb";
 const REVIEWED_CFW_2_2_6_12_SHA256 =
@@ -198,7 +198,7 @@ const RELEASES = [
     baseSha256: REVIEWED_CFW_2_2_7_14_BASE_SHA256,
     channel: "custom",
     trust: "reviewed-custom",
-    hash: "1a3c0c73924a95cf40be632846ffe068",
+    hash: "0b4965e39055256b0d5353e42413521d",
     sha256: REVIEWED_CFW_2_2_7_16_SHA256,
     size: 4351457,
     fileName: "g2-2.2.7.16.bin",
@@ -214,11 +214,13 @@ const RELEASES = [
     patchFallback:
       "public/firmware-updates/source-files/2.2.7.16/cfw_patches-2.2.7.16.json",
     patchFileName: "cfw_patches-2.2.7.16.json",
-    patchCount: 24,
+    patchCount: 25,
     manifestFileName: "manifest.json",
     capabilityMarker:
       "EVENCFW/6 img576 img640 imgz rle wakelease directfb fbguard",
     g2flashCommit: "28aad42757837db14c08225884a7cc5201e08595",
+    g2flashRebasePatchSha256:
+      "2049b1f1331176cc7485d73757e9c6a8ee8d072ba3e3047790f2bc0eb465dc5f",
     directFramebufferCommits: [
       "235a8b304447e330df6a0bce0351e3b6dc3d6f08",
       "28aad42757837db14c08225884a7cc5201e08595",
@@ -490,6 +492,11 @@ async function saveRelease(root, release, fallbackRoots) {
       (release.g2flashCommit &&
         patchSet.source_provenance?.g2flash_upstream_commit !==
           release.g2flashCommit) ||
+      (release.g2flashRebasePatchSha256 &&
+        (patchSet.g2flash_rebase_patch_sha256 !==
+          release.g2flashRebasePatchSha256 ||
+          patchSet.source_provenance?.g2flash_rebase_patch_sha256 !==
+            release.g2flashRebasePatchSha256)) ||
       (release.directFramebufferCommits &&
         JSON.stringify(patchSet.source_provenance?.direct_framebuffer_commits) !==
           JSON.stringify(release.directFramebufferCommits))
@@ -600,6 +607,7 @@ async function saveRelease(root, release, fallbackRoots) {
     internalVersion: parsed.version,
     channel: release.channel ?? "official",
     trust: release.trust ?? "official-pinned",
+    hardwareValidated: HARDWARE_VALIDATED_TEMPLE_IMAGES.has(sha256),
     baseVersion: release.baseVersion ?? null,
     notes: release.notes ?? null,
     capabilities: release.capabilities ?? [],
@@ -658,6 +666,7 @@ async function saveRelease(root, release, fallbackRoots) {
     ...(release.displayName ? { displayName: release.displayName } : {}),
     channel: release.channel ?? "official",
     trust: release.trust ?? "official-pinned",
+    hardwareValidated: HARDWARE_VALIDATED_TEMPLE_IMAGES.has(sha256),
     version: release.version,
     internalVersion: parsed.version,
     baseVersion: release.baseVersion ?? null,

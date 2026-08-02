@@ -5,6 +5,7 @@
   "internalVersion": "2.2.7.16",
   "channel": "custom",
   "trust": "reviewed-custom",
+  "hardwareValidated": false,
   "baseVersion": "2.2.7.14",
   "notes": "SybilSight CFW 2.2.7.16 applies the pinned jimrandomh/g2flash patch set to official G2 2.2.7.14 stock. It retains upstream Faceclaw wake and framebuffer controls while its guarded Even AI trampoline resumes the untouched stock command path when no wake lease is active. The image is reproducibly built and statically reviewed but not yet hardware-flashed.",
   "capabilities": [
@@ -24,20 +25,20 @@
   "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.7.16/g2-2.2.7.16.bin",
   "archivedFrom": "WebFlasher local evidence",
   "sourceFile": "g2-2.2.7.16.bin",
-  "sourceMd5": "1a3c0c73924a95cf40be632846ffe068",
-  "sourceSha256": "408e48d29f9937fb9efe6a17ddb5766768dcb9d68fc057e9a90bbcbad685a6bb",
+  "sourceMd5": "0b4965e39055256b0d5353e42413521d",
+  "sourceSha256": "6c0fdfed0eabfc40ba718ec1eec6b0728e9794a8abdb6079ebdcee2c56f58127",
   "sourceSize": 4351457,
   "patchUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.7.16/cfw_patches-2.2.7.16.json",
   "patchFile": "cfw_patches-2.2.7.16.json",
-  "patchSha256": "955d38d2676d402bea3c219468022fcbb11953f97bf20058af1f454a97c363ec",
+  "patchSha256": "8d37bb2b045d7306e96d886c4c1aae74438bb09ebee10d7cba0fb16c5df6a54e",
   "manifestFile": "manifest.json",
-  "manifestSha256": "1fe454442759387e00ed8080a4dc699e84e0b78cb735e239b11092a91385f4d9",
-  "archivedAt": "2026-08-02T21:14:01.705Z",
+  "manifestSha256": "a6752d97647adc3f41c29a90e6ee9a08088b7acd974c04419c24bb582218339f",
+  "archivedAt": "2026-08-02T22:07:15.250Z",
   "mainFirmware": {
     "runBase": "0x00438000",
     "installedImageSize": 3573594,
     "installedImageEnd": "0x007a075a",
-    "crc32": "806a8908"
+    "crc32": "22640190"
   },
   "components": [
     {
@@ -79,20 +80,20 @@
       "name": "ota/s200_firmware_ota.bin",
       "typeId": 0,
       "size": 3573626,
-      "crc32c": "c54f8c72",
-      "sha256": "3aa9753479fa389a551c415fa431375cb82599011274c75eca2e4d87715498ba"
+      "crc32c": "61d8289e",
+      "sha256": "bdd473f5988c926e78ebc0b9d5255bbd5982957ebb24a649328d3eb92cf1c78c"
     }
   ],
   "files": [
     {
       "name": "g2-2.2.7.16.bin",
       "size": 4351457,
-      "sha256": "408e48d29f9937fb9efe6a17ddb5766768dcb9d68fc057e9a90bbcbad685a6bb"
+      "sha256": "6c0fdfed0eabfc40ba718ec1eec6b0728e9794a8abdb6079ebdcee2c56f58127"
     },
     {
       "name": "cfw_patches-2.2.7.16.json",
-      "size": 36530,
-      "sha256": "955d38d2676d402bea3c219468022fcbb11953f97bf20058af1f454a97c363ec"
+      "size": 36753,
+      "sha256": "8d37bb2b045d7306e96d886c4c1aae74438bb09ebee10d7cba0fb16c5df6a54e"
     },
     {
       "name": "firmware_codec.bin",
@@ -127,12 +128,12 @@
     {
       "name": "ota_s200_firmware_ota.bin",
       "size": 3573626,
-      "sha256": "3aa9753479fa389a551c415fa431375cb82599011274c75eca2e4d87715498ba"
+      "sha256": "bdd473f5988c926e78ebc0b9d5255bbd5982957ebb24a649328d3eb92cf1c78c"
     },
     {
       "name": "manifest.json",
       "size": 3713,
-      "sha256": "1fe454442759387e00ed8080a4dc699e84e0b78cb735e239b11092a91385f4d9"
+      "sha256": "a6752d97647adc3f41c29a90e6ee9a08088b7acd974c04419c24bb582218339f"
     }
   ]
 }

@@ -756,6 +756,7 @@ test("ships the complete official and reviewed-CFW development catalog", async (
   assert.equal(cfw.sha256, REVIEWED_CFW_2_2_7_16.sha256);
   assert.equal(cfw.baseVersion, "2.2.7.14");
   assert.equal(cfw.caseRecoveryEligible, false);
+  assert.equal(cfw.hardwareValidated, false);
 });
 
 test("ships the exact official G2 2.2.7.14 bundle and six components", async () => {
@@ -804,7 +805,15 @@ test("ships stock-based CFW 2.2.7.16 with upstream 640x480 and guarded Even AI",
   assert.equal(patchSet.base_sha256, REVIEWED_CFW_2_2_7_16.baseSha256);
   assert.equal(patchSet.output_sha256, REVIEWED_CFW_2_2_7_16.sha256);
   assert.equal(patchSet.capability_marker, REVIEWED_CFW_2_2_7_16.capabilityMarker);
-  assert.equal(patchSet.patches.length, 24);
+  assert.equal(patchSet.patches.length, 25);
+  assert.equal(
+    patchSet.g2flash_rebase_patch_sha256,
+    "2049b1f1331176cc7485d73757e9c6a8ee8d072ba3e3047790f2bc0eb465dc5f",
+  );
+  assert.equal(
+    patchSet.source_provenance.g2flash_rebase_patch_sha256,
+    "2049b1f1331176cc7485d73757e9c6a8ee8d072ba3e3047790f2bc0eb465dc5f",
+  );
   assert.deepEqual(
     patchSet.source_provenance.direct_framebuffer_commits,
     [
@@ -829,11 +838,15 @@ test("ships stock-based CFW 2.2.7.16 with upstream 640x480 and guarded Even AI",
   assert.equal(manifest.release.hardwareValidated, false);
   assert.equal(manifest.package.sha256, REVIEWED_CFW_2_2_7_16.sha256);
   assert.equal(manifest.package.componentCount, 6);
-  assert.equal(manifest.patchRecipe.operationCount, 24);
+  assert.equal(manifest.patchRecipe.operationCount, 25);
   assert.equal(manifest.capabilityMarker, REVIEWED_CFW_2_2_7_16.capabilityMarker);
   assert.equal(manifest.sourceProvenance.faceclaw_retained, true);
   assert.equal(manifest.excludedFeature, null);
   assert.equal(manifest.firmwareFiles.length, 6);
+  const metadata = JSON.parse(
+    await readFile(new URL("metadata.json", releaseDirectory), "utf8"),
+  );
+  assert.equal(metadata.hardwareValidated, false);
   for (const file of manifest.firmwareFiles) {
     const bytes = await readFile(new URL(file.archiveFile, releaseDirectory));
     const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);

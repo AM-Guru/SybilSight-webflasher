@@ -45,10 +45,10 @@ export const REVIEWED_CFW_2_2_7_16 = Object.freeze({
   version: "2.2.7.16",
   baseVersion: "2.2.7.14",
   baseSha256: "0fced0aebcc6c88db6f76dba34f91b805d842a5fc297bfd7fa6d6a34ec83cecb",
-  sha256: "408e48d29f9937fb9efe6a17ddb5766768dcb9d68fc057e9a90bbcbad685a6bb",
+  sha256: "6c0fdfed0eabfc40ba718ec1eec6b0728e9794a8abdb6079ebdcee2c56f58127",
   mainPayloadBytes: 3573626,
   mainPayloadSha256:
-    "3aa9753479fa389a551c415fa431375cb82599011274c75eca2e4d87715498ba",
+    "bdd473f5988c926e78ebc0b9d5255bbd5982957ebb24a649328d3eb92cf1c78c",
   capabilityMarker:
     "EVENCFW/6 img576 img640 imgz rle wakelease directfb fbguard",
   capabilities: [

@@ -13,16 +13,16 @@
   "package": {
     "file": "g2-2.2.7.16.bin",
     "size": 4351457,
-    "md5": "1a3c0c73924a95cf40be632846ffe068",
-    "sha256": "408e48d29f9937fb9efe6a17ddb5766768dcb9d68fc057e9a90bbcbad685a6bb",
+    "md5": "0b4965e39055256b0d5353e42413521d",
+    "sha256": "6c0fdfed0eabfc40ba718ec1eec6b0728e9794a8abdb6079ebdcee2c56f58127",
     "componentCount": 6
   },
   "patchRecipe": {
     "file": "cfw_patches-2.2.7.16.json",
-    "sha256": "955d38d2676d402bea3c219468022fcbb11953f97bf20058af1f454a97c363ec",
+    "sha256": "8d37bb2b045d7306e96d886c4c1aae74438bb09ebee10d7cba0fb16c5df6a54e",
     "baseVersion": "2.2.7.14",
     "baseSha256": "0fced0aebcc6c88db6f76dba34f91b805d842a5fc297bfd7fa6d6a34ec83cecb",
-    "operationCount": 24
+    "operationCount": 25
   },
   "capabilityMarker": "EVENCFW/6 img576 img640 imgz rle wakelease directfb fbguard",
   "sourceProvenance": {
@@ -32,7 +32,7 @@
     ],
     "faceclaw_even_ai_resume_address": "0x004e6a6e",
     "faceclaw_retained": true,
-    "g2flash_rebase_patch_sha256": "1f1220d45760e2813793c9572f1d88ded0aad830115d95596290fdcb9aac8e22",
+    "g2flash_rebase_patch_sha256": "2049b1f1331176cc7485d73757e9c6a8ee8d072ba3e3047790f2bc0eb465dc5f",
     "g2flash_upstream_commit": "28aad42757837db14c08225884a7cc5201e08595",
     "hardware_validation": "not-yet-hardware-flashed",
     "implementation": "jimrandomh/g2flash patches applied to official stock"
@@ -89,8 +89,8 @@
       "archiveFile": "ota_s200_firmware_ota.bin",
       "typeId": 0,
       "size": 3573626,
-      "crc32c": "c54f8c72",
-      "sha256": "3aa9753479fa389a551c415fa431375cb82599011274c75eca2e4d87715498ba",
+      "crc32c": "61d8289e",
+      "sha256": "bdd473f5988c926e78ebc0b9d5255bbd5982957ebb24a649328d3eb92cf1c78c",
       "role": "glasses-application"
     }
   ],
