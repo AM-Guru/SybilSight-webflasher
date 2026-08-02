@@ -41,6 +41,30 @@ export const REVIEWED_CFW = Object.freeze({
     "Ring long-press and release events",
   ],
 });
+export const REVIEWED_CFW_2_2_7_16 = Object.freeze({
+  version: "2.2.7.16",
+  baseVersion: "2.2.7.14",
+  baseSha256: "0fced0aebcc6c88db6f76dba34f91b805d842a5fc297bfd7fa6d6a34ec83cecb",
+  sha256: "408e48d29f9937fb9efe6a17ddb5766768dcb9d68fc057e9a90bbcbad685a6bb",
+  mainPayloadBytes: 3573626,
+  mainPayloadSha256:
+    "3aa9753479fa389a551c415fa431375cb82599011274c75eca2e4d87715498ba",
+  capabilityMarker:
+    "EVENCFW/6 img576 img640 imgz rle wakelease directfb fbguard",
+  capabilities: [
+    "576×288 image containers",
+    "640×480 full-panel custom image surface",
+    "Zlib and RLE image payloads",
+    "Direct packed-4bpp framebuffer presentation",
+    "Atomic multi-segment and rectangle-copy updates",
+    "Per-lens stereo image operations",
+    "Snapshot FIFO and on-device timing diagnostics",
+    "Buzzer presets, notes, raw tones, and sequences",
+    "Settings capability field 100",
+    "Faceclaw control field 101 and wake lease",
+    "Ring long-press and release events",
+  ],
+});
 const HARDWARE_VALIDATED_CFW_2_2_6_11 = Object.freeze({
   sha256: "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86",
 });
@@ -867,14 +891,17 @@ export function parseMainOTAPreamble(payload) {
 
 export function classifyG2Firmware(fileSha256) {
   const digest = fileSha256.toLowerCase();
-  if (digest === REVIEWED_CFW.sha256) {
+  const reviewed = [REVIEWED_CFW_2_2_7_16, REVIEWED_CFW].find(
+    (release) => release.sha256 === digest,
+  );
+  if (reviewed) {
     return {
       channel: "custom",
       trust: "reviewed-custom",
-      label: `Reviewed CFW · stock ${REVIEWED_CFW.baseVersion} base`,
-      version: REVIEWED_CFW.version,
-      baseVersion: REVIEWED_CFW.baseVersion,
-      capabilities: REVIEWED_CFW.capabilities,
+      label: `Reviewed CFW · stock ${reviewed.baseVersion} base`,
+      version: reviewed.version,
+      baseVersion: reviewed.baseVersion,
+      capabilities: reviewed.capabilities,
     };
   }
   const official = Object.entries(OFFICIAL_G2_SHA256).find(

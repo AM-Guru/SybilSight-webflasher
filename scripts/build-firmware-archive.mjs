@@ -10,6 +10,10 @@ import { unzipSync } from "fflate";
 import { parseEvenOTA } from "../src/lib/firmware.js";
 
 const CDN_BASE = "https://cdn.evenreal.co/firmware";
+const REVIEWED_CFW_2_2_7_16_SHA256 =
+  "408e48d29f9937fb9efe6a17ddb5766768dcb9d68fc057e9a90bbcbad685a6bb";
+const REVIEWED_CFW_2_2_7_14_BASE_SHA256 =
+  "0fced0aebcc6c88db6f76dba34f91b805d842a5fc297bfd7fa6d6a34ec83cecb";
 const REVIEWED_CFW_2_2_6_12_SHA256 =
   "b4de0cd3ffce5b0c756a7625b5250378d7680637e82849b15291a56a279fb4cd";
 const REVIEWED_CFW_2_2_6_11_SHA256 =
@@ -184,6 +188,56 @@ const RELEASES = [
     size: 4335715,
     notes:
       "Enhanced Bluetooth connection stability and Teleprompt AI noise reduction; fixed Teleprompt Remote Control and earlier-version firmware update failures in specific scenarios.",
+  },
+  {
+    id: "g2-custom-2.2.7.16",
+    displayName: "SybilSight CFW (2.2.7.16)",
+    version: "2.2.7.16",
+    internalVersion: "2.2.7.16",
+    baseVersion: "2.2.7.14",
+    baseSha256: REVIEWED_CFW_2_2_7_14_BASE_SHA256,
+    channel: "custom",
+    trust: "reviewed-custom",
+    hash: "1a3c0c73924a95cf40be632846ffe068",
+    sha256: REVIEWED_CFW_2_2_7_16_SHA256,
+    size: 4351457,
+    fileName: "g2-2.2.7.16.bin",
+    sourceUrl:
+      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.7.16/g2-2.2.7.16.bin",
+    fallbacks: [[
+      "webflasher",
+      "public/firmware-updates/source-files/2.2.7.16/g2-2.2.7.16.bin",
+    ]],
+    patchUrl:
+      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.7.16/cfw_patches-2.2.7.16.json",
+    patchFallbackRoot: "webflasher",
+    patchFallback:
+      "public/firmware-updates/source-files/2.2.7.16/cfw_patches-2.2.7.16.json",
+    patchFileName: "cfw_patches-2.2.7.16.json",
+    patchCount: 24,
+    manifestFileName: "manifest.json",
+    capabilityMarker:
+      "EVENCFW/6 img576 img640 imgz rle wakelease directfb fbguard",
+    g2flashCommit: "28aad42757837db14c08225884a7cc5201e08595",
+    directFramebufferCommits: [
+      "235a8b304447e330df6a0bce0351e3b6dc3d6f08",
+      "28aad42757837db14c08225884a7cc5201e08595",
+    ],
+    notes:
+      "SybilSight CFW 2.2.7.16 applies the pinned jimrandomh/g2flash patch set to official G2 2.2.7.14 stock. It retains upstream Faceclaw wake and framebuffer controls while its guarded Even AI trampoline resumes the untouched stock command path when no wake lease is active. The image is reproducibly built and statically reviewed but not yet hardware-flashed.",
+    capabilities: [
+      "576×288 image containers",
+      "640×480 full-panel custom image surface",
+      "Zlib and RLE image payloads",
+      "Direct packed-4bpp framebuffer presentation",
+      "Atomic multi-segment and rectangle-copy updates",
+      "Per-lens stereo image operations",
+      "Snapshot FIFO and on-device timing diagnostics",
+      "Buzzer presets, notes, raw tones, and sequences",
+      "Settings capability field 100",
+      "Faceclaw control field 101 and wake lease",
+      "Ring long-press and release events",
+    ],
   },
   {
     id: "g2-custom-2.2.6.12",
@@ -430,7 +484,15 @@ async function saveRelease(root, release, fallbackRoots) {
       patchVersion !== release.version ||
       patchBaseVersion !== release.baseVersion ||
       !Array.isArray(patchSet.patches) ||
-      patchSet.patches.length !== release.patchCount
+      patchSet.patches.length !== release.patchCount ||
+      (release.capabilityMarker &&
+        patchSet.capability_marker !== release.capabilityMarker) ||
+      (release.g2flashCommit &&
+        patchSet.source_provenance?.g2flash_upstream_commit !==
+          release.g2flashCommit) ||
+      (release.directFramebufferCommits &&
+        JSON.stringify(patchSet.source_provenance?.direct_framebuffer_commits) !==
+          JSON.stringify(release.directFramebufferCommits))
     ) {
       throw new Error("The reviewed CFW patch recipe does not match its pinned trust boundary");
     }

@@ -17,6 +17,8 @@ const REVIEWED_CFW_2_2_6_11_SHA256 =
   "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86";
 const REVIEWED_CFW_2_2_6_12_SHA256 =
   "b4de0cd3ffce5b0c756a7625b5250378d7680637e82849b15291a56a279fb4cd";
+const REVIEWED_CFW_2_2_7_16_SHA256 =
+  "408e48d29f9937fb9efe6a17ddb5766768dcb9d68fc057e9a90bbcbad685a6bb";
 const OFFICIAL_G2_2_2_7_14_SHA256 =
   "0fced0aebcc6c88db6f76dba34f91b805d842a5fc297bfd7fa6d6a34ec83cecb";
 
@@ -54,6 +56,7 @@ test("flags a pinned image the served library is too old to offer", () => {
   assert.deepEqual(
     missing.map((target) => target.imageSha256),
     [
+      REVIEWED_CFW_2_2_7_16_SHA256,
       OFFICIAL_G2_2_2_7_14_SHA256,
       REVIEWED_CFW_2_2_6_12_SHA256,
       REVIEWED_CFW_2_2_6_11_SHA256,
@@ -74,6 +77,7 @@ test("blocks firmware mutation when the served library is behind the build", () 
       assert.deepEqual(
         error.missingPinnedImages.map((target) => target.imageSha256),
         [
+          REVIEWED_CFW_2_2_7_16_SHA256,
           OFFICIAL_G2_2_2_7_14_SHA256,
           REVIEWED_CFW_2_2_6_12_SHA256,
           REVIEWED_CFW_2_2_6_11_SHA256,
@@ -95,6 +99,10 @@ test("stays silent about images retired from the library for being old", async (
       "utf8",
     ),
   ).releases;
+  assert.ok(
+    catalog.some((release) => release.sha256 === REVIEWED_CFW_2_2_7_16_SHA256),
+    "the shipped catalog should serve reviewed CFW 2.2.7.16",
+  );
   assert.ok(
     catalog.some((release) => release.sha256 === REVIEWED_CFW_2_2_6_11_SHA256),
     "the shipped catalog should serve reviewed CFW 2.2.6.11",

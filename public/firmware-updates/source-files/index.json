@@ -1,8 +1,95 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-01T22:38:20.360Z",
+  "generatedAt": "2026-08-02T21:14:06.283Z",
   "source": "Even Realities G2/R1 CDN plus SybilSight release evidence",
   "releases": [
+    {
+      "id": "g2-custom-2.2.7.16",
+      "displayName": "SybilSight CFW (2.2.7.16)",
+      "channel": "custom",
+      "trust": "reviewed-custom",
+      "version": "2.2.7.16",
+      "internalVersion": "2.2.7.16",
+      "baseVersion": "2.2.7.14",
+      "notes": "SybilSight CFW 2.2.7.16 applies the pinned jimrandomh/g2flash patch set to official G2 2.2.7.14 stock. It retains upstream Faceclaw wake and framebuffer controls while its guarded Even AI trampoline resumes the untouched stock command path when no wake lease is active. The image is reproducibly built and statically reviewed but not yet hardware-flashed.",
+      "capabilities": [
+        "576×288 image containers",
+        "640×480 full-panel custom image surface",
+        "Zlib and RLE image payloads",
+        "Direct packed-4bpp framebuffer presentation",
+        "Atomic multi-segment and rectangle-copy updates",
+        "Per-lens stereo image operations",
+        "Snapshot FIFO and on-device timing diagnostics",
+        "Buzzer presets, notes, raw tones, and sequences",
+        "Settings capability field 100",
+        "Faceclaw control field 101 and wake lease",
+        "Ring long-press and release events"
+      ],
+      "recoveryTarget": "glasses",
+      "caseRecoveryEligible": false,
+      "caseVersion": "1.2.57",
+      "url": "/firmware-updates/source-files/2.2.7.16/g2-2.2.7.16.bin",
+      "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.7.16/g2-2.2.7.16.bin",
+      "fileName": "g2-2.2.7.16.bin",
+      "size": 4351457,
+      "md5": "1a3c0c73924a95cf40be632846ffe068",
+      "sha256": "408e48d29f9937fb9efe6a17ddb5766768dcb9d68fc057e9a90bbcbad685a6bb",
+      "patchUrl": "/firmware-updates/source-files/2.2.7.16/cfw_patches-2.2.7.16.json",
+      "patchSha256": "955d38d2676d402bea3c219468022fcbb11953f97bf20058af1f454a97c363ec",
+      "manifestUrl": "/firmware-updates/source-files/2.2.7.16/manifest.json",
+      "manifestSha256": "1fe454442759387e00ed8080a4dc699e84e0b78cb735e239b11092a91385f4d9",
+      "archivedFrom": "WebFlasher local evidence",
+      "mainFirmware": {
+        "runBase": "0x00438000",
+        "installedImageSize": 3573594,
+        "installedImageEnd": "0x007a075a",
+        "crc32": "806a8908"
+      },
+      "components": [
+        {
+          "name": "firmware/codec.bin",
+          "typeId": 4,
+          "size": 326092,
+          "crc32c": "bdcfeeac",
+          "sha256": "b06dfef7faa2f1e52d2aacd07958d4b96ffc36dca5077ac9149e48f19fc9c4d0"
+        },
+        {
+          "name": "firmware/ble_em9305.bin",
+          "typeId": 5,
+          "size": 211948,
+          "crc32c": "c074baf7",
+          "sha256": "91a38f7fc05555f86181ecb22b363e3239bfcaaa2ff6171e98524ae64821eca9"
+        },
+        {
+          "name": "firmware/touch.bin",
+          "typeId": 3,
+          "size": 34464,
+          "crc32c": "ba63bc61",
+          "sha256": "0d13d8bb1337bf22989dc16143e3d5eca29a31cc1ed753ff624668750ea9470d"
+        },
+        {
+          "name": "firmware/box.bin",
+          "typeId": 6,
+          "size": 55784,
+          "crc32c": "7d443be0",
+          "sha256": "36ca0c13558f252af286ae2b36b5e576d087d21d37b15d778e7da9f502a70374"
+        },
+        {
+          "name": "ota/s200_bootloader.bin",
+          "typeId": 1,
+          "size": 148599,
+          "crc32c": "3529e0e2",
+          "sha256": "45e87ebf66f4836087e97a942f4e5e63be8378e78ad052fee6c7204db39ff633"
+        },
+        {
+          "name": "ota/s200_firmware_ota.bin",
+          "typeId": 0,
+          "size": 3573626,
+          "crc32c": "c54f8c72",
+          "sha256": "3aa9753479fa389a551c415fa431375cb82599011274c75eca2e4d87715498ba"
+        }
+      ]
+    },
     {
       "id": "g2-official-2.2.7.14",
       "channel": "official",
@@ -109,7 +196,7 @@
       "patchSha256": "af9f93c6e48638c90c607b19631ebcc8a091c23efb0e0ba4c41cf1fa244789bc",
       "manifestUrl": "/firmware-updates/source-files/2.2.6.12/manifest.json",
       "manifestSha256": "8cfd8ea6b8f95f3f1b8e7f8bf97a8dc992650197cc683f937ad67ee9f7116a40",
-      "archivedFrom": "WebFlasher local evidence",
+      "archivedFrom": "SybilSight reviewed CFW mirror",
       "mainFirmware": {
         "runBase": "0x00438000",
         "installedImageSize": 3538456,
