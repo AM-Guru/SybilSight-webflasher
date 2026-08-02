@@ -28,6 +28,7 @@
 /work/
 /.codex/
 /.openai/
+/.worktrees/
 
 # Environment files and credentials
 .env
