@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -25,9 +25,19 @@ test("Caddy serves release-bound firmware from the atomic WebFlasher root", asyn
     caddy,
     /handle \/firmware-updates\/source-files\/index\.json\s*\{\s*root \* \/share\/webflasher\s+file_server\s*\}/,
   );
-  for (const release of catalog.releases.filter(
-    (entry) => entry.channel === "custom" && entry.trust === "reviewed-custom",
-  )) {
+  const releaseBound = [];
+  for (const release of catalog.releases) {
+    try {
+      const target = await stat(
+        new URL(`../public${release.url}`, import.meta.url),
+      );
+      if (target.isFile()) releaseBound.push(release);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+  assert.ok(releaseBound.length > 0);
+  for (const release of releaseBound) {
     const route = escapeRegExp(
       `/firmware-updates/source-files/${release.version}/*`,
     );
@@ -115,6 +125,41 @@ test("production Caddy verification rejects a stale WebFlasher site block", asyn
 
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /does not match the deployment source/);
+    assert.equal(result.stdout, "", "active Caddy directives must not enter CI logs");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("production Caddy verification rejects duplicate WebFlasher blocks", async () => {
+  const expected = await readFile(
+    new URL("../deploy/webflasher.caddy", import.meta.url),
+    "utf8",
+  );
+  const directory = await mkdtemp(join(tmpdir(), "webflasher-caddy-test-"));
+  try {
+    const activePath = join(directory, "Caddyfile");
+    const expectedPath = join(directory, "webflasher.caddy");
+    await Promise.all([
+      writeFile(activePath, `${expected}\n${expected}`),
+      writeFile(expectedPath, expected),
+    ]);
+
+    const result = spawnSync(
+      "sh",
+      [
+        new URL(
+          "../scripts/verify-webflasher-caddy.sh",
+          import.meta.url,
+        ).pathname,
+        activePath,
+        expectedPath,
+      ],
+      { encoding: "utf8" },
+    );
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /exactly one WebFlasher site block/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

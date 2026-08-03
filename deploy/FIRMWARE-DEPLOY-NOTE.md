@@ -84,10 +84,10 @@ reviewed `2.2.6.11` and Faceclaw-free `2.2.6.12` directories from that atomic
 web root; other versioned paths fall back to the historical archive.
 
 The production Caddy block must therefore contain explicit `/share/webflasher`
-handlers for both reviewed CFW version directories as well as the release-bound
-source-files index. Without the `2.2.6.12` handler, the broader historical-archive
-handler shadows the correctly deployed bundle and returns a cacheable 404 whenever
-that separate archive is refreshed without the release.
+handlers for every G2 version directory bundled with the release as well as the
+release-bound source-files index. Without one of those handlers, the broader
+historical-archive handler shadows the correctly deployed bundle and returns a
+cacheable 404 whenever that separate archive is refreshed without the release.
 
 The deployment artifact now carries the canonical WebFlasher Caddy block and a
 hash-pinned verifier. Before changing either firmware root or the website, the

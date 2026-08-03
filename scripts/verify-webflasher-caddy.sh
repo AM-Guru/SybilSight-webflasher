@@ -18,6 +18,12 @@ if [ ! -f "${expected_webflasher_block}" ] || [ -L "${expected_webflasher_block}
   exit 65
 fi
 
+active_marker_count="$(grep -c '^# ---- webflasher[.]sybilsight[.]com ' "${active_caddyfile}" || true)"
+if [ "${active_marker_count}" -ne 1 ]; then
+  echo "Active Caddyfile must contain exactly one WebFlasher site block." >&2
+  exit 66
+fi
+
 observed_webflasher_block="$(mktemp "${TMPDIR:-/tmp}/webflasher-caddy.XXXXXX")"
 cleanup() {
   rm -f "${observed_webflasher_block}"
@@ -32,7 +38,6 @@ if ! awk '
     depth = 0
   }
   /^# ---- webflasher[.]sybilsight[.]com / {
-    if (found) exit 40
     collecting = 1
     found = 1
   }
@@ -56,8 +61,7 @@ if ! awk '
   exit 66
 fi
 
-if ! diff -u "${expected_webflasher_block}" "${observed_webflasher_block}"; then
+if ! cmp -s "${expected_webflasher_block}" "${observed_webflasher_block}"; then
   echo "Active WebFlasher Caddy block does not match the deployment source." >&2
   exit 67
 fi
-

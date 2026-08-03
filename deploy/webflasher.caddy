@@ -29,14 +29,18 @@ webflasher.sybilsight.com {
 		rewrite * /healthz
 		reverse_proxy local-sybilsight-remote-support:8787
 	}
-	# The release-bound catalog and reviewed CFW are present in the same atomic
-	# web-root swap as release.json. Keep older official binaries in the larger
-	# shared archive without allowing an archive refresh to replace these files.
+	# The release-bound catalog and bundled current firmware are present in the
+	# same atomic web-root swap as release.json. Keep older official binaries in
+	# the larger shared archive without allowing a refresh to shadow these files.
 	handle /firmware-updates/source-files/index.json {
 		root * /share/webflasher
 		file_server
 	}
 	handle /firmware-updates/source-files/2.2.7.16/* {
+		root * /share/webflasher
+		file_server
+	}
+	handle /firmware-updates/source-files/2.2.7.14/* {
 		root * /share/webflasher
 		file_server
 	}
