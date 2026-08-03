@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 function escapeRegExp(value) {
@@ -39,5 +42,102 @@ test("Caddy serves release-bound firmware from the atomic WebFlasher root", asyn
   assert.match(
     caddy,
     /handle \/firmware-updates\/source-files\/r1\/\*\s*\{\s*root \* \/share\/webflasher\s+file_server\s*\}/,
+  );
+});
+
+test("production Caddy verification accepts the exact WebFlasher site block", async () => {
+  const expected = await readFile(
+    new URL("../deploy/webflasher.caddy", import.meta.url),
+    "utf8",
+  );
+  const directory = await mkdtemp(join(tmpdir(), "webflasher-caddy-test-"));
+  try {
+    const activePath = join(directory, "Caddyfile");
+    const expectedPath = join(directory, "webflasher.caddy");
+    await Promise.all([
+      writeFile(
+        activePath,
+        `other.example {\n\trespond "ok"\n}\n\n${expected}\nafter.example {\n\trespond "ok"\n}\n`,
+      ),
+      writeFile(expectedPath, expected),
+    ]);
+
+    const result = spawnSync(
+      "sh",
+      [
+        new URL(
+          "../scripts/verify-webflasher-caddy.sh",
+          import.meta.url,
+        ).pathname,
+        activePath,
+        expectedPath,
+      ],
+      { encoding: "utf8" },
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("production Caddy verification rejects a stale WebFlasher site block", async () => {
+  const expected = await readFile(
+    new URL("../deploy/webflasher.caddy", import.meta.url),
+    "utf8",
+  );
+  const stale = expected.replace(
+    /\thandle \/firmware-updates\/source-files\/2\.2\.7\.16\/\* \{\n\t\troot \* \/share\/webflasher\n\t\tfile_server\n\t\}\n/,
+    "",
+  );
+  assert.notEqual(stale, expected);
+  const directory = await mkdtemp(join(tmpdir(), "webflasher-caddy-test-"));
+  try {
+    const activePath = join(directory, "Caddyfile");
+    const expectedPath = join(directory, "webflasher.caddy");
+    await Promise.all([
+      writeFile(activePath, stale),
+      writeFile(expectedPath, expected),
+    ]);
+
+    const result = spawnSync(
+      "sh",
+      [
+        new URL(
+          "../scripts/verify-webflasher-caddy.sh",
+          import.meta.url,
+        ).pathname,
+        activePath,
+        expectedPath,
+      ],
+      { encoding: "utf8" },
+    );
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /does not match the deployment source/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("deployment verifies the active production Caddy block before publishing", async () => {
+  const workflow = await readFile(
+    new URL("../.github/workflows/deploy.yml", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(workflow, /cp deploy\/webflasher\.caddy .*webflasher\.caddy/);
+  assert.match(
+    workflow,
+    /cp scripts\/verify-webflasher-caddy\.sh .*verify-webflasher-caddy\.sh/,
+  );
+  assert.match(
+    workflow,
+    /scp .*Caddyfile.*active-Caddyfile[\s\S]*verify-webflasher-caddy\.sh[\s\S]*active-Caddyfile[\s\S]*webflasher\.caddy[\s\S]*- name: Deploy website/,
+  );
+  assert.match(
+    workflow,
+    /sh "\$\{release_dir\}\/verify-webflasher-caddy\.sh"/,
+    "artifact downloads do not preserve executable mode",
   );
 });

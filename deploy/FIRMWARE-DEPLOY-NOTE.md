@@ -89,6 +89,12 @@ source-files index. Without the `2.2.6.12` handler, the broader historical-archi
 handler shadows the correctly deployed bundle and returns a cacheable 404 whenever
 that separate archive is refreshed without the release.
 
+The deployment artifact now carries the canonical WebFlasher Caddy block and a
+hash-pinned verifier. Before changing either firmware root or the website, the
+production job downloads the active add-on Caddyfile and requires its extracted
+WebFlasher block to match that canonical source exactly. A newly reviewed CFW route
+therefore cannot be published while production still has an older routing block.
+
 ## Guard in the app
 
 `src/App.jsx` now compares the fetched catalog against the compiled-in

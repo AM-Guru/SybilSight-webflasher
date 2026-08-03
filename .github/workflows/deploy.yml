@@ -117,9 +117,16 @@ jobs:
             -C dist \
             -czf "${artifact_dir}/webflasher-site.tar.gz" \
             .
+          cp deploy/webflasher.caddy "${artifact_dir}/webflasher.caddy"
+          cp scripts/verify-webflasher-caddy.sh "${artifact_dir}/verify-webflasher-caddy.sh"
+          chmod 755 "${artifact_dir}/verify-webflasher-caddy.sh"
           (
             cd "${artifact_dir}"
-            sha256sum webflasher-site.tar.gz > webflasher-site.tar.gz.sha256
+            sha256sum \
+              webflasher-site.tar.gz \
+              webflasher.caddy \
+              verify-webflasher-caddy.sh \
+              > webflasher-release.sha256
           )
 
       - name: Upload deployment artifact
@@ -128,7 +135,9 @@ jobs:
           name: webflasher-site-${{ github.sha }}
           path: |
             ${{ runner.temp }}/webflasher-artifact/webflasher-site.tar.gz
-            ${{ runner.temp }}/webflasher-artifact/webflasher-site.tar.gz.sha256
+            ${{ runner.temp }}/webflasher-artifact/webflasher.caddy
+            ${{ runner.temp }}/webflasher-artifact/verify-webflasher-caddy.sh
+            ${{ runner.temp }}/webflasher-artifact/webflasher-release.sha256
           if-no-files-found: error
           retention-days: 14
 
@@ -162,7 +171,25 @@ jobs:
         run: |
           set -euo pipefail
           cd "${RUNNER_TEMP}/webflasher-release"
-          sha256sum --check webflasher-site.tar.gz.sha256
+          sha256sum --check webflasher-release.sha256
+
+      - name: Verify production Caddy routing
+        env:
+          SSH_TARGET: homeassistant
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="${RUNNER_TEMP}/webflasher-release"
+          ssh_options=(
+            -o BatchMode=yes
+            -o ConnectTimeout=15
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=3
+          )
+          scp "${ssh_options[@]}" "${SSH_TARGET}:/addon_configs/c80c7555_caddy-2/Caddyfile" "${RUNNER_TEMP}/active-Caddyfile"
+          sh "${release_dir}/verify-webflasher-caddy.sh" \
+            "${RUNNER_TEMP}/active-Caddyfile" \
+            "${release_dir}/webflasher.caddy"
 
       - name: Deploy website
         env:
