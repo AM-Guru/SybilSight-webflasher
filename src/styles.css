@@ -2718,6 +2718,79 @@ code {
   box-shadow: 0 0 0 4px rgba(0, 255, 136, 0.12);
 }
 
+/* Sized to the two serials it exists to show, not to a log window. */
+.pair-mismatch-panel {
+  display: grid;
+  width: min(560px, 100%);
+  max-height: min(620px, calc(100vh - 48px));
+  overflow: hidden;
+  color: #dedbd3;
+  border: 1px solid #7a3a30;
+  border-radius: 7px;
+  background: #171714;
+  box-shadow: 0 40px 110px rgba(0, 0, 0, 0.5);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.pair-mismatch-panel .eyebrow {
+  color: #d2523f;
+}
+
+.pair-mismatch-body {
+  display: grid;
+  gap: 14px;
+  padding: 20px 25px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.pair-mismatch-body p {
+  margin: 0;
+}
+
+.pair-mismatch-serials {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.pair-mismatch-serials > div {
+  display: grid;
+  gap: 3px;
+  padding: 11px 13px;
+  border: 1px solid #46453f;
+  border-radius: 5px;
+  background: #0f0f0d;
+}
+
+.pair-mismatch-serials dt {
+  color: #9a978e;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.pair-mismatch-serials dd {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+
+/* The serial is what the operator compares against the print inside the
+   temple, so it gets the monospace treatment and room to breathe. */
+.pair-mismatch-serials code {
+  color: #f0ede5;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  overflow-wrap: anywhere;
+}
+
+.pair-mismatch-serials dd span {
+  color: #9a978e;
+  font-size: 11px;
+}
+
 .remote-support-panel {
   display: grid;
   width: min(820px, 100%);
@@ -3516,6 +3589,96 @@ code {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.ble-temple-identity {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #0b0b0b;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.ble-temple-identity dt {
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ble-temple-identity dd {
+  margin: 0;
+  /* The serial has to stay readable character by character: it is what the
+     operator compares against the print inside the temple. */
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.ble-pair-verdict {
+  margin: 0;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.ble-pair-verdict.is-matched {
+  border-color: var(--accent);
+}
+
+.ble-pair-verdict.is-mismatched {
+  border-color: #d2523f;
+  color: #d2523f;
+  font-weight: 600;
+}
+
+.ble-serial-filter {
+  display: grid;
+  gap: 5px;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+
+.ble-serial-filter em {
+  font-style: normal;
+  opacity: 0.7;
+}
+
+.ble-serial-filter input {
+  padding: 7px 8px;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #0b0b0b;
+  /* The operator is comparing this against tiny print inside a temple. */
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ble-serial-filter input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ble-serial-filter small {
+  opacity: 0.75;
+}
+
+.link-button {
+  padding: 0;
+  color: inherit;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .ble-ready-confirm {

@@ -20,6 +20,11 @@
 // track revisions has to come from elsewhere — the USB bridge chip revision, or
 // an operator-supplied label.
 
+import {
+  compareTempleSerials,
+  decodeGlassesSerial,
+} from "./glassesVariant.js";
+
 export const CASE_UID_BYTES = 12;
 
 // The CH340 reports its own silicon revision during WebUSB setup, where it is
@@ -92,15 +97,21 @@ export function caseDeviceKey(report) {
 }
 
 // A compact, comparable description of the hardware an operation ran against.
-// Everything here is observed, never inferred: the mechanical frame variant is
-// deliberately absent because the factory console does not report it, and the
-// operator label is the supported way to record what only a human can see
-// (case colour, frame fit, which unit this is).
+// Everything here is observed, never inferred.
+//
+// The mechanical frame variant used to be permanently absent here, on the
+// grounds that the factory console does not report it. That is still true of
+// the USB path, but it is not the whole picture: the temples' own Device
+// Information serial encodes the frame shape and the colourway, and the
+// Bluetooth path can read it (see glassesVariant.js). Pass `templeIdentities`
+// when that read succeeded and the variant is recorded; omit it and the
+// honest "operator label instead" reason stands.
 export function buildDeviceFingerprint({
   report,
   transport = null,
   usbBridgeRevision = null,
   templeVersions = null,
+  templeIdentities = null,
   operatorLabel = null,
 } = {}) {
   const decoded = decodeCaseUid(report?.console?.serialNumber);
@@ -144,10 +155,61 @@ export function buildDeviceFingerprint({
           : null,
     },
     temples: { left: temple("left"), right: temple("right") },
-    frameVariant: {
-      value: null,
-      reason:
-        "The factory console and STM32 ROM fields do not report the Frame A/Frame B mechanical variant; record it with the operator label instead.",
-    },
+    glasses: buildGlassesIdentity(templeIdentities),
+    frameVariant: buildFrameVariant(templeIdentities),
+  };
+}
+
+function templeSerial(identities, route) {
+  const value = identities?.[route]?.serialNumber ?? identities?.[route]?.serial;
+  const text = String(value ?? "").trim();
+  return text || null;
+}
+
+// The product identity of the glasses themselves, as distinct from the Case.
+// Null throughout when no temple answered a Device Information read, which is
+// the normal state on the USB-only path.
+function buildGlassesIdentity(identities) {
+  const left = templeSerial(identities, "left");
+  const right = templeSerial(identities, "right");
+  if (!left && !right) return null;
+  const comparison = compareTempleSerials(left, right);
+  // Either side's serial identifies the pair; they are equal whenever both
+  // were read and agreed.
+  const decoded = decodeGlassesSerial(left ?? right);
+  return {
+    leftSerial: left,
+    rightSerial: right,
+    // "matched" | "mismatched" | "unknown" - the last meaning only one side
+    // was read, never that the two disagreed.
+    pairVerdict: comparison.verdict,
+    serial: comparison.verdict === "matched" ? comparison.serial : null,
+    modelCode: decoded?.modelCode ?? null,
+    productName: decoded?.productName ?? null,
+    displayName: decoded?.displayName ?? null,
+  };
+}
+
+function buildFrameVariant(identities) {
+  const decoded = decodeGlassesSerial(
+    templeSerial(identities, "left") ?? templeSerial(identities, "right"),
+  );
+  if (decoded?.frame) {
+    return {
+      value: decoded.frame.toUpperCase(),
+      shape: decoded.frameShape,
+      colorway: decoded.colorway,
+      source: "temple-device-information-serial",
+      reason: null,
+    };
+  }
+  return {
+    value: null,
+    shape: null,
+    colorway: null,
+    source: null,
+    reason: decoded
+      ? "The temple serial was read but its model code is not one this tool recognises; record the frame variant with the operator label instead."
+      : "The factory console and STM32 ROM fields do not report the Frame A/Frame B mechanical variant. It is carried in the temples' own Bluetooth Device Information serial, which the USB path cannot read; record it with the operator label instead.",
   };
 }

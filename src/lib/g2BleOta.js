@@ -2,6 +2,13 @@ import {
   EXPECTED_COMPONENTS,
   EXPECTED_COMPONENT_TYPES,
 } from "./firmware.js";
+import {
+  GLASSES_SERIAL_MIN_LENGTH,
+  compareTempleSerials,
+  decodeGlassesSerial,
+  normalizeGlassesSerial,
+  templeSerialMismatchWarning,
+} from "./glassesVariant.js";
 
 export const G2_BLE_DATA_SERVICE =
   "00002760-08c2-11e1-9073-0e8ac72e1001";
@@ -15,6 +22,32 @@ export const G2_BLE_CONTROL_WRITE =
   "00002760-08c2-11e1-9073-0e8ac72e5401";
 export const G2_BLE_CONTROL_NOTIFY =
   "00002760-08c2-11e1-9073-0e8ac72e5402";
+
+// Standard Bluetooth SIG Device Information Service. The temple's own product
+// serial lives here, and it is the ONLY place this tool can obtain it: the USB
+// factory console reports the Charging Case's STM32 UID, and the pogo version
+// frame carries firmware/hardware bytes only. Reading it turns "some G2" into
+// the exact SKU, and lets the two sides be checked against each other.
+export const G2_BLE_DEVICE_INFO_SERVICE = "device_information";
+export const G2_BLE_SERIAL_NUMBER_CHARACTERISTIC = "serial_number_string";
+export const G2_BLE_MODEL_NUMBER_CHARACTERISTIC = "model_number_string";
+export const G2_BLE_HARDWARE_REVISION_CHARACTERISTIC = "hardware_revision_string";
+export const G2_BLE_FIRMWARE_REVISION_CHARACTERISTIC = "firmware_revision_string";
+
+// Even Realities' company identifier, as it appears in the G2 advertisement's
+// Manufacturer Specific Data element. Confirmed from an HCI capture:
+//
+//   18 ff 45 52 53 32 31 31 47 42 42 43 31 38 30 33 30 34 e0 ec b6 14 12 e0 02
+//   |  |  |____| |_______________________________________| |______________| |
+//   |  |  company  SN(14) ASCII "S211GBBC180304"            MAC(6, LE)      flag
+//   |  AD type 0xFF = Manufacturer Specific Data
+//   AD element length 0x18 = 24
+//
+// The two company bytes are 0x45 0x52, which spell "ER" when read in order;
+// as the little-endian uint16 the Bluetooth spec defines for that field they
+// are 0x5245. Web Bluetooth wants the number, not the letters.
+export const EVEN_COMPANY_IDENTIFIER = 0x5245;
+export const EVEN_ADVERTISED_SERIAL_LENGTH = 14;
 
 export const G2_BLE_BLOCK_BYTES = 4096;
 export const G2_BLE_ENVELOPE_CHUNK_BYTES = 232;
@@ -48,6 +81,26 @@ const END_OK = new Set([0, 8, 9]);
 const HEARTBEAT_PAYLOAD = Uint8Array.from([
   0x08, 0x0e, 0x10, 0x26, 0x6a, 0x00,
 ]);
+
+// Device Information characteristics are UTF-8 strings, but firmware commonly
+// pads or NUL-terminates them into a fixed buffer. Cut at the first NUL and
+// strip the control bytes rather than carrying them into a comparison, which
+// is what would make two readings of one serial look like two devices.
+export function decodeDeviceInformationString(value) {
+  if (!value) return null;
+  const bytes = asBytes(
+    value instanceof DataView
+      ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+      : value,
+  );
+  const terminator = bytes.indexOf(0);
+  const body = terminator >= 0 ? bytes.subarray(0, terminator) : bytes;
+  const text = new TextDecoder()
+    .decode(body)
+    .replace(/[\u0000-\u001F\u007F]/g, "")
+    .trim();
+  return text || null;
+}
 
 function asBytes(input) {
   if (input instanceof Uint8Array) return input;
@@ -222,9 +275,41 @@ export function g2BleTargetVersionProof(
   );
 }
 
+// Build the chooser filter that admits only one specific pair.
+//
+// This is the closest a web page can get to "show the serial in the chooser".
+// Chrome's device chooser is browser UI: a page cannot relabel its entries, and
+// the advertised name it displays (`Even G2_32_L_4FB39E`) carries a side marker
+// and a per-arm hex tail but NOT the product serial. What a page can decide is
+// which devices are eligible to appear at all — and the serial is right there
+// in the advertisement to filter on. Given a serial, the chooser lists that one
+// pair, so picking a stranger's glasses stops being possible rather than merely
+// being detectable afterwards.
+//
+// Returns null for anything that is not a usable serial, so callers fall back
+// to the name filters instead of opening a chooser that can never populate.
+export function glassesSerialChooserFilter(serial) {
+  const normalized = normalizeGlassesSerial(serial);
+  if (normalized.length < GLASSES_SERIAL_MIN_LENGTH) return null;
+  return {
+    manufacturerData: [
+      {
+        companyIdentifier: EVEN_COMPANY_IDENTIFIER,
+        // dataPrefix matches the bytes that follow the company identifier,
+        // which is exactly where the ASCII serial begins. A partial serial is
+        // a legitimate prefix match; a full one pins a single pair.
+        dataPrefix: new TextEncoder().encode(
+          normalized.slice(0, EVEN_ADVERTISED_SERIAL_LENGTH),
+        ),
+      },
+    ],
+  };
+}
+
 export async function requestG2BleDevice(
   side,
   bluetooth = globalThis.navigator?.bluetooth,
+  { expectedSerial = null } = {},
 ) {
   if (!["left", "right"].includes(side)) {
     throw new Error("Choose the left or right G2 temple.");
@@ -234,19 +319,27 @@ export async function requestG2BleDevice(
       "Web Bluetooth is unavailable. Open the WebFlasher in current Chrome.",
     );
   }
+  const serialFilter = glassesSerialChooserFilter(expectedSerial);
   const device = await bluetooth.requestDevice({
     // G2 names put the side marker after a model-variant token
     // (for example Even G2_32_L_…), so Web Bluetooth's prefix-only
     // chooser filter cannot express the side safely. Narrow the chooser to
     // G2 name prefixes, request access to only the two required services,
     // then enforce one explicit matching side marker on the returned device.
-    filters: [
-      { namePrefix: "Even G2" },
-      { namePrefix: "G2_" },
-    ],
+    //
+    // With a known serial the chooser is narrowed to that pair's advertisement
+    // instead. Filters are OR-ed, so the serial filter has to stand alone:
+    // keeping the name prefixes alongside it would re-admit every other G2 in
+    // the room and defeat the whole point.
+    filters: serialFilter
+      ? [serialFilter]
+      : [{ namePrefix: "Even G2" }, { namePrefix: "G2_" }],
     optionalServices: [
       G2_BLE_DATA_SERVICE,
       G2_BLE_CONTROL_SERVICE,
+      // Read-only. Requested here because Web Bluetooth grants service access
+      // at chooser time; asking later is not possible.
+      G2_BLE_DEVICE_INFO_SERVICE,
     ],
   });
   const observedSide = g2BleDeviceSide(device?.name);
@@ -259,6 +352,154 @@ export async function requestG2BleDevice(
     );
   }
   return device;
+}
+
+// Read the temple's own product identity from the standard Device Information
+// Service and decode the SKU from its serial.
+//
+// Advisory by construction. Every failure path returns null and logs at warn:
+// firmware that does not publish 0x180A, a Chrome build that refuses the
+// service, or a serial in a format we have never seen must all leave the
+// operator able to flash — the broken states this tool exists to repair are
+// exactly the ones least likely to answer. What it buys is that when it DOES
+// work, the tool names the exact glasses on the bench and can catch a pair
+// assembled from two different sets.
+export async function readG2DeviceInformation(
+  server,
+  { side = null, log = () => {} } = {},
+) {
+  if (!server?.getPrimaryService) return null;
+  const label = side ? `${side}: ` : "";
+  let service;
+  try {
+    service = await server.getPrimaryService(G2_BLE_DEVICE_INFO_SERVICE);
+  } catch (error) {
+    log(
+      `${label}this temple does not publish the standard Device Information service (${error?.message ?? String(error)}); continuing without an automatic model check.`,
+      "warn",
+    );
+    return null;
+  }
+  const readString = async (characteristic) => {
+    try {
+      const value = await (
+        await service.getCharacteristic(characteristic)
+      ).readValue();
+      return decodeDeviceInformationString(value);
+    } catch {
+      return null;
+    }
+  };
+  const serialNumber = await readString(G2_BLE_SERIAL_NUMBER_CHARACTERISTIC);
+  const identity = {
+    side,
+    serialNumber,
+    modelNumber: await readString(G2_BLE_MODEL_NUMBER_CHARACTERISTIC),
+    hardwareRevision: await readString(
+      G2_BLE_HARDWARE_REVISION_CHARACTERISTIC,
+    ),
+    firmwareRevision: await readString(
+      G2_BLE_FIRMWARE_REVISION_CHARACTERISTIC,
+    ),
+    variant: decodeGlassesSerial(serialNumber),
+    observedAt: new Date().toISOString(),
+  };
+  if (!serialNumber) {
+    log(
+      `${label}the Device Information service answered without a serial number; continuing without an automatic model check.`,
+      "warn",
+    );
+  } else if (identity.variant?.variantSummary) {
+    log(
+      `${label}temple identified as ${identity.variant.displayName} · ${identity.variant.variantSummary} · serial ${identity.variant.serial}.`,
+      "success",
+    );
+  } else {
+    log(
+      `${label}serial ${serialNumber} does not match any Even model code this tool knows; continuing without a decoded frame or colour.`,
+      "warn",
+    );
+  }
+  return identity;
+}
+
+// Connect read-only, read Device Information, disconnect. Used at selection
+// time so the operator learns which glasses they picked before any firmware
+// package is opened. Writes nothing and touches no OTA service.
+export async function readG2TempleIdentity(
+  device,
+  { side = null, log = () => {} } = {},
+) {
+  if (!device?.gatt) return null;
+  const wasConnected = Boolean(device.gatt.connected);
+  try {
+    const server = wasConnected ? device.gatt : await device.gatt.connect();
+    return await readG2DeviceInformation(server, { side, log });
+  } catch (error) {
+    log(
+      `${side ? `${side}: ` : ""}could not read this temple's identity over Bluetooth (${error?.message ?? String(error)}). This does not block flashing; confirm the serial printed inside the temple by hand.`,
+      "warn",
+    );
+    return null;
+  } finally {
+    // Leave the link exactly as it was found. A temple that was already
+    // connected for another reason must not be dropped by an advisory read.
+    if (!wasConnected) {
+      try {
+        device.gatt.disconnect();
+      } catch {
+        // The read may already have lost the link; nothing to undo.
+      }
+    }
+  }
+}
+
+// Decide whether the two temples an operator has connected may be flashed as
+// one pair.
+//
+// Advisory-by-absence, blocking-by-evidence. A temple that never reported a
+// serial yields "unverified" and must not stop the work — plenty of firmware
+// states cannot answer a Device Information read, including the broken ones
+// this tool exists to repair. But two serials that positively disagree is
+// evidence, and the operator should be stopped and told, because from here the
+// tool would otherwise drive two halves of two different pairs.
+export function evaluateG2PairIdentity(left, right) {
+  const leftSerial = left?.serialNumber ?? null;
+  const rightSerial = right?.serialNumber ?? null;
+  const comparison = compareTempleSerials(leftSerial, rightSerial);
+  if (comparison.verdict === "mismatched") {
+    return {
+      status: "mismatched",
+      comparison,
+      blocking: true,
+      message: templeSerialMismatchWarning(comparison),
+    };
+  }
+  if (comparison.verdict === "matched") {
+    const variant = decodeGlassesSerial(comparison.serial);
+    return {
+      status: "matched",
+      comparison,
+      blocking: false,
+      serial: comparison.serial,
+      variant,
+      message: variant?.variantSummary
+        ? `Both temples report serial ${comparison.serial} · ${variant.displayName} · ${variant.variantSummary}. This is one matched pair.`
+        : `Both temples report serial ${comparison.serial}. This is one matched pair.`,
+    };
+  }
+  const missing = [
+    leftSerial ? null : "left",
+    rightSerial ? null : "right",
+  ].filter(Boolean);
+  return {
+    status: "unverified",
+    comparison,
+    blocking: false,
+    message: missing.length
+      ? `No serial number from the ${missing.join(" or ")} temple, so the two sides cannot be confirmed as one pair. Check the serial printed inside each temple by hand before flashing both sides.`
+      : null,
+  };
 }
 
 export function assertPinnedG2BleBundle(firmware) {
@@ -351,6 +592,9 @@ export class G2BleOtaSession {
     this.heartbeatError = null;
     this.connectionRecoveries = 0;
     this.selectedDeviceId = device?.id ?? null;
+    // Filled by readDeviceIdentity() on connect; stays null when the temple
+    // does not publish Device Information.
+    this.deviceIdentity = null;
     this.dataNotifyHandler = (event) => {
       const value = event?.target?.value;
       const ack = parseBleAck(value);
@@ -481,10 +725,29 @@ export class G2BleOtaSession {
     await this.controlNotify.startNotifications();
     await new Promise((resolve) => setTimeout(resolve, 2500));
     this.drainAcks();
+    // After the OTA plumbing, never before: a Device Information read must not
+    // be able to fail a connection that is otherwise ready to flash.
+    await this.readDeviceIdentity();
     this.log(
       `${this.side}: direct Bluetooth OTA services and notifications are ready.`,
       "success",
     );
+  }
+
+  // Read the temple's own product identity from the standard Device
+  // Information Service and decode the SKU from its serial.
+  //
+  // Advisory by construction. Every failure path returns null and logs at
+  // warn: firmware that does not publish 0x180A, a Chrome build that refuses
+  // the service, or a serial in a format we have never seen must all leave the
+  // operator able to flash. What this buys is that when it DOES work, the tool
+  // can name the exact glasses on the bench and catch a mismatched pair.
+  async readDeviceIdentity() {
+    this.deviceIdentity = await readG2DeviceInformation(this.server, {
+      side: this.side,
+      log: this.log,
+    });
+    return this.deviceIdentity;
   }
 
   async connectForTransfer() {
