@@ -239,6 +239,90 @@ export function g2BleSupported(bluetooth = globalThis.navigator?.bluetooth) {
   return Boolean(bluetooth?.requestDevice);
 }
 
+// G2 advertised names are `Even G2_<token>_<side>_<addressTail>`, for example
+// `Even G2_32_L_4FB39E`.
+//
+// The trailing hex is the last three bytes of THAT ARM's Bluetooth address, so
+// it is per-arm and the two temples of one pair do not share it. Confirmed on
+// hardware and in the field capture, where one pair reports:
+//
+//   Glasses::S211GBBC180304, Even G2_32_L_4FB39E-none, Even G2_32_R_1412E0-none
+//   :4F:B3:9E, remote device = Even G2_32_L_4FB39E
+//
+// Nothing about one arm's name predicts the other's. The pair identity lives in
+// the serial (identical on both arms, in the advertisement's manufacturer data
+// and in Device Information), never in the name.
+//
+// The token has been `32` on every advertised name recorded so far, which is
+// what makes a side-specific name PREFIX possible at all - see
+// g2SideNamePrefixes.
+export const G2_NAME_PATTERN =
+  /^(?:Even\s+)?G2_([0-9A-Za-z]+)_(L|R)_([0-9A-Fa-f]+)$/;
+
+// Tokens seen in the field. Used only to build side-specific name prefixes for
+// the FIRST arm, where nothing else is known yet. A G2 advertising an
+// unrecorded token is invisible to a prefix built from this list, which is why
+// every caller must offer the unfiltered chooser when the filtered one comes
+// up empty, and why `g2NameToken` feeds newly observed tokens back in.
+export const G2_KNOWN_NAME_TOKENS = Object.freeze(["32"]);
+
+export function g2NameToken(name) {
+  const match = G2_NAME_PATTERN.exec(String(name ?? "").trim());
+  return match ? match[1] : null;
+}
+
+// Name prefixes that admit one side only.
+//
+// `_L_` sits in the middle of the name, after a variable token, and Web
+// Bluetooth's filter grammar has no substring match - only exact `name` and
+// `namePrefix`. Enumerating the observed tokens is what turns the side marker
+// into something a prefix CAN express.
+export function g2SideNamePrefixes(side, tokens = G2_KNOWN_NAME_TOKENS) {
+  const marker = side === "left" ? "L" : "R";
+  const unique = [...new Set((tokens ?? []).filter(Boolean))];
+  return unique.flatMap((token) => [
+    `Even G2_${token}_${marker}_`,
+    `G2_${token}_${marker}_`,
+  ]);
+}
+
+// Assemble the chooser filters for one side.
+//
+// Criteria inside a single filter are ANDed and filters are ORed, so a side
+// prefix and a serial can be combined into "this pair, this side" while still
+// offering one filter per known token spelling.
+export function buildG2ChooserFilters(
+  side,
+  { expectedSerial = null, expectedName = null, tokens = G2_KNOWN_NAME_TOKENS } = {},
+) {
+  const serialFilter = glassesSerialChooserFilter(expectedSerial);
+  // Strongest case: this same side's own name, remembered from a previous
+  // session. It pins one device exactly, with no token assumption. It can only
+  // ever come from having seen THIS arm before - one arm's name says nothing
+  // about the other's, because the trailing hex is per-arm.
+  const remembered = String(expectedName ?? "").trim();
+  if (remembered && G2_NAME_PATTERN.test(remembered)) {
+    const marker = side === "left" ? "L" : "R";
+    // Refuse a remembered name for the wrong side rather than pinning the
+    // chooser to the opposite temple.
+    if (G2_NAME_PATTERN.exec(remembered)[2] === marker) {
+      return [{ name: remembered, ...(serialFilter ?? {}) }];
+    }
+  }
+  const prefixes = g2SideNamePrefixes(side, tokens);
+  if (prefixes.length) {
+    return prefixes.map((namePrefix) => ({
+      namePrefix,
+      ...(serialFilter ?? {}),
+    }));
+  }
+  // No token to build a side prefix from. Fall back to the pair-wide filters;
+  // the post-chooser side check still refuses a wrong-side selection.
+  return serialFilter
+    ? [serialFilter]
+    : [{ namePrefix: "Even G2" }, { namePrefix: "G2_" }];
+}
+
 export function g2BleDeviceSide(name) {
   const normalized = String(name ?? "").trim().toUpperCase();
   if (!/^(?:EVEN\s+)?G2(?:[\s_-]|$)/.test(normalized)) return null;
@@ -309,7 +393,11 @@ export function glassesSerialChooserFilter(serial) {
 export async function requestG2BleDevice(
   side,
   bluetooth = globalThis.navigator?.bluetooth,
-  { expectedSerial = null } = {},
+  {
+    expectedSerial = null,
+    expectedName = null,
+    tokens = G2_KNOWN_NAME_TOKENS,
+  } = {},
 ) {
   if (!["left", "right"].includes(side)) {
     throw new Error("Choose the left or right G2 temple.");
@@ -319,21 +407,19 @@ export async function requestG2BleDevice(
       "Web Bluetooth is unavailable. Open the WebFlasher in current Chrome.",
     );
   }
-  const serialFilter = glassesSerialChooserFilter(expectedSerial);
   const device = await bluetooth.requestDevice({
-    // G2 names put the side marker after a model-variant token
-    // (for example Even G2_32_L_…), so Web Bluetooth's prefix-only
-    // chooser filter cannot express the side safely. Narrow the chooser to
-    // G2 name prefixes, request access to only the two required services,
-    // then enforce one explicit matching side marker on the returned device.
+    // Side-specific by construction: the LEFT button offers only `_L_` names
+    // and the RIGHT button only `_R_` names. See buildG2ChooserFilters for how
+    // a mid-string marker is expressed in a grammar that has only prefixes.
     //
-    // With a known serial the chooser is narrowed to that pair's advertisement
-    // instead. Filters are OR-ed, so the serial filter has to stand alone:
-    // keeping the name prefixes alongside it would re-admit every other G2 in
-    // the room and defeat the whole point.
-    filters: serialFilter
-      ? [serialFilter]
-      : [{ namePrefix: "Even G2" }, { namePrefix: "G2_" }],
+    // The post-chooser side check below is NOT redundant. These filters depend
+    // on the observed token list, and a G2 advertising an unrecorded token
+    // falls back to pair-wide filters that cannot express the side.
+    filters: buildG2ChooserFilters(side, {
+      expectedSerial,
+      expectedName,
+      tokens,
+    }),
     optionalServices: [
       G2_BLE_DATA_SERVICE,
       G2_BLE_CONTROL_SERVICE,

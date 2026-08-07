@@ -107,7 +107,9 @@ import {
   flashG2BleSessionsConcurrently,
   g2BleDeviceSide,
   g2BleSupported,
+  G2_KNOWN_NAME_TOKENS,
   g2BleTargetVersionProof,
+  g2NameToken,
   glassesSerialChooserFilter,
   readG2TempleIdentity,
   requestG2BleDevice,
@@ -151,6 +153,67 @@ function readRememberedGlassesSerial() {
     // Private windows and blocked storage must not break the chooser.
     return "";
   }
+}
+
+// Name tokens observed on real hardware, merged with the built-in list. A G2
+// advertising a token nobody has recorded cannot be reached by a side-specific
+// name prefix, so remembering each one seen keeps the filter working for that
+// operator's own devices from the second session onward.
+const OBSERVED_NAME_TOKENS_KEY = "webflasher.g2NameTokens";
+// The exact advertised name last seen for each side, which pins that side's
+// chooser to one device. Per-side and never derived from the other arm: the
+// trailing hex is the arm's own address tail, so one says nothing about the other.
+const REMEMBERED_TEMPLE_NAMES_KEY = "webflasher.g2TempleNames";
+
+function readJsonSetting(key, fallback) {
+  try {
+    const raw = globalThis.localStorage?.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJsonSetting(key, value) {
+  try {
+    globalThis.localStorage?.setItem(key, JSON.stringify(value));
+  } catch {
+    // Remembering is a convenience; failing to remember changes nothing.
+  }
+}
+
+function readObservedNameTokens() {
+  const stored = readJsonSetting(OBSERVED_NAME_TOKENS_KEY, []);
+  return [
+    ...new Set([
+      ...G2_KNOWN_NAME_TOKENS,
+      ...(Array.isArray(stored) ? stored.filter((t) => typeof t === "string") : []),
+    ]),
+  ];
+}
+
+function rememberNameToken(name) {
+  const token = g2NameToken(name);
+  if (!token || G2_KNOWN_NAME_TOKENS.includes(token)) return;
+  const stored = readJsonSetting(OBSERVED_NAME_TOKENS_KEY, []);
+  const next = [...new Set([...(Array.isArray(stored) ? stored : []), token])];
+  writeJsonSetting(OBSERVED_NAME_TOKENS_KEY, next);
+}
+
+function readRememberedTempleNames() {
+  const stored = readJsonSetting(REMEMBERED_TEMPLE_NAMES_KEY, {});
+  return {
+    left: typeof stored?.left === "string" ? stored.left : null,
+    right: typeof stored?.right === "string" ? stored.right : null,
+  };
+}
+
+function rememberTempleName(side, name) {
+  if (!name) return;
+  writeJsonSetting(REMEMBERED_TEMPLE_NAMES_KEY, {
+    ...readRememberedTempleNames(),
+    [side]: name,
+  });
 }
 
 function rememberGlassesSerial(serial) {
@@ -993,7 +1056,8 @@ function BluetoothRecoveryCard({
         )}
         {serialFilterFailedSide && (
           <p className="ble-pair-verdict is-mismatched" role="alert">
-            Nothing advertising that serial appeared in the chooser.{" "}
+            The {serialFilterFailedSide} chooser closed without a selection. If
+            the temple was advertising but never appeared,{" "}
             <button
               type="button"
               className="link-button"
@@ -1004,9 +1068,10 @@ function BluetoothRecoveryCard({
               }
               disabled={Boolean(operation)}
             >
-              List every nearby G2 for the {serialFilterFailedSide} temple
+              list every nearby G2 for the {serialFilterFailedSide} temple
             </button>{" "}
-            — each temple's serial is still read and checked after you pick it.
+            — the {serialFilterFailedSide} side is still enforced after you pick
+            one, and the serial is still read and checked.
           </p>
         )}
         {pairIdentity.message && (
@@ -2983,21 +3048,36 @@ function App() {
     setBleSerialFilterFailedSide(null);
     setBlePairMismatch(null);
     const expectedSerial = ignoreExpectedSerial ? null : bleExpectedSerial;
-    const narrowed = Boolean(glassesSerialChooserFilter(expectedSerial));
+    // The unfiltered retry drops every narrowing, including the side prefix:
+    // it exists for a temple whose advertised name this build cannot express,
+    // and the post-chooser side check still refuses a wrong-side pick.
+    const tokens = ignoreExpectedSerial ? [] : readObservedNameTokens();
+    const narrowed = !ignoreExpectedSerial;
+    const marker = side === "left" ? "_L_" : "_R_";
+    const serialNote = glassesSerialChooserFilter(expectedSerial)
+      ? ` and serial ${normalizeGlassesSerial(expectedSerial)}`
+      : "";
     setBleStatus(
       narrowed
-        ? `Waiting for Chrome's Bluetooth chooser · it will list only glasses advertising serial ${normalizeGlassesSerial(expectedSerial)}.`
-        : `Waiting for Chrome's Bluetooth chooser · select the ${side} Even G2 temple.`,
+        ? `Waiting for Chrome's Bluetooth chooser · it will list only Even Realities devices whose name contains ${marker}${serialNote}.`
+        : `Waiting for Chrome's Bluetooth chooser · listing every nearby Even G2 for the ${side} temple.`,
     );
     addLog(
       narrowed
-        ? `Waiting for the ${side} G2 temple in Chrome's Bluetooth chooser · narrowed to serial ${normalizeGlassesSerial(expectedSerial)}. Chrome draws the chooser itself and shows the advertised name; the serial is applied as a filter, so anything listed is that pair.`
-        : `Waiting for the advertising ${side} G2 temple in Chrome's Bluetooth chooser.`,
+        ? `Waiting for the ${side} G2 temple in Chrome's Bluetooth chooser · restricted to names containing ${marker}${serialNote}.`
+        : `Waiting for the ${side} G2 temple in Chrome's Bluetooth chooser · every nearby G2 listed; the ${side} side is still enforced after you pick one.`,
     );
     try {
       const device = await requestG2BleDevice(side, undefined, {
         expectedSerial,
+        // This side's own remembered name, never the other arm's.
+        expectedName: ignoreExpectedSerial
+          ? null
+          : readRememberedTempleNames()[side],
+        tokens,
       });
+      rememberNameToken(device?.name);
+      rememberTempleName(side, device?.name);
       const otherSide = side === "left" ? "right" : "left";
       if (
         bleDevices[otherSide]?.id &&
@@ -3069,10 +3149,12 @@ function App() {
       // glasses actually on the bench — or behind a temple whose firmware is
       // broken enough that it advertises without manufacturer data.
       if (caught?.name === "NotFoundError" && narrowed) {
+        // NotFoundError means "dismissed" and "nothing listed" alike - Web
+        // Bluetooth does not distinguish them - so this names the possibility
+        // rather than diagnosing it, and always offers the way out.
         const message =
-          `No glasses advertising serial ${normalizeGlassesSerial(expectedSerial)} appeared in the chooser. ` +
-          `Either these are different glasses, or this temple is advertising without the manufacturer data the filter reads. ` +
-          `Clear the serial box to list every nearby G2 instead.`;
+          `The ${side} chooser closed without a selection. If your ${side} temple was advertising but never appeared, ` +
+          `its name may not contain ${marker}${serialNote ? `, or may not match${serialNote}` : ""} in the form this filter expects.`;
         setBleStatus(message);
         addLog(message, "warn");
         setBleSerialFilterFailedSide(side);

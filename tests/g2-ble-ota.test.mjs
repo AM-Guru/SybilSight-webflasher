@@ -858,9 +858,13 @@ test("requires an explicit matching side marker after the chooser", async () => 
     }),
     /without one unambiguous Left\/Right marker.*explicitly identifies the right side/,
   );
+  // The chooser is now restricted to the requested side. The rejection above
+  // is still what makes the guarantee hold: these prefixes are built from the
+  // observed name-token list, so a G2 advertising an unrecorded token falls
+  // back to pair-wide filters that cannot express the side at all.
   assert.deepEqual(
     options.filters.map((filter) => filter.namePrefix),
-    ["Even G2", "G2_"],
+    ["Even G2_32_R_", "G2_32_R_"],
   );
   // The two OTA services, plus the read-only Device Information service that
   // carries the temple's product serial. Web Bluetooth grants service access at

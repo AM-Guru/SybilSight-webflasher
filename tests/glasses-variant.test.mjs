@@ -11,8 +11,12 @@ import {
 } from "../src/lib/glassesVariant.js";
 import {
   EVEN_COMPANY_IDENTIFIER,
+  G2_NAME_PATTERN,
+  buildG2ChooserFilters,
   decodeDeviceInformationString,
   evaluateG2PairIdentity,
+  g2NameToken,
+  g2SideNamePrefixes,
   glassesSerialChooserFilter,
   requestG2BleDevice,
 } from "../src/lib/g2BleOta.js";
@@ -189,7 +193,7 @@ test("a partial serial is a legal prefix, junk is not a filter at all", () => {
   assert.equal(glassesSerialChooserFilter(null), null);
 });
 
-test("a known serial narrows the chooser to that pair alone", async () => {
+test("a known serial narrows the chooser to that pair, and that side", async () => {
   let options = null;
   const device = { name: "Even G2_32_L_4FB39E", id: "left", gatt: {} };
   await requestG2BleDevice(
@@ -202,17 +206,19 @@ test("a known serial narrows the chooser to that pair alone", async () => {
     },
     { expectedSerial: G2_B_BROWN },
   );
-  // The name prefixes must NOT remain alongside it: filters are OR-ed, so
-  // keeping them would re-admit every other G2 in the room.
-  assert.equal(options.filters.length, 1);
-  assert.equal(
-    options.filters[0].manufacturerData[0].companyIdentifier,
-    EVEN_COMPANY_IDENTIFIER,
-  );
-  assert.equal(options.filters[0].namePrefix, undefined);
+  // Every filter carries BOTH criteria. Web Bluetooth ANDs criteria within one
+  // filter and ORs between filters, so a serial-only filter alongside a
+  // side-only filter would admit either on its own - it has to be per-filter.
+  for (const filter of options.filters) {
+    assert.match(filter.namePrefix, /_L_$/);
+    assert.equal(
+      filter.manufacturerData[0].companyIdentifier,
+      EVEN_COMPANY_IDENTIFIER,
+    );
+  }
 });
 
-test("without a serial the chooser keeps the original name filters", async () => {
+test("without a serial the chooser still restricts to the chosen side", async () => {
   let options = null;
   const device = { name: "Even G2_32_L_4FB39E", id: "left", gatt: {} };
   for (const expectedSerial of [null, "", "not-a-serial"]) {
@@ -228,10 +234,128 @@ test("without a serial the chooser keeps the original name filters", async () =>
     );
     assert.deepEqual(
       options.filters.map((filter) => filter.namePrefix),
-      ["Even G2", "G2_"],
-      `expectedSerial ${JSON.stringify(expectedSerial)} must not narrow the chooser`,
+      ["Even G2_32_L_", "G2_32_L_"],
+      `expectedSerial ${JSON.stringify(expectedSerial)} must still keep the side filter`,
     );
   }
+});
+
+// MARK: Side-specific chooser filters
+
+test("each side's chooser offers only that side's name prefixes", () => {
+  assert.deepEqual(g2SideNamePrefixes("left"), [
+    "Even G2_32_L_",
+    "G2_32_L_",
+  ]);
+  assert.deepEqual(g2SideNamePrefixes("right"), [
+    "Even G2_32_R_",
+    "G2_32_R_",
+  ]);
+  // Every prefix carries the side marker, which is the whole point.
+  for (const prefix of g2SideNamePrefixes("left", ["32", "40"])) {
+    assert.match(prefix, /_L_$/);
+  }
+});
+
+test("the left chooser cannot admit a right-side name, and vice versa", async () => {
+  for (const [side, wrongName] of [
+    ["left", "Even G2_32_R_4FB39E"],
+    ["right", "Even G2_32_L_4FB39E"],
+  ]) {
+    let options = null;
+    await assert.rejects(
+      requestG2BleDevice(side, {
+        requestDevice: async (value) => {
+          options = value;
+          // Chrome could only return this if the filters admitted it; the
+          // post-chooser check is the backstop that makes the guarantee hold
+          // even when the token list cannot express the side.
+          return { name: wrongName, id: "wrong-side", gatt: { disconnect() {} } };
+        },
+      }),
+      new RegExp(`Select the ${side} temple`),
+    );
+    const marker = side === "left" ? "_L_" : "_R_";
+    assert.ok(
+      options.filters.every((filter) => filter.namePrefix?.includes(marker)),
+      `${side} filters must all carry ${marker}: ${JSON.stringify(options.filters)}`,
+    );
+  }
+});
+
+// The trailing hex is the last three bytes of that ARM's Bluetooth address,
+// not a pair identifier. One field capture records a single pair as
+//   Glasses::S211GBBC180304, Even G2_32_L_4FB39E, Even G2_32_R_1412E0
+// so nothing about one arm's name predicts the other's. Guarded by a test
+// because an earlier revision of this file assumed the opposite.
+test("one arm's name says nothing about the other arm's name", () => {
+  const left = "Even G2_32_L_4FB39E";
+  const right = "Even G2_32_R_1412E0";
+  assert.equal(g2NameToken(left), g2NameToken(right));
+  assert.notEqual(
+    G2_NAME_PATTERN.exec(left)[3],
+    G2_NAME_PATTERN.exec(right)[3],
+    "the two arms of one pair carry different address tails",
+  );
+  assert.equal(g2NameToken("Even G2_32_L_4FB39E"), "32");
+  assert.equal(g2NameToken("nonsense"), null);
+});
+
+test("this side's remembered name pins the chooser to one exact device", () => {
+  assert.deepEqual(
+    buildG2ChooserFilters("right", { expectedName: "Even G2_32_R_1412E0" }),
+    [{ name: "Even G2_32_R_1412E0" }],
+  );
+  // A remembered name for the OTHER side must never pin this chooser.
+  assert.deepEqual(
+    buildG2ChooserFilters("right", {
+      expectedName: "Even G2_32_L_4FB39E",
+    }).map((filter) => filter.namePrefix),
+    ["Even G2_32_R_", "G2_32_R_"],
+  );
+});
+
+test("a side prefix and a serial are ANDed inside one filter", () => {
+  // Criteria within a single filter are ANDed by Web Bluetooth, so this reads
+  // as "this pair AND this side" rather than admitting either on its own.
+  const filters = buildG2ChooserFilters("left", { expectedSerial: G2_B_BROWN });
+  assert.equal(filters.length, 2);
+  for (const filter of filters) {
+    assert.match(filter.namePrefix, /_L_$/);
+    assert.equal(
+      filter.manufacturerData[0].companyIdentifier,
+      EVEN_COMPANY_IDENTIFIER,
+    );
+  }
+});
+
+// The failure this feature introduces: a G2 whose name token was never
+// recorded is invisible to a prefix built from the known list. It must degrade
+// to the pair-wide filters rather than to an empty chooser.
+test("an empty token list falls back instead of hiding every device", () => {
+  const filters = buildG2ChooserFilters("left", { tokens: [] });
+  assert.deepEqual(
+    filters.map((filter) => filter.namePrefix),
+    ["Even G2", "G2_"],
+  );
+  const withSerial = buildG2ChooserFilters("left", {
+    tokens: [],
+    expectedSerial: G2_B_BROWN,
+  });
+  assert.equal(withSerial.length, 1);
+  assert.equal(withSerial[0].namePrefix, undefined);
+  assert.equal(
+    withSerial[0].manufacturerData[0].companyIdentifier,
+    EVEN_COMPANY_IDENTIFIER,
+  );
+});
+
+test("a newly observed token widens the filter for later sessions", () => {
+  const filters = buildG2ChooserFilters("left", { tokens: ["32", "40"] });
+  assert.deepEqual(
+    filters.map((filter) => filter.namePrefix),
+    ["Even G2_32_L_", "G2_32_L_", "Even G2_40_L_", "G2_40_L_"],
+  );
 });
 
 // MARK: Pair gate
