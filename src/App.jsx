@@ -108,6 +108,7 @@ import {
   g2BleDeviceSide,
   g2BleSupported,
   G2_KNOWN_NAME_TOKENS,
+  chooserProvenIdentity,
   g2BleTargetVersionProof,
   g2NameToken,
   glassesSerialChooserFilter,
@@ -1014,8 +1015,8 @@ function BluetoothRecoveryCard({
                   expectedVariant?.displayName
                     ? ` · ${expectedVariant.displayName}`
                     : ""
-                }. The chooser still shows each device's advertised name; the serial is applied as a filter.`
-              : "Chrome will list every nearby G2. Each temple's serial is read and checked after you pick it, before any firmware is sent."}
+                }. Chrome matches that against each device's real advertisement before listing it, so a temple you can select here has proven it belongs to this pair.`
+              : "Without a serial the two sides cannot be confirmed as one pair: Chrome blocks web pages from reading a device's serial number, so there is nothing to compare. Enter it once and the browser does the matching for you."}
           </small>
         </label>
         <div className="ble-device-buttons">
@@ -1046,8 +1047,13 @@ function BluetoothRecoveryCard({
                   <dd>
                     {identity.variant
                       ? `${identity.variant.displayName} · ${identity.variant.variantSummary ?? "variant unknown"}`
-                      : "Model not recognised"}
+                      : identity.serialNumber
+                        ? "Serial does not match a model code this tool knows"
+                        : "Model unknown — Chrome blocks reading a device serial, so enter the serial above to confirm this pair"}
                     {identity.serialNumber ? ` · serial ${identity.serialNumber}` : ""}
+                    {identity.serialSource === "chooser-filter"
+                      ? " (confirmed by the chooser filter)"
+                      : ""}
                   </dd>
                 </div>
               );
@@ -3104,10 +3110,20 @@ function App() {
       // Read-only identity pass. The advertised name proves only which SIDE
       // this is; the Device Information serial proves WHICH GLASSES, which is
       // what catches a temple borrowed from a second pair on the same bench.
-      const identity = await readG2TempleIdentity(device, {
+      let identity = await readG2TempleIdentity(device, {
         side,
         log: addLog,
       });
+      // Neither automatic source is available in stock Chrome. When the chooser
+      // was pinned to a serial, the browser already matched this device's
+      // advertisement against it — that match is the evidence.
+      if (!identity?.serialNumber && glassesSerialChooserFilter(expectedSerial)) {
+        identity = { ...(identity ?? {}), ...chooserProvenIdentity(side, expectedSerial) };
+        addLog(
+          `${side}: confirmed as serial ${identity.serialNumber} by the chooser filter — Chrome matched this temple's advertisement against that serial before listing it. Not a direct read; Chrome permits none.`,
+          "success",
+        );
+      }
       // Through the ref, not the render-time state: the two temples are
       // chosen in two separate awaits, and the second must see the first.
       const identities = {

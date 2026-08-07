@@ -18,6 +18,9 @@ import {
   g2NameToken,
   g2SideNamePrefixes,
   glassesSerialChooserFilter,
+  isBlocklistedCharacteristicError,
+  readG2AdvertisedSerial,
+  readG2TempleIdentity,
   requestG2BleDevice,
 } from "../src/lib/g2BleOta.js";
 import { buildDeviceFingerprint } from "../src/lib/deviceIdentity.js";
@@ -356,6 +359,138 @@ test("a newly observed token widens the filter for later sessions", () => {
     filters.map((filter) => filter.namePrefix),
     ["Even G2_32_L_", "G2_32_L_", "Even G2_40_L_", "G2_40_L_"],
   );
+});
+
+// MARK: Serial sources
+//
+// Chrome blocks the standard Serial Number characteristic (0x2A25) on every
+// web page — it is on the Web Bluetooth GATT blocklist under "standardized
+// unique identifiers". Confirmed on hardware: the read throws and the serial
+// has to come from the advertisement instead.
+
+test("a blocklisted-characteristic failure is recognised as one", () => {
+  assert.equal(
+    isBlocklistedCharacteristicError({
+      name: "SecurityError",
+      message: "getCharacteristic(s) called with blocklisted UUID.",
+    }),
+    true,
+  );
+  assert.equal(
+    isBlocklistedCharacteristicError({
+      name: "NotFoundError",
+      message: "No Characteristic matching UUID.",
+    }),
+    false,
+  );
+  assert.equal(isBlocklistedCharacteristicError(null), false);
+});
+
+function advertisingDevice(serial, { company = EVEN_COMPANY_IDENTIFIER } = {}) {
+  const listeners = new Set();
+  const payload = new Uint8Array(21);
+  payload.set(new TextEncoder().encode(serial));
+  return {
+    listeners,
+    addEventListener: (type, fn) => type === "advertisementreceived" && listeners.add(fn),
+    removeEventListener: (type, fn) => listeners.delete(fn),
+    async watchAdvertisements() {
+      // Deliver one advertisement, as Chrome would.
+      queueMicrotask(() => {
+        for (const fn of [...listeners]) {
+          fn({ manufacturerData: new Map([[company, new DataView(payload.buffer)]]) });
+        }
+      });
+    },
+  };
+}
+
+test("the serial is read from the advertisement, which is not blocklisted", async () => {
+  const serial = await readG2AdvertisedSerial(advertisingDevice(G2_B_BROWN), {
+    side: "left",
+  });
+  assert.equal(serial, G2_B_BROWN);
+});
+
+test("an advertisement from another vendor is ignored", async () => {
+  const serial = await readG2AdvertisedSerial(
+    advertisingDevice(G2_B_BROWN, { company: 0x004c }),
+    { side: "left", timeoutMs: 60 },
+  );
+  assert.equal(serial, null);
+});
+
+test("a Chrome build without watchAdvertisements degrades, it does not throw", async () => {
+  const warnings = [];
+  const serial = await readG2AdvertisedSerial(
+    { addEventListener() {}, removeEventListener() {} },
+    { side: "left", log: (message, tone) => warnings.push([tone, message]) },
+  );
+  assert.equal(serial, null);
+  assert.equal(warnings[0][0], "warn");
+  assert.match(warnings[0][1], /watchAdvertisements is unavailable/);
+});
+
+test("the advertisement supplies the serial when GATT cannot", async () => {
+  const advertiser = advertisingDevice(G2_B_BROWN);
+  const identity = await readG2TempleIdentity(
+    {
+      ...advertiser,
+      gatt: {
+        connected: false,
+        // Stands in for the blocklist: the whole GATT path fails.
+        async connect() {
+          throw Object.assign(new Error("blocked"), { name: "SecurityError" });
+        },
+        disconnect() {},
+      },
+    },
+    { side: "left" },
+  );
+  assert.equal(identity.serialNumber, G2_B_BROWN);
+  assert.equal(identity.serialSource, "advertisement");
+  assert.equal(identity.variant.displayName, "Even G2 B · Brown");
+});
+
+// This is the exact hardware case: Device Information resolves, every string
+// read except the serial succeeds, and the serial is refused by the browser.
+test("a blocked serial read still yields a decoded temple", async () => {
+  const advertiser = advertisingDevice(G2_B_BROWN);
+  const identity = await readG2TempleIdentity(
+    {
+      ...advertiser,
+      gatt: {
+        connected: false,
+        async connect() {
+          return {
+            async getPrimaryService() {
+              return {
+                async getCharacteristic(name) {
+                  if (name === "serial_number_string") {
+                    throw Object.assign(
+                      new Error("getCharacteristic(s) called with blocklisted UUID."),
+                      { name: "SecurityError" },
+                    );
+                  }
+                  return {
+                    async readValue() {
+                      return new DataView(new TextEncoder().encode("G2").buffer);
+                    },
+                  };
+                },
+              };
+            },
+          };
+        },
+        disconnect() {},
+      },
+    },
+    { side: "left" },
+  );
+  assert.equal(identity.serialNumber, G2_B_BROWN);
+  assert.equal(identity.serialSource, "advertisement");
+  assert.equal(identity.modelNumber, "G2");
+  assert.equal(identity.variant.frame, "b");
 });
 
 // MARK: Pair gate

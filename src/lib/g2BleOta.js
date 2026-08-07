@@ -440,6 +440,100 @@ export async function requestG2BleDevice(
   return device;
 }
 
+// Chrome blocks the standard Serial Number String characteristic (0x2A25) on
+// every web page. It is on the Web Bluetooth GATT blocklist, listed under
+// "Block access to standardized unique identifiers, for privacy reasons", so
+// no permission, flag or user gesture makes it readable. The iOS app reads it
+// happily because CoreBluetooth has no such blocklist; a browser never will.
+export function isBlocklistedCharacteristicError(failure) {
+  if (!failure) return false;
+  return (
+    failure.name === "SecurityError" ||
+    /blocklist|blocked/i.test(failure.message ?? "")
+  );
+}
+
+export const G2_ADVERTISEMENT_SERIAL_TIMEOUT_MS = 6000;
+
+// Read the serial out of the advertisement instead.
+//
+// The blocklist governs GATT attributes, not advertisement data, and the G2
+// puts its serial in Manufacturer Specific Data - the same bytes the iOS app
+// reads at scan time. Web Bluetooth exposes them through watchAdvertisements(),
+// keyed by company identifier, with the company bytes stripped, so the value
+// begins at the serial.
+//
+// Advisory like every other identity read: unsupported browser, a device that
+// has stopped advertising, or a silent timeout all return null and leave the
+// operator able to flash.
+export async function readG2AdvertisedSerial(
+  device,
+  {
+    side = null,
+    log = () => {},
+    timeoutMs = G2_ADVERTISEMENT_SERIAL_TIMEOUT_MS,
+  } = {},
+) {
+  const label = side ? `${side}: ` : "";
+  if (typeof device?.watchAdvertisements !== "function") {
+    log(
+      `${label}this Chrome build cannot read Bluetooth advertisements from a web page (watchAdvertisements is unavailable), so the serial cannot be read automatically.`,
+      "warn",
+    );
+    return null;
+  }
+  const controller =
+    typeof AbortController === "function" ? new AbortController() : null;
+  return new Promise((resolve) => {
+    let settled = false;
+    let timer = null;
+    const finish = (serial) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      device.removeEventListener?.("advertisementreceived", onAdvertisement);
+      try {
+        controller?.abort();
+      } catch {
+        // Aborting a watch that already ended is not an error worth raising.
+      }
+      resolve(serial);
+    };
+    function onAdvertisement(event) {
+      const data = event?.manufacturerData?.get?.(EVEN_COMPANY_IDENTIFIER);
+      if (!data) return;
+      const bytes = new Uint8Array(
+        data.buffer ?? data,
+        data.byteOffset ?? 0,
+        data.byteLength ?? data.length ?? 0,
+      );
+      // "ER" is the company identifier and is the map key, so these bytes
+      // start at the serial rather than two bytes into it.
+      const serial = decodeDeviceInformationString(
+        bytes.subarray(0, EVEN_ADVERTISED_SERIAL_LENGTH),
+      );
+      if (serial) finish(serial);
+    }
+    device.addEventListener?.("advertisementreceived", onAdvertisement);
+    timer = setTimeout(() => {
+      log(
+        `${label}no Even advertisement carrying a serial arrived within ${Math.round(timeoutMs / 1000)}s. A connected temple stops advertising, so this is expected if it is already linked to something else.`,
+        "warn",
+      );
+      finish(null);
+    }, timeoutMs);
+    Promise.resolve(
+      device.watchAdvertisements(controller ? { signal: controller.signal } : undefined),
+    ).catch((error) => {
+      log(
+        `${label}could not watch this temple's advertisements (${error?.name ?? "Error"}: ${error?.message ?? String(error)}); continuing without an automatic serial read.`,
+        "warn",
+      );
+      finish(null);
+    });
+  });
+}
+
 // Read the temple's own product identity from the standard Device Information
 // Service and decode the SKU from its serial.
 //
@@ -466,13 +560,23 @@ export async function readG2DeviceInformation(
     );
     return null;
   }
+  // Never swallow the reason. An earlier revision returned null for every
+  // failure, which turned "Chrome refuses this characteristic" into "the
+  // glasses answered without a serial" - a message that blamed the hardware
+  // for a browser policy and made the real cause undiagnosable from the log.
+  const failures = [];
   const readString = async (characteristic) => {
     try {
       const value = await (
         await service.getCharacteristic(characteristic)
       ).readValue();
       return decodeDeviceInformationString(value);
-    } catch {
+    } catch (error) {
+      failures.push({
+        characteristic,
+        name: error?.name ?? "Error",
+        message: error?.message ?? String(error),
+      });
       return null;
     }
   };
@@ -491,8 +595,15 @@ export async function readG2DeviceInformation(
     observedAt: new Date().toISOString(),
   };
   if (!serialNumber) {
+    const serialFailure = failures.find(
+      (failure) => failure.characteristic === G2_BLE_SERIAL_NUMBER_CHARACTERISTIC,
+    );
     log(
-      `${label}the Device Information service answered without a serial number; continuing without an automatic model check.`,
+      isBlocklistedCharacteristicError(serialFailure)
+        ? `${label}Chrome refuses to read the standard Serial Number characteristic (0x2A25) from any web page — it is on the Web Bluetooth blocklist as a "standardized unique identifier", blocked for privacy. The glasses answered normally; the browser blocked it. Falling back to the serial in the advertisement.`
+        : `${label}the Device Information service returned no serial number${
+            serialFailure ? ` (${serialFailure.name}: ${serialFailure.message})` : ""
+          }; continuing without an automatic model check.`,
       "warn",
     );
   } else if (identity.variant?.variantSummary) {
@@ -509,24 +620,69 @@ export async function readG2DeviceInformation(
   return identity;
 }
 
-// Connect read-only, read Device Information, disconnect. Used at selection
-// time so the operator learns which glasses they picked before any firmware
-// package is opened. Writes nothing and touches no OTA service.
+// Learn what this temple is, read-only, at selection time.
+//
+// Two sources, because neither is sufficient alone:
+//
+//   * the advertisement, which carries the serial and is NOT blocklisted, but
+//     only while the temple is still advertising, and only in Chrome builds
+//     that expose watchAdvertisements(); and
+//   * Device Information over GATT, which survives a connected temple and
+//     supplies model/hardware/firmware strings, but whose serial characteristic
+//     Chrome blocks outright.
+//
+// The advertisement is read FIRST and while still disconnected, because
+// connecting is what stops a peripheral advertising.
 export async function readG2TempleIdentity(
   device,
   { side = null, log = () => {} } = {},
 ) {
   if (!device?.gatt) return null;
+  const advertisedSerial = await readG2AdvertisedSerial(device, { side, log });
+  if (advertisedSerial) {
+    const variant = decodeGlassesSerial(advertisedSerial);
+    log(
+      variant?.variantSummary
+        ? `${side ? `${side}: ` : ""}temple identified from its advertisement as ${variant.displayName} · ${variant.variantSummary} · serial ${variant.serial}.`
+        : `${side ? `${side}: ` : ""}advertised serial ${advertisedSerial} does not match any Even model code this tool knows.`,
+      variant?.variantSummary ? "success" : "warn",
+    );
+  }
   const wasConnected = Boolean(device.gatt.connected);
   try {
     const server = wasConnected ? device.gatt : await device.gatt.connect();
-    return await readG2DeviceInformation(server, { side, log });
+    const information = await readG2DeviceInformation(server, { side, log });
+    if (!advertisedSerial) return information;
+    // The advertisement is authoritative for the serial: it is the only source
+    // a browser is permitted to read.
+    const serialNumber = information?.serialNumber ?? advertisedSerial;
+    return {
+      ...(information ?? { side, modelNumber: null, hardwareRevision: null, firmwareRevision: null }),
+      serialNumber,
+      serialSource: information?.serialNumber
+        ? "device-information"
+        : "advertisement",
+      variant: decodeGlassesSerial(serialNumber),
+      observedAt: information?.observedAt ?? new Date().toISOString(),
+    };
   } catch (error) {
     log(
-      `${side ? `${side}: ` : ""}could not read this temple's identity over Bluetooth (${error?.message ?? String(error)}). This does not block flashing; confirm the serial printed inside the temple by hand.`,
+      `${side ? `${side}: ` : ""}could not read this temple's Device Information over Bluetooth (${error?.message ?? String(error)}). This does not block flashing.`,
       "warn",
     );
-    return null;
+    // A GATT failure must not discard a serial the advertisement already gave.
+    return advertisedSerial
+      ? {
+          side,
+          serialNumber: advertisedSerial,
+          serialSource: "advertisement",
+          modelNumber: null,
+          hardwareRevision: null,
+          firmwareRevision: null,
+          variant: decodeGlassesSerial(advertisedSerial),
+          observedAt: new Date().toISOString(),
+        }
+      : null;
   } finally {
     // Leave the link exactly as it was found. A temple that was already
     // connected for another reason must not be dropped by an advisory read.
@@ -538,6 +694,37 @@ export async function readG2TempleIdentity(
       }
     }
   }
+}
+
+// Identity established by the chooser filter rather than by reading anything.
+//
+// Stock Chrome permits no way to read a G2's serial: the standard Serial Number
+// characteristic is blocklisted, and watchAdvertisements() - the one API that
+// exposes the advertisement carrying it - is behind the experimental-features
+// flag. So on a default browser, both automatic sources are closed.
+//
+// What is still available is the chooser filter. `requestDevice` was given a
+// manufacturerData filter pinned to this serial, and the browser matched it
+// against the real advertisement before listing the device. A device that came
+// back through that chooser has therefore PROVEN it advertises this serial -
+// the browser did the comparison we are not allowed to do ourselves.
+//
+// Weaker than a read, and honestly labelled: it confirms the temple against a
+// serial the operator supplied, so a typo yields an empty chooser rather than a
+// false match. It cannot discover an unknown serial.
+export function chooserProvenIdentity(side, serial) {
+  const normalized = normalizeGlassesSerial(serial);
+  if (normalized.length < GLASSES_SERIAL_MIN_LENGTH) return null;
+  return {
+    side,
+    serialNumber: normalized,
+    serialSource: "chooser-filter",
+    modelNumber: null,
+    hardwareRevision: null,
+    firmwareRevision: null,
+    variant: decodeGlassesSerial(normalized),
+    observedAt: new Date().toISOString(),
+  };
 }
 
 // Decide whether the two temples an operator has connected may be flashed as
