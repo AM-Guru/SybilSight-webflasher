@@ -427,6 +427,12 @@ export async function requestG2BleDevice(
       // at chooser time; asking later is not possible.
       G2_BLE_DEVICE_INFO_SERVICE,
     ],
+    // Without this, `advertisementreceived` events arrive with Even's
+    // manufacturer data stripped out, and the serial can never be read.
+    // Manufacturer data is only delivered for company identifiers the page
+    // asked for, and asking is only possible here, at chooser time. It does
+    // not affect which devices the chooser lists - that is `filters` alone.
+    optionalManufacturerData: [EVEN_COMPANY_IDENTIFIER],
   });
   const observedSide = g2BleDeviceSide(device?.name);
   if (observedSide !== side) {
@@ -487,6 +493,12 @@ export async function readG2AdvertisedSerial(
   return new Promise((resolve) => {
     let settled = false;
     let timer = null;
+    // Counted so a failure can say WHICH failure it was. "No advertisements at
+    // all" (temple not advertising) and "advertisements without Even's
+    // manufacturer data" (the page was never granted that company identifier)
+    // are different problems that previously produced the same message.
+    let advertisements = 0;
+    let withEvenData = 0;
     const finish = (serial) => {
       if (settled) return;
       settled = true;
@@ -500,8 +512,10 @@ export async function readG2AdvertisedSerial(
       resolve(serial);
     };
     function onAdvertisement(event) {
+      advertisements += 1;
       const data = event?.manufacturerData?.get?.(EVEN_COMPANY_IDENTIFIER);
       if (!data) return;
+      withEvenData += 1;
       const bytes = new Uint8Array(
         data.buffer ?? data,
         data.byteOffset ?? 0,
@@ -516,8 +530,13 @@ export async function readG2AdvertisedSerial(
     }
     device.addEventListener?.("advertisementreceived", onAdvertisement);
     timer = setTimeout(() => {
+      const seconds = Math.round(timeoutMs / 1000);
       log(
-        `${label}no Even advertisement carrying a serial arrived within ${Math.round(timeoutMs / 1000)}s. A connected temple stops advertising, so this is expected if it is already linked to something else.`,
+        advertisements === 0
+          ? `${label}no advertisements at all arrived within ${seconds}s. A connected temple stops advertising, so this is expected if it is already linked to a phone or the Even app.`
+          : withEvenData === 0
+            ? `${label}${advertisements} advertisement(s) arrived in ${seconds}s but none carried Even's manufacturer data (company 0x${EVEN_COMPANY_IDENTIFIER.toString(16)}). The page is not being given that data.`
+            : `${label}${withEvenData} Even advertisement(s) arrived in ${seconds}s but none held a readable serial.`,
         "warn",
       );
       finish(null);
