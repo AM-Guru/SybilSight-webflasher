@@ -21,6 +21,8 @@ const REVIEWED_CFW_2_2_7_16_SHA256 =
   "6c0fdfed0eabfc40ba718ec1eec6b0728e9794a8abdb6079ebdcee2c56f58127";
 const OFFICIAL_G2_2_2_7_14_SHA256 =
   "0fced0aebcc6c88db6f76dba34f91b805d842a5fc297bfd7fa6d6a34ec83cecb";
+const OFFICIAL_G2_2_2_8_4_SHA256 =
+  "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7";
 
 // The catalog production actually served on 2026-07-28: newest CFW is the
 // legacy 2.2.6.10 build; both current reviewed CFW releases are absent.
@@ -56,6 +58,7 @@ test("flags a pinned image the served library is too old to offer", () => {
   assert.deepEqual(
     missing.map((target) => target.imageSha256),
     [
+      OFFICIAL_G2_2_2_8_4_SHA256,
       REVIEWED_CFW_2_2_7_16_SHA256,
       OFFICIAL_G2_2_2_7_14_SHA256,
       REVIEWED_CFW_2_2_6_12_SHA256,
@@ -77,6 +80,7 @@ test("blocks firmware mutation when the served library is behind the build", () 
       assert.deepEqual(
         error.missingPinnedImages.map((target) => target.imageSha256),
         [
+          OFFICIAL_G2_2_2_8_4_SHA256,
           REVIEWED_CFW_2_2_7_16_SHA256,
           OFFICIAL_G2_2_2_7_14_SHA256,
           REVIEWED_CFW_2_2_6_12_SHA256,

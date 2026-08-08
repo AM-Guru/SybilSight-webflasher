@@ -24,6 +24,38 @@ const LEGACY_HARDWARE_VALIDATED_CFW_SHA256 =
   "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0";
 const R1_RELEASES = [
   {
+    id: "r1-official-2.2.8.0002",
+    displayName: "Official R1 2.2.8.0002",
+    version: "2.2.8.0002",
+    channel: "official",
+    trust: "official-pinned",
+    format: "nordic-secure-dfu",
+    fileName: "r1-2.2.8.0002-ce5aa289bf6c95a293d41bd48c123e40.zip",
+    size: 650915,
+    md5: "ce5aa289bf6c95a293d41bd48c123e40",
+    sha256: "662ca213e628f6bd82b8cd930bd63d6c1efe00b6f470fd6ed21e6367712bfdb7",
+    sourceUrl:
+      "https://cdn.evenreal.co/firmware/ce5aa289bf6c95a293d41bd48c123e40.zip",
+    minAppVersion: "2.2.8",
+    notes: "Bug fixes.",
+    application: {
+      binFile: "application.bin",
+      binSize: 650284,
+      binSha256:
+        "41ea4fdcf1b2d1d3702c41669983b4ef0817ee4eb789f8eebc7dd6102609e274",
+      datFile: "application.dat",
+      datSize: 141,
+      datSha256:
+        "1b9ede75c2d95b6d97e5b51dc396e0433d2575c4e04f63cc77e26218ccf13ea8",
+    },
+    initPacket: {
+      applicationVersion: 3,
+      hardwareVersion: 52,
+      softDeviceFirmwareIds: [0x0100],
+      signed: true,
+    },
+  },
+  {
     id: "r1-official-2.2.7.0005",
     displayName: "Official R1 2.2.7.0005",
     version: "2.2.7.0005",
@@ -188,6 +220,13 @@ const RELEASES = [
     size: 4335715,
     notes:
       "Enhanced Bluetooth connection stability and Teleprompt AI noise reduction; fixed Teleprompt Remote Control and earlier-version firmware update failures in specific scenarios.",
+  },
+  {
+    version: "2.2.8.4",
+    hash: "d495a1dffb919795e95135e144345f04",
+    sha256: "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7",
+    size: 4342507,
+    notes: "Added Korean system language support.",
   },
   {
     id: "g2-custom-2.2.7.16",

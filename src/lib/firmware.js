@@ -574,6 +574,7 @@ export const OFFICIAL_G2_SHA256 = Object.freeze({
   "2.2.4.34": "f9a93621a7141e0ae54ca6371cd2f1b4afbffa61f302ace096e0656ba25b1754",
   "2.2.6.10": REVIEWED_CFW.baseSha256,
   "2.2.7.14": "0fced0aebcc6c88db6f76dba34f91b805d842a5fc297bfd7fa6d6a34ec83cecb",
+  "2.2.8.4": "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7",
 });
 export const FLASH_BASE = 0x08000000;
 export const FLASH_SIZE = 0x80000;

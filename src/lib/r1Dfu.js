@@ -9,6 +9,25 @@ export const R1_BUTTONLESS_DFU_UUID =
 
 export const R1_PINNED_RELEASES = Object.freeze([
   Object.freeze({
+    id: "r1-official-2.2.8.0002",
+    version: "2.2.8.0002",
+    fileName: "r1-2.2.8.0002-ce5aa289bf6c95a293d41bd48c123e40.zip",
+    size: 650915,
+    md5: "ce5aa289bf6c95a293d41bd48c123e40",
+    sha256: "662ca213e628f6bd82b8cd930bd63d6c1efe00b6f470fd6ed21e6367712bfdb7",
+    format: "nordic-secure-dfu",
+    application: Object.freeze({
+      binFile: "application.bin",
+      binSize: 650284,
+      binSha256:
+        "41ea4fdcf1b2d1d3702c41669983b4ef0817ee4eb789f8eebc7dd6102609e274",
+      datFile: "application.dat",
+      datSize: 141,
+      datSha256:
+        "1b9ede75c2d95b6d97e5b51dc396e0433d2575c4e04f63cc77e26218ccf13ea8",
+    }),
+  }),
+  Object.freeze({
     id: "r1-official-2.2.7.0005",
     version: "2.2.7.0005",
     fileName: "r1-2.2.7.0005-be359b28954f8fe4a94ec21a58415d59.zip",

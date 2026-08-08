@@ -744,12 +744,12 @@ test("ships the complete official and reviewed-CFW development catalog", async (
   assert.equal(
     catalog.releases.filter((release) => (release.channel ?? "official") === "official")
       .length,
-    13,
+    14,
   );
   const latestOfficial = catalog.releases.find(
-    (release) => release.id === "g2-official-2.2.7.14",
+    (release) => release.id === "g2-official-2.2.8.4",
   );
-  assert.equal(latestOfficial.sha256, OFFICIAL_G2_SHA256["2.2.7.14"]);
+  assert.equal(latestOfficial.sha256, OFFICIAL_G2_SHA256["2.2.8.4"]);
   assert.equal(latestOfficial.caseVersion, "1.2.57");
   const cfw = catalog.releases.find((release) => release.channel === "custom");
   assert.equal(cfw.version, "2.2.7.16");
@@ -757,6 +757,22 @@ test("ships the complete official and reviewed-CFW development catalog", async (
   assert.equal(cfw.baseVersion, "2.2.7.14");
   assert.equal(cfw.caseRecoveryEligible, false);
   assert.equal(cfw.hardwareValidated, false);
+});
+
+test("ships the exact official G2 2.2.8.4 bundle and six components", async () => {
+  const releaseDirectory = new URL(
+    "../public/firmware-updates/source-files/2.2.8.4/",
+    import.meta.url,
+  );
+  const firmware = await parseFirmwareInput(
+    await readFile(new URL("d495a1dffb919795e95135e144345f04.bin", releaseDirectory)),
+    "d495a1dffb919795e95135e144345f04.bin",
+  );
+  assert.equal(firmware.fileSha256, OFFICIAL_G2_SHA256["2.2.8.4"]);
+  assert.equal(firmware.g2Version, "2.2.8.4");
+  assert.equal(firmware.componentImages.length, 6);
+  assert.equal(firmware.caseVersion, "1.2.57");
+  assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
 });
 
 test("ships the exact official G2 2.2.7.14 bundle and six components", async () => {

@@ -20,6 +20,14 @@ export const TEMPLE_FLASH_TARGETS = Object.freeze([
     hardwareValidated: true,
   }),
   Object.freeze({
+    imageSha256: "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7",
+    mainSha256: "776fb77e508955ef7c56cb48945cf96bd30f937c3bb36d916d41e3ebad203a26",
+    mainBytes: 3564728,
+    version: "2.2.8.4",
+    label: "Stock Even Realities G2 2.2.8.4",
+    hardwareValidated: false,
+  }),
+  Object.freeze({
     imageSha256: "6c0fdfed0eabfc40ba718ec1eec6b0728e9794a8abdb6079ebdcee2c56f58127",
     mainSha256: "bdd473f5988c926e78ebc0b9d5255bbd5982957ebb24a649328d3eb92cf1c78c",
     mainBytes: 3573626,

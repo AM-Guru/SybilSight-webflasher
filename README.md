@@ -1364,16 +1364,17 @@ and both routes receive read-only liveness verification.
 
 ## Firmware archive
 
-The archive builder knows about all 13 official G2 releases evidenced by the
+The archive builder knows about all 14 official G2 releases evidenced by the
 SybilSight research plus reviewed CFW `2.2.6.11` and Faceclaw-free CFW
 `2.2.6.12`, both built from Stock `2.2.6.10`. It also verifies and archives
-the signed R1 `2.2.7.0005` and prior `2.2.6.0009` Secure DFU packages:
+the signed R1 `2.2.8.0002`, `2.2.7.0005`, and prior `2.2.6.0009` Secure DFU
+packages:
 
 ```text
 2.0.1.14  2.0.3.20  2.0.5.12  2.0.6.14
 2.0.7.16  2.0.8.20  2.0.9.20  2.1.1.8
 2.1.1.12  2.2.0.24  2.2.4.34  2.2.6.10
-2.2.6.11  2.2.6.12  2.2.7.14
+2.2.6.11  2.2.6.12  2.2.7.14  2.2.8.4
 ```
 
 It retrieves each original bundle from the Even Realities CDN. If a known CDN
@@ -1395,6 +1396,8 @@ artifact and its digest:
 source-files/
   index.json
   r1/
+    2.2.8.0002/
+      r1-2.2.8.0002-ce5aa289bf6c95a293d41bd48c123e40.zip
     2.2.7.0005/
       r1-2.2.7.0005-be359b28954f8fe4a94ec21a58415d59.zip
       application.bin
@@ -1402,8 +1405,8 @@ source-files/
       manifest.json
       metadata.json
       SHA256SUMS
-  2.2.7.14/
-    ededa3729ef16cb2948fa54c44e1dd09.bin
+  2.2.8.4/
+    d495a1dffb919795e95135e144345f04.bin
     firmware_codec.bin
     firmware_ble_em9305.bin
     firmware_touch.bin
