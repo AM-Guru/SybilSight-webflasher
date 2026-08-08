@@ -103,22 +103,14 @@ import {
 import {
   G2BleOtaSession,
   assertPinnedG2BleBundle,
-  evaluateG2PairIdentity,
   flashG2BleSessionsConcurrently,
   g2BleDeviceSide,
   g2BleSupported,
   G2_KNOWN_NAME_TOKENS,
-  chooserProvenIdentity,
   g2BleTargetVersionProof,
   g2NameToken,
-  glassesSerialChooserFilter,
-  readG2TempleIdentity,
   requestG2BleDevice,
 } from "./lib/g2BleOta.js";
-import {
-  decodeGlassesSerial,
-  normalizeGlassesSerial,
-} from "./lib/glassesVariant.js";
 import {
   assertPinnedR1Release,
   enterR1DfuMode,
@@ -138,23 +130,6 @@ const EMPTY_PROGRESS = {
   current: 1,
   percent: 0,
 };
-
-// The last pair whose two temples verified as one set. Remembered so a
-// returning operator does not have to read a serial off the inside of a temple
-// to narrow the chooser. Deliberately a plain string in localStorage: it is a
-// convenience default the operator can always clear or overtype.
-const REMEMBERED_GLASSES_SERIAL_KEY = "webflasher.glassesSerial";
-
-function readRememberedGlassesSerial() {
-  try {
-    return (
-      globalThis.localStorage?.getItem(REMEMBERED_GLASSES_SERIAL_KEY) ?? ""
-    );
-  } catch {
-    // Private windows and blocked storage must not break the chooser.
-    return "";
-  }
-}
 
 // Name tokens observed on real hardware, merged with the built-in list. A G2
 // advertising a token nobody has recorded cannot be reached by a side-specific
@@ -215,18 +190,6 @@ function rememberTempleName(side, name) {
     ...readRememberedTempleNames(),
     [side]: name,
   });
-}
-
-function rememberGlassesSerial(serial) {
-  try {
-    if (serial) {
-      globalThis.localStorage?.setItem(REMEMBERED_GLASSES_SERIAL_KEY, serial);
-    } else {
-      globalThis.localStorage?.removeItem(REMEMBERED_GLASSES_SERIAL_KEY);
-    }
-  } catch {
-    // Remembering is a convenience; failing to remember changes nothing.
-  }
 }
 
 const EMPTY_BLE_ROUTE_PROGRESS = Object.freeze({
@@ -831,108 +794,11 @@ function ShellEvidenceView({ analytics, onDownload }) {
   );
 }
 
-// Two temples from two different pairs, put in front of the operator rather
-// than left in a status line.
-//
-// The block itself does NOT live here — `bleFlashReady` is already false and
-// `flashBleTempleFirmware` refuses independently. This dialog exists because a
-// disabled button explains nothing: the operator is holding two temples that
-// look identical, and what they need is the two serials side by side and the
-// instruction to check the print inside each one. So it is dismissible; closing
-// it re-enables nothing.
-function PairMismatchDialog({ open, verdict, onClose, onReselect, busy }) {
-  useEffect(() => {
-    if (!open) return undefined;
-    const closeOnEscape = (event) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [open, onClose]);
-  if (!open || !verdict) return null;
-  const sides = [
-    { side: "left", label: "Left temple", serial: verdict.comparison?.left },
-    { side: "right", label: "Right temple", serial: verdict.comparison?.right },
-  ];
-  return (
-    <div className="console-backdrop" role="presentation" onMouseDown={onClose}>
-      <section
-        className="pair-mismatch-panel"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="pair-mismatch-title"
-        aria-describedby="pair-mismatch-body"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <div className="console-header">
-          <div>
-            <div className="eyebrow">Update blocked</div>
-            <h2 id="pair-mismatch-title">These are two different pairs</h2>
-          </div>
-          <button
-            className="console-close"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-        <div className="pair-mismatch-body" id="pair-mismatch-body">
-          <p>
-            The two temples you selected report different serial numbers, so
-            they are not a matched set. The update will not start until both
-            sides come from the same pair.
-          </p>
-          <dl className="pair-mismatch-serials">
-            {sides.map(({ side, label, serial }) => {
-              const decoded = decodeGlassesSerial(serial);
-              return (
-                <div key={side}>
-                  <dt>{label}</dt>
-                  <dd>
-                    <code>{serial ?? "not reported"}</code>
-                    <span>
-                      {decoded
-                        ? `${decoded.displayName}${decoded.variantSummary ? ` · ${decoded.variantSummary}` : ""}`
-                        : "Model not recognised"}
-                    </span>
-                  </dd>
-                </div>
-              );
-            })}
-          </dl>
-          <p>
-            Each temple has its serial printed on the inside. Check both, set
-            the mismatched one aside, and select the temple that matches.
-          </p>
-        </div>
-        <div className="console-actions">
-          {sides.map(({ side, label }) => (
-            <Button
-              key={side}
-              tone="secondary"
-              onClick={() => onReselect(side)}
-              disabled={busy}
-            >
-              Re-select {label.toLowerCase()}
-            </Button>
-          ))}
-          <Button onClick={onClose}>Close</Button>
-        </div>
-      </section>
-    </div>
-  );
-}
-
 function BluetoothRecoveryCard({
   variant = "easy",
   directBleSupported,
   operation,
   bleDevices,
-  templeIdentities = { left: null, right: null },
-  expectedSerial = "",
-  onExpectedSerialChange = () => {},
-  serialFilterFailedSide = null,
   onSelectTemple,
   bleReady,
   onReadyChange,
@@ -942,12 +808,6 @@ function BluetoothRecoveryCard({
   bleResults,
   bleStatus,
 }) {
-  const pairIdentity = evaluateG2PairIdentity(
-    templeIdentities?.left,
-    templeIdentities?.right,
-  );
-  const serialFilter = glassesSerialChooserFilter(expectedSerial);
-  const expectedVariant = decodeGlassesSerial(expectedSerial);
   const advanced = variant === "advanced";
   const primary = variant === "primary";
   return (
@@ -990,35 +850,6 @@ function BluetoothRecoveryCard({
         </ol>
       </div>
       <div className="ble-recovery-actions">
-        {/* Chrome draws its own chooser and a page cannot change what it says,
-            so the serial cannot be shown there. What it can do is decide which
-            devices are eligible to appear: with a serial, the chooser lists
-            that pair alone. */}
-        <label className="ble-serial-filter">
-          <span>
-            Only list glasses with this serial{" "}
-            <em>(optional · printed inside the temple)</em>
-          </span>
-          <input
-            type="text"
-            inputMode="latin"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="S211GBBC180304 — leave empty to list every nearby G2"
-            value={expectedSerial}
-            onChange={(event) => onExpectedSerialChange(event.target.value)}
-            disabled={!directBleSupported || Boolean(operation)}
-          />
-          <small>
-            {serialFilter
-              ? `Chrome will list only glasses advertising ${normalizeGlassesSerial(expectedSerial)}${
-                  expectedVariant?.displayName
-                    ? ` · ${expectedVariant.displayName}`
-                    : ""
-                }. Chrome matches that against each device's real advertisement before listing it, so a temple you can select here has proven it belongs to this pair.`
-              : "Without a serial the two sides cannot be confirmed as one pair: Chrome blocks web pages from reading a device's serial number, so there is nothing to compare. Enter it once and the browser does the matching for you."}
-          </small>
-        </label>
         <div className="ble-device-buttons">
           {["left", "right"].map((side) => (
             <Button
@@ -1028,70 +859,11 @@ function BluetoothRecoveryCard({
               disabled={!directBleSupported || Boolean(operation)}
             >
               {bleDevices[side]
-                ? `${side === "left" ? "Left" : "Right"} · ${templeIdentities?.[side]?.variant?.displayName ?? bleDevices[side].name}`
+                ? `${side === "left" ? "Left" : "Right"} · ${bleDevices[side].name}`
                 : `Select ${side === "left" ? "LEFT" : "RIGHT"} temple`}
             </Button>
           ))}
         </div>
-        {/* The serial is what distinguishes two identical-looking pairs, so it
-            is shown verbatim next to the decoded model rather than summarised
-            away. Absent for a temple that could not answer. */}
-        {(templeIdentities?.left || templeIdentities?.right) && (
-          <dl className="ble-temple-identity">
-            {["left", "right"].map((side) => {
-              const identity = templeIdentities?.[side];
-              if (!identity) return null;
-              return (
-                <div key={side}>
-                  <dt>{side === "left" ? "Left" : "Right"} temple</dt>
-                  <dd>
-                    {identity.variant
-                      ? `${identity.variant.displayName} · ${identity.variant.variantSummary ?? "variant unknown"}`
-                      : identity.serialNumber
-                        ? "Serial does not match a model code this tool knows"
-                        : "Model unknown — Chrome blocks reading a device serial, so enter the serial above to confirm this pair"}
-                    {identity.serialNumber ? ` · serial ${identity.serialNumber}` : ""}
-                    {identity.serialSource === "chooser-filter"
-                      ? " (confirmed by the chooser filter)"
-                      : ""}
-                  </dd>
-                </div>
-              );
-            })}
-          </dl>
-        )}
-        {serialFilterFailedSide && (
-          <p className="ble-pair-verdict is-mismatched" role="alert">
-            The {serialFilterFailedSide} chooser closed without a selection. If
-            the temple was advertising but never appeared,{" "}
-            <button
-              type="button"
-              className="link-button"
-              onClick={() =>
-                onSelectTemple(serialFilterFailedSide, {
-                  ignoreExpectedSerial: true,
-                })
-              }
-              disabled={Boolean(operation)}
-            >
-              list every nearby G2 for the {serialFilterFailedSide} temple
-            </button>{" "}
-            — the {serialFilterFailedSide} side is still enforced after you pick
-            one, and the serial is still read and checked.
-          </p>
-        )}
-        {pairIdentity.message && (
-          <p
-            className={cx(
-              "ble-pair-verdict",
-              pairIdentity.status === "mismatched" && "is-mismatched",
-              pairIdentity.status === "matched" && "is-matched",
-            )}
-            role={pairIdentity.blocking ? "alert" : "status"}
-          >
-            {pairIdentity.message}
-          </p>
-        )}
         <label className="ble-ready-confirm">
           <input
             type="checkbox"
@@ -1676,26 +1448,6 @@ function App() {
     "Choose firmware, disconnect the Even app, then pair the explicitly labeled Left and Right temples.",
   );
   const [bleResults, setBleResults] = useState(null);
-  // Per-side Device Information reads, taken read-only at selection time. Null
-  // for a temple that could not answer; that is advisory, never blocking.
-  const [bleTempleIdentities, setBleTempleIdentities] = useState({
-    left: null,
-    right: null,
-  });
-  // Serial the Chrome chooser should be narrowed to. Seeded from the last pair
-  // this browser verified, because the common case is returning to the same
-  // glasses and the serial is otherwise only printed inside a temple.
-  const [bleExpectedSerial, setBleExpectedSerial] = useState(
-    readRememberedGlassesSerial,
-  );
-  // Set when a serial-narrowed chooser came up empty, so the card can offer the
-  // unfiltered retry for that side instead of leaving the operator stuck.
-  const [bleSerialFilterFailedSide, setBleSerialFilterFailedSide] =
-    useState(null);
-  // The mismatch verdict currently being shown in the blocking dialog, or null.
-  // Holding the verdict rather than a boolean keeps the dialog showing the two
-  // serials that were actually compared.
-  const [blePairMismatch, setBlePairMismatch] = useState(null);
   const [bleRouteProgress, setBleRouteProgress] = useState(
     EMPTY_BLE_ROUTE_PROGRESS,
   );
@@ -1705,7 +1457,6 @@ function App() {
   const [recoveryConfigError, setRecoveryConfigError] = useState("");
   const portRef = useRef(null);
   const sessionRef = useRef(null);
-  const bleTempleIdentitiesRef = useRef({ left: null, right: null });
   const activeOperationRef = useRef(null);
   const activeOperationTotalRef = useRef(null);
   const progressLogRef = useRef({ name: null, bucket: -1 });
@@ -3048,39 +2799,21 @@ function App() {
     });
   };
 
-  const selectBleTemple = async (side, { ignoreExpectedSerial = false } = {}) => {
+  const selectBleTemple = async (side) => {
     if (operation) return;
     setError("");
-    setBleSerialFilterFailedSide(null);
-    setBlePairMismatch(null);
-    const expectedSerial = ignoreExpectedSerial ? null : bleExpectedSerial;
-    // The unfiltered retry drops every narrowing, including the side prefix:
-    // it exists for a temple whose advertised name this build cannot express,
-    // and the post-chooser side check still refuses a wrong-side pick.
-    const tokens = ignoreExpectedSerial ? [] : readObservedNameTokens();
-    const narrowed = !ignoreExpectedSerial;
     const marker = side === "left" ? "_L_" : "_R_";
-    const serialNote = glassesSerialChooserFilter(expectedSerial)
-      ? ` and serial ${normalizeGlassesSerial(expectedSerial)}`
-      : "";
     setBleStatus(
-      narrowed
-        ? `Waiting for Chrome's Bluetooth chooser · it will list only Even Realities devices whose name contains ${marker}${serialNote}.`
-        : `Waiting for Chrome's Bluetooth chooser · listing every nearby Even G2 for the ${side} temple.`,
+      `Waiting for Chrome's Bluetooth chooser · it will list Even G2 devices whose name contains ${marker}.`,
     );
     addLog(
-      narrowed
-        ? `Waiting for the ${side} G2 temple in Chrome's Bluetooth chooser · restricted to names containing ${marker}${serialNote}.`
-        : `Waiting for the ${side} G2 temple in Chrome's Bluetooth chooser · every nearby G2 listed; the ${side} side is still enforced after you pick one.`,
+      `Waiting for the ${side} G2 temple in Chrome's Bluetooth chooser · restricted to names containing ${marker}.`,
     );
     try {
       const device = await requestG2BleDevice(side, undefined, {
-        expectedSerial,
         // This side's own remembered name, never the other arm's.
-        expectedName: ignoreExpectedSerial
-          ? null
-          : readRememberedTempleNames()[side],
-        tokens,
+        expectedName: readRememberedTempleNames()[side],
+        tokens: readObservedNameTokens(),
       });
       rememberNameToken(device?.name);
       rememberTempleName(side, device?.name);
@@ -3100,82 +2833,13 @@ function App() {
       }));
       setBleResults(null);
       setBleStatus(
-        `${side} selected · ${device.name} · advertised ${observedSide} marker verified. Reading this temple's identity…`,
+        `${side} selected · ${device.name} · advertised ${observedSide} marker verified. Select the other temple before updating.`,
       );
       addLog(
         `${side}: selected Bluetooth device ${JSON.stringify(device.name)} · advertised side=${observedSide}. No firmware bytes were sent.`,
         "success",
       );
-
-      // Read-only identity pass. The advertised name proves only which SIDE
-      // this is; the Device Information serial proves WHICH GLASSES, which is
-      // what catches a temple borrowed from a second pair on the same bench.
-      let identity = await readG2TempleIdentity(device, {
-        side,
-        log: addLog,
-      });
-      // Neither automatic source is available in stock Chrome. When the chooser
-      // was pinned to a serial, the browser already matched this device's
-      // advertisement against it — that match is the evidence.
-      if (!identity?.serialNumber && glassesSerialChooserFilter(expectedSerial)) {
-        identity = { ...(identity ?? {}), ...chooserProvenIdentity(side, expectedSerial) };
-        addLog(
-          `${side}: confirmed as serial ${identity.serialNumber} by the chooser filter — Chrome matched this temple's advertisement against that serial before listing it. Not a direct read; Chrome permits none.`,
-          "success",
-        );
-      }
-      // Through the ref, not the render-time state: the two temples are
-      // chosen in two separate awaits, and the second must see the first.
-      const identities = {
-        ...bleTempleIdentitiesRef.current,
-        [side]: identity,
-      };
-      bleTempleIdentitiesRef.current = identities;
-      setBleTempleIdentities(identities);
-      const pair = evaluateG2PairIdentity(identities.left, identities.right);
-      if (pair.status === "mismatched") {
-        setBleStatus(pair.message);
-        setError(pair.message);
-        addLog(pair.message, "error");
-        // Put it in front of the operator now, while both temples are still in
-        // their hands, rather than waiting for them to find a disabled button.
-        setBlePairMismatch(pair);
-        return;
-      }
-      if (pair.status === "matched") {
-        setBleStatus(pair.message);
-        addLog(pair.message, "success");
-        // Both sides agreed, so this serial is worth offering as next
-        // session's chooser filter.
-        setBleExpectedSerial(pair.serial);
-        rememberGlassesSerial(pair.serial);
-        return;
-      }
-      const named = identity?.variant?.displayName
-        ? `${side} selected · ${identity.variant.displayName} · ${identity.variant.variantSummary} · serial ${identity.variant.serial}.`
-        : `${side} selected · ${device.name} · advertised ${observedSide} marker verified.`;
-      setBleStatus(
-        `${named} Select the other temple before updating.`,
-      );
     } catch (caught) {
-      // A narrowed chooser that produced nothing is the one failure this
-      // feature introduces, and it looks identical to the operator dismissing
-      // the dialog. Say what the filter did and offer the unfiltered chooser
-      // rather than leaving them stuck behind a serial that does not match the
-      // glasses actually on the bench — or behind a temple whose firmware is
-      // broken enough that it advertises without manufacturer data.
-      if (caught?.name === "NotFoundError" && narrowed) {
-        // NotFoundError means "dismissed" and "nothing listed" alike - Web
-        // Bluetooth does not distinguish them - so this names the possibility
-        // rather than diagnosing it, and always offers the way out.
-        const message =
-          `The ${side} chooser closed without a selection. If your ${side} temple was advertising but never appeared, ` +
-          `its name may not contain ${marker}${serialNote ? `, or may not match${serialNote}` : ""} in the form this filter expects.`;
-        setBleStatus(message);
-        addLog(message, "warn");
-        setBleSerialFilterFailedSide(side);
-        return;
-      }
       const message =
         caught?.name === "NotFoundError"
           ? `The ${side} Bluetooth chooser was dismissed without selecting a temple.`
@@ -3200,26 +2864,6 @@ function App() {
   const flashBleTempleFirmware = async () => {
     const release = catalog.find((item) => item.id === selectedReleaseId);
     if (!release || !bleDevices.left || !bleDevices.right || !bleReady) return;
-    // Positive evidence of two different pairs stops the run. An unread or
-    // unrecognised serial does not — the firmware states this tool repairs are
-    // the least able to answer a Device Information read, and refusing them
-    // would withhold the tool exactly when it is needed.
-    const pairIdentity = evaluateG2PairIdentity(
-      bleTempleIdentitiesRef.current.left,
-      bleTempleIdentitiesRef.current.right,
-    );
-    if (pairIdentity.blocking) {
-      setBleStatus(pairIdentity.message);
-      setError(pairIdentity.message);
-      addLog(pairIdentity.message, "error");
-      // Reached only if the disabled button was bypassed (keyboard, restored
-      // focus, a stale render). Refuse here too and re-raise the dialog.
-      setBlePairMismatch(pairIdentity);
-      return;
-    }
-    if (pairIdentity.status === "unverified" && pairIdentity.message) {
-      addLog(pairIdentity.message, "warn");
-    }
     setBleRouteProgress({
       left: { ...EMPTY_BLE_ROUTE_PROGRESS.left },
       right: { ...EMPTY_BLE_ROUTE_PROGRESS.right },
@@ -4412,19 +4056,12 @@ function App() {
   const ringFlashReady = Boolean(
     selectedRingRelease && ringDfuDevice && ringReady && !operation,
   );
-  const bleTemplePairIdentity = evaluateG2PairIdentity(
-    bleTempleIdentities.left,
-    bleTempleIdentities.right,
-  );
   const bleFlashReady = Boolean(
     directBleSupported &&
       selectedRelease &&
       bleDevices.left &&
       bleDevices.right &&
       bleReady &&
-      // Two serials that positively disagree are two different pairs. Only
-      // that blocks; an unread serial leaves the button enabled.
-      !bleTemplePairIdentity.blocking &&
       !operation,
   );
   const bluetoothUpdateComplete =
@@ -4719,10 +4356,6 @@ function App() {
               directBleSupported={directBleSupported}
               operation={operation}
               bleDevices={bleDevices}
-              templeIdentities={bleTempleIdentities}
-              expectedSerial={bleExpectedSerial}
-              onExpectedSerialChange={setBleExpectedSerial}
-              serialFilterFailedSide={bleSerialFilterFailedSide}
               onSelectTemple={selectBleTemple}
               bleReady={bleReady}
               onReadyChange={setBleReady}
@@ -5825,10 +5458,6 @@ function App() {
             directBleSupported={directBleSupported}
             operation={operation}
             bleDevices={bleDevices}
-            templeIdentities={bleTempleIdentities}
-            expectedSerial={bleExpectedSerial}
-            onExpectedSerialChange={setBleExpectedSerial}
-            serialFilterFailedSide={bleSerialFilterFailedSide}
             onSelectTemple={selectBleTemple}
             bleReady={bleReady}
             onReadyChange={setBleReady}
@@ -6616,16 +6245,6 @@ function App() {
         onClose={() => setConsoleOpen(false)}
         onClear={clearConsole}
         onDownload={downloadConsoleTranscript}
-      />
-      <PairMismatchDialog
-        open={Boolean(blePairMismatch)}
-        verdict={blePairMismatch}
-        busy={Boolean(operation)}
-        onClose={() => setBlePairMismatch(null)}
-        onReselect={(side) => {
-          setBlePairMismatch(null);
-          selectBleTemple(side);
-        }}
       />
       <RemoteSupportDialog
         open={supportOpen}

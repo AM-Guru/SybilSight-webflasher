@@ -221,11 +221,7 @@ test("a known serial narrows the chooser to that pair, and that side", async () 
   }
 });
 
-// Manufacturer data reaches advertisementreceived events only for company
-// identifiers the page requested, and requesting is only possible at chooser
-// time. Without this the advertisement path silently yields nothing: the events
-// arrive with Even's data stripped, which is exactly what happened on hardware.
-test("the chooser asks for Even's manufacturer data every time", async () => {
+test("the chooser does not request manufacturer-data access", async () => {
   for (const expectedSerial of [null, G2_B_BROWN]) {
     let options = null;
     await requestG2BleDevice(
@@ -238,9 +234,7 @@ test("the chooser asks for Even's manufacturer data every time", async () => {
       },
       { expectedSerial },
     );
-    assert.deepEqual(options.optionalManufacturerData, [
-      EVEN_COMPANY_IDENTIFIER,
-    ]);
+    assert.equal(options.optionalManufacturerData, undefined);
   }
 });
 

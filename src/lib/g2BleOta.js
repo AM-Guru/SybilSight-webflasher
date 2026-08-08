@@ -423,16 +423,7 @@ export async function requestG2BleDevice(
     optionalServices: [
       G2_BLE_DATA_SERVICE,
       G2_BLE_CONTROL_SERVICE,
-      // Read-only. Requested here because Web Bluetooth grants service access
-      // at chooser time; asking later is not possible.
-      G2_BLE_DEVICE_INFO_SERVICE,
     ],
-    // Without this, `advertisementreceived` events arrive with Even's
-    // manufacturer data stripped out, and the serial can never be read.
-    // Manufacturer data is only delivered for company identifiers the page
-    // asked for, and asking is only possible here, at chooser time. It does
-    // not affect which devices the chooser lists - that is `filters` alone.
-    optionalManufacturerData: [EVEN_COMPANY_IDENTIFIER],
   });
   const observedSide = g2BleDeviceSide(device?.name);
   if (observedSide !== side) {
@@ -886,7 +877,6 @@ export class G2BleOtaSession {
     this.selectedDeviceId = device?.id ?? null;
     // Filled by readDeviceIdentity() on connect; stays null when the temple
     // does not publish Device Information.
-    this.deviceIdentity = null;
     this.dataNotifyHandler = (event) => {
       const value = event?.target?.value;
       const ack = parseBleAck(value);
@@ -1017,29 +1007,10 @@ export class G2BleOtaSession {
     await this.controlNotify.startNotifications();
     await new Promise((resolve) => setTimeout(resolve, 2500));
     this.drainAcks();
-    // After the OTA plumbing, never before: a Device Information read must not
-    // be able to fail a connection that is otherwise ready to flash.
-    await this.readDeviceIdentity();
     this.log(
       `${this.side}: direct Bluetooth OTA services and notifications are ready.`,
       "success",
     );
-  }
-
-  // Read the temple's own product identity from the standard Device
-  // Information Service and decode the SKU from its serial.
-  //
-  // Advisory by construction. Every failure path returns null and logs at
-  // warn: firmware that does not publish 0x180A, a Chrome build that refuses
-  // the service, or a serial in a format we have never seen must all leave the
-  // operator able to flash. What this buys is that when it DOES work, the tool
-  // can name the exact glasses on the bench and catch a mismatched pair.
-  async readDeviceIdentity() {
-    this.deviceIdentity = await readG2DeviceInformation(this.server, {
-      side: this.side,
-      log: this.log,
-    });
-    return this.deviceIdentity;
   }
 
   async connectForTransfer() {

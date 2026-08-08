@@ -866,16 +866,13 @@ test("requires an explicit matching side marker after the chooser", async () => 
     options.filters.map((filter) => filter.namePrefix),
     ["Even G2_32_R_", "G2_32_R_"],
   );
-  // The two OTA services, plus the read-only Device Information service that
-  // carries the temple's product serial. Web Bluetooth grants service access at
-  // chooser time, so a service not requested here can never be read later; this
-  // list is the whole permission scope and is asserted exactly for that reason.
+  // Serial verification was removed, so the chooser requests only the two
+  // services required by the OTA transport.
   assert.deepEqual(
     options.optionalServices,
     [
       "00002760-08c2-11e1-9073-0e8ac72e1001",
       "00002760-08c2-11e1-9073-0e8ac72e5450",
-      "device_information",
     ],
   );
 });
