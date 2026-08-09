@@ -251,7 +251,7 @@ jobs:
           [ -w "${deploy_root}" ]
           [ -d "${firmware_root}" ]
           [ -w "${firmware_root}" ]
-          for required_command in tar stat chown chmod find mkdir mv cp diff; do
+          for required_command in tar stat chown chmod find mkdir mv cp cmp sed; do
             command -v "${required_command}" >/dev/null
           done
           PREFLIGHT_SCRIPT
@@ -310,11 +310,13 @@ jobs:
           chown "${firmware_owner_group}" "${catalog_incoming}"
           chmod g+rw "${catalog_incoming}"
 
-          # Versioned firmware directories are immutable. G2 releases live at
-          # 2.*, while R1 Secure DFU releases live at r1/2.*. Publish missing
-          # leaf directories before the index, but refuse every other layout
-          # and refuse to change bytes beneath a path an older catalog may
-          # already reference.
+          # Versioned firmware package bytes are immutable. G2 releases live
+          # at 2.*, while R1 Secure DFU releases live at r1/2.*. Publish
+          # missing leaf directories before the index, but refuse every other
+          # layout and every package collision. Existing archive directories
+          # may safely coexist with newly extracted release-bound files;
+          # generated metadata, checksums, and normalized manifests live
+          # under /share/webflasher and do not define package identity here.
           publish_firmware_directory() {
             firmware_source_dir="$1"
             firmware_relative="$2"
@@ -351,10 +353,45 @@ jobs:
                 echo "Refusing non-directory firmware target: ${firmware_target}" >&2
                 exit 1
               fi
-              if ! diff -qr "${firmware_source_dir}" "${firmware_target}" >/dev/null; then
-                echo "Refusing to replace immutable firmware directory: ${firmware_relative}" >&2
+              firmware_package="$(sed -n \
+                's/^[[:space:]]*"sourceFile":[[:space:]]*"\([^"]*\)",*[[:space:]]*$/\1/p' \
+                "${firmware_source_dir}/metadata.json")"
+              case "${firmware_package}" in
+                ""|*/*|.|..)
+                  echo "Refusing invalid firmware package name: ${firmware_relative}" >&2
+                  exit 1
+                  ;;
+              esac
+              firmware_source_package="${firmware_source_dir}/${firmware_package}"
+              firmware_target_package="${firmware_target}/${firmware_package}"
+              if [ ! -f "${firmware_source_package}" ] || \
+                [ -L "${firmware_source_package}" ] || \
+                [ ! -f "${firmware_target_package}" ] || \
+                [ -L "${firmware_target_package}" ] || \
+                ! cmp -s "${firmware_source_package}" "${firmware_target_package}"; then
+                echo "Refusing conflicting immutable firmware package: ${firmware_relative}/${firmware_package}" >&2
                 exit 1
               fi
+
+              # Preserve every byte already in the historical archive. If a
+              # newly bundled file already exists there it must still match,
+              # except for generated inventory/provenance documents whose
+              # release-bound copies are served from the atomic website root.
+              find "${firmware_source_dir}" -type f | while IFS= read -r firmware_source_file; do
+                firmware_file="${firmware_source_file#"${firmware_source_dir}/"}"
+                case "${firmware_file}" in
+                  metadata.json|SHA256SUMS|manifest.json) continue ;;
+                esac
+                firmware_target_file="${firmware_target}/${firmware_file}"
+                if [ -e "${firmware_target_file}" ] || [ -L "${firmware_target_file}" ]; then
+                  if [ ! -f "${firmware_target_file}" ] || \
+                    [ -L "${firmware_target_file}" ] || \
+                    ! cmp -s "${firmware_source_file}" "${firmware_target_file}"; then
+                    echo "Refusing conflicting immutable firmware file: ${firmware_relative}/${firmware_file}" >&2
+                    exit 1
+                  fi
+                fi
+              done
               return
             fi
             rm -rf -- "${firmware_incoming}"

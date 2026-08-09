@@ -186,3 +186,26 @@ test("deployment verifies the active production Caddy block before publishing", 
     "artifact downloads do not preserve executable mode",
   );
 });
+
+test("deployment preserves immutable package bytes while allowing archive enrichment", async () => {
+  const workflow = await readFile(
+    new URL("../.github/workflows/deploy.yml", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(workflow, /for required_command in[^\n]*\bcmp\b[^\n]*\bsed\b/);
+  assert.match(workflow, /"sourceFile":\[\[:space:\]\]\*"/);
+  assert.match(
+    workflow,
+    /cmp -s "\$\{firmware_source_package\}" "\$\{firmware_target_package\}"/,
+  );
+  assert.match(
+    workflow,
+    /metadata\.json\|SHA256SUMS\|manifest\.json\) continue/,
+  );
+  assert.match(
+    workflow,
+    /cmp -s "\$\{firmware_source_file\}" "\$\{firmware_target_file\}"/,
+  );
+  assert.doesNotMatch(workflow, /diff -qr "\$\{firmware_source_dir\}"/);
+});
