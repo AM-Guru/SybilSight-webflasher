@@ -10,6 +10,10 @@ import { unzipSync } from "fflate";
 import { parseEvenOTA } from "../src/lib/firmware.js";
 
 const CDN_BASE = "https://cdn.evenreal.co/firmware";
+const REVIEWED_CFW_2_2_8_6_SHA256 =
+  "95d110fc9d1279bc58268af89e62df92dc81060a8c5d08a17e458ea846edc209";
+const REVIEWED_CFW_2_2_8_4_BASE_SHA256 =
+  "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7";
 const REVIEWED_CFW_2_2_7_16_SHA256 =
   "6c0fdfed0eabfc40ba718ec1eec6b0728e9794a8abdb6079ebdcee2c56f58127";
 const REVIEWED_CFW_2_2_7_14_BASE_SHA256 =
@@ -227,6 +231,58 @@ const RELEASES = [
     sha256: "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7",
     size: 4342507,
     notes: "Added Korean system language support.",
+  },
+  {
+    id: "g2-custom-2.2.8.6",
+    displayName: "SybilSight CFW (2.2.8.6)",
+    version: "2.2.8.6",
+    internalVersion: "2.2.8.6",
+    baseVersion: "2.2.8.4",
+    baseSha256: REVIEWED_CFW_2_2_8_4_BASE_SHA256,
+    channel: "custom",
+    trust: "reviewed-custom",
+    hash: "5b708549a5c741d1a2991d4a27670589",
+    sha256: REVIEWED_CFW_2_2_8_6_SHA256,
+    size: 4358249,
+    fileName: "g2-2.2.8.6.bin",
+    sourceUrl:
+      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.6/g2-2.2.8.6.bin",
+    fallbacks: [[
+      "webflasher",
+      "public/firmware-updates/source-files/2.2.8.6/g2-2.2.8.6.bin",
+    ]],
+    patchUrl:
+      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.6/cfw_patches-2.2.8.6.json",
+    patchFallbackRoot: "webflasher",
+    patchFallback:
+      "public/firmware-updates/source-files/2.2.8.6/cfw_patches-2.2.8.6.json",
+    patchFileName: "cfw_patches-2.2.8.6.json",
+    patchCount: 25,
+    manifestFileName: "manifest.json",
+    capabilityMarker:
+      "EVENCFW/6 img576 img640 imgz rle wakelease directfb fbguard",
+    g2flashCommit: "28aad42757837db14c08225884a7cc5201e08595",
+    g2flashRebasePatchSha256:
+      "d6ee1354e2177b354f4891f4ce1751ec5302e266062a2b07752e9ac56f22f80a",
+    directFramebufferCommits: [
+      "235a8b304447e330df6a0bce0351e3b6dc3d6f08",
+      "28aad42757837db14c08225884a7cc5201e08595",
+    ],
+    notes:
+      "SybilSight CFW 2.2.8.6 applies the pinned jimrandomh/g2flash patch set to official G2 2.2.8.4 stock. It preserves the vendor Korean-language update, retains upstream Faceclaw wake and framebuffer controls, and resumes the untouched stock Even AI command path when no wake lease is active. The image is reproducibly built and statically reviewed but not yet hardware-flashed.",
+    capabilities: [
+      "576×288 image containers",
+      "640×480 full-panel custom image surface",
+      "Zlib and RLE image payloads",
+      "Direct packed-4bpp framebuffer presentation",
+      "Atomic multi-segment and rectangle-copy updates",
+      "Per-lens stereo image operations",
+      "Snapshot FIFO and on-device timing diagnostics",
+      "Buzzer presets, notes, raw tones, and sequences",
+      "Settings capability field 100",
+      "Faceclaw control field 101 and wake lease",
+      "Ring long-press and release events",
+    ],
   },
   {
     id: "g2-custom-2.2.7.16",

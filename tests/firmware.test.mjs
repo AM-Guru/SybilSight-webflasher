@@ -10,6 +10,7 @@ import {
   POGO_TRANSFER_RESEARCH,
   REVIEWED_CFW,
   REVIEWED_CFW_2_2_7_16,
+  REVIEWED_CFW_2_2_8_6,
   additiveBigEndianWordSum,
   classifyG2Firmware,
   crc32,
@@ -186,6 +187,15 @@ test("recognizes the stock-based G2 2.2.7 reviewed CFW trust pin", () => {
   assert.equal(trust.trust, "reviewed-custom");
   assert.equal(trust.version, "2.2.7.16");
   assert.equal(trust.baseVersion, "2.2.7.14");
+  assert.equal(trust.capabilities.some((value) => /wake lease/i.test(value)), true);
+  assert.equal(trust.capabilities.some((value) => /640×480/i.test(value)), true);
+});
+
+test("recognizes the stock-based G2 2.2.8 reviewed CFW trust pin", () => {
+  const trust = classifyG2Firmware(REVIEWED_CFW_2_2_8_6.sha256);
+  assert.equal(trust.trust, "reviewed-custom");
+  assert.equal(trust.version, "2.2.8.6");
+  assert.equal(trust.baseVersion, "2.2.8.4");
   assert.equal(trust.capabilities.some((value) => /wake lease/i.test(value)), true);
   assert.equal(trust.capabilities.some((value) => /640×480/i.test(value)), true);
 });
@@ -752,9 +762,9 @@ test("ships the complete official and reviewed-CFW development catalog", async (
   assert.equal(latestOfficial.sha256, OFFICIAL_G2_SHA256["2.2.8.4"]);
   assert.equal(latestOfficial.caseVersion, "1.2.57");
   const cfw = catalog.releases.find((release) => release.channel === "custom");
-  assert.equal(cfw.version, "2.2.7.16");
-  assert.equal(cfw.sha256, REVIEWED_CFW_2_2_7_16.sha256);
-  assert.equal(cfw.baseVersion, "2.2.7.14");
+  assert.equal(cfw.version, "2.2.8.6");
+  assert.equal(cfw.sha256, REVIEWED_CFW_2_2_8_6.sha256);
+  assert.equal(cfw.baseVersion, "2.2.8.4");
   assert.equal(cfw.caseRecoveryEligible, false);
   assert.equal(cfw.hardwareValidated, false);
 });
@@ -789,6 +799,72 @@ test("ships the exact official G2 2.2.7.14 bundle and six components", async () 
   assert.equal(firmware.componentImages.length, 6);
   assert.equal(firmware.caseVersion, "1.2.57");
   assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
+});
+
+test("ships stock-based CFW 2.2.8.6 from patches with guarded Even AI", async () => {
+  const releaseDirectory = new URL(
+    "../public/firmware-updates/source-files/2.2.8.6/",
+    import.meta.url,
+  );
+  const bundle = await readFile(new URL("g2-2.2.8.6.bin", releaseDirectory));
+  const firmware = await parseFirmwareInput(bundle, "g2-2.2.8.6.bin");
+  assert.equal(firmware.fileSha256, REVIEWED_CFW_2_2_8_6.sha256);
+  assert.equal(firmware.g2Version, "2.2.8.6");
+  assert.equal(firmware.provenance.trust, "reviewed-custom");
+  assert.equal(firmware.provenance.baseVersion, "2.2.8.4");
+  assert.equal(firmware.mainComponent.payload.length, REVIEWED_CFW_2_2_8_6.mainPayloadBytes);
+  assert.equal(firmware.mainComponent.payloadSha256, REVIEWED_CFW_2_2_8_6.mainPayloadSha256);
+  assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
+  assert.equal(
+    bundle.includes(Buffer.from(REVIEWED_CFW_2_2_8_6.capabilityMarker, "ascii")),
+    true,
+  );
+
+  const patchSet = JSON.parse(
+    await readFile(new URL("cfw_patches-2.2.8.6.json", releaseDirectory), "utf8"),
+  );
+  assert.equal(patchSet.release_version, "2.2.8.6");
+  assert.equal(patchSet.vendor_base_version, "2.2.8.4");
+  assert.equal(patchSet.base_sha256, REVIEWED_CFW_2_2_8_6.baseSha256);
+  assert.equal(patchSet.output_sha256, REVIEWED_CFW_2_2_8_6.sha256);
+  assert.equal(patchSet.capability_marker, REVIEWED_CFW_2_2_8_6.capabilityMarker);
+  assert.equal(patchSet.patches.length, 25);
+  assert.equal(
+    patchSet.g2flash_rebase_patch_sha256,
+    "d6ee1354e2177b354f4891f4ce1751ec5302e266062a2b07752e9ac56f22f80a",
+  );
+  assert.equal(patchSet.source_provenance.faceclaw_retained, true);
+  assert.equal(
+    patchSet.source_provenance.faceclaw_even_ai_resume_address,
+    "0x004e6a92",
+  );
+  const evenAiHook = patchSet.patches.find((operation) => operation.offset === 1493217);
+  assert.equal(evenAiHook.old, "7fb50600");
+  assert.notEqual(evenAiHook.new, evenAiHook.old);
+
+  const manifest = JSON.parse(
+    await readFile(new URL("manifest.json", releaseDirectory), "utf8"),
+  );
+  assert.equal(manifest.format, "evenota-hardware-flash-manifest-v1");
+  assert.equal(manifest.release.baseVersion, "2.2.8.4");
+  assert.equal(manifest.release.hardwareValidated, false);
+  assert.equal(manifest.package.sha256, REVIEWED_CFW_2_2_8_6.sha256);
+  assert.equal(manifest.package.componentCount, 6);
+  assert.equal(manifest.patchRecipe.operationCount, 25);
+  assert.equal(manifest.capabilityMarker, REVIEWED_CFW_2_2_8_6.capabilityMarker);
+  assert.equal(manifest.sourceProvenance.faceclaw_retained, true);
+  assert.equal(manifest.excludedFeature, null);
+  assert.equal(manifest.firmwareFiles.length, 6);
+  const metadata = JSON.parse(
+    await readFile(new URL("metadata.json", releaseDirectory), "utf8"),
+  );
+  assert.equal(metadata.hardwareValidated, false);
+  for (const file of manifest.firmwareFiles) {
+    const bytes = await readFile(new URL(file.archiveFile, releaseDirectory));
+    const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+    assert.equal(bytes.length, file.size);
+    assert.equal(Buffer.from(digest).toString("hex"), file.sha256);
+  }
 });
 
 test("ships stock-based CFW 2.2.7.16 with upstream 640x480 and guarded Even AI", async () => {

@@ -65,6 +65,18 @@ export const REVIEWED_CFW_2_2_7_16 = Object.freeze({
     "Ring long-press and release events",
   ],
 });
+export const REVIEWED_CFW_2_2_8_6 = Object.freeze({
+  version: "2.2.8.6",
+  baseVersion: "2.2.8.4",
+  baseSha256: "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7",
+  sha256: "95d110fc9d1279bc58268af89e62df92dc81060a8c5d08a17e458ea846edc209",
+  mainPayloadBytes: 3580470,
+  mainPayloadSha256:
+    "e13e324fd141a5d4cd0a69fa698262eae414d7e552ba35b667bb76236f3cebca",
+  capabilityMarker:
+    "EVENCFW/6 img576 img640 imgz rle wakelease directfb fbguard",
+  capabilities: REVIEWED_CFW_2_2_7_16.capabilities,
+});
 const HARDWARE_VALIDATED_CFW_2_2_6_11 = Object.freeze({
   sha256: "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86",
 });
@@ -892,7 +904,7 @@ export function parseMainOTAPreamble(payload) {
 
 export function classifyG2Firmware(fileSha256) {
   const digest = fileSha256.toLowerCase();
-  const reviewed = [REVIEWED_CFW_2_2_7_16, REVIEWED_CFW].find(
+  const reviewed = [REVIEWED_CFW_2_2_8_6, REVIEWED_CFW_2_2_7_16, REVIEWED_CFW].find(
     (release) => release.sha256 === digest,
   );
   if (reviewed) {

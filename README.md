@@ -38,8 +38,8 @@ Production deployment:
   Smart Glasses firmware bundle.
 - Accepts official five- or six-component `EVENOTA` bundles, wrapped
   `firmware_box.bin` components, and validated raw case images.
-- Recognizes all 12 archived official G2 SHA-256 values, the hardware-validated
-  SybilSight CFW 2.2.6.11 image, and the current Faceclaw-free CFW 2.2.6.12 image.
+- Recognizes all 14 archived official G2 SHA-256 values and the reviewed
+  SybilSight CFW 2.2.6.11, 2.2.6.12, 2.2.7.16, and 2.2.8.6 images.
 - Validates the Apollo main application's independent preamble, CRC-32, target
   region, installed-image boundary, and vector.
 - Stages case firmware in the inactive bank and verifies a byte-for-byte
@@ -176,26 +176,24 @@ control:
   time-separates TX-only and RX-only operation.
 
 The current reviewed CFW is an exact, machine-described transformation of official
-2.2.6.10:
+2.2.8.4 using the pinned `jimrandomh/g2flash` patch set. It does not use OpenCFW:
 
 - stock SHA-256:
-  `f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa`
+  `df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7`
 - CFW SHA-256:
-  `b4de0cd3ffce5b0c756a7625b5250378d7680637e82849b15291a56a279fb4cd`
+  `95d110fc9d1279bc58268af89e62df92dc81060a8c5d08a17e458ea846edc209`
 - patch-manifest SHA-256:
-  `af9f93c6e48638c90c607b19631ebcc8a091c23efb0e0ba4c41cf1fa244789bc`
-- 20 expected-byte-gated operations, including one appended code blob,
-  three same-length `2.2.6.10` → `2.2.6.12` identity fields, and
+  `85bb43ae6a3387a008d5e34297c7c60ced9977f3e1dfa33653dc33b943bb72c4`
+- 25 expected-byte-gated operations, including one appended code blob,
+  the two runtime `2.2.8.4` → `2.2.8.6` identity fields, and
   the required inner/outer size and checksum updates
 
-It reports numeric version `2.2.6.12` while retaining `2.2.6.10` as its Stock
-base, and advertises `EVENCFW/6 img576 img640 imgz rle directfb`. This carries
-the current full-panel direct-framebuffer, compressed-image, gesture, buzzer,
-snapshot, and timing patches. The Faceclaw settings controls, wake takeover,
-native Even AI trampoline, and persistent framebuffer lease are absent, so
-“Hey Even” follows the stock entry path and stock repaints remain stock. The prior
-2.2.6.11 image remains archived with its hardware-transfer evidence; 2.2.6.12
-is hash-pinned and statically reviewed but does not claim a completed hardware flash.
+It reports numeric version `2.2.8.6`, retains `2.2.8.4` as its Stock base, and
+advertises `EVENCFW/6 img576 img640 imgz rle wakelease directfb fbguard`.
+The guarded Faceclaw trampoline resumes the untouched stock Even AI path when
+no wake lease is active. The image is reproducibly built and statically
+reviewed but does not claim a completed hardware flash; older CFW releases
+remain archived with their existing validation status.
 
 ### Application-alive pogo OTA
 
