@@ -4712,6 +4712,101 @@ code {
   background: #0b0d0c;
 }
 
+.browser-compatibility-backdrop {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  min-height: 100dvh;
+  padding: 24px;
+  overflow: auto;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(255, 91, 106, 0.1), transparent 24rem),
+    rgba(0, 0, 0, 0.94);
+  backdrop-filter: blur(18px);
+  place-items: center;
+}
+
+.browser-compatibility-modal {
+  width: min(520px, 100%);
+  padding: clamp(32px, 6vw, 52px);
+  color: #dfe2e0;
+  border: 1px solid rgba(255, 91, 106, 0.38);
+  border-radius: 14px;
+  background:
+    linear-gradient(145deg, rgba(255, 91, 106, 0.075), transparent 48%),
+    #0b0d0c;
+  box-shadow: 0 40px 110px rgba(0, 0, 0, 0.68);
+  text-align: center;
+}
+
+.browser-compatibility-modal:focus {
+  outline: none;
+}
+
+.browser-compatibility-icon {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 24px;
+  color: #130809;
+  border-radius: 50%;
+  background: var(--danger);
+  font-family: var(--mono);
+  font-size: 25px;
+  font-weight: 800;
+  place-items: center;
+}
+
+.browser-compatibility-modal .eyebrow {
+  color: var(--danger);
+}
+
+.browser-compatibility-modal h1 {
+  margin: 12px 0 0;
+  color: #f5f6f5;
+  font-size: clamp(27px, 6vw, 38px);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 1.08;
+}
+
+.browser-compatibility-modal p {
+  max-width: 410px;
+  margin: 20px auto 0;
+  color: #aeb3b0;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.browser-compatibility-action {
+  display: inline-flex;
+  min-height: 48px;
+  margin-top: 30px;
+  padding: 0 20px;
+  color: #06130d;
+  border-radius: 5px;
+  background: var(--accent);
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition:
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.browser-compatibility-action:hover {
+  background: #4dffa7;
+  transform: translateY(-1px);
+}
+
+.browser-compatibility-action span {
+  font-family: var(--mono);
+}
+
 .console-header,
 .console-actions {
   border-color: #242925;
