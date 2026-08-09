@@ -19,6 +19,15 @@ export const EVENOTA_TOC_TRAILER = new Uint8Array([
 export const APOLLO_BOOTLOADER_BASE = 0x00410000;
 export const APOLLO_APPLICATION_BASE = 0x00438000;
 export const APOLLO_UPDATE_FLAG_ADDRESS = 0x007fe000;
+const REVIEWED_CFW_DISPLAY_CHANGES = Object.freeze([
+  "Uses the full display for custom screens and images.",
+  "Makes image updates smoother and more efficient.",
+  "Supports different visuals on the left and right lenses.",
+  "Adds richer sounds and custom alert patterns.",
+  "Recognizes ring long presses and releases.",
+]);
+const REVIEWED_CFW_PENDING_VALIDATION =
+  "Reviewed for consistency; testing on physical glasses is still pending.";
 export const REVIEWED_CFW = Object.freeze({
   version: "2.2.6.12",
   baseVersion: "2.2.6.10",
@@ -29,16 +38,8 @@ export const REVIEWED_CFW = Object.freeze({
     "81e979487d70af05fa88ae5cf1475fe183b01a14c2d8b6506585d22c0e854bcb",
   capabilityMarker: "EVENCFW/6 img576 img640 imgz rle directfb",
   capabilities: [
-    "576×288 image containers",
-    "640×480 full-panel custom image surface",
-    "Zlib and RLE image payloads",
-    "Direct packed-4bpp framebuffer presentation",
-    "Atomic multi-segment and rectangle-copy updates",
-    "Per-lens stereo image operations",
-    "Snapshot FIFO and on-device timing diagnostics",
-    "Buzzer presets, notes, raw tones, and sequences",
-    "Settings capability field 100",
-    "Ring long-press and release events",
+    ...REVIEWED_CFW_DISPLAY_CHANGES,
+    REVIEWED_CFW_PENDING_VALIDATION,
   ],
 });
 export const REVIEWED_CFW_2_2_7_16 = Object.freeze({
@@ -52,30 +53,67 @@ export const REVIEWED_CFW_2_2_7_16 = Object.freeze({
   capabilityMarker:
     "EVENCFW/6 img576 img640 imgz rle wakelease directfb fbguard",
   capabilities: [
-    "576×288 image containers",
-    "640×480 full-panel custom image surface",
-    "Zlib and RLE image payloads",
-    "Direct packed-4bpp framebuffer presentation",
-    "Atomic multi-segment and rectangle-copy updates",
-    "Per-lens stereo image operations",
-    "Snapshot FIFO and on-device timing diagnostics",
-    "Buzzer presets, notes, raw tones, and sequences",
-    "Settings capability field 100",
-    "Faceclaw control field 101 and wake lease",
-    "Ring long-press and release events",
+    ...REVIEWED_CFW_DISPLAY_CHANGES,
+    "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
+    REVIEWED_CFW_PENDING_VALIDATION,
   ],
 });
-export const REVIEWED_CFW_2_2_8_6 = Object.freeze({
-  version: "2.2.8.6",
+export const REVIEWED_CFW_2_2_8_7 = Object.freeze({
+  version: "2.2.8.7",
   baseVersion: "2.2.8.4",
   baseSha256: "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7",
-  sha256: "95d110fc9d1279bc58268af89e62df92dc81060a8c5d08a17e458ea846edc209",
-  mainPayloadBytes: 3580470,
+  sha256: "e9d9e8b30d5f240fb8e2fc157f552515cee4c785af6886840d420ec27e86f4e0",
+  mainPayloadBytes: 3585930,
   mainPayloadSha256:
-    "e13e324fd141a5d4cd0a69fa698262eae414d7e552ba35b667bb76236f3cebca",
+    "37a2f81a83c9f1b112c610282e784cfb8567b2b146826512b0ac3ea7d6f46901",
   capabilityMarker:
-    "EVENCFW/6 img576 img640 imgz rle wakelease directfb fbguard",
-  capabilities: REVIEWED_CFW_2_2_7_16.capabilities,
+    "EVENCFW/9 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10 nameserial",
+  capabilities: [
+    ...REVIEWED_CFW_DISPLAY_CHANGES,
+    "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
+    "Keeps wear-status and compass updates available to connected apps.",
+    "Includes Korean system-language support from the official update.",
+    REVIEWED_CFW_PENDING_VALIDATION,
+  ],
+});
+export const REVIEWED_CFW_2_2_8_8 = Object.freeze({
+  version: "2.2.8.8",
+  baseVersion: "2.2.8.4",
+  baseSha256: "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7",
+  sha256: "9a7ebf7b7989730ca30195af46219c188fff3c3023533b763d0ca5abf8243944",
+  mainPayloadBytes: 3585266,
+  mainPayloadSha256:
+    "9ffd330b0dd764d1e692c2f335b9abd240228b8ab09d6de29022839ea556f477",
+  capabilityMarker:
+    "EVENCFW/9 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10 nameserial",
+  capabilities: [
+    ...REVIEWED_CFW_DISPLAY_CHANGES,
+    "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
+    "Keeps wear-status and compass updates available to connected apps.",
+    "Uses the final six pair-serial characters for both Bluetooth setup names.",
+    "Includes Korean system-language support from the official update.",
+    REVIEWED_CFW_PENDING_VALIDATION,
+  ],
+});
+export const REVIEWED_CFW_2_2_8_9 = Object.freeze({
+  version: "2.2.8.9",
+  baseVersion: "2.2.8.4",
+  baseSha256: "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7",
+  sha256: "742a0241f7ba34c6fb45c9a3ec616ba0be2b92f9c3e656b9824f6bc21a5513ca",
+  mainPayloadBytes: 3585266,
+  mainPayloadSha256:
+    "fe834158de3ceb0770841b0f397f37be8063a1c08f40a8af7a11bfd2ffcfd7f5",
+  capabilityMarker:
+    "EVENCFW/9 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10 nameserial",
+  capabilities: [
+    ...REVIEWED_CFW_DISPLAY_CHANGES,
+    "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
+    "Keeps wear-status and compass updates available to connected apps.",
+    "Uses the final six pair-serial characters for both Bluetooth setup names.",
+    "Reports the same custom firmware version from both temples.",
+    "Includes Korean system-language support from the official update.",
+    REVIEWED_CFW_PENDING_VALIDATION,
+  ],
 });
 const HARDWARE_VALIDATED_CFW_2_2_6_11 = Object.freeze({
   sha256: "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86",
@@ -143,7 +181,7 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
       }),
       left: Object.freeze({
         outcome: "success",
-        transport: "fresh local BLE via reviewed jimrandomh/g2flash.py",
+        transport: "fresh local Bluetooth recovery",
         fullPackageComponents: 6,
         blockAcks: 1053,
         componentEndVerifications: 6,
@@ -904,7 +942,13 @@ export function parseMainOTAPreamble(payload) {
 
 export function classifyG2Firmware(fileSha256) {
   const digest = fileSha256.toLowerCase();
-  const reviewed = [REVIEWED_CFW_2_2_8_6, REVIEWED_CFW_2_2_7_16, REVIEWED_CFW].find(
+  const reviewed = [
+    REVIEWED_CFW_2_2_8_9,
+    REVIEWED_CFW_2_2_8_8,
+    REVIEWED_CFW_2_2_8_7,
+    REVIEWED_CFW_2_2_7_16,
+    REVIEWED_CFW,
+  ].find(
     (release) => release.sha256 === digest,
   );
   if (reviewed) {

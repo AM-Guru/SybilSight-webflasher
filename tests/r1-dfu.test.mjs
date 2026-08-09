@@ -34,15 +34,42 @@ test("reviewed R1 archive and both Nordic DFU components verify exactly", async 
   assert.equal(prepared.initPacket.length, 141);
 });
 
-test("the previous pinned R1 release remains available for recovery", async () => {
-  const previous = R1_PINNED_RELEASES[1];
-  const previousPath = new URL(
-    `../public/firmware-updates/source-files/r1/${previous.version}/${previous.fileName}`,
-    import.meta.url,
+test("every API-visible R1 release remains pinned and available for recovery", async () => {
+  assert.equal(R1_PINNED_RELEASES.length, 11);
+  assert.equal(R1_PINNED_RELEASES.at(-1).version, "2.0.3.0013");
+
+  for (const release of R1_PINNED_RELEASES) {
+    const releasePath = new URL(
+      `../public/firmware-updates/source-files/r1/${release.version}/${release.fileName}`,
+      import.meta.url,
+    );
+    const prepared = await prepareR1DfuPackage(await readFile(releasePath), release);
+    assert.equal(prepared.application.length, release.application.binSize);
+    assert.equal(prepared.initPacket.length, release.application.datSize);
+  }
+});
+
+test("the shipped R1 catalog exactly matches the compiled trust pins", async () => {
+  const catalog = JSON.parse(
+    await readFile(
+      new URL("../public/firmware-updates/source-files/index.json", import.meta.url),
+      "utf8",
+    ),
+  ).ringReleases;
+
+  assert.deepEqual(
+    catalog.map(({ id, version, fileName, size, md5, sha256, format, application }) => ({
+      id,
+      version,
+      fileName,
+      size,
+      md5,
+      sha256,
+      format,
+      application,
+    })),
+    R1_PINNED_RELEASES,
   );
-  const prepared = await prepareR1DfuPackage(await readFile(previousPath), previous);
-  assert.equal(prepared.application.length, 649376);
-  assert.equal(prepared.initPacket.length, 141);
 });
 
 test("R1 release trust cannot be widened by the catalog", () => {

@@ -10,11 +10,11 @@ import { operationProgress } from "../src/lib/operationProgress.js";
 import { TEMPLE_FLASH_TARGETS } from "../src/lib/templeFlashTargets.js";
 
 const cfwTarget = TEMPLE_FLASH_TARGETS.find(
-  (target) => target.version === "2.2.6.11" && target.label.includes("CFW"),
+  (target) => target.version === "2.2.8.9" && target.label.includes("CFW"),
 );
 const stockTarget = TEMPLE_FLASH_TARGETS.find(
   (target) =>
-    target.version === "2.2.6.10" && target.label.startsWith("Stock"),
+    target.version === "2.2.8.4" && target.label.startsWith("Stock"),
 );
 
 function component(name, typeId, payload, sha256) {
@@ -48,7 +48,7 @@ function firmware(target, channel, mainPayload, mainDigest) {
     g2Version: target.version,
     provenance: {
       channel,
-      baseVersion: channel === "custom" ? "2.2.6.10" : null,
+      baseVersion: channel === "custom" ? "2.2.8.4" : null,
     },
     componentImages: [...shared, main],
     mainComponent: main,
@@ -97,12 +97,12 @@ test("builds an executable Stock-to-CFW component-difference plan", () => {
 
 test("finds the exact opposite Stock/CFW catalog release", () => {
   const catalog = [
-    { channel: "custom", baseVersion: "2.2.6.10", id: "cfw" },
-    { channel: "official", version: "2.2.6.10", id: "stock" },
+    { channel: "custom", baseVersion: "2.2.8.4", id: "cfw" },
+    { channel: "official", version: "2.2.8.4", id: "stock" },
   ];
   const target = {
     templeFlashTarget: cfwTarget,
-    provenance: { channel: "custom", baseVersion: "2.2.6.10" },
+    provenance: { channel: "custom", baseVersion: "2.2.8.4" },
   };
   assert.equal(findStockCfwCounterpartRelease(catalog, target).id, "stock");
 });

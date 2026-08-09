@@ -5,6 +5,7 @@
   "internalVersion": "2.2.7.14",
   "channel": "official",
   "trust": "official-pinned",
+  "hardwareValidated": false,
   "baseVersion": null,
   "notes": "Enhanced Bluetooth connection stability and Teleprompt AI noise reduction; fixed Teleprompt Remote Control and earlier-version firmware update failures in specific scenarios.",
   "capabilities": [],
@@ -18,7 +19,9 @@
   "patchUrl": null,
   "patchFile": null,
   "patchSha256": null,
-  "archivedAt": "2026-08-01T16:21:40.776Z",
+  "manifestFile": null,
+  "manifestSha256": null,
+  "archivedAt": "2026-08-09T18:20:57.398Z",
   "mainFirmware": {
     "runBase": "0x00438000",
     "installedImageSize": 3557852,

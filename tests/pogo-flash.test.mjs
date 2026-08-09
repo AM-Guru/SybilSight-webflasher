@@ -1773,19 +1773,8 @@ test("pins every temple-flash target to a distinct image and main digest", () =>
   const validated = TEMPLE_FLASH_TARGETS.filter((t) => t.hardwareValidated);
   assert.deepEqual(
     validated.map((t) => t.imageSha256),
-    [
-      "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0",
-      REVIEWED_CFW_IMAGE_SHA256,
-      REVIEWED_STOCK_IMAGE_SHA256,
-    ],
-    "the legacy reviewed CFW, reviewed CFW 2.2.6.11, and pinned Stock image retain hardware evidence",
-  );
-  assert.equal(
-    TEMPLE_FLASH_TARGETS.find(
-      (target) => target.imageSha256 === REVIEWED_CFW_IMAGE_SHA256,
-    )?.hardwareValidated,
-    true,
-    "reviewed CFW 2.2.6.11 qualified on the 2026-07-28 Case-USB temple transfer",
+    [REVIEWED_STOCK_IMAGE_SHA256],
+    "only offered targets may retain hardware-validation status",
   );
 });
 
@@ -1799,15 +1788,7 @@ test("keeps the generated pin table in sync with the firmware archive", async ()
       "utf8",
     ),
   );
-  const expected = [{
-    imageSha256:
-      "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0",
-    mainSha256:
-      "38dea7dc05e832e6f5aea8fa726454b2ec44055af5d456b323448ee6989e53d1",
-    mainBytes: 3539474,
-    version: "2.2.6.10",
-    hardwareValidated: true,
-  }, ...index.releases
+  const expected = index.releases
     .map((release) => ({
       release,
       main: (release.components ?? []).find(
@@ -1821,7 +1802,7 @@ test("keeps the generated pin table in sync with the firmware archive", async ()
       mainBytes: main.size,
       version: release.internalVersion ?? release.version,
       hardwareValidated: HARDWARE_VALIDATED_IMAGE_SHA256.has(release.sha256),
-    }))];
+    }));
   assert.deepEqual(
     TEMPLE_FLASH_TARGETS.map(({ label, ...rest }) => rest),
     expected,

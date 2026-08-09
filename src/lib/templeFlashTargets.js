@@ -12,19 +12,11 @@
 
 export const TEMPLE_FLASH_TARGETS = Object.freeze([
   Object.freeze({
-    imageSha256: "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0",
-    mainSha256: "38dea7dc05e832e6f5aea8fa726454b2ec44055af5d456b323448ee6989e53d1",
-    mainBytes: 3539474,
-    version: "2.2.6.10",
-    label: "Legacy reviewed SybilSight CFW 2.2.6.10",
-    hardwareValidated: true,
-  }),
-  Object.freeze({
-    imageSha256: "95d110fc9d1279bc58268af89e62df92dc81060a8c5d08a17e458ea846edc209",
-    mainSha256: "e13e324fd141a5d4cd0a69fa698262eae414d7e552ba35b667bb76236f3cebca",
-    mainBytes: 3580470,
-    version: "2.2.8.6",
-    label: "SybilSight CFW (2.2.8.6)",
+    imageSha256: "742a0241f7ba34c6fb45c9a3ec616ba0be2b92f9c3e656b9824f6bc21a5513ca",
+    mainSha256: "fe834158de3ceb0770841b0f397f37be8063a1c08f40a8af7a11bfd2ffcfd7f5",
+    mainBytes: 3585266,
+    version: "2.2.8.9",
+    label: "SybilSight CFW (2.2.8.9)",
     hardwareValidated: false,
   }),
   Object.freeze({
@@ -36,36 +28,12 @@ export const TEMPLE_FLASH_TARGETS = Object.freeze([
     hardwareValidated: false,
   }),
   Object.freeze({
-    imageSha256: "6c0fdfed0eabfc40ba718ec1eec6b0728e9794a8abdb6079ebdcee2c56f58127",
-    mainSha256: "bdd473f5988c926e78ebc0b9d5255bbd5982957ebb24a649328d3eb92cf1c78c",
-    mainBytes: 3573626,
-    version: "2.2.7.16",
-    label: "SybilSight CFW (2.2.7.16)",
-    hardwareValidated: false,
-  }),
-  Object.freeze({
     imageSha256: "0fced0aebcc6c88db6f76dba34f91b805d842a5fc297bfd7fa6d6a34ec83cecb",
     mainSha256: "8e25fcdadac1efadf8ef97e35086487b673d079f5fd229e56443ac42a5d55c31",
     mainBytes: 3557884,
     version: "2.2.7.14",
     label: "Stock Even Realities G2 2.2.7.14",
     hardwareValidated: false,
-  }),
-  Object.freeze({
-    imageSha256: "b4de0cd3ffce5b0c756a7625b5250378d7680637e82849b15291a56a279fb4cd",
-    mainSha256: "81e979487d70af05fa88ae5cf1475fe183b01a14c2d8b6506585d22c0e854bcb",
-    mainBytes: 3538488,
-    version: "2.2.6.12",
-    label: "SybilSight CFW (2.2.6.12)",
-    hardwareValidated: false,
-  }),
-  Object.freeze({
-    imageSha256: "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86",
-    mainSha256: "be8f5459e32065fbe3038accea49d418ba81884fc8ec4ed8927f37e219407dcf",
-    mainBytes: 3542584,
-    version: "2.2.6.11",
-    label: "SybilSight CFW (2.2.6.11)",
-    hardwareValidated: true,
   }),
   Object.freeze({
     imageSha256: "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa",

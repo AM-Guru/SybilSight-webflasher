@@ -10,131 +10,208 @@ import { unzipSync } from "fflate";
 import { parseEvenOTA } from "../src/lib/firmware.js";
 
 const CDN_BASE = "https://cdn.evenreal.co/firmware";
-const REVIEWED_CFW_2_2_8_6_SHA256 =
-  "95d110fc9d1279bc58268af89e62df92dc81060a8c5d08a17e458ea846edc209";
+const REVIEWED_CFW_2_2_8_9_SHA256 =
+  "742a0241f7ba34c6fb45c9a3ec616ba0be2b92f9c3e656b9824f6bc21a5513ca";
 const REVIEWED_CFW_2_2_8_4_BASE_SHA256 =
   "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7";
-const REVIEWED_CFW_2_2_7_16_SHA256 =
-  "6c0fdfed0eabfc40ba718ec1eec6b0728e9794a8abdb6079ebdcee2c56f58127";
-const REVIEWED_CFW_2_2_7_14_BASE_SHA256 =
-  "0fced0aebcc6c88db6f76dba34f91b805d842a5fc297bfd7fa6d6a34ec83cecb";
-const REVIEWED_CFW_2_2_6_12_SHA256 =
-  "b4de0cd3ffce5b0c756a7625b5250378d7680637e82849b15291a56a279fb4cd";
-const REVIEWED_CFW_2_2_6_11_SHA256 =
-  "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86";
 const REVIEWED_CFW_BASE_SHA256 =
   "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa";
-const LEGACY_HARDWARE_VALIDATED_CFW_SHA256 =
-  "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0";
-const R1_RELEASES = [
-  {
-    id: "r1-official-2.2.8.0002",
-    displayName: "Official R1 2.2.8.0002",
-    version: "2.2.8.0002",
+const REVIEWED_CFW_DISPLAY_CHANGES = [
+  "Uses the full display for custom screens and images.",
+  "Makes image updates smoother and more efficient.",
+  "Supports different visuals on the left and right lenses.",
+  "Adds richer sounds and custom alert patterns.",
+  "Recognizes ring long presses and releases.",
+];
+const REVIEWED_CFW_PENDING_VALIDATION =
+  "Reviewed for consistency; testing on physical glasses is still pending.";
+function r1Release({
+  version,
+  minAppVersion,
+  notes,
+  size,
+  md5,
+  sha256,
+  binSize,
+  binSha256,
+  datSha256,
+  fallbacks,
+}) {
+  return {
+    id: `r1-official-${version}`,
+    displayName: `Official R1 ${version}`,
+    version,
     channel: "official",
     trust: "official-pinned",
     format: "nordic-secure-dfu",
-    fileName: "r1-2.2.8.0002-ce5aa289bf6c95a293d41bd48c123e40.zip",
+    fileName: `r1-${version}-${md5}.zip`,
+    size,
+    md5,
+    sha256,
+    sourceUrl: `${CDN_BASE}/${md5}.zip`,
+    fallbacks: [
+      [
+        "webflasher",
+        `public/firmware-updates/source-files/r1/${version}/r1-${version}-${md5}.zip`,
+      ],
+      ...(fallbacks ?? []),
+    ],
+    minAppVersion,
+    notes,
+    application: {
+      binFile: "application.bin",
+      binSize,
+      binSha256,
+      datFile: "application.dat",
+      datSize: 141,
+      datSha256,
+    },
+    initPacket: {
+      applicationVersion: 3,
+      hardwareVersion: 52,
+      softDeviceFirmwareIds: [0x0100],
+      signed: true,
+    },
+  };
+}
+
+const R1_RELEASES = [
+  r1Release({
+    version: "2.2.8.0002",
+    minAppVersion: "2.2.8",
+    notes: "Bug fixes.",
     size: 650915,
     md5: "ce5aa289bf6c95a293d41bd48c123e40",
     sha256: "662ca213e628f6bd82b8cd930bd63d6c1efe00b6f470fd6ed21e6367712bfdb7",
-    sourceUrl:
-      "https://cdn.evenreal.co/firmware/ce5aa289bf6c95a293d41bd48c123e40.zip",
-    minAppVersion: "2.2.8",
-    notes: "Bug fixes.",
-    application: {
-      binFile: "application.bin",
-      binSize: 650284,
-      binSha256:
-        "41ea4fdcf1b2d1d3702c41669983b4ef0817ee4eb789f8eebc7dd6102609e274",
-      datFile: "application.dat",
-      datSize: 141,
-      datSha256:
-        "1b9ede75c2d95b6d97e5b51dc396e0433d2575c4e04f63cc77e26218ccf13ea8",
-    },
-    initPacket: {
-      applicationVersion: 3,
-      hardwareVersion: 52,
-      softDeviceFirmwareIds: [0x0100],
-      signed: true,
-    },
-  },
-  {
-    id: "r1-official-2.2.7.0005",
-    displayName: "Official R1 2.2.7.0005",
+    binSize: 650284,
+    binSha256: "41ea4fdcf1b2d1d3702c41669983b4ef0817ee4eb789f8eebc7dd6102609e274",
+    datSha256: "1b9ede75c2d95b6d97e5b51dc396e0433d2575c4e04f63cc77e26218ccf13ea8",
+  }),
+  r1Release({
     version: "2.2.7.0005",
-    channel: "official",
-    trust: "official-pinned",
-    format: "nordic-secure-dfu",
-    fileName: "r1-2.2.7.0005-be359b28954f8fe4a94ec21a58415d59.zip",
-    size: 650007,
-    md5: "be359b28954f8fe4a94ec21a58415d59",
-    sha256: "6222e4bb334b531c3d2cfedfae2a26f609f0ffd99bd60a50bc8cced645c9eba5",
-    sourceUrl:
-      "https://cdn.evenreal.co/firmware/be359b28954f8fe4a94ec21a58415d59.zip",
     minAppVersion: "2.2.7",
     notes:
       "Enhanced Bluetooth connection stability and fixed health data collection failures in specific scenarios.",
-    application: {
-      binFile: "application.bin",
-      binSize: 649376,
-      binSha256:
-        "2d38253e00b887ced3f1e2c049db21254b0974091bc954a82c13e21c48b064c2",
-      datFile: "application.dat",
-      datSize: 141,
-      datSha256:
-        "68447d4dfc0ad7d77270797fe0dbf4311faef7eb5e275342033e5b373be93be9",
-    },
-    initPacket: {
-      applicationVersion: 3,
-      hardwareVersion: 52,
-      softDeviceFirmwareIds: [0x0100],
-      signed: true,
-    },
-  },
-  {
-    id: "r1-official-2.2.6.0009",
-    displayName: "Official R1 2.2.6.0009",
+    size: 650007,
+    md5: "be359b28954f8fe4a94ec21a58415d59",
+    sha256: "6222e4bb334b531c3d2cfedfae2a26f609f0ffd99bd60a50bc8cced645c9eba5",
+    binSize: 649376,
+    binSha256: "2d38253e00b887ced3f1e2c049db21254b0974091bc954a82c13e21c48b064c2",
+    datSha256: "68447d4dfc0ad7d77270797fe0dbf4311faef7eb5e275342033e5b373be93be9",
+  }),
+  r1Release({
     version: "2.2.6.0009",
-    channel: "official",
-    trust: "official-pinned",
-    format: "nordic-secure-dfu",
-    fileName: "r1-2.2.6.0009-9eca8ae9d5117abda4f72f39bdb44ad2.zip",
+    minAppVersion: "2.2.6",
+    notes: "Updated the sleep algorithm to improve measurement accuracy; bug fixes.",
     size: 647039,
     md5: "9eca8ae9d5117abda4f72f39bdb44ad2",
     sha256: "492baf487734720732f82f404624e0c3b3af3b01d30727366238e154164ad0dd",
-    sourceUrl:
-      "https://cdn.evenreal.co/firmware/r1-2.2.6.0009-9eca8ae9d5117abda4f72f39bdb44ad2.zip",
     fallbacks: [[
       "current",
       "firmware/ota/2026-07-22/r1-2.2.6.0009-9eca8ae9d5117abda4f72f39bdb44ad2.zip",
     ]],
-    application: {
-      binFile: "application.bin",
-      binSize: 646408,
-      binSha256:
-        "0e788d433ea50fd36edb8f21a9c18b6062211e4a36dbc5bd7695ea5827f3aa1a",
-      datFile: "application.dat",
-      datSize: 141,
-      datSha256:
-        "305da36784e527b3e434f2cf45019a290bf5c14cbceb2e57c9e61dcdfdb1f253",
-    },
-    initPacket: {
-      applicationVersion: 3,
-      hardwareVersion: 52,
-      softDeviceFirmwareIds: [0x0100],
-      signed: true,
-    },
-  },
+    binSize: 646408,
+    binSha256: "0e788d433ea50fd36edb8f21a9c18b6062211e4a36dbc5bd7695ea5827f3aa1a",
+    datSha256: "305da36784e527b3e434f2cf45019a290bf5c14cbceb2e57c9e61dcdfdb1f253",
+  }),
+  r1Release({
+    version: "2.2.5.0005",
+    minAppVersion: "2.2.5",
+    notes:
+      "Updated Calorie goals to Active Calories in Health and optimized R1 health data syncing in specific scenarios.",
+    size: 644583,
+    md5: "83038dad13c339f9e5f2e5fc828a00b3",
+    sha256: "46102dd54d86fb24fb5f1a2c8ba9f9d54e6a603659240dd59fc43b1ee564e778",
+    binSize: 643952,
+    binSha256: "221fb44aa6ff954dc73978d3848ed466913e2bebcfada4aaa8984610d7e2a6e2",
+    datSha256: "e4518bc50ee225024cca96dd581d955f9650dc8b0450060fa7b22b9ccf4c0847",
+  }),
+  r1Release({
+    version: "2.2.4.0003",
+    minAppVersion: "2.2.4",
+    notes:
+      "Update both Even G2 and R1 to 2.2.4 to prevent Bluetooth issues. Adds hand preference settings, improves Bluetooth stability, and adds the R1 battery level to Dashboard.",
+    size: 638259,
+    md5: "248978eb758a342a0254d6dae45bfdb2",
+    sha256: "549d60061c1cc9cde94da5c3c0efc0e7220272aca6c872c49bde0ec30ae16dcc",
+    binSize: 637628,
+    binSha256: "a347128b46bfb01e6c02bc2a93768bc0838ae73c1e7ad401dd29841cc930647f",
+    datSha256: "56f017384d7bbc73f47f018b601dd13bceda3f27f4b09f2f89586981c1429e0e",
+  }),
+  r1Release({
+    version: "2.2.0.0014",
+    minAppVersion: "2.2.0",
+    notes: "Charging, Bluetooth, and touch sensor bug fixes.",
+    size: 633367,
+    md5: "9ae5429275afdcb2ff86c53152bef1cb",
+    sha256: "9ce535518d1321a27186394355e05aff7b4ba76be58c8de1a0dfcf3b01395d00",
+    binSize: 632736,
+    binSha256: "590584f3d56dc4b495d6454823fe177f042225b55c7d098abab479041f641d36",
+    datSha256: "e77d2fdf34eb94e3d955e0b23e0913b4622d46c9f9aa5b5ff0b8cc29f23a85c1",
+  }),
+  r1Release({
+    version: "2.0.8.0012",
+    minAppVersion: "2.0.8",
+    notes: "Fixed potential system crashes and abnormal power consumption in certain scenarios.",
+    size: 626207,
+    md5: "90a6479e4d736365192f30556cba44a5",
+    sha256: "6bc6567f656d3905683000278af529ad516f45d8e9516618ffad2cb4ea7adf2b",
+    binSize: 625576,
+    binSha256: "8a3db3c56bf4cddd0a02eebc4090857f6e8907ae2108ce9487f8b8bdee7c96df",
+    datSha256: "fb80c99d3eba14e8ae80ca7908bdb3bb928e5829968f37f247a8b7e3041f7c63",
+  }),
+  r1Release({
+    version: "2.0.7.0004",
+    minAppVersion: "2.0.7",
+    notes:
+      "Added the ability to restart R1 from the app and fixed Touch Sensor unresponsiveness in certain scenarios.",
+    size: 628831,
+    md5: "692af8c7baed67e20c5920d350dd466e",
+    sha256: "ba499025ab86cf3679eb5f19e6322422c1ef7f3304ce386f7e1e1dddf7ef5e08",
+    binSize: 628200,
+    binSha256: "1045569b5ca10cdb6c3991304f8b7273c18cd302b28d65f2647ed947984c8f2a",
+    datSha256: "3b9fc345ca31f709732debfa5cc81b00dfb78ed56f90e592ca82287249fd4dcc",
+  }),
+  r1Release({
+    version: "2.0.6.0005",
+    minAppVersion: "2.0.6",
+    notes:
+      "Optimized R1 power efficiency for longer battery life and fixed abnormal collection for certain health metrics.",
+    size: 622931,
+    md5: "37c8d118670c97f3e218c4a5f2f30951",
+    sha256: "5ef38db1e80a40859dd14e2914732193d8e3162ef118e37173e3fa45125d1d85",
+    binSize: 622300,
+    binSha256: "5ef4eb77076c1054bf95c7781787963607a6a61af4b338cb98c39ca7fa7831b6",
+    datSha256: "376d60acc327068dd7c1fe4d3133c32a512b762bde19ef00866432f71e2aba4d",
+  }),
+  r1Release({
+    version: "2.0.5.0004",
+    minAppVersion: "2.0.5",
+    notes:
+      "Optimized the SpO2 measurement algorithm and fixed Bluetooth connection and crash issues.",
+    size: 618755,
+    md5: "3f7990f1d725be5c544103dc03e1ae54",
+    sha256: "893e9c72e5ad1ef2950309c4ed48a81af8bbedd920240d8bf6ebf4be122b5763",
+    binSize: 618124,
+    binSha256: "5fb80f2f4f1cc37299bdfc9695d08c13d5d5052dfd64d485852aba098d66dcec",
+    datSha256: "afa75e575683db8a219c4b01ac9a0b32c76c6dcea2ea71f7db5ccf7bdd632eba",
+  }),
+  r1Release({
+    version: "2.0.3.0013",
+    minAppVersion: "2.0.4",
+    notes: "Improves Bluetooth stability and optimizes battery life.",
+    size: 619023,
+    md5: "da3c754078c1e9dd0b2fe282e4614783",
+    sha256: "a24ddd6c580a2706f98c06b6504bb34af7159024ad8bb066eca6ae684e533c6f",
+    binSize: 618392,
+    binSha256: "c74c61beb5c30f671d2094a3f9a9310dbb556e7cf01d73c77dfca66d31a2b590",
+    datSha256: "816e350b7d36240b7e33252141680baf39da06f7619bb1e51d80df83d73068b5",
+  }),
 ];
-// Reviewed CFW 2.2.6.11. Case-USB temple transfer exercised end to end on
-// 2026-07-28: right temple Stock 2.2.6.10 -> CFW 2.2.6.11, all 3,543 records
-// and FINISH accepted, image activated on the first activation reset, and the
-// post-reset version reply verified on both temples.
+// Stock 2.2.6.10 remains hardware-validated recovery evidence. Legacy CFW
+// images are intentionally excluded from both the catalog and writer allowlist.
 const HARDWARE_VALIDATED_TEMPLE_IMAGES = new Set([
-  LEGACY_HARDWARE_VALIDATED_CFW_SHA256,
   REVIEWED_CFW_BASE_SHA256,
-  REVIEWED_CFW_2_2_6_11_SHA256,
 ]);
 const RELEASES = [
   {
@@ -233,185 +310,59 @@ const RELEASES = [
     notes: "Added Korean system language support.",
   },
   {
-    id: "g2-custom-2.2.8.6",
-    displayName: "SybilSight CFW (2.2.8.6)",
-    version: "2.2.8.6",
-    internalVersion: "2.2.8.6",
+    id: "g2-custom-2.2.8.9",
+    displayName: "SybilSight CFW (2.2.8.9)",
+    version: "2.2.8.9",
+    internalVersion: "2.2.8.9",
     baseVersion: "2.2.8.4",
     baseSha256: REVIEWED_CFW_2_2_8_4_BASE_SHA256,
     channel: "custom",
     trust: "reviewed-custom",
-    hash: "5b708549a5c741d1a2991d4a27670589",
-    sha256: REVIEWED_CFW_2_2_8_6_SHA256,
-    size: 4358249,
-    fileName: "g2-2.2.8.6.bin",
+    hash: "3c59e54730e36a4834295df75caed59f",
+    sha256: REVIEWED_CFW_2_2_8_9_SHA256,
+    size: 4363045,
+    fileName: "g2-2.2.8.9.bin",
     sourceUrl:
-      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.6/g2-2.2.8.6.bin",
+      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.9/g2-2.2.8.9.bin",
     fallbacks: [[
       "webflasher",
-      "public/firmware-updates/source-files/2.2.8.6/g2-2.2.8.6.bin",
+      "public/firmware-updates/source-files/2.2.8.9/g2-2.2.8.9.bin",
     ]],
+    preferLocalEvidence: true,
     patchUrl:
-      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.6/cfw_patches-2.2.8.6.json",
+      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.9/cfw_patches-2.2.8.9.json",
     patchFallbackRoot: "webflasher",
     patchFallback:
-      "public/firmware-updates/source-files/2.2.8.6/cfw_patches-2.2.8.6.json",
-    patchFileName: "cfw_patches-2.2.8.6.json",
-    patchCount: 25,
+      "public/firmware-updates/source-files/2.2.8.9/cfw_patches-2.2.8.9.json",
+    patchFileName: "cfw_patches-2.2.8.9.json",
+    patchCount: 40,
     manifestFileName: "manifest.json",
     capabilityMarker:
-      "EVENCFW/6 img576 img640 imgz rle wakelease directfb fbguard",
-    g2flashCommit: "28aad42757837db14c08225884a7cc5201e08595",
+      "EVENCFW/9 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10 nameserial",
+    g2flashCommit: "877c8d9490db0d3717ca012dd0f54556af3701bd",
     g2flashRebasePatchSha256:
-      "d6ee1354e2177b354f4891f4ce1751ec5302e266062a2b07752e9ac56f22f80a",
+      "fdf8fcb5de6a658105a1d45e1376c3932bc59d0dd278314c242572449f7bcdfb",
+    bleAdvertisingPatchSha256:
+      "d570411dfcf7096cd641f5edb87019cc406e3033c99370220b4ebcb80b530827",
+    bleAdvertisingSources: {
+      "ble_advertised_name.c":
+        "3c2d7dbdce272f9ff2ead4dfccdc9a045932b4a68651ebf3f6b48e246fe620b4",
+      "ble_advertised_name.py":
+        "54937a57c0dfcd3b7d90a428ab6f4ed6354f23b966bae1acc15ad04c5cb6659c",
+    },
     directFramebufferCommits: [
       "235a8b304447e330df6a0bce0351e3b6dc3d6f08",
       "28aad42757837db14c08225884a7cc5201e08595",
     ],
-    notes:
-      "SybilSight CFW 2.2.8.6 applies the pinned jimrandomh/g2flash patch set to official G2 2.2.8.4 stock. It preserves the vendor Korean-language update, retains upstream Faceclaw wake and framebuffer controls, and resumes the untouched stock Even AI command path when no wake lease is active. The image is reproducibly built and statically reviewed but not yet hardware-flashed.",
+    notes: null,
     capabilities: [
-      "576×288 image containers",
-      "640×480 full-panel custom image surface",
-      "Zlib and RLE image payloads",
-      "Direct packed-4bpp framebuffer presentation",
-      "Atomic multi-segment and rectangle-copy updates",
-      "Per-lens stereo image operations",
-      "Snapshot FIFO and on-device timing diagnostics",
-      "Buzzer presets, notes, raw tones, and sequences",
-      "Settings capability field 100",
-      "Faceclaw control field 101 and wake lease",
-      "Ring long-press and release events",
-    ],
-  },
-  {
-    id: "g2-custom-2.2.7.16",
-    displayName: "SybilSight CFW (2.2.7.16)",
-    version: "2.2.7.16",
-    internalVersion: "2.2.7.16",
-    baseVersion: "2.2.7.14",
-    baseSha256: REVIEWED_CFW_2_2_7_14_BASE_SHA256,
-    channel: "custom",
-    trust: "reviewed-custom",
-    hash: "0b4965e39055256b0d5353e42413521d",
-    sha256: REVIEWED_CFW_2_2_7_16_SHA256,
-    size: 4351457,
-    fileName: "g2-2.2.7.16.bin",
-    sourceUrl:
-      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.7.16/g2-2.2.7.16.bin",
-    fallbacks: [[
-      "webflasher",
-      "public/firmware-updates/source-files/2.2.7.16/g2-2.2.7.16.bin",
-    ]],
-    patchUrl:
-      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.7.16/cfw_patches-2.2.7.16.json",
-    patchFallbackRoot: "webflasher",
-    patchFallback:
-      "public/firmware-updates/source-files/2.2.7.16/cfw_patches-2.2.7.16.json",
-    patchFileName: "cfw_patches-2.2.7.16.json",
-    patchCount: 25,
-    manifestFileName: "manifest.json",
-    capabilityMarker:
-      "EVENCFW/6 img576 img640 imgz rle wakelease directfb fbguard",
-    g2flashCommit: "28aad42757837db14c08225884a7cc5201e08595",
-    g2flashRebasePatchSha256:
-      "2049b1f1331176cc7485d73757e9c6a8ee8d072ba3e3047790f2bc0eb465dc5f",
-    directFramebufferCommits: [
-      "235a8b304447e330df6a0bce0351e3b6dc3d6f08",
-      "28aad42757837db14c08225884a7cc5201e08595",
-    ],
-    notes:
-      "SybilSight CFW 2.2.7.16 applies the pinned jimrandomh/g2flash patch set to official G2 2.2.7.14 stock. It retains upstream Faceclaw wake and framebuffer controls while its guarded Even AI trampoline resumes the untouched stock command path when no wake lease is active. The image is reproducibly built and statically reviewed but not yet hardware-flashed.",
-    capabilities: [
-      "576×288 image containers",
-      "640×480 full-panel custom image surface",
-      "Zlib and RLE image payloads",
-      "Direct packed-4bpp framebuffer presentation",
-      "Atomic multi-segment and rectangle-copy updates",
-      "Per-lens stereo image operations",
-      "Snapshot FIFO and on-device timing diagnostics",
-      "Buzzer presets, notes, raw tones, and sequences",
-      "Settings capability field 100",
-      "Faceclaw control field 101 and wake lease",
-      "Ring long-press and release events",
-    ],
-  },
-  {
-    id: "g2-custom-2.2.6.12",
-    displayName: "SybilSight CFW (2.2.6.12)",
-    version: "2.2.6.12",
-    internalVersion: "2.2.6.12",
-    baseVersion: "2.2.6.10",
-    baseSha256: REVIEWED_CFW_BASE_SHA256,
-    channel: "custom",
-    trust: "reviewed-custom",
-    hash: "af10fac70eb60f158ac6ba98eef7f54c",
-    sha256: REVIEWED_CFW_2_2_6_12_SHA256,
-    size: 4316319,
-    fileName: "g2-2.2.6.12.bin",
-    sourceUrl:
-      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.6.12/g2-2.2.6.12.bin",
-    fallbacks: [[
-      "webflasher",
-      "public/firmware-updates/source-files/2.2.6.12/g2-2.2.6.12.bin",
-    ]],
-    patchUrl:
-      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.6.12/cfw_patches-2.2.6.12.json",
-    patchFallbackRoot: "webflasher",
-    patchFallback:
-      "public/firmware-updates/source-files/2.2.6.12/cfw_patches-2.2.6.12.json",
-    patchFileName: "cfw_patches-2.2.6.12.json",
-    patchCount: 20,
-    manifestFileName: "manifest.json",
-    notes:
-      "SybilSight CFW 2.2.6.12 built from official G2 2.2.6.10 with the current CFW image, gesture, timing, and full-panel direct-framebuffer patches. The Faceclaw settings controls, wake takeover, Even AI interception, and framebuffer lease are excluded. The image is reproducibly built and statically reviewed but not yet hardware-flashed.",
-    capabilities: [
-      "576×288 image containers",
-      "640×480 full-panel custom image surface",
-      "Zlib and RLE image payloads",
-      "Direct packed-4bpp framebuffer presentation",
-      "Atomic multi-segment and rectangle-copy updates",
-      "Per-lens stereo image operations",
-      "Snapshot FIFO and on-device timing diagnostics",
-      "Buzzer presets, notes, raw tones, and sequences",
-      "Settings capability field 100",
-      "Ring long-press and release events",
-    ],
-  },
-  {
-    id: "g2-custom-2.2.6.11",
-    displayName: "SybilSight CFW (2.2.6.11)",
-    version: "2.2.6.11",
-    internalVersion: "2.2.6.11",
-    baseVersion: "2.2.6.10",
-    baseSha256: REVIEWED_CFW_BASE_SHA256,
-    channel: "custom",
-    trust: "reviewed-custom",
-    hash: "8a7d12c38c07e43469e266df3055e874",
-    sha256: REVIEWED_CFW_2_2_6_11_SHA256,
-    size: 4320415,
-    fileName: "g2-2.2.6.11.bin",
-    sourceUrl:
-      "https://sybilsight.com/firmware-updates/releases/g2-2.2.6.11.bin",
-    fallbacks: [[
-      "website",
-      "firmware-updates/releases/g2-2.2.6.11.bin",
-    ]],
-    patchUrl:
-      "https://sybilsight.com/firmware-updates/patches/cfw_patches-2.2.6.11.json",
-    patchFallback:
-      "firmware-updates/patches/cfw_patches-2.2.6.11.json",
-    patchFileName: "cfw_patches-2.2.6.11.json",
-    patchCount: 23,
-    notes:
-      "Reviewed SybilSight CFW built from official G2 2.2.6.10. It reports 2.2.6.11 and EVENCFW/3 so Stock/CFW identity is available before OTA.",
-    capabilities: [
-      "576×288 image containers",
-      "RLE and LZ4 image payloads",
-      "8bpp XOR-delta frame updates",
-      "Per-lens stereo image pairs",
-      "Settings capability field 100",
-      "Ring long-press and release events",
+      ...REVIEWED_CFW_DISPLAY_CHANGES,
+      "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
+      "Keeps wear-status and compass updates available to connected apps.",
+      "Shows the same pair identifier on both lenses during Bluetooth setup.",
+      "Reports the same custom firmware version from both temples.",
+      "Includes Korean system-language support from the official update.",
+      REVIEWED_CFW_PENDING_VALIDATION,
     ],
   },
 ];
@@ -470,15 +421,7 @@ async function download(url) {
 }
 
 async function acquireRelease(release, sourceUrl, fallbackRoots) {
-  try {
-    return {
-      bytes: await download(sourceUrl),
-      archivedFrom:
-        release.channel === "custom"
-          ? "SybilSight reviewed CFW mirror"
-          : "Even Realities CDN",
-    };
-  } catch (downloadError) {
+  async function acquireFallback() {
     for (const [rootName, relativePath] of release.fallbacks ?? []) {
       const fallbackPath = path.join(fallbackRoots[rootName], relativePath);
       try {
@@ -495,6 +438,24 @@ async function acquireRelease(release, sourceUrl, fallbackRoots) {
         // Continue through every known local preservation path.
       }
     }
+    return null;
+  }
+
+  if (release.preferLocalEvidence) {
+    const local = await acquireFallback();
+    if (local) return local;
+  }
+  try {
+    return {
+      bytes: await download(sourceUrl),
+      archivedFrom:
+        release.channel === "custom"
+          ? "SybilSight reviewed CFW mirror"
+          : "Even Realities CDN",
+    };
+  } catch (downloadError) {
+    const local = await acquireFallback();
+    if (local) return local;
     throw new Error(
       `Could not acquire G2 ${release.version} from the CDN or local evidence: ${downloadError.message}`,
     );
@@ -554,7 +515,14 @@ async function saveRelease(root, release, fallbackRoots) {
   let patchSet = null;
   if (release.patchUrl) {
     let patchBytes;
-    try {
+    if (release.preferLocalEvidence && release.patchFallback) {
+      patchBytes = await readFile(
+        path.join(
+          fallbackRoots[release.patchFallbackRoot ?? "website"],
+          release.patchFallback,
+        ),
+      );
+    } else try {
       patchBytes = await download(release.patchUrl);
     } catch (downloadError) {
       if (!release.patchFallback) throw downloadError;
@@ -592,6 +560,16 @@ async function saveRelease(root, release, fallbackRoots) {
           release.g2flashRebasePatchSha256 ||
           patchSet.source_provenance?.g2flash_rebase_patch_sha256 !==
             release.g2flashRebasePatchSha256)) ||
+      (release.bleAdvertisingPatchSha256 &&
+        (patchSet.ble_advertising_patch_sha256 !==
+          release.bleAdvertisingPatchSha256 ||
+          patchSet.source_provenance?.ble_advertising_patch_sha256 !==
+            release.bleAdvertisingPatchSha256)) ||
+      (release.bleAdvertisingSources &&
+        (JSON.stringify(patchSet.ble_advertising_sources) !==
+          JSON.stringify(release.bleAdvertisingSources) ||
+          JSON.stringify(patchSet.source_provenance?.ble_advertising_sources) !==
+            JSON.stringify(release.bleAdvertisingSources))) ||
       (release.directFramebufferCommits &&
         JSON.stringify(patchSet.source_provenance?.direct_framebuffer_commits) !==
           JSON.stringify(release.directFramebufferCommits))
@@ -818,6 +796,7 @@ async function saveRingRelease(root, release, fallbackRoots) {
     throw new Error(`R1 ${release.version} ZIP contains an unexpected file set`);
   }
   const manifest = JSON.parse(Buffer.from(files["manifest.json"]).toString("utf8"));
+  const normalizedManifest = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`);
   const declared = manifest?.manifest?.application;
   if (
     declared?.bin_file !== release.application.binFile ||
@@ -839,7 +818,7 @@ async function saveRingRelease(root, release, fallbackRoots) {
   await writeFile(path.join(directory, release.fileName), bytes);
   await writeFile(path.join(directory, release.application.binFile), application);
   await writeFile(path.join(directory, release.application.datFile), initPacket);
-  await writeFile(path.join(directory, "manifest.json"), files["manifest.json"]);
+  await writeFile(path.join(directory, "manifest.json"), normalizedManifest);
   const metadata = {
     schemaVersion: 2,
     device: "Even Realities R1",
@@ -868,6 +847,7 @@ async function saveRingRelease(root, release, fallbackRoots) {
     [
       `${release.application.binSha256}  ${release.application.binFile}`,
       `${release.application.datSha256}  ${release.application.datFile}`,
+      `${digest("sha256", normalizedManifest)}  manifest.json`,
       `${release.sha256}  ${release.fileName}`,
     ].join("\n") + "\n",
   );
@@ -897,17 +877,7 @@ async function saveRingRelease(root, release, fallbackRoots) {
 // file rather than something read from index.json at runtime: the writer's final
 // trust gate must not be widenable by a tampered catalog.
 async function writeTempleFlashTargets(releases) {
-  const targets = [
-    {
-      imageSha256: LEGACY_HARDWARE_VALIDATED_CFW_SHA256,
-      mainSha256:
-        "38dea7dc05e832e6f5aea8fa726454b2ec44055af5d456b323448ee6989e53d1",
-      mainBytes: 3539474,
-      version: "2.2.6.10",
-      label: "Legacy reviewed SybilSight CFW 2.2.6.10",
-      hardwareValidated: true,
-    },
-  ];
+  const targets = [];
   for (const release of releases) {
     const main = (release.components ?? []).find(
       (component) =>
@@ -973,6 +943,7 @@ async function main() {
     "../firmware-archive/source-files",
   );
   const output = path.resolve(argument("--output", defaultOutput));
+  const r1Only = process.argv.includes("--r1-only");
   const fallbackRoots = {
     webflasher: path.resolve(
       path.dirname(fileURLToPath(import.meta.url)),
@@ -993,24 +964,37 @@ async function main() {
   };
   await mkdir(output, { recursive: true });
   const catalog = [];
-  for (const release of RELEASES) {
-    catalog.push(await saveRelease(output, release, fallbackRoots));
+  if (!r1Only) {
+    for (const release of RELEASES) {
+      catalog.push(await saveRelease(output, release, fallbackRoots));
+    }
   }
   const ringCatalog = [];
   for (const release of R1_RELEASES) {
     ringCatalog.push(await saveRingRelease(output, release, fallbackRoots));
   }
+  let existingIndex = {};
+  if (r1Only) {
+    try {
+      existingIndex = JSON.parse(await readFile(path.join(output, "index.json"), "utf8"));
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
   const index = {
+    ...existingIndex,
     schemaVersion: 2,
     generatedAt: new Date().toISOString(),
     source: "Even Realities G2/R1 CDN plus SybilSight release evidence",
-    releases: catalog.sort((left, right) => {
-      const versionOrder = right.version.localeCompare(left.version, undefined, {
-        numeric: true,
-      });
-      if (versionOrder !== 0) return versionOrder;
-      return left.channel === "custom" ? -1 : 1;
-    }),
+    releases: r1Only
+      ? existingIndex.releases ?? []
+      : catalog.sort((left, right) => {
+          const versionOrder = right.version.localeCompare(left.version, undefined, {
+            numeric: true,
+          });
+          if (versionOrder !== 0) return versionOrder;
+          return left.channel === "custom" ? -1 : 1;
+        }),
     ringReleases: ringCatalog.sort((left, right) =>
       right.version.localeCompare(left.version, undefined, { numeric: true }),
     ),
@@ -1019,12 +1003,16 @@ async function main() {
     path.join(output, "index.json"),
     `${JSON.stringify(index, null, 2)}\n`,
   );
-  const targets = await writeTempleFlashTargets(index.releases);
-  process.stdout.write(`Archived ${catalog.length} verified G2 releases in ${output}\n`);
+  const targets = r1Only ? null : await writeTempleFlashTargets(index.releases);
+  if (!r1Only) {
+    process.stdout.write(`Archived ${catalog.length} verified G2 releases in ${output}\n`);
+  }
   process.stdout.write(`Archived ${ringCatalog.length} verified R1 release(s)\n`);
-  process.stdout.write(
-    `Pinned ${targets} temple-flash Apollo-main target(s) in src/lib/templeFlashTargets.js\n`,
-  );
+  if (targets !== null) {
+    process.stdout.write(
+      `Pinned ${targets} temple-flash Apollo-main target(s) in src/lib/templeFlashTargets.js\n`,
+    );
+  }
 }
 
 await main();

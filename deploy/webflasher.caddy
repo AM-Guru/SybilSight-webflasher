@@ -36,27 +36,63 @@ webflasher.sybilsight.com {
 		root * /share/webflasher
 		file_server
 	}
+	handle /firmware-updates/source-files/2.0.1.14/* {
+		root * /share/webflasher
+		file_server
+	}
+	handle /firmware-updates/source-files/2.0.3.20/* {
+		root * /share/webflasher
+		file_server
+	}
+	handle /firmware-updates/source-files/2.0.5.12/* {
+		root * /share/webflasher
+		file_server
+	}
+	handle /firmware-updates/source-files/2.0.6.14/* {
+		root * /share/webflasher
+		file_server
+	}
+	handle /firmware-updates/source-files/2.0.7.16/* {
+		root * /share/webflasher
+		file_server
+	}
+	handle /firmware-updates/source-files/2.0.8.20/* {
+		root * /share/webflasher
+		file_server
+	}
+	handle /firmware-updates/source-files/2.0.9.20/* {
+		root * /share/webflasher
+		file_server
+	}
+	handle /firmware-updates/source-files/2.1.1.8/* {
+		root * /share/webflasher
+		file_server
+	}
+	handle /firmware-updates/source-files/2.1.1.12/* {
+		root * /share/webflasher
+		file_server
+	}
+	handle /firmware-updates/source-files/2.2.0.24/* {
+		root * /share/webflasher
+		file_server
+	}
+	handle /firmware-updates/source-files/2.2.4.34/* {
+		root * /share/webflasher
+		file_server
+	}
+	handle /firmware-updates/source-files/2.2.6.10/* {
+		root * /share/webflasher
+		file_server
+	}
 	handle /firmware-updates/source-files/2.2.8.4/* {
 		root * /share/webflasher
 		file_server
 	}
-	handle /firmware-updates/source-files/2.2.8.6/* {
-		root * /share/webflasher
-		file_server
-	}
-	handle /firmware-updates/source-files/2.2.7.16/* {
+	handle /firmware-updates/source-files/2.2.8.9/* {
 		root * /share/webflasher
 		file_server
 	}
 	handle /firmware-updates/source-files/2.2.7.14/* {
-		root * /share/webflasher
-		file_server
-	}
-	handle /firmware-updates/source-files/2.2.6.11/* {
-		root * /share/webflasher
-		file_server
-	}
-	handle /firmware-updates/source-files/2.2.6.12/* {
 		root * /share/webflasher
 		file_server
 	}

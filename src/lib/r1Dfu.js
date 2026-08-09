@@ -7,63 +7,133 @@ export const R1_DFU_PACKET_UUID = "8ec90002-f315-4f60-9fb8-838830daea50";
 export const R1_BUTTONLESS_DFU_UUID =
   "8ec90003-f315-4f60-9fb8-838830daea50";
 
+function pinnedR1Release({
+  version,
+  size,
+  md5,
+  sha256,
+  binSize,
+  binSha256,
+  datSha256,
+}) {
+  return Object.freeze({
+    id: `r1-official-${version}`,
+    version,
+    fileName: `r1-${version}-${md5}.zip`,
+    size,
+    md5,
+    sha256,
+    format: "nordic-secure-dfu",
+    application: Object.freeze({
+      binFile: "application.bin",
+      binSize,
+      binSha256,
+      datFile: "application.dat",
+      datSize: 141,
+      datSha256,
+    }),
+  });
+}
+
 export const R1_PINNED_RELEASES = Object.freeze([
-  Object.freeze({
-    id: "r1-official-2.2.8.0002",
+  pinnedR1Release({
     version: "2.2.8.0002",
-    fileName: "r1-2.2.8.0002-ce5aa289bf6c95a293d41bd48c123e40.zip",
     size: 650915,
     md5: "ce5aa289bf6c95a293d41bd48c123e40",
     sha256: "662ca213e628f6bd82b8cd930bd63d6c1efe00b6f470fd6ed21e6367712bfdb7",
-    format: "nordic-secure-dfu",
-    application: Object.freeze({
-      binFile: "application.bin",
-      binSize: 650284,
-      binSha256:
-        "41ea4fdcf1b2d1d3702c41669983b4ef0817ee4eb789f8eebc7dd6102609e274",
-      datFile: "application.dat",
-      datSize: 141,
-      datSha256:
-        "1b9ede75c2d95b6d97e5b51dc396e0433d2575c4e04f63cc77e26218ccf13ea8",
-    }),
+    binSize: 650284,
+    binSha256: "41ea4fdcf1b2d1d3702c41669983b4ef0817ee4eb789f8eebc7dd6102609e274",
+    datSha256: "1b9ede75c2d95b6d97e5b51dc396e0433d2575c4e04f63cc77e26218ccf13ea8",
   }),
-  Object.freeze({
-    id: "r1-official-2.2.7.0005",
+  pinnedR1Release({
     version: "2.2.7.0005",
-    fileName: "r1-2.2.7.0005-be359b28954f8fe4a94ec21a58415d59.zip",
     size: 650007,
     md5: "be359b28954f8fe4a94ec21a58415d59",
     sha256: "6222e4bb334b531c3d2cfedfae2a26f609f0ffd99bd60a50bc8cced645c9eba5",
-    format: "nordic-secure-dfu",
-    application: Object.freeze({
-      binFile: "application.bin",
-      binSize: 649376,
-      binSha256:
-        "2d38253e00b887ced3f1e2c049db21254b0974091bc954a82c13e21c48b064c2",
-      datFile: "application.dat",
-      datSize: 141,
-      datSha256:
-        "68447d4dfc0ad7d77270797fe0dbf4311faef7eb5e275342033e5b373be93be9",
-    }),
+    binSize: 649376,
+    binSha256: "2d38253e00b887ced3f1e2c049db21254b0974091bc954a82c13e21c48b064c2",
+    datSha256: "68447d4dfc0ad7d77270797fe0dbf4311faef7eb5e275342033e5b373be93be9",
   }),
-  Object.freeze({
-    id: "r1-official-2.2.6.0009",
+  pinnedR1Release({
     version: "2.2.6.0009",
-    fileName: "r1-2.2.6.0009-9eca8ae9d5117abda4f72f39bdb44ad2.zip",
     size: 647039,
     md5: "9eca8ae9d5117abda4f72f39bdb44ad2",
     sha256: "492baf487734720732f82f404624e0c3b3af3b01d30727366238e154164ad0dd",
-    format: "nordic-secure-dfu",
-    application: Object.freeze({
-      binFile: "application.bin",
-      binSize: 646408,
-      binSha256:
-        "0e788d433ea50fd36edb8f21a9c18b6062211e4a36dbc5bd7695ea5827f3aa1a",
-      datFile: "application.dat",
-      datSize: 141,
-      datSha256:
-        "305da36784e527b3e434f2cf45019a290bf5c14cbceb2e57c9e61dcdfdb1f253",
-    }),
+    binSize: 646408,
+    binSha256: "0e788d433ea50fd36edb8f21a9c18b6062211e4a36dbc5bd7695ea5827f3aa1a",
+    datSha256: "305da36784e527b3e434f2cf45019a290bf5c14cbceb2e57c9e61dcdfdb1f253",
+  }),
+  pinnedR1Release({
+    version: "2.2.5.0005",
+    size: 644583,
+    md5: "83038dad13c339f9e5f2e5fc828a00b3",
+    sha256: "46102dd54d86fb24fb5f1a2c8ba9f9d54e6a603659240dd59fc43b1ee564e778",
+    binSize: 643952,
+    binSha256: "221fb44aa6ff954dc73978d3848ed466913e2bebcfada4aaa8984610d7e2a6e2",
+    datSha256: "e4518bc50ee225024cca96dd581d955f9650dc8b0450060fa7b22b9ccf4c0847",
+  }),
+  pinnedR1Release({
+    version: "2.2.4.0003",
+    size: 638259,
+    md5: "248978eb758a342a0254d6dae45bfdb2",
+    sha256: "549d60061c1cc9cde94da5c3c0efc0e7220272aca6c872c49bde0ec30ae16dcc",
+    binSize: 637628,
+    binSha256: "a347128b46bfb01e6c02bc2a93768bc0838ae73c1e7ad401dd29841cc930647f",
+    datSha256: "56f017384d7bbc73f47f018b601dd13bceda3f27f4b09f2f89586981c1429e0e",
+  }),
+  pinnedR1Release({
+    version: "2.2.0.0014",
+    size: 633367,
+    md5: "9ae5429275afdcb2ff86c53152bef1cb",
+    sha256: "9ce535518d1321a27186394355e05aff7b4ba76be58c8de1a0dfcf3b01395d00",
+    binSize: 632736,
+    binSha256: "590584f3d56dc4b495d6454823fe177f042225b55c7d098abab479041f641d36",
+    datSha256: "e77d2fdf34eb94e3d955e0b23e0913b4622d46c9f9aa5b5ff0b8cc29f23a85c1",
+  }),
+  pinnedR1Release({
+    version: "2.0.8.0012",
+    size: 626207,
+    md5: "90a6479e4d736365192f30556cba44a5",
+    sha256: "6bc6567f656d3905683000278af529ad516f45d8e9516618ffad2cb4ea7adf2b",
+    binSize: 625576,
+    binSha256: "8a3db3c56bf4cddd0a02eebc4090857f6e8907ae2108ce9487f8b8bdee7c96df",
+    datSha256: "fb80c99d3eba14e8ae80ca7908bdb3bb928e5829968f37f247a8b7e3041f7c63",
+  }),
+  pinnedR1Release({
+    version: "2.0.7.0004",
+    size: 628831,
+    md5: "692af8c7baed67e20c5920d350dd466e",
+    sha256: "ba499025ab86cf3679eb5f19e6322422c1ef7f3304ce386f7e1e1dddf7ef5e08",
+    binSize: 628200,
+    binSha256: "1045569b5ca10cdb6c3991304f8b7273c18cd302b28d65f2647ed947984c8f2a",
+    datSha256: "3b9fc345ca31f709732debfa5cc81b00dfb78ed56f90e592ca82287249fd4dcc",
+  }),
+  pinnedR1Release({
+    version: "2.0.6.0005",
+    size: 622931,
+    md5: "37c8d118670c97f3e218c4a5f2f30951",
+    sha256: "5ef38db1e80a40859dd14e2914732193d8e3162ef118e37173e3fa45125d1d85",
+    binSize: 622300,
+    binSha256: "5ef4eb77076c1054bf95c7781787963607a6a61af4b338cb98c39ca7fa7831b6",
+    datSha256: "376d60acc327068dd7c1fe4d3133c32a512b762bde19ef00866432f71e2aba4d",
+  }),
+  pinnedR1Release({
+    version: "2.0.5.0004",
+    size: 618755,
+    md5: "3f7990f1d725be5c544103dc03e1ae54",
+    sha256: "893e9c72e5ad1ef2950309c4ed48a81af8bbedd920240d8bf6ebf4be122b5763",
+    binSize: 618124,
+    binSha256: "5fb80f2f4f1cc37299bdfc9695d08c13d5d5052dfd64d485852aba098d66dcec",
+    datSha256: "afa75e575683db8a219c4b01ac9a0b32c76c6dcea2ea71f7db5ccf7bdd632eba",
+  }),
+  pinnedR1Release({
+    version: "2.0.3.0013",
+    size: 619023,
+    md5: "da3c754078c1e9dd0b2fe282e4614783",
+    sha256: "a24ddd6c580a2706f98c06b6504bb34af7159024ad8bb066eca6ae684e533c6f",
+    binSize: 618392,
+    binSha256: "c74c61beb5c30f671d2094a3f9a9310dbb556e7cf01d73c77dfca66d31a2b590",
+    datSha256: "816e350b7d36240b7e33252141680baf39da06f7619bb1e51d80df83d73068b5",
   }),
 ]);
 

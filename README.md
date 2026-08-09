@@ -38,8 +38,8 @@ Production deployment:
   Smart Glasses firmware bundle.
 - Accepts official five- or six-component `EVENOTA` bundles, wrapped
   `firmware_box.bin` components, and validated raw case images.
-- Recognizes all 14 archived official G2 SHA-256 values and the reviewed
-  SybilSight CFW 2.2.6.11, 2.2.6.12, 2.2.7.16, and 2.2.8.6 images.
+- Recognizes all 14 archived official G2 SHA-256 values and offers only the
+  latest reviewed SybilSight CFW 2.2.8.9 image.
 - Validates the Apollo main application's independent preamble, CRC-32, target
   region, installed-image boundary, and vector.
 - Stages case firmware in the inactive bank and verifies a byte-for-byte
@@ -181,19 +181,25 @@ The current reviewed CFW is an exact, machine-described transformation of offici
 - stock SHA-256:
   `df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7`
 - CFW SHA-256:
-  `95d110fc9d1279bc58268af89e62df92dc81060a8c5d08a17e458ea846edc209`
+  `742a0241f7ba34c6fb45c9a3ec616ba0be2b92f9c3e656b9824f6bc21a5513ca`
 - patch-manifest SHA-256:
-  `85bb43ae6a3387a008d5e34297c7c60ced9977f3e1dfa33653dc33b943bb72c4`
-- 25 expected-byte-gated operations, including one appended code blob,
-  the two runtime `2.2.8.4` → `2.2.8.6` identity fields, and
+  `f5d0a33f7a0ae4f759983bec370ef011b3d2cde546048e46818288ea32cbc64d`
+- 40 expected-byte-gated operations, including the established CFW blob and an
+  isolated advertised-name hook blob,
+  all thirteen main-firmware `2.2.8.4` → `2.2.8.9` identity fields, and
   the required inner/outer size and checksum updates
 
-It reports numeric version `2.2.8.6`, retains `2.2.8.4` as its Stock base, and
-advertises `EVENCFW/6 img576 img640 imgz rle wakelease directfb fbguard`.
+It reports numeric version `2.2.8.9` from both temples, retains `2.2.8.4` as
+its Stock base, and
+advertises `EVENCFW/9 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10 nameserial`.
+The `nameserial` hook wraps stock `_blePsnIntoADV`, where the real 14-character
+pair serial is already available. It keeps names such as
+`Even G2_32_L_XXXXXX` the same length while replacing the final six per-temple
+MAC characters in the stock name buffer with serial characters 8–13.
 The guarded Faceclaw trampoline resumes the untouched stock Even AI path when
 no wake lease is active. The image is reproducibly built and statically
-reviewed but does not claim a completed hardware flash; older CFW releases
-remain archived with their existing validation status.
+reviewed but does not claim a completed hardware flash. Older CFW releases are
+not offered by WebFlasher.
 
 ### Application-alive pogo OTA
 
@@ -1363,16 +1369,22 @@ and both routes receive read-only liveness verification.
 ## Firmware archive
 
 The archive builder knows about all 14 official G2 releases evidenced by the
-SybilSight research plus reviewed CFW `2.2.6.11` and Faceclaw-free CFW
-`2.2.6.12`, both built from Stock `2.2.6.10`. It also verifies and archives
-the signed R1 `2.2.8.0002`, `2.2.7.0005`, and prior `2.2.6.0009` Secure DFU
-packages:
+SybilSight research plus only the latest reviewed CFW `2.2.8.9`, built from
+Stock `2.2.8.4`. It also verifies and archives every R1 Secure DFU package
+exposed by the authenticated compatibility API, with exact CDN size, MD5,
+SHA-256, application, and signed init-packet pins:
 
 ```text
 2.0.1.14  2.0.3.20  2.0.5.12  2.0.6.14
 2.0.7.16  2.0.8.20  2.0.9.20  2.1.1.8
 2.1.1.12  2.2.0.24  2.2.4.34  2.2.6.10
-2.2.6.11  2.2.6.12  2.2.7.14  2.2.8.4
+2.2.7.14  2.2.8.4  2.2.8.9
+```
+
+```text
+R1: 2.0.3.0013  2.0.5.0004  2.0.6.0005  2.0.7.0004
+    2.0.8.0012  2.2.0.0014  2.2.4.0003  2.2.5.0005
+    2.2.6.0009  2.2.7.0005  2.2.8.0002
 ```
 
 It retrieves each original bundle from the Even Realities CDN. If a known CDN
@@ -1385,6 +1397,9 @@ Run it with:
 npm run archive:firmware -- --output ./firmware-archive/source-files
 ```
 
+Use `--r1-only` to refresh just the R1 packages and `ringReleases` while
+preserving the existing G2 catalog and compiled temple-flash targets.
+
 Each version directory contains the original bundle, every extracted
 component, a raw case image, `metadata.json`, and `SHA256SUMS`. The current CFW
 directory also contains `manifest.json`, which identifies every hardware-flash
@@ -1394,10 +1409,8 @@ artifact and its digest:
 source-files/
   index.json
   r1/
-    2.2.8.0002/
-      r1-2.2.8.0002-ce5aa289bf6c95a293d41bd48c123e40.zip
-    2.2.7.0005/
-      r1-2.2.7.0005-be359b28954f8fe4a94ec21a58415d59.zip
+    <version>/
+      r1-<version>-<vendor-md5>.zip
       application.bin
       application.dat
       manifest.json
@@ -1425,21 +1438,9 @@ source-files/
     ota_s200_firmware_ota.bin
     metadata.json
     SHA256SUMS
-  2.2.6.11/
-    g2-2.2.6.11.bin
-    cfw_patches-2.2.6.11.json
-    firmware_codec.bin
-    firmware_ble_em9305.bin
-    firmware_touch.bin
-    firmware_box.bin
-    firmware_box.raw.bin
-    ota_s200_bootloader.bin
-    ota_s200_firmware_ota.bin
-    metadata.json
-    SHA256SUMS
-  2.2.6.12/
-    g2-2.2.6.12.bin
-    cfw_patches-2.2.6.12.json
+  2.2.8.9/
+    g2-2.2.8.9.bin
+    cfw_patches-2.2.8.9.json
     manifest.json
     firmware_codec.bin
     firmware_ble_em9305.bin

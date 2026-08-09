@@ -13,14 +13,8 @@ import { TEMPLE_FLASH_TARGETS } from "../src/lib/templeFlashTargets.js";
 
 const LEGACY_CFW_SHA256 =
   "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0";
-const REVIEWED_CFW_2_2_6_11_SHA256 =
-  "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86";
-const REVIEWED_CFW_2_2_6_12_SHA256 =
-  "b4de0cd3ffce5b0c756a7625b5250378d7680637e82849b15291a56a279fb4cd";
-const REVIEWED_CFW_2_2_7_16_SHA256 =
-  "6c0fdfed0eabfc40ba718ec1eec6b0728e9794a8abdb6079ebdcee2c56f58127";
-const REVIEWED_CFW_2_2_8_6_SHA256 =
-  "95d110fc9d1279bc58268af89e62df92dc81060a8c5d08a17e458ea846edc209";
+const REVIEWED_CFW_2_2_8_9_SHA256 =
+  "742a0241f7ba34c6fb45c9a3ec616ba0be2b92f9c3e656b9824f6bc21a5513ca";
 const OFFICIAL_G2_2_2_7_14_SHA256 =
   "0fced0aebcc6c88db6f76dba34f91b805d842a5fc297bfd7fa6d6a34ec83cecb";
 const OFFICIAL_G2_2_2_8_4_SHA256 =
@@ -60,14 +54,11 @@ test("flags a pinned image the served library is too old to offer", () => {
   assert.deepEqual(
     missing.map((target) => target.imageSha256),
     [
-      REVIEWED_CFW_2_2_8_6_SHA256,
+      REVIEWED_CFW_2_2_8_9_SHA256,
       OFFICIAL_G2_2_2_8_4_SHA256,
-      REVIEWED_CFW_2_2_7_16_SHA256,
       OFFICIAL_G2_2_2_7_14_SHA256,
-      REVIEWED_CFW_2_2_6_12_SHA256,
-      REVIEWED_CFW_2_2_6_11_SHA256,
     ],
-    "the new official and reviewed CFW releases are newer than anything the stale catalog serves",
+    "the latest CFW and newer official releases are newer than anything the stale catalog serves",
   );
 });
 
@@ -83,12 +74,9 @@ test("blocks firmware mutation when the served library is behind the build", () 
       assert.deepEqual(
         error.missingPinnedImages.map((target) => target.imageSha256),
         [
-          REVIEWED_CFW_2_2_8_6_SHA256,
+          REVIEWED_CFW_2_2_8_9_SHA256,
           OFFICIAL_G2_2_2_8_4_SHA256,
-          REVIEWED_CFW_2_2_7_16_SHA256,
           OFFICIAL_G2_2_2_7_14_SHA256,
-          REVIEWED_CFW_2_2_6_12_SHA256,
-          REVIEWED_CFW_2_2_6_11_SHA256,
         ],
       );
       assert.match(error.message, /No device mutation was started/);
@@ -97,10 +85,7 @@ test("blocks firmware mutation when the served library is behind the build", () 
   );
 });
 
-test("stays silent about images retired from the library for being old", async () => {
-  // The shipped catalog no longer lists the legacy 2.2.6.10 CFW, which remains
-  // pinned in the allowlist. That is deliberate retirement, not drift — warning
-  // about it on every load would train operators to ignore the warning.
+test("offers only the latest CFW while retaining official firmware", async () => {
   const catalog = JSON.parse(
     await readFile(
       new URL("../public/firmware-updates/source-files/index.json", import.meta.url),
@@ -108,33 +93,20 @@ test("stays silent about images retired from the library for being old", async (
     ),
   ).releases;
   const reviewed228 = catalog.find(
-    (release) => release.sha256 === REVIEWED_CFW_2_2_8_6_SHA256,
+    (release) => release.sha256 === REVIEWED_CFW_2_2_8_9_SHA256,
   );
   assert.ok(
     reviewed228,
-    "the shipped catalog should serve reviewed CFW 2.2.8.6",
+    "the shipped catalog should serve reviewed CFW 2.2.8.9",
   );
   assert.equal(reviewed228.hardwareValidated, false);
-  const reviewed227 = catalog.find(
-    (release) => release.sha256 === REVIEWED_CFW_2_2_7_16_SHA256,
+  assert.deepEqual(
+    catalog.filter((release) => release.channel === "custom").map((release) => release.version),
+    ["2.2.8.9"],
+    "no superseded CFW release may remain in the WebFlasher listing",
   );
-  assert.ok(
-    reviewed227,
-    "the shipped catalog should serve reviewed CFW 2.2.7.16",
-  );
-  assert.equal(reviewed227.hardwareValidated, false);
-  assert.ok(
-    catalog.some((release) => release.sha256 === REVIEWED_CFW_2_2_6_11_SHA256),
-    "the shipped catalog should serve reviewed CFW 2.2.6.11",
-  );
-  assert.ok(
-    catalog.some((release) => release.sha256 === REVIEWED_CFW_2_2_6_12_SHA256),
-    "the shipped catalog should serve reviewed CFW 2.2.6.12",
-  );
-  assert.ok(
-    !catalog.some((release) => release.sha256 === LEGACY_CFW_SHA256),
-    "the shipped catalog should no longer serve the legacy CFW",
-  );
+  assert.ok(catalog.some((release) => release.sha256 === OFFICIAL_G2_2_2_8_4_SHA256));
+  assert.ok(catalog.some((release) => release.sha256 === OFFICIAL_G2_2_2_7_14_SHA256));
   assert.deepEqual(
     findUnservedPinnedImages({ catalog, targets: TEMPLE_FLASH_TARGETS }),
     [],
@@ -146,6 +118,25 @@ test("stays silent about images retired from the library for being old", async (
     }),
     { verified: true, missingPinnedImages: [] },
   );
+});
+
+test("keeps custom firmware release copy plain-language and repository-free", async () => {
+  const catalog = JSON.parse(
+    await readFile(
+      new URL("../public/firmware-updates/source-files/index.json", import.meta.url),
+      "utf8",
+    ),
+  ).releases;
+  const customReleases = catalog.filter((release) => release.channel === "custom");
+  const forbiddenUserFacingTerms =
+    /g2flash|jimrandomh|framebuffer|zlib|\brle\b|\blz4\b|\b8bpp\b|capability field|wake lease/i;
+
+  assert.ok(customReleases.length > 0);
+  for (const release of customReleases) {
+    assert.equal(release.notes, null);
+    assert.ok(release.capabilities.length > 0);
+    assert.doesNotMatch(release.capabilities.join("\n"), forbiddenUserFacingTerms);
+  }
 });
 
 test("says nothing when it cannot tell", () => {

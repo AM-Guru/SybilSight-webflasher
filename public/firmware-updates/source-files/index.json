@@ -1,50 +1,50 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-08T23:55:09.287Z",
+  "generatedAt": "2026-08-09T18:28:05.486Z",
   "source": "Even Realities G2/R1 CDN plus SybilSight release evidence",
   "releases": [
     {
-      "id": "g2-custom-2.2.8.6",
-      "displayName": "SybilSight CFW (2.2.8.6)",
+      "id": "g2-custom-2.2.8.9",
+      "displayName": "SybilSight CFW (2.2.8.9)",
       "channel": "custom",
       "trust": "reviewed-custom",
       "hardwareValidated": false,
-      "version": "2.2.8.6",
-      "internalVersion": "2.2.8.6",
+      "version": "2.2.8.9",
+      "internalVersion": "2.2.8.9",
       "baseVersion": "2.2.8.4",
-      "notes": "SybilSight CFW 2.2.8.6 applies the pinned jimrandomh/g2flash patch set to official G2 2.2.8.4 stock. It preserves the vendor Korean-language update, retains upstream Faceclaw wake and framebuffer controls, and resumes the untouched stock Even AI command path when no wake lease is active. The image is reproducibly built and statically reviewed but not yet hardware-flashed.",
+      "notes": null,
       "capabilities": [
-        "576×288 image containers",
-        "640×480 full-panel custom image surface",
-        "Zlib and RLE image payloads",
-        "Direct packed-4bpp framebuffer presentation",
-        "Atomic multi-segment and rectangle-copy updates",
-        "Per-lens stereo image operations",
-        "Snapshot FIFO and on-device timing diagnostics",
-        "Buzzer presets, notes, raw tones, and sequences",
-        "Settings capability field 100",
-        "Faceclaw control field 101 and wake lease",
-        "Ring long-press and release events"
+        "Uses the full display for custom screens and images.",
+        "Makes image updates smoother and more efficient.",
+        "Supports different visuals on the left and right lenses.",
+        "Adds richer sounds and custom alert patterns.",
+        "Recognizes ring long presses and releases.",
+        "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
+        "Keeps wear-status and compass updates available to connected apps.",
+        "Shows the same pair identifier on both lenses during Bluetooth setup.",
+        "Reports the same custom firmware version from both temples.",
+        "Includes Korean system-language support from the official update.",
+        "Reviewed for consistency; testing on physical glasses is still pending."
       ],
       "recoveryTarget": "glasses",
       "caseRecoveryEligible": false,
       "caseVersion": "1.2.57",
-      "url": "/firmware-updates/source-files/2.2.8.6/g2-2.2.8.6.bin",
-      "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.6/g2-2.2.8.6.bin",
-      "fileName": "g2-2.2.8.6.bin",
-      "size": 4358249,
-      "md5": "5b708549a5c741d1a2991d4a27670589",
-      "sha256": "95d110fc9d1279bc58268af89e62df92dc81060a8c5d08a17e458ea846edc209",
-      "patchUrl": "/firmware-updates/source-files/2.2.8.6/cfw_patches-2.2.8.6.json",
-      "patchSha256": "85bb43ae6a3387a008d5e34297c7c60ced9977f3e1dfa33653dc33b943bb72c4",
-      "manifestUrl": "/firmware-updates/source-files/2.2.8.6/manifest.json",
-      "manifestSha256": "91932a9de57320fc3a70545a7ef20247ce083228f22b10ce4117c18e652bfd2e",
+      "url": "/firmware-updates/source-files/2.2.8.9/g2-2.2.8.9.bin",
+      "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.9/g2-2.2.8.9.bin",
+      "fileName": "g2-2.2.8.9.bin",
+      "size": 4363045,
+      "md5": "3c59e54730e36a4834295df75caed59f",
+      "sha256": "742a0241f7ba34c6fb45c9a3ec616ba0be2b92f9c3e656b9824f6bc21a5513ca",
+      "patchUrl": "/firmware-updates/source-files/2.2.8.9/cfw_patches-2.2.8.9.json",
+      "patchSha256": "f5d0a33f7a0ae4f759983bec370ef011b3d2cde546048e46818288ea32cbc64d",
+      "manifestUrl": "/firmware-updates/source-files/2.2.8.9/manifest.json",
+      "manifestSha256": "1aef6202980c8f8baa56528db22a556d6c1c8ffc5c0a2ac156512442e4297820",
       "archivedFrom": "WebFlasher local evidence",
       "mainFirmware": {
         "runBase": "0x00438000",
-        "installedImageSize": 3580438,
-        "installedImageEnd": "0x007a2216",
-        "crc32": "4224b3cd"
+        "installedImageSize": 3585234,
+        "installedImageEnd": "0x007a34d2",
+        "crc32": "8440c661"
       },
       "components": [
         {
@@ -85,9 +85,9 @@
         {
           "name": "ota/s200_firmware_ota.bin",
           "typeId": 0,
-          "size": 3580470,
-          "crc32c": "cb22928c",
-          "sha256": "e13e324fd141a5d4cd0a69fa698262eae414d7e552ba35b667bb76236f3cebca"
+          "size": 3585266,
+          "crc32c": "f771e8d0",
+          "sha256": "fe834158de3ceb0770841b0f397f37be8063a1c08f40a8af7a11bfd2ffcfd7f5"
         }
       ]
     },
@@ -165,94 +165,6 @@
       ]
     },
     {
-      "id": "g2-custom-2.2.7.16",
-      "displayName": "SybilSight CFW (2.2.7.16)",
-      "channel": "custom",
-      "trust": "reviewed-custom",
-      "hardwareValidated": false,
-      "version": "2.2.7.16",
-      "internalVersion": "2.2.7.16",
-      "baseVersion": "2.2.7.14",
-      "notes": "SybilSight CFW 2.2.7.16 applies the pinned jimrandomh/g2flash patch set to official G2 2.2.7.14 stock. It retains upstream Faceclaw wake and framebuffer controls while its guarded Even AI trampoline resumes the untouched stock command path when no wake lease is active. The image is reproducibly built and statically reviewed but not yet hardware-flashed.",
-      "capabilities": [
-        "576×288 image containers",
-        "640×480 full-panel custom image surface",
-        "Zlib and RLE image payloads",
-        "Direct packed-4bpp framebuffer presentation",
-        "Atomic multi-segment and rectangle-copy updates",
-        "Per-lens stereo image operations",
-        "Snapshot FIFO and on-device timing diagnostics",
-        "Buzzer presets, notes, raw tones, and sequences",
-        "Settings capability field 100",
-        "Faceclaw control field 101 and wake lease",
-        "Ring long-press and release events"
-      ],
-      "recoveryTarget": "glasses",
-      "caseRecoveryEligible": false,
-      "caseVersion": "1.2.57",
-      "url": "/firmware-updates/source-files/2.2.7.16/g2-2.2.7.16.bin",
-      "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.7.16/g2-2.2.7.16.bin",
-      "fileName": "g2-2.2.7.16.bin",
-      "size": 4351457,
-      "md5": "0b4965e39055256b0d5353e42413521d",
-      "sha256": "6c0fdfed0eabfc40ba718ec1eec6b0728e9794a8abdb6079ebdcee2c56f58127",
-      "patchUrl": "/firmware-updates/source-files/2.2.7.16/cfw_patches-2.2.7.16.json",
-      "patchSha256": "8d37bb2b045d7306e96d886c4c1aae74438bb09ebee10d7cba0fb16c5df6a54e",
-      "manifestUrl": "/firmware-updates/source-files/2.2.7.16/manifest.json",
-      "manifestSha256": "a6752d97647adc3f41c29a90e6ee9a08088b7acd974c04419c24bb582218339f",
-      "archivedFrom": "SybilSight reviewed CFW mirror",
-      "mainFirmware": {
-        "runBase": "0x00438000",
-        "installedImageSize": 3573594,
-        "installedImageEnd": "0x007a075a",
-        "crc32": "22640190"
-      },
-      "components": [
-        {
-          "name": "firmware/codec.bin",
-          "typeId": 4,
-          "size": 326092,
-          "crc32c": "bdcfeeac",
-          "sha256": "b06dfef7faa2f1e52d2aacd07958d4b96ffc36dca5077ac9149e48f19fc9c4d0"
-        },
-        {
-          "name": "firmware/ble_em9305.bin",
-          "typeId": 5,
-          "size": 211948,
-          "crc32c": "c074baf7",
-          "sha256": "91a38f7fc05555f86181ecb22b363e3239bfcaaa2ff6171e98524ae64821eca9"
-        },
-        {
-          "name": "firmware/touch.bin",
-          "typeId": 3,
-          "size": 34464,
-          "crc32c": "ba63bc61",
-          "sha256": "0d13d8bb1337bf22989dc16143e3d5eca29a31cc1ed753ff624668750ea9470d"
-        },
-        {
-          "name": "firmware/box.bin",
-          "typeId": 6,
-          "size": 55784,
-          "crc32c": "7d443be0",
-          "sha256": "36ca0c13558f252af286ae2b36b5e576d087d21d37b15d778e7da9f502a70374"
-        },
-        {
-          "name": "ota/s200_bootloader.bin",
-          "typeId": 1,
-          "size": 148599,
-          "crc32c": "3529e0e2",
-          "sha256": "45e87ebf66f4836087e97a942f4e5e63be8378e78ad052fee6c7204db39ff633"
-        },
-        {
-          "name": "ota/s200_firmware_ota.bin",
-          "typeId": 0,
-          "size": 3573626,
-          "crc32c": "61d8289e",
-          "sha256": "bdd473f5988c926e78ebc0b9d5255bbd5982957ebb24a649328d3eb92cf1c78c"
-        }
-      ]
-    },
-    {
       "id": "g2-official-2.2.7.14",
       "channel": "official",
       "trust": "official-pinned",
@@ -322,174 +234,6 @@
           "size": 3557884,
           "crc32c": "68582516",
           "sha256": "8e25fcdadac1efadf8ef97e35086487b673d079f5fd229e56443ac42a5d55c31"
-        }
-      ]
-    },
-    {
-      "id": "g2-custom-2.2.6.12",
-      "displayName": "SybilSight CFW (2.2.6.12)",
-      "channel": "custom",
-      "trust": "reviewed-custom",
-      "hardwareValidated": false,
-      "version": "2.2.6.12",
-      "internalVersion": "2.2.6.12",
-      "baseVersion": "2.2.6.10",
-      "notes": "SybilSight CFW 2.2.6.12 built from official G2 2.2.6.10 with the current CFW image, gesture, timing, and full-panel direct-framebuffer patches. The Faceclaw settings controls, wake takeover, Even AI interception, and framebuffer lease are excluded. The image is reproducibly built and statically reviewed but not yet hardware-flashed.",
-      "capabilities": [
-        "576×288 image containers",
-        "640×480 full-panel custom image surface",
-        "Zlib and RLE image payloads",
-        "Direct packed-4bpp framebuffer presentation",
-        "Atomic multi-segment and rectangle-copy updates",
-        "Per-lens stereo image operations",
-        "Snapshot FIFO and on-device timing diagnostics",
-        "Buzzer presets, notes, raw tones, and sequences",
-        "Settings capability field 100",
-        "Ring long-press and release events"
-      ],
-      "recoveryTarget": "glasses",
-      "caseRecoveryEligible": false,
-      "caseVersion": "1.2.57",
-      "url": "/firmware-updates/source-files/2.2.6.12/g2-2.2.6.12.bin",
-      "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.6.12/g2-2.2.6.12.bin",
-      "fileName": "g2-2.2.6.12.bin",
-      "size": 4316319,
-      "md5": "af10fac70eb60f158ac6ba98eef7f54c",
-      "sha256": "b4de0cd3ffce5b0c756a7625b5250378d7680637e82849b15291a56a279fb4cd",
-      "patchUrl": "/firmware-updates/source-files/2.2.6.12/cfw_patches-2.2.6.12.json",
-      "patchSha256": "af9f93c6e48638c90c607b19631ebcc8a091c23efb0e0ba4c41cf1fa244789bc",
-      "manifestUrl": "/firmware-updates/source-files/2.2.6.12/manifest.json",
-      "manifestSha256": "8cfd8ea6b8f95f3f1b8e7f8bf97a8dc992650197cc683f937ad67ee9f7116a40",
-      "archivedFrom": "SybilSight reviewed CFW mirror",
-      "mainFirmware": {
-        "runBase": "0x00438000",
-        "installedImageSize": 3538456,
-        "installedImageEnd": "0x00797e18",
-        "crc32": "4f2156b9"
-      },
-      "components": [
-        {
-          "name": "firmware/codec.bin",
-          "typeId": 4,
-          "size": 326092,
-          "crc32c": "bdcfeeac",
-          "sha256": "b06dfef7faa2f1e52d2aacd07958d4b96ffc36dca5077ac9149e48f19fc9c4d0"
-        },
-        {
-          "name": "firmware/ble_em9305.bin",
-          "typeId": 5,
-          "size": 211948,
-          "crc32c": "c074baf7",
-          "sha256": "91a38f7fc05555f86181ecb22b363e3239bfcaaa2ff6171e98524ae64821eca9"
-        },
-        {
-          "name": "firmware/touch.bin",
-          "typeId": 3,
-          "size": 34464,
-          "crc32c": "ba63bc61",
-          "sha256": "0d13d8bb1337bf22989dc16143e3d5eca29a31cc1ed753ff624668750ea9470d"
-        },
-        {
-          "name": "firmware/box.bin",
-          "typeId": 6,
-          "size": 55784,
-          "crc32c": "7d443be0",
-          "sha256": "36ca0c13558f252af286ae2b36b5e576d087d21d37b15d778e7da9f502a70374"
-        },
-        {
-          "name": "ota/s200_bootloader.bin",
-          "typeId": 1,
-          "size": 148599,
-          "crc32c": "27d2eb10",
-          "sha256": "f89a4c4657537cec6bfc572bdb8318866309b90a5d180c4307680d39824167b5"
-        },
-        {
-          "name": "ota/s200_firmware_ota.bin",
-          "typeId": 0,
-          "size": 3538488,
-          "crc32c": "e2400543",
-          "sha256": "81e979487d70af05fa88ae5cf1475fe183b01a14c2d8b6506585d22c0e854bcb"
-        }
-      ]
-    },
-    {
-      "id": "g2-custom-2.2.6.11",
-      "displayName": "SybilSight CFW (2.2.6.11)",
-      "channel": "custom",
-      "trust": "reviewed-custom",
-      "hardwareValidated": true,
-      "version": "2.2.6.11",
-      "internalVersion": "2.2.6.11",
-      "baseVersion": "2.2.6.10",
-      "notes": "Reviewed SybilSight CFW built from official G2 2.2.6.10. It reports 2.2.6.11 and EVENCFW/3 so Stock/CFW identity is available before OTA.",
-      "capabilities": [
-        "576×288 image containers",
-        "RLE and LZ4 image payloads",
-        "8bpp XOR-delta frame updates",
-        "Per-lens stereo image pairs",
-        "Settings capability field 100",
-        "Ring long-press and release events"
-      ],
-      "recoveryTarget": "glasses",
-      "caseRecoveryEligible": false,
-      "caseVersion": "1.2.57",
-      "url": "/firmware-updates/source-files/2.2.6.11/g2-2.2.6.11.bin",
-      "sourceUrl": "https://sybilsight.com/firmware-updates/releases/g2-2.2.6.11.bin",
-      "fileName": "g2-2.2.6.11.bin",
-      "size": 4320415,
-      "md5": "8a7d12c38c07e43469e266df3055e874",
-      "sha256": "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86",
-      "patchUrl": "/firmware-updates/source-files/2.2.6.11/cfw_patches-2.2.6.11.json",
-      "patchSha256": "47b33307da30d08480f226ee519a0c10d20288cbb411695e9a3fc45eaee5a0a2",
-      "archivedFrom": "SybilSight reviewed CFW mirror",
-      "mainFirmware": {
-        "runBase": "0x00438000",
-        "installedImageSize": 3542552,
-        "installedImageEnd": "0x00798e18",
-        "crc32": "437fe10e"
-      },
-      "components": [
-        {
-          "name": "firmware/codec.bin",
-          "typeId": 4,
-          "size": 326092,
-          "crc32c": "bdcfeeac",
-          "sha256": "b06dfef7faa2f1e52d2aacd07958d4b96ffc36dca5077ac9149e48f19fc9c4d0"
-        },
-        {
-          "name": "firmware/ble_em9305.bin",
-          "typeId": 5,
-          "size": 211948,
-          "crc32c": "c074baf7",
-          "sha256": "91a38f7fc05555f86181ecb22b363e3239bfcaaa2ff6171e98524ae64821eca9"
-        },
-        {
-          "name": "firmware/touch.bin",
-          "typeId": 3,
-          "size": 34464,
-          "crc32c": "ba63bc61",
-          "sha256": "0d13d8bb1337bf22989dc16143e3d5eca29a31cc1ed753ff624668750ea9470d"
-        },
-        {
-          "name": "firmware/box.bin",
-          "typeId": 6,
-          "size": 55784,
-          "crc32c": "7d443be0",
-          "sha256": "36ca0c13558f252af286ae2b36b5e576d087d21d37b15d778e7da9f502a70374"
-        },
-        {
-          "name": "ota/s200_bootloader.bin",
-          "typeId": 1,
-          "size": 148599,
-          "crc32c": "27d2eb10",
-          "sha256": "f89a4c4657537cec6bfc572bdb8318866309b90a5d180c4307680d39824167b5"
-        },
-        {
-          "name": "ota/s200_firmware_ota.bin",
-          "typeId": 0,
-          "size": 3542584,
-          "crc32c": "ac14ca7d",
-          "sha256": "be8f5459e32065fbe3038accea49d418ba81884fc8ec4ed8927f37e219407dcf"
         }
       ]
     },
@@ -1431,14 +1175,14 @@
       "version": "2.2.6.0009",
       "format": "nordic-secure-dfu",
       "url": "/firmware-updates/source-files/r1/2.2.6.0009/r1-2.2.6.0009-9eca8ae9d5117abda4f72f39bdb44ad2.zip",
-      "sourceUrl": "https://cdn.evenreal.co/firmware/r1-2.2.6.0009-9eca8ae9d5117abda4f72f39bdb44ad2.zip",
+      "sourceUrl": "https://cdn.evenreal.co/firmware/9eca8ae9d5117abda4f72f39bdb44ad2.zip",
       "fileName": "r1-2.2.6.0009-9eca8ae9d5117abda4f72f39bdb44ad2.zip",
       "size": 647039,
       "md5": "9eca8ae9d5117abda4f72f39bdb44ad2",
       "sha256": "492baf487734720732f82f404624e0c3b3af3b01d30727366238e154164ad0dd",
-      "archivedFrom": "SybilSight local evidence",
-      "minAppVersion": null,
-      "notes": null,
+      "archivedFrom": "Even Realities CDN",
+      "minAppVersion": "2.2.6",
+      "notes": "Updated the sleep algorithm to improve measurement accuracy; bug fixes.",
       "application": {
         "binFile": "application.bin",
         "binSize": 646408,
@@ -1446,6 +1190,270 @@
         "datFile": "application.dat",
         "datSize": 141,
         "datSha256": "305da36784e527b3e434f2cf45019a290bf5c14cbceb2e57c9e61dcdfdb1f253"
+      },
+      "initPacket": {
+        "applicationVersion": 3,
+        "hardwareVersion": 52,
+        "softDeviceFirmwareIds": [
+          256
+        ],
+        "signed": true
+      }
+    },
+    {
+      "id": "r1-official-2.2.5.0005",
+      "displayName": "Official R1 2.2.5.0005",
+      "channel": "official",
+      "trust": "official-pinned",
+      "version": "2.2.5.0005",
+      "format": "nordic-secure-dfu",
+      "url": "/firmware-updates/source-files/r1/2.2.5.0005/r1-2.2.5.0005-83038dad13c339f9e5f2e5fc828a00b3.zip",
+      "sourceUrl": "https://cdn.evenreal.co/firmware/83038dad13c339f9e5f2e5fc828a00b3.zip",
+      "fileName": "r1-2.2.5.0005-83038dad13c339f9e5f2e5fc828a00b3.zip",
+      "size": 644583,
+      "md5": "83038dad13c339f9e5f2e5fc828a00b3",
+      "sha256": "46102dd54d86fb24fb5f1a2c8ba9f9d54e6a603659240dd59fc43b1ee564e778",
+      "archivedFrom": "Even Realities CDN",
+      "minAppVersion": "2.2.5",
+      "notes": "Updated Calorie goals to Active Calories in Health and optimized R1 health data syncing in specific scenarios.",
+      "application": {
+        "binFile": "application.bin",
+        "binSize": 643952,
+        "binSha256": "221fb44aa6ff954dc73978d3848ed466913e2bebcfada4aaa8984610d7e2a6e2",
+        "datFile": "application.dat",
+        "datSize": 141,
+        "datSha256": "e4518bc50ee225024cca96dd581d955f9650dc8b0450060fa7b22b9ccf4c0847"
+      },
+      "initPacket": {
+        "applicationVersion": 3,
+        "hardwareVersion": 52,
+        "softDeviceFirmwareIds": [
+          256
+        ],
+        "signed": true
+      }
+    },
+    {
+      "id": "r1-official-2.2.4.0003",
+      "displayName": "Official R1 2.2.4.0003",
+      "channel": "official",
+      "trust": "official-pinned",
+      "version": "2.2.4.0003",
+      "format": "nordic-secure-dfu",
+      "url": "/firmware-updates/source-files/r1/2.2.4.0003/r1-2.2.4.0003-248978eb758a342a0254d6dae45bfdb2.zip",
+      "sourceUrl": "https://cdn.evenreal.co/firmware/248978eb758a342a0254d6dae45bfdb2.zip",
+      "fileName": "r1-2.2.4.0003-248978eb758a342a0254d6dae45bfdb2.zip",
+      "size": 638259,
+      "md5": "248978eb758a342a0254d6dae45bfdb2",
+      "sha256": "549d60061c1cc9cde94da5c3c0efc0e7220272aca6c872c49bde0ec30ae16dcc",
+      "archivedFrom": "Even Realities CDN",
+      "minAppVersion": "2.2.4",
+      "notes": "Update both Even G2 and R1 to 2.2.4 to prevent Bluetooth issues. Adds hand preference settings, improves Bluetooth stability, and adds the R1 battery level to Dashboard.",
+      "application": {
+        "binFile": "application.bin",
+        "binSize": 637628,
+        "binSha256": "a347128b46bfb01e6c02bc2a93768bc0838ae73c1e7ad401dd29841cc930647f",
+        "datFile": "application.dat",
+        "datSize": 141,
+        "datSha256": "56f017384d7bbc73f47f018b601dd13bceda3f27f4b09f2f89586981c1429e0e"
+      },
+      "initPacket": {
+        "applicationVersion": 3,
+        "hardwareVersion": 52,
+        "softDeviceFirmwareIds": [
+          256
+        ],
+        "signed": true
+      }
+    },
+    {
+      "id": "r1-official-2.2.0.0014",
+      "displayName": "Official R1 2.2.0.0014",
+      "channel": "official",
+      "trust": "official-pinned",
+      "version": "2.2.0.0014",
+      "format": "nordic-secure-dfu",
+      "url": "/firmware-updates/source-files/r1/2.2.0.0014/r1-2.2.0.0014-9ae5429275afdcb2ff86c53152bef1cb.zip",
+      "sourceUrl": "https://cdn.evenreal.co/firmware/9ae5429275afdcb2ff86c53152bef1cb.zip",
+      "fileName": "r1-2.2.0.0014-9ae5429275afdcb2ff86c53152bef1cb.zip",
+      "size": 633367,
+      "md5": "9ae5429275afdcb2ff86c53152bef1cb",
+      "sha256": "9ce535518d1321a27186394355e05aff7b4ba76be58c8de1a0dfcf3b01395d00",
+      "archivedFrom": "Even Realities CDN",
+      "minAppVersion": "2.2.0",
+      "notes": "Charging, Bluetooth, and touch sensor bug fixes.",
+      "application": {
+        "binFile": "application.bin",
+        "binSize": 632736,
+        "binSha256": "590584f3d56dc4b495d6454823fe177f042225b55c7d098abab479041f641d36",
+        "datFile": "application.dat",
+        "datSize": 141,
+        "datSha256": "e77d2fdf34eb94e3d955e0b23e0913b4622d46c9f9aa5b5ff0b8cc29f23a85c1"
+      },
+      "initPacket": {
+        "applicationVersion": 3,
+        "hardwareVersion": 52,
+        "softDeviceFirmwareIds": [
+          256
+        ],
+        "signed": true
+      }
+    },
+    {
+      "id": "r1-official-2.0.8.0012",
+      "displayName": "Official R1 2.0.8.0012",
+      "channel": "official",
+      "trust": "official-pinned",
+      "version": "2.0.8.0012",
+      "format": "nordic-secure-dfu",
+      "url": "/firmware-updates/source-files/r1/2.0.8.0012/r1-2.0.8.0012-90a6479e4d736365192f30556cba44a5.zip",
+      "sourceUrl": "https://cdn.evenreal.co/firmware/90a6479e4d736365192f30556cba44a5.zip",
+      "fileName": "r1-2.0.8.0012-90a6479e4d736365192f30556cba44a5.zip",
+      "size": 626207,
+      "md5": "90a6479e4d736365192f30556cba44a5",
+      "sha256": "6bc6567f656d3905683000278af529ad516f45d8e9516618ffad2cb4ea7adf2b",
+      "archivedFrom": "Even Realities CDN",
+      "minAppVersion": "2.0.8",
+      "notes": "Fixed potential system crashes and abnormal power consumption in certain scenarios.",
+      "application": {
+        "binFile": "application.bin",
+        "binSize": 625576,
+        "binSha256": "8a3db3c56bf4cddd0a02eebc4090857f6e8907ae2108ce9487f8b8bdee7c96df",
+        "datFile": "application.dat",
+        "datSize": 141,
+        "datSha256": "fb80c99d3eba14e8ae80ca7908bdb3bb928e5829968f37f247a8b7e3041f7c63"
+      },
+      "initPacket": {
+        "applicationVersion": 3,
+        "hardwareVersion": 52,
+        "softDeviceFirmwareIds": [
+          256
+        ],
+        "signed": true
+      }
+    },
+    {
+      "id": "r1-official-2.0.7.0004",
+      "displayName": "Official R1 2.0.7.0004",
+      "channel": "official",
+      "trust": "official-pinned",
+      "version": "2.0.7.0004",
+      "format": "nordic-secure-dfu",
+      "url": "/firmware-updates/source-files/r1/2.0.7.0004/r1-2.0.7.0004-692af8c7baed67e20c5920d350dd466e.zip",
+      "sourceUrl": "https://cdn.evenreal.co/firmware/692af8c7baed67e20c5920d350dd466e.zip",
+      "fileName": "r1-2.0.7.0004-692af8c7baed67e20c5920d350dd466e.zip",
+      "size": 628831,
+      "md5": "692af8c7baed67e20c5920d350dd466e",
+      "sha256": "ba499025ab86cf3679eb5f19e6322422c1ef7f3304ce386f7e1e1dddf7ef5e08",
+      "archivedFrom": "Even Realities CDN",
+      "minAppVersion": "2.0.7",
+      "notes": "Added the ability to restart R1 from the app and fixed Touch Sensor unresponsiveness in certain scenarios.",
+      "application": {
+        "binFile": "application.bin",
+        "binSize": 628200,
+        "binSha256": "1045569b5ca10cdb6c3991304f8b7273c18cd302b28d65f2647ed947984c8f2a",
+        "datFile": "application.dat",
+        "datSize": 141,
+        "datSha256": "3b9fc345ca31f709732debfa5cc81b00dfb78ed56f90e592ca82287249fd4dcc"
+      },
+      "initPacket": {
+        "applicationVersion": 3,
+        "hardwareVersion": 52,
+        "softDeviceFirmwareIds": [
+          256
+        ],
+        "signed": true
+      }
+    },
+    {
+      "id": "r1-official-2.0.6.0005",
+      "displayName": "Official R1 2.0.6.0005",
+      "channel": "official",
+      "trust": "official-pinned",
+      "version": "2.0.6.0005",
+      "format": "nordic-secure-dfu",
+      "url": "/firmware-updates/source-files/r1/2.0.6.0005/r1-2.0.6.0005-37c8d118670c97f3e218c4a5f2f30951.zip",
+      "sourceUrl": "https://cdn.evenreal.co/firmware/37c8d118670c97f3e218c4a5f2f30951.zip",
+      "fileName": "r1-2.0.6.0005-37c8d118670c97f3e218c4a5f2f30951.zip",
+      "size": 622931,
+      "md5": "37c8d118670c97f3e218c4a5f2f30951",
+      "sha256": "5ef38db1e80a40859dd14e2914732193d8e3162ef118e37173e3fa45125d1d85",
+      "archivedFrom": "Even Realities CDN",
+      "minAppVersion": "2.0.6",
+      "notes": "Optimized R1 power efficiency for longer battery life and fixed abnormal collection for certain health metrics.",
+      "application": {
+        "binFile": "application.bin",
+        "binSize": 622300,
+        "binSha256": "5ef4eb77076c1054bf95c7781787963607a6a61af4b338cb98c39ca7fa7831b6",
+        "datFile": "application.dat",
+        "datSize": 141,
+        "datSha256": "376d60acc327068dd7c1fe4d3133c32a512b762bde19ef00866432f71e2aba4d"
+      },
+      "initPacket": {
+        "applicationVersion": 3,
+        "hardwareVersion": 52,
+        "softDeviceFirmwareIds": [
+          256
+        ],
+        "signed": true
+      }
+    },
+    {
+      "id": "r1-official-2.0.5.0004",
+      "displayName": "Official R1 2.0.5.0004",
+      "channel": "official",
+      "trust": "official-pinned",
+      "version": "2.0.5.0004",
+      "format": "nordic-secure-dfu",
+      "url": "/firmware-updates/source-files/r1/2.0.5.0004/r1-2.0.5.0004-3f7990f1d725be5c544103dc03e1ae54.zip",
+      "sourceUrl": "https://cdn.evenreal.co/firmware/3f7990f1d725be5c544103dc03e1ae54.zip",
+      "fileName": "r1-2.0.5.0004-3f7990f1d725be5c544103dc03e1ae54.zip",
+      "size": 618755,
+      "md5": "3f7990f1d725be5c544103dc03e1ae54",
+      "sha256": "893e9c72e5ad1ef2950309c4ed48a81af8bbedd920240d8bf6ebf4be122b5763",
+      "archivedFrom": "Even Realities CDN",
+      "minAppVersion": "2.0.5",
+      "notes": "Optimized the SpO2 measurement algorithm and fixed Bluetooth connection and crash issues.",
+      "application": {
+        "binFile": "application.bin",
+        "binSize": 618124,
+        "binSha256": "5fb80f2f4f1cc37299bdfc9695d08c13d5d5052dfd64d485852aba098d66dcec",
+        "datFile": "application.dat",
+        "datSize": 141,
+        "datSha256": "afa75e575683db8a219c4b01ac9a0b32c76c6dcea2ea71f7db5ccf7bdd632eba"
+      },
+      "initPacket": {
+        "applicationVersion": 3,
+        "hardwareVersion": 52,
+        "softDeviceFirmwareIds": [
+          256
+        ],
+        "signed": true
+      }
+    },
+    {
+      "id": "r1-official-2.0.3.0013",
+      "displayName": "Official R1 2.0.3.0013",
+      "channel": "official",
+      "trust": "official-pinned",
+      "version": "2.0.3.0013",
+      "format": "nordic-secure-dfu",
+      "url": "/firmware-updates/source-files/r1/2.0.3.0013/r1-2.0.3.0013-da3c754078c1e9dd0b2fe282e4614783.zip",
+      "sourceUrl": "https://cdn.evenreal.co/firmware/da3c754078c1e9dd0b2fe282e4614783.zip",
+      "fileName": "r1-2.0.3.0013-da3c754078c1e9dd0b2fe282e4614783.zip",
+      "size": 619023,
+      "md5": "da3c754078c1e9dd0b2fe282e4614783",
+      "sha256": "a24ddd6c580a2706f98c06b6504bb34af7159024ad8bb066eca6ae684e533c6f",
+      "archivedFrom": "Even Realities CDN",
+      "minAppVersion": "2.0.4",
+      "notes": "Improves Bluetooth stability and optimizes battery life.",
+      "application": {
+        "binFile": "application.bin",
+        "binSize": 618392,
+        "binSha256": "c74c61beb5c30f671d2094a3f9a9310dbb556e7cf01d73c77dfca66d31a2b590",
+        "datFile": "application.dat",
+        "datSize": 141,
+        "datSha256": "816e350b7d36240b7e33252141680baf39da06f7619bb1e51d80df83d73068b5"
       },
       "initPacket": {
         "applicationVersion": 3,

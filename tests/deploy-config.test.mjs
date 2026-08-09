@@ -97,7 +97,7 @@ test("production Caddy verification rejects a stale WebFlasher site block", asyn
     "utf8",
   );
   const stale = expected.replace(
-    /\thandle \/firmware-updates\/source-files\/2\.2\.7\.16\/\* \{\n\t\troot \* \/share\/webflasher\n\t\tfile_server\n\t\}\n/,
+    /\thandle \/firmware-updates\/source-files\/2\.2\.8\.9\/\* \{\n\t\troot \* \/share\/webflasher\n\t\tfile_server\n\t\}\n/,
     "",
   );
   assert.notEqual(stale, expected);

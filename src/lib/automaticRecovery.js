@@ -6,8 +6,10 @@ export const DEFAULT_AUTOMATIC_CASE_UPDATE = true;
 export const AUTOMATIC_INSTALL_MODES = Object.freeze(["update", "restore"]);
 
 const ROUTES = Object.freeze(["right", "left"]);
-const REVIEWED_STOCK_VERSION = "2.2.6.10";
-const REVIEWED_CFW_VERSIONS = Object.freeze(["2.2.6.11", "2.2.6.12"]);
+const REVIEWED_STOCK_CFW_PAIRS = Object.freeze([
+  Object.freeze(["2.2.6.10", "2.2.6.11", "2.2.6.12"]),
+  Object.freeze(["2.2.8.4", "2.2.8.7", "2.2.8.8", "2.2.8.9"]),
+]);
 const MAIN_COMPONENT = "ota/s200_firmware_ota.bin";
 
 export function assessAutomaticTempleContacts(telemetry) {
@@ -664,8 +666,8 @@ function supportsLiveCompatiblePairProof(differencePlan) {
     differencePlan?.executable &&
       differencePlan?.changedMainOnly === true &&
       new Set([source?.version, target?.version]).size === 2 &&
-      [source?.version, target?.version].every((version) =>
-        [REVIEWED_STOCK_VERSION, ...REVIEWED_CFW_VERSIONS].includes(version),
+      REVIEWED_STOCK_CFW_PAIRS.some((pair) =>
+        [source?.version, target?.version].every((version) => pair.includes(version)),
       ) &&
       wireTransfer?.component === MAIN_COMPONENT &&
       Number.isInteger(wireTransfer?.bytes) &&

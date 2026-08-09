@@ -101,13 +101,10 @@ export function buildBundleDifferencePlan(sourceFirmware, targetFirmware) {
   }
   if (
     sourceTarget.imageSha256 === targetTarget.imageSha256 ||
-    new Set([sourceTarget.version, targetTarget.version]).size !== 2 ||
-    ![sourceTarget.version, targetTarget.version].every((version) =>
-      ["2.2.6.10", "2.2.6.11", "2.2.6.12"].includes(version),
-    )
+    new Set([sourceTarget.version, targetTarget.version]).size !== 2
   ) {
     throw new Error(
-      "Flash differences is limited to a reviewed Stock 2.2.6.10 ↔ compatible CFW pair.",
+      "Flash differences requires two different reviewed Stock/CFW targets.",
     );
   }
 
@@ -118,6 +115,19 @@ export function buildBundleDifferencePlan(sourceFirmware, targetFirmware) {
   if (!channels.has("official") || !channels.has("custom")) {
     throw new Error(
       "Flash differences requires one official Stock image and one reviewed CFW image.",
+    );
+  }
+  const customFirmware =
+    sourceFirmware.provenance?.channel === "custom"
+      ? sourceFirmware
+      : targetFirmware;
+  const officialFirmware =
+    sourceFirmware.provenance?.channel === "official"
+      ? sourceFirmware
+      : targetFirmware;
+  if (customFirmware.provenance?.baseVersion !== officialFirmware.g2Version) {
+    throw new Error(
+      "Flash differences requires the exact official Stock base of the reviewed CFW image.",
     );
   }
 
