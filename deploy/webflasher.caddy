@@ -29,86 +29,24 @@ webflasher.sybilsight.com {
 		rewrite * /healthz
 		reverse_proxy local-sybilsight-remote-support:8787
 	}
-	# The release-bound catalog and bundled current firmware are present in the
-	# same atomic web-root swap as release.json. Keep older official binaries in
-	# the larger shared archive without allowing a refresh to shadow these files.
-	handle /firmware-updates/source-files/index.json {
-		root * /share/webflasher
-		file_server
-	}
-	handle /firmware-updates/source-files/2.0.1.14/* {
-		root * /share/webflasher
-		file_server
-	}
-	handle /firmware-updates/source-files/2.0.3.20/* {
-		root * /share/webflasher
-		file_server
-	}
-	handle /firmware-updates/source-files/2.0.5.12/* {
-		root * /share/webflasher
-		file_server
-	}
-	handle /firmware-updates/source-files/2.0.6.14/* {
-		root * /share/webflasher
-		file_server
-	}
-	handle /firmware-updates/source-files/2.0.7.16/* {
-		root * /share/webflasher
-		file_server
-	}
-	handle /firmware-updates/source-files/2.0.8.20/* {
-		root * /share/webflasher
-		file_server
-	}
-	handle /firmware-updates/source-files/2.0.9.20/* {
-		root * /share/webflasher
-		file_server
-	}
-	handle /firmware-updates/source-files/2.1.1.8/* {
-		root * /share/webflasher
-		file_server
-	}
-	handle /firmware-updates/source-files/2.1.1.12/* {
-		root * /share/webflasher
-		file_server
-	}
-	handle /firmware-updates/source-files/2.2.0.24/* {
-		root * /share/webflasher
-		file_server
-	}
-	handle /firmware-updates/source-files/2.2.4.34/* {
-		root * /share/webflasher
-		file_server
-	}
-	handle /firmware-updates/source-files/2.2.6.10/* {
-		root * /share/webflasher
-		file_server
-	}
-	handle /firmware-updates/source-files/2.2.8.4/* {
-		root * /share/webflasher
-		file_server
-	}
-	handle /firmware-updates/source-files/2.2.8.9/* {
-		root * /share/webflasher
-		file_server
-	}
-	handle /firmware-updates/source-files/2.2.8.10/* {
-		root * /share/webflasher
-		file_server
-	}
-	handle /firmware-updates/source-files/2.2.7.14/* {
-		root * /share/webflasher
-		file_server
-	}
-	# R1 Secure DFU packages are small, release-bound assets carried by the
-	# WebFlasher build rather than the separate historical G2 archive.
-	handle /firmware-updates/source-files/r1/* {
-		root * /share/webflasher
-		file_server
-	}
+	# Prefer every firmware file carried by the same atomic web-root swap as
+	# release.json. If a requested file is not bundled, fall back to the larger
+	# historical archive. New releases therefore need no version-specific route.
 	handle /firmware-updates/* {
-		root * /share/sybilsight
-		file_server
+		@releaseBoundFirmware {
+			path /firmware-updates/source-files/*
+			file {
+				root /share/webflasher
+			}
+		}
+		handle @releaseBoundFirmware {
+			root * /share/webflasher
+			file_server
+		}
+		handle {
+			root * /share/sybilsight
+			file_server
+		}
 	}
 	handle {
 		root * /share/webflasher

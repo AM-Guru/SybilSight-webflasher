@@ -84,17 +84,19 @@ and tracked official firmware directories from that atomic web root; other
 official versioned paths fall back to the historical archive. Superseded CFW
 releases are not offered by WebFlasher.
 
-The production Caddy block must therefore contain explicit `/share/webflasher`
-handlers for every G2 version directory bundled with the release as well as the
-release-bound source-files index. Without one of those handlers, the broader
-historical-archive handler shadows the correctly deployed bundle and returns a
-cacheable 404 whenever that separate archive is refreshed without the release.
+The production Caddy block therefore uses a file-aware matcher rooted at
+`/share/webflasher` for every request beneath `source-files`. Files carried by
+the atomic release—including its index, G2 images, and R1 packages—are served
+from that release. A path absent from the release falls through to the larger
+historical archive under `/share/sybilsight`. Version numbers never appear in
+the routing configuration, so adding firmware cannot require a Caddy edit.
 
 The deployment artifact now carries the canonical WebFlasher Caddy block and a
 hash-pinned verifier. Before changing either firmware root or the website, the
 production job downloads the active add-on Caddyfile and requires its extracted
-WebFlasher block to match that canonical source exactly. A newly reviewed CFW route
-therefore cannot be published while production still has an older routing block.
+WebFlasher block to match that canonical source exactly. Changes to the routing
+policy still fail closed, while ordinary firmware additions reuse the stable
+file-aware route automatically.
 
 ## Guard in the app
 
