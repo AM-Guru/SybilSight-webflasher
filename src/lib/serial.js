@@ -4013,6 +4013,7 @@ export class G2CaseSession {
   ) {
     const { mainComponent: component, target } =
       await assertPinnedTempleFlashCandidate(firmware);
+    const targetReportedVersion = target.reportedVersion ?? target.version;
     if (!["complete", "differences"].includes(mode)) {
       throw new PogoFlashSafetyError("Choose complete or differences flashing.");
     }
@@ -4069,7 +4070,7 @@ export class G2CaseSession {
       installedIdentity: {
         channel:
           firmware.provenance?.channel === "custom" ? "custom" : "official",
-        reportedVersion: target.version,
+        reportedVersion: targetReportedVersion,
         displayVersion:
           firmware.provenance?.channel === "custom"
             ? `${target.version} CFW`
@@ -4147,7 +4148,7 @@ export class G2CaseSession {
             await this.flashPinnedTempleRoute(
               component,
               expectedSourceVersion,
-              target.version,
+              targetReportedVersion,
               route,
               index,
               routes.length,
@@ -4310,7 +4311,7 @@ export class G2CaseSession {
             const restartingRouteVersion =
               error.routeResult?.preflightVersion?.firmware ??
               expectedSourceVersion ??
-              target.version;
+              targetReportedVersion;
             const expectedVersionByRoute = Object.fromEntries(
               livenessRoutes.map((livenessRoute) => [
                 livenessRoute,
@@ -4319,7 +4320,7 @@ export class G2CaseSession {
                     completed?.route === livenessRoute &&
                     completed?.outcome === "success",
                 )
-                  ? target.version
+                  ? targetReportedVersion
                   : restartingRouteVersion,
               ]),
             );
@@ -4342,7 +4343,7 @@ export class G2CaseSession {
       }
       audit.finalResetAndLiveness = await this.finalizeTempleRestore(
         livenessRoutes,
-        target.version,
+        targetReportedVersion,
       );
       if (audit.sourceValidation) {
         audit.sourceValidation.routePreflight = Object.fromEntries(
@@ -4369,7 +4370,7 @@ export class G2CaseSession {
         ),
         everyRoutePostflightVersionValid: audit.routeResults.every(
           (result) =>
-            result.postflightVersion?.firmware === target.version &&
+            result.postflightVersion?.firmware === targetReportedVersion &&
             result.postflightVersion?.hardware === 5,
         ),
         everyRoutePreflightCompatible: audit.routeResults.every(
@@ -4383,7 +4384,7 @@ export class G2CaseSession {
         postResetLivenessVerified: livenessRoutes.every(
           (route) =>
             audit.finalResetAndLiveness?.versions?.[route]?.firmware ===
-              target.version &&
+              targetReportedVersion &&
             audit.finalResetAndLiveness?.versions?.[route]?.hardware === 5,
         ),
         installedByteReadbackAvailable: false,

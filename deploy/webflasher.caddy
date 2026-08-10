@@ -92,6 +92,10 @@ webflasher.sybilsight.com {
 		root * /share/webflasher
 		file_server
 	}
+	handle /firmware-updates/source-files/2.2.8.10/* {
+		root * /share/webflasher
+		file_server
+	}
 	handle /firmware-updates/source-files/2.2.7.14/* {
 		root * /share/webflasher
 		file_server

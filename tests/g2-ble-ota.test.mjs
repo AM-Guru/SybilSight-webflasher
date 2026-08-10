@@ -736,16 +736,16 @@ test("the direct BLE writer accepts only the complete pinned topology", () => {
 test("the archived SybilSight CFW is a complete direct-BLE package", async () => {
   const bytes = await readFile(
     new URL(
-      "../public/firmware-updates/source-files/2.2.8.9/g2-2.2.8.9.bin",
+      "../public/firmware-updates/source-files/2.2.8.10/g2-2.2.8.10.bin",
       import.meta.url,
     ),
   );
   const firmware = await parseFirmwareInput(
     bytes,
-    "g2-2.2.8.9.bin",
+    "g2-2.2.8.10.bin",
   );
   assert.equal(assertPinnedG2BleBundle(firmware), firmware);
-  assert.equal(firmware.g2Version, "2.2.8.9");
+  assert.equal(firmware.g2Version, "2.2.8.10");
   assert.equal(
     firmware.componentImages.reduce(
       (sum, component) =>

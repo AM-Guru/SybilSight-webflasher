@@ -115,6 +115,26 @@ export const REVIEWED_CFW_2_2_8_9 = Object.freeze({
     REVIEWED_CFW_PENDING_VALIDATION,
   ],
 });
+export const REVIEWED_CFW_2_2_8_10 = Object.freeze({
+  version: "2.2.8.10",
+  baseVersion: "2.2.8.4",
+  baseSha256: "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7",
+  sha256: "3f99dcaf4c39a352402331f843f5beb7c115120f3800a7dacc568f9fe2e63e62",
+  mainPayloadBytes: 3585680,
+  mainPayloadSha256:
+    "a16c063eccb156e2c2b219b8feb0ae128d057b80908343ff78e656aba9e54864",
+  capabilityMarker:
+    "EVENCFW/9 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10 nameserial",
+  capabilities: [
+    ...REVIEWED_CFW_DISPLAY_CHANGES,
+    "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
+    "Keeps wear-status and compass updates available to connected apps.",
+    "Shows the pair identifier on both lenses from the first cold-start Bluetooth advertisement.",
+    "Retains matching firmware identity reports from both temples.",
+    "Includes Korean system-language support from the official update.",
+    REVIEWED_CFW_PENDING_VALIDATION,
+  ],
+});
 const HARDWARE_VALIDATED_CFW_2_2_6_11 = Object.freeze({
   sha256: "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86",
 });
@@ -943,6 +963,7 @@ export function parseMainOTAPreamble(payload) {
 export function classifyG2Firmware(fileSha256) {
   const digest = fileSha256.toLowerCase();
   const reviewed = [
+    REVIEWED_CFW_2_2_8_10,
     REVIEWED_CFW_2_2_8_9,
     REVIEWED_CFW_2_2_8_8,
     REVIEWED_CFW_2_2_8_7,

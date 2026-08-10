@@ -13,8 +13,8 @@ import { TEMPLE_FLASH_TARGETS } from "../src/lib/templeFlashTargets.js";
 
 const LEGACY_CFW_SHA256 =
   "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0";
-const REVIEWED_CFW_2_2_8_9_SHA256 =
-  "742a0241f7ba34c6fb45c9a3ec616ba0be2b92f9c3e656b9824f6bc21a5513ca";
+const REVIEWED_CFW_2_2_8_10_SHA256 =
+  "3f99dcaf4c39a352402331f843f5beb7c115120f3800a7dacc568f9fe2e63e62";
 const OFFICIAL_G2_2_2_7_14_SHA256 =
   "0fced0aebcc6c88db6f76dba34f91b805d842a5fc297bfd7fa6d6a34ec83cecb";
 const OFFICIAL_G2_2_2_8_4_SHA256 =
@@ -54,7 +54,7 @@ test("flags a pinned image the served library is too old to offer", () => {
   assert.deepEqual(
     missing.map((target) => target.imageSha256),
     [
-      REVIEWED_CFW_2_2_8_9_SHA256,
+      REVIEWED_CFW_2_2_8_10_SHA256,
       OFFICIAL_G2_2_2_8_4_SHA256,
       OFFICIAL_G2_2_2_7_14_SHA256,
     ],
@@ -74,7 +74,7 @@ test("blocks firmware mutation when the served library is behind the build", () 
       assert.deepEqual(
         error.missingPinnedImages.map((target) => target.imageSha256),
         [
-          REVIEWED_CFW_2_2_8_9_SHA256,
+          REVIEWED_CFW_2_2_8_10_SHA256,
           OFFICIAL_G2_2_2_8_4_SHA256,
           OFFICIAL_G2_2_2_7_14_SHA256,
         ],
@@ -93,16 +93,16 @@ test("offers only the latest CFW while retaining official firmware", async () =>
     ),
   ).releases;
   const reviewed228 = catalog.find(
-    (release) => release.sha256 === REVIEWED_CFW_2_2_8_9_SHA256,
+    (release) => release.sha256 === REVIEWED_CFW_2_2_8_10_SHA256,
   );
   assert.ok(
     reviewed228,
-    "the shipped catalog should serve reviewed CFW 2.2.8.9",
+    "the shipped catalog should serve reviewed CFW 2.2.8.10",
   );
   assert.equal(reviewed228.hardwareValidated, false);
   assert.deepEqual(
     catalog.filter((release) => release.channel === "custom").map((release) => release.version),
-    ["2.2.8.9"],
+    ["2.2.8.10"],
     "no superseded CFW release may remain in the WebFlasher listing",
   );
   assert.ok(catalog.some((release) => release.sha256 === OFFICIAL_G2_2_2_8_4_SHA256));

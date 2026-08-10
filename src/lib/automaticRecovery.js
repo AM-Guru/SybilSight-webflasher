@@ -8,7 +8,7 @@ export const AUTOMATIC_INSTALL_MODES = Object.freeze(["update", "restore"]);
 const ROUTES = Object.freeze(["right", "left"]);
 const REVIEWED_STOCK_CFW_PAIRS = Object.freeze([
   Object.freeze(["2.2.6.10", "2.2.6.11", "2.2.6.12"]),
-  Object.freeze(["2.2.8.4", "2.2.8.7", "2.2.8.8", "2.2.8.9"]),
+  Object.freeze(["2.2.8.4", "2.2.8.7", "2.2.8.8", "2.2.8.9", "2.2.8.10"]),
 ]);
 const MAIN_COMPONENT = "ota/s200_firmware_ota.bin";
 
@@ -696,6 +696,9 @@ function observedTempleIdentity(observedTempleVersions, route) {
 
 function targetFirmwareVersion(targetFirmware) {
   return (
+    targetFirmware?.templeFlashTarget?.reportedVersion ??
+    targetFirmware?.reportedVersion ??
+    targetFirmware?.catalogRelease?.reportedVersion ??
     targetFirmware?.g2Version ??
     targetFirmware?.internalVersion ??
     targetFirmware?.version ??

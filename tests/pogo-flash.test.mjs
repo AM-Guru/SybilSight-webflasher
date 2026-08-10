@@ -1801,6 +1801,8 @@ test("keeps the generated pin table in sync with the firmware archive", async ()
       mainSha256: main.sha256,
       mainBytes: main.size,
       version: release.internalVersion ?? release.version,
+      reportedVersion:
+        release.reportedVersion ?? release.internalVersion ?? release.version,
       hardwareValidated: HARDWARE_VALIDATED_IMAGE_SHA256.has(release.sha256),
     }));
   assert.deepEqual(
