@@ -784,12 +784,12 @@ test("the current SybilSight CFW is a complete direct-BLE package", async () => 
   );
   assert.equal(assertPinnedG2BleBundle(firmware), firmware);
   assert.equal(firmware.g2Version, "2.2.8.11");
-  assert.equal(g2BleTargetReportedVersion(firmware), "2.2.8.9");
+  assert.equal(g2BleTargetReportedVersion(firmware), "2.2.8.11");
   assert.equal(
     g2BleTargetVersionProof(
       {
         version: {
-          decoded: { firmwareVersion: "2.2.8.9" },
+          decoded: { firmwareVersion: "2.2.8.11" },
           transportProof: { restoredMask: 0x3ff },
           observedAt: "2026-08-11T04:12:49.248Z",
         },
@@ -798,7 +798,7 @@ test("the current SybilSight CFW is a complete direct-BLE package", async () => 
       { now: Date.parse("2026-08-11T04:13:00.000Z") },
     ),
     true,
-    "a fresh 2.2.8.9 runtime proof must retain package 2.2.8.11 instead of rewriting it",
+    "a fresh 2.2.8.11 runtime proof must retain package 2.2.8.11 instead of rewriting it",
   );
   assert.equal(
     firmware.componentImages.reduce(

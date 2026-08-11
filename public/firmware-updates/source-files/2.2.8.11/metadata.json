@@ -3,7 +3,7 @@
   "device": "Even Realities G2",
   "version": "2.2.8.11",
   "internalVersion": "2.2.8.11",
-  "reportedVersion": "2.2.8.9",
+  "reportedVersion": "2.2.8.11",
   "channel": "custom",
   "trust": "reviewed-custom",
   "hardwareValidated": false,
@@ -25,20 +25,20 @@
   "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.11/g2-2.2.8.11.bin",
   "archivedFrom": "WebFlasher local evidence",
   "sourceFile": "g2-2.2.8.11.bin",
-  "sourceMd5": "5ffd8d83cb8707b36653cf6e89f1af47",
-  "sourceSha256": "492947f498b9812d4e0846f8fe1ad7159fb83005e0a4bdba22ffbb531af41df4",
-  "sourceSize": 4362643,
+  "sourceMd5": "9fd3b32423ddfea6aad55d9926393eaa",
+  "sourceSha256": "be3922f3695e0b58a6b62f40f760b6c8754488c4e9a58c96b2c13e92ef33bd3a",
+  "sourceSize": 4362652,
   "patchUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.11/cfw_patches-2.2.8.11.json",
   "patchFile": "cfw_patches-2.2.8.11.json",
-  "patchSha256": "7c39a3302322ed351b56dde18033716ce311f8420ef32c40c9651129cf48b94e",
+  "patchSha256": "1d5166704b666c35633c08ef37a7f60e6f2f936e78fc6c7f80beb8ff91dff831",
   "manifestFile": "manifest.json",
-  "manifestSha256": "92ab0c2b81f70406b61083625b79a7f84198ec286dbd11b74b528b579bfb6384",
-  "archivedAt": "2026-08-11T03:32:26.493Z",
+  "manifestSha256": "f622dedfb6b13848427139971c53f3765176c0c955e25d319f8cb938d37452c8",
+  "archivedAt": "2026-08-11T13:12:45.453Z",
   "mainFirmware": {
     "runBase": "0x00438000",
-    "installedImageSize": 3584832,
-    "installedImageEnd": "0x007a3340",
-    "crc32": "0475245a"
+    "installedImageSize": 3584841,
+    "installedImageEnd": "0x007a3349",
+    "crc32": "8aa1cb71"
   },
   "components": [
     {
@@ -79,21 +79,21 @@
     {
       "name": "ota/s200_firmware_ota.bin",
       "typeId": 0,
-      "size": 3584864,
-      "crc32c": "e0459dc1",
-      "sha256": "5c23e40de9abc90d88e7ddc2e5575409a1160183c77121ab51415eecfa7f8f33"
+      "size": 3584873,
+      "crc32c": "3b91b58d",
+      "sha256": "7423adc2b0fc2ebf9e45a1b681d3d6973823ae3432088f019a1afb48e5845691"
     }
   ],
   "files": [
     {
       "name": "g2-2.2.8.11.bin",
-      "size": 4362643,
-      "sha256": "492947f498b9812d4e0846f8fe1ad7159fb83005e0a4bdba22ffbb531af41df4"
+      "size": 4362652,
+      "sha256": "be3922f3695e0b58a6b62f40f760b6c8754488c4e9a58c96b2c13e92ef33bd3a"
     },
     {
       "name": "cfw_patches-2.2.8.11.json",
-      "size": 48488,
-      "sha256": "7c39a3302322ed351b56dde18033716ce311f8420ef32c40c9651129cf48b94e"
+      "size": 48529,
+      "sha256": "1d5166704b666c35633c08ef37a7f60e6f2f936e78fc6c7f80beb8ff91dff831"
     },
     {
       "name": "firmware_codec.bin",
@@ -127,13 +127,13 @@
     },
     {
       "name": "ota_s200_firmware_ota.bin",
-      "size": 3584864,
-      "sha256": "5c23e40de9abc90d88e7ddc2e5575409a1160183c77121ab51415eecfa7f8f33"
+      "size": 3584873,
+      "sha256": "7423adc2b0fc2ebf9e45a1b681d3d6973823ae3432088f019a1afb48e5845691"
     },
     {
       "name": "manifest.json",
-      "size": 4546,
-      "sha256": "92ab0c2b81f70406b61083625b79a7f84198ec286dbd11b74b528b579bfb6384"
+      "size": 4964,
+      "sha256": "f622dedfb6b13848427139971c53f3765176c0c955e25d319f8cb938d37452c8"
     }
   ]
 }

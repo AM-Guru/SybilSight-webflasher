@@ -5,7 +5,7 @@
   "release": {
     "version": "2.2.8.11",
     "internalVersion": "2.2.8.11",
-    "reportedVersion": "2.2.8.9",
+    "reportedVersion": "2.2.8.11",
     "channel": "custom",
     "trust": "reviewed-custom",
     "baseVersion": "2.2.8.4",
@@ -13,17 +13,17 @@
   },
   "package": {
     "file": "g2-2.2.8.11.bin",
-    "size": 4362643,
-    "md5": "5ffd8d83cb8707b36653cf6e89f1af47",
-    "sha256": "492947f498b9812d4e0846f8fe1ad7159fb83005e0a4bdba22ffbb531af41df4",
+    "size": 4362652,
+    "md5": "9fd3b32423ddfea6aad55d9926393eaa",
+    "sha256": "be3922f3695e0b58a6b62f40f760b6c8754488c4e9a58c96b2c13e92ef33bd3a",
     "componentCount": 6
   },
   "patchRecipe": {
     "file": "cfw_patches-2.2.8.11.json",
-    "sha256": "7c39a3302322ed351b56dde18033716ce311f8420ef32c40c9651129cf48b94e",
+    "sha256": "1d5166704b666c35633c08ef37a7f60e6f2f936e78fc6c7f80beb8ff91dff831",
     "baseVersion": "2.2.8.4",
     "baseSha256": "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7",
-    "operationCount": 39
+    "operationCount": 36
   },
   "capabilityMarker": "EVENCFW/8 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10",
   "sourceProvenance": {
@@ -44,7 +44,23 @@
     "g2flash_rebase_patch_sha256": "fdf8fcb5de6a658105a1d45e1376c3932bc59d0dd278314c242572449f7bcdfb",
     "g2flash_upstream_commit": "877c8d9490db0d3717ca012dd0f54556af3701bd",
     "hardware_validation": "not-yet-hardware-flashed",
-    "implementation": "jimrandomh/g2flash main-branch patch set applied to official stock; BLE advertisement modification omitted"
+    "implementation": "jimrandomh/g2flash main-branch patch set applied to official stock; BLE advertisement modification omitted; runtime identity relocated to 2.2.8.11",
+    "runtime_identity": {
+      "address": "0x007a3340",
+      "numeric_report_instruction": "0x00575ad4",
+      "pointer_addresses": [
+        "0x0046e708",
+        "0x005abb74",
+        "0x0044acf8",
+        "0x005d44f4",
+        "0x0049d71c",
+        "0x00583d88",
+        "0x0046ca18",
+        "0x004ce430",
+        "0x0047f074"
+      ],
+      "version": "2.2.8.11"
+    }
   },
   "excludedFeature": {
     "id": "ble-advertised-name",
@@ -104,9 +120,9 @@
       "componentName": "ota/s200_firmware_ota.bin",
       "archiveFile": "ota_s200_firmware_ota.bin",
       "typeId": 0,
-      "size": 3584864,
-      "crc32c": "e0459dc1",
-      "sha256": "5c23e40de9abc90d88e7ddc2e5575409a1160183c77121ab51415eecfa7f8f33",
+      "size": 3584873,
+      "crc32c": "3b91b58d",
+      "sha256": "7423adc2b0fc2ebf9e45a1b681d3d6973823ae3432088f019a1afb48e5845691",
       "role": "glasses-application"
     }
   ],

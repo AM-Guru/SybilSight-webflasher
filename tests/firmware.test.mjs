@@ -954,7 +954,9 @@ test("ships CFW 2.2.8.11 from stock with every BLE advertisement change omitted"
   assert.equal(firmware.provenance.baseVersion, "2.2.8.4");
   assert.equal(firmware.mainComponent.payload.length, REVIEWED_CFW_2_2_8_11.mainPayloadBytes);
   assert.equal(firmware.mainComponent.payloadSha256, REVIEWED_CFW_2_2_8_11.mainPayloadSha256);
-  assert.equal(firmware.templeFlashTarget.reportedVersion, "2.2.8.9");
+  assert.equal(firmware.templeFlashTarget.reportedVersion, "2.2.8.11");
+  assert.equal(bundle.toString("latin1").split("2.2.8.11").length - 1, 2);
+  assert.equal(bundle.includes(Buffer.from("2.2.8.9", "ascii")), false);
   assert.equal(bundle.includes(Buffer.from(REVIEWED_CFW_2_2_8_11.capabilityMarker)), true);
   assert.equal(bundle.includes(Buffer.from("nameserial", "ascii")), false);
   assert.equal(bundle.subarray(1000085, 1000089).toString("hex"), "fff74cff");
@@ -970,7 +972,27 @@ test("ships CFW 2.2.8.11 from stock with every BLE advertisement change omitted"
   assert.equal(patchSet.vendor_base_version, "2.2.8.4");
   assert.equal(patchSet.output_sha256, REVIEWED_CFW_2_2_8_11.sha256);
   assert.equal(patchSet.capability_marker, REVIEWED_CFW_2_2_8_11.capabilityMarker);
-  assert.equal(patchSet.patches.length, 39);
+  assert.equal(patchSet.patches.length, 36);
+  assert.equal(patchSet.source_provenance.runtime_identity.version, "2.2.8.11");
+  assert.equal(
+    patchSet.patches.filter(
+      (operation) => operation.desc ===
+        "redirect live firmware-version identity to CFW 2.2.8.11",
+    ).length,
+    9,
+  );
+  assert.deepEqual(
+    patchSet.patches.find(
+      (operation) => operation.desc ===
+        "report firmware point-release component 11 in the binary version response",
+    ),
+    {
+      offset: 2079015,
+      old: "0398",
+      new: "0b20",
+      desc: "report firmware point-release component 11 in the binary version response",
+    },
+  );
   assert.equal("ble_advertising_patch_sha256" in patchSet, false);
   assert.equal("ble_advertising_sources" in patchSet, false);
   assert.equal(patchSet.excluded_feature.id, "ble-advertised-name");
@@ -984,9 +1006,9 @@ test("ships CFW 2.2.8.11 from stock with every BLE advertisement change omitted"
     await readFile(new URL("manifest.json", releaseDirectory), "utf8"),
   );
   assert.equal(manifest.release.version, "2.2.8.11");
-  assert.equal(manifest.release.reportedVersion, "2.2.8.9");
+  assert.equal(manifest.release.reportedVersion, "2.2.8.11");
   assert.equal(manifest.package.sha256, REVIEWED_CFW_2_2_8_11.sha256);
-  assert.equal(manifest.patchRecipe.operationCount, 39);
+  assert.equal(manifest.patchRecipe.operationCount, 36);
   assert.equal(manifest.excludedFeature.id, "ble-advertised-name");
   assert.equal(manifest.excludedFeature.status, "omitted");
 });

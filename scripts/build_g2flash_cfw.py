@@ -47,6 +47,30 @@ OUTPUT_RECIPE = OUTPUT_DIR / f"cfw_patches-{OUTPUT_VERSION}.json"
 
 APPLICATION_BASE = 0x00438000
 APPLICATION_PREAMBLE = 0x20
+APPLICATION_LOAD_BASE = APPLICATION_BASE - APPLICATION_PREAMBLE
+RUNTIME_VERSION = b"2.2.8.11\0"
+# The stock image stores its fixed-width version literals in a densely packed
+# string table.  Since 2.2.8.11 is one byte longer than 2.2.8.4/2.2.8.9, the
+# live consumers must point at a relocated, terminated string instead of
+# overwriting the byte immediately following each old literal.
+RUNTIME_VERSION_POINTERS = (
+    (0x0046E708, 0x007964A4),
+    (0x005ABB74, 0x007966BC),
+    (0x0044ACF8, 0x00796CA4),
+    (0x005D44F4, 0x00797934),
+    (0x0049D71C, 0x00797C34),
+    (0x00583D88, 0x00797EB4),
+    (0x0046CA18, 0x0079834C),
+    (0x004CE430, 0x00798974),
+    (0x0047F074, 0x007989AC),
+)
+# This protocol response copies the old seven-character literal plus NUL into
+# an eight-byte local before parsing it.  Redirecting it to an eight-character
+# literal would drop the terminator, so update the emitted fourth component
+# after parsing instead (``ldr r0, [sp, #0xc]`` -> ``movs r0, #11``).
+NUMERIC_VERSION_REPORT_INSTRUCTION = 0x00575AD4
+NUMERIC_VERSION_REPORT_OLD = bytes.fromhex("0398")
+NUMERIC_VERSION_REPORT_NEW = bytes.fromhex("0b20")
 EXPECTED_BASE_SHA256 = (
     "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7"
 )
@@ -215,6 +239,11 @@ def build() -> tuple[bytes, dict]:
     if upstream_blob.count(UPSTREAM_CAPABILITY) != 1:
         raise BuildError("upstream capability marker was not restored exactly once")
 
+    upstream_blob.extend(bytes((-len(upstream_blob)) % 4))
+    runtime_version_address = append_address + len(upstream_blob)
+    runtime_version_blob_offset = len(upstream_blob)
+    upstream_blob.extend(RUNTIME_VERSION)
+
     data = bytearray(base)
     operations: list[dict] = []
 
@@ -235,9 +264,9 @@ def build() -> tuple[bytes, dict]:
         )
         data[offset : offset + len(replacement_bytes)] = replacement_bytes
 
-    # Package identity is 2.2.8.11. The running application continues to report
-    # the reviewed g2flash rebase identity 2.2.8.9, matching the established
-    # 2.2.8.10 package/reporting split.
+    # Keep the outer package identity and every live application identity in
+    # agreement.  The application strings are relocated below because the new
+    # point-release component does not fit in the old fixed-width slots.
     record(60, b"11", "advance CFW package identity to 2.2.8.11")
 
     for operation in source["patches"]:
@@ -250,16 +279,31 @@ def build() -> tuple[bytes, dict]:
                 bytes.fromhex(operation["new"]),
                 description,
             )
-        elif (
-            int(operation["offset"]) > payload_start
-            and operation.get("old") == "34"
-            and operation.get("new") == "39"
-        ):
-            record(
-                int(operation["offset"]),
-                b"9",
-                "upstream g2flash reported-version identity 2.2.8.4 to 2.2.8.9",
+    for pointer_address, stock_target in RUNTIME_VERSION_POINTERS:
+        pointer_offset = payload_start + (pointer_address - APPLICATION_LOAD_BASE)
+        if struct.unpack_from("<I", base, pointer_offset)[0] != stock_target:
+            raise BuildError(
+                f"runtime-version pointer at {pointer_address:#x} no longer targets "
+                f"{stock_target:#x}"
             )
+        record(
+            pointer_offset,
+            struct.pack("<I", runtime_version_address),
+            "redirect live firmware-version identity to CFW 2.2.8.11",
+        )
+
+    numeric_report_offset = payload_start + (
+        NUMERIC_VERSION_REPORT_INSTRUCTION - APPLICATION_LOAD_BASE
+    )
+    if bytes(base[numeric_report_offset : numeric_report_offset + 2]) != (
+        NUMERIC_VERSION_REPORT_OLD
+    ):
+        raise BuildError("numeric firmware-version response instruction changed")
+    record(
+        numeric_report_offset,
+        NUMERIC_VERSION_REPORT_NEW,
+        "report firmware point-release component 11 in the binary version response",
+    )
 
     if bytes(data[EXPECTED_ADVERTISED_HOOK_FILE_OFFSET : EXPECTED_ADVERTISED_HOOK_FILE_OFFSET + 4]) != EXPECTED_ADVERTISED_HOOK_STOCK:
         raise BuildError("stock advertised-name call was not preserved")
@@ -324,6 +368,21 @@ def build() -> tuple[bytes, dict]:
         EXPECTED_ADVERTISED_HOOK_FILE_OFFSET : EXPECTED_ADVERTISED_HOOK_FILE_OFFSET + 4
     ] != EXPECTED_ADVERTISED_HOOK_STOCK:
         raise BuildError("output changed the stock advertised-name call")
+    runtime_version_file_offset = payload_end + runtime_version_blob_offset
+    if output[
+        runtime_version_file_offset : runtime_version_file_offset + len(RUNTIME_VERSION)
+    ] != RUNTIME_VERSION:
+        raise BuildError("relocated runtime identity was not emitted at its pinned offset")
+    for pointer_address, _ in RUNTIME_VERSION_POINTERS:
+        pointer_offset = payload_start + (pointer_address - APPLICATION_LOAD_BASE)
+        if struct.unpack_from("<I", output, pointer_offset)[0] != runtime_version_address:
+            raise BuildError(
+                f"runtime-version pointer at {pointer_address:#x} was not redirected"
+            )
+    if output[numeric_report_offset : numeric_report_offset + 2] != (
+        NUMERIC_VERSION_REPORT_NEW
+    ):
+        raise BuildError("binary firmware-version response was not updated")
 
     excluded_feature = {
         "id": "ble-advertised-name",
@@ -346,8 +405,19 @@ def build() -> tuple[bytes, dict]:
         "hardware_validation": "not-yet-hardware-flashed",
         "implementation": (
             "jimrandomh/g2flash main-branch patch set applied to official stock; "
-            "BLE advertisement modification omitted"
+            "BLE advertisement modification omitted; runtime identity relocated "
+            "to 2.2.8.11"
         ),
+        "runtime_identity": {
+            "address": f"0x{runtime_version_address:08x}",
+            "numeric_report_instruction": (
+                f"0x{NUMERIC_VERSION_REPORT_INSTRUCTION:08x}"
+            ),
+            "pointer_addresses": [
+                f"0x{address:08x}" for address, _ in RUNTIME_VERSION_POINTERS
+            ],
+            "version": OUTPUT_VERSION,
+        },
     }
     recipe = {
         "schemaVersion": 1,

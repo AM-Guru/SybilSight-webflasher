@@ -11,7 +11,7 @@ import { parseEvenOTA } from "../src/lib/firmware.js";
 
 const CDN_BASE = "https://cdn.evenreal.co/firmware";
 const REVIEWED_CFW_2_2_8_11_SHA256 =
-  "492947f498b9812d4e0846f8fe1ad7159fb83005e0a4bdba22ffbb531af41df4";
+  "be3922f3695e0b58a6b62f40f760b6c8754488c4e9a58c96b2c13e92ef33bd3a";
 const REVIEWED_CFW_2_2_8_4_BASE_SHA256 =
   "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7";
 const REVIEWED_CFW_BASE_SHA256 =
@@ -314,14 +314,14 @@ const RELEASES = [
     displayName: "SybilSight CFW (2.2.8.11)",
     version: "2.2.8.11",
     internalVersion: "2.2.8.11",
-    reportedVersion: "2.2.8.9",
+    reportedVersion: "2.2.8.11",
     baseVersion: "2.2.8.4",
     baseSha256: REVIEWED_CFW_2_2_8_4_BASE_SHA256,
     channel: "custom",
     trust: "reviewed-custom",
-    hash: "5ffd8d83cb8707b36653cf6e89f1af47",
+    hash: "9fd3b32423ddfea6aad55d9926393eaa",
     sha256: REVIEWED_CFW_2_2_8_11_SHA256,
-    size: 4362643,
+    size: 4362652,
     fileName: "g2-2.2.8.11.bin",
     sourceUrl:
       "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.11/g2-2.2.8.11.bin",
@@ -336,7 +336,7 @@ const RELEASES = [
     patchFallback:
       "public/firmware-updates/source-files/2.2.8.11/cfw_patches-2.2.8.11.json",
     patchFileName: "cfw_patches-2.2.8.11.json",
-    patchCount: 39,
+    patchCount: 36,
     manifestFileName: "manifest.json",
     capabilityMarker:
       "EVENCFW/8 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10",
