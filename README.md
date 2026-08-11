@@ -38,8 +38,9 @@ Production deployment:
   Smart Glasses firmware bundle.
 - Accepts official five- or six-component `EVENOTA` bundles, wrapped
   `firmware_box.bin` components, and validated raw case images.
-- Recognizes all 14 archived official G2 SHA-256 values and offers only the
-  latest reviewed SybilSight CFW 2.2.8.10 image.
+- Recognizes all 14 archived official G2 SHA-256 values and offers the
+  last known-good SybilSight CFW 2.2.8.9 image. CFW 2.2.8.10 is withdrawn
+  from both direct-Bluetooth and Case-USB installation.
 - Validates the Apollo main application's independent preamble, CRC-32, target
   region, installed-image boundary, and vector.
 - Stages case firmware in the inactive bank and verifies a byte-for-byte
@@ -181,27 +182,27 @@ The current reviewed CFW is an exact, machine-described transformation of offici
 - stock SHA-256:
   `df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7`
 - CFW SHA-256:
-  `3f99dcaf4c39a352402331f843f5beb7c115120f3800a7dacc568f9fe2e63e62`
+  `742a0241f7ba34c6fb45c9a3ec616ba0be2b92f9c3e656b9824f6bc21a5513ca`
 - patch-manifest SHA-256:
-  `33536957cf79a3087cd546f88e0c31f0262a1151308517faafcb5163760cc373`
-- 49 expected-byte-gated operations, including the established CFW blob, a
-  cold-start-safe advertised-name hook, the `2.2.8.10` package identity, and
-  the required inner/outer size and checksum updates
+-  `f5d0a33f7a0ae4f759983bec370ef011b3d2cde546048e46818288ea32cbc64d`
+- 40 expected-byte-gated operations, including the established CFW blob and an
+  isolated advertised-name hook blob, all thirteen main-firmware
+  `2.2.8.4` → `2.2.8.9` identity fields, and the required inner/outer size
+  and checksum updates
 
-The archive and package report numeric version `2.2.8.10` and retain `2.2.8.4`
-as the Stock base. The Apollo application's fixed seven-character identity
-slots remain synchronized at `2.2.8.9`; WebFlasher records that reported
-version separately for safe post-reset verification. The build
+It reports numeric version `2.2.8.9` from both temples, retains `2.2.8.4` as
+its Stock base, and
 advertises `EVENCFW/9 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10 nameserial`.
-The corrected `nameserial` hook intercepts the final six-byte suffix copy after
-stock name construction. It keeps names such as `Even G2_32_L_XXXXXX` the same
-length while replacing the final six per-temple MAC characters with validated
-serial characters 8–13. This prevents the stock MAC copy from overwriting the
-serial suffix during the first cold-start advertisement.
+The `nameserial` hook wraps stock `_blePsnIntoADV`, where the real 14-character
+pair serial is already available. It keeps names such as
+`Even G2_32_L_XXXXXX` the same length while replacing the final six per-temple
+MAC characters in the stock name buffer with serial characters 8–13.
 The guarded Faceclaw trampoline resumes the untouched stock Even AI path when
 no wake lease is active. The image is reproducibly built and statically
-reviewed but does not claim a completed hardware flash. Older CFW releases are
-not offered by WebFlasher.
+reviewed but does not claim a completed hardware flash. CFW 2.2.8.10 remains
+archived as diagnostic evidence, but hardware transcripts associate its new
+final-copy hook with loss of Bluetooth discovery, so its hash is no longer in
+either mutation allowlist.
 
 ### Application-alive pogo OTA
 
@@ -1371,7 +1372,7 @@ and both routes receive read-only liveness verification.
 ## Firmware archive
 
 The archive builder knows about all 14 official G2 releases evidenced by the
-SybilSight research plus only the latest reviewed CFW `2.2.8.10`, built from
+SybilSight research plus only the last known-good CFW `2.2.8.9`, built from
 Stock `2.2.8.4`. It also verifies and archives every R1 Secure DFU package
 exposed by the authenticated compatibility API, with exact CDN size, MD5,
 SHA-256, application, and signed init-packet pins:
@@ -1380,7 +1381,7 @@ SHA-256, application, and signed init-packet pins:
 2.0.1.14  2.0.3.20  2.0.5.12  2.0.6.14
 2.0.7.16  2.0.8.20  2.0.9.20  2.1.1.8
 2.1.1.12  2.2.0.24  2.2.4.34  2.2.6.10
-2.2.7.14  2.2.8.4  2.2.8.10
+2.2.7.14  2.2.8.4  2.2.8.9
 ```
 
 ```text
@@ -1440,9 +1441,9 @@ source-files/
     ota_s200_firmware_ota.bin
     metadata.json
     SHA256SUMS
-  2.2.8.10/
-    g2-2.2.8.10.bin
-    cfw_patches-2.2.8.10.json
+  2.2.8.9/
+    g2-2.2.8.9.bin
+    cfw_patches-2.2.8.9.json
     manifest.json
     firmware_codec.bin
     firmware_ble_em9305.bin

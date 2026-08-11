@@ -126,13 +126,7 @@ export const REVIEWED_CFW_2_2_8_10 = Object.freeze({
   capabilityMarker:
     "EVENCFW/9 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10 nameserial",
   capabilities: [
-    ...REVIEWED_CFW_DISPLAY_CHANGES,
-    "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
-    "Keeps wear-status and compass updates available to connected apps.",
-    "Shows the pair identifier on both lenses from the first cold-start Bluetooth advertisement.",
-    "Retains matching firmware identity reports from both temples.",
-    "Includes Korean system-language support from the official update.",
-    REVIEWED_CFW_PENDING_VALIDATION,
+    "Withdrawn: hardware transcripts associate this build's advertised-name hook with temples disappearing from Bluetooth discovery.",
   ],
 });
 const HARDWARE_VALIDATED_CFW_2_2_6_11 = Object.freeze({

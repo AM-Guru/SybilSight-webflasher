@@ -10,7 +10,7 @@ import { operationProgress } from "../src/lib/operationProgress.js";
 import { TEMPLE_FLASH_TARGETS } from "../src/lib/templeFlashTargets.js";
 
 const cfwTarget = TEMPLE_FLASH_TARGETS.find(
-  (target) => target.version === "2.2.8.10" && target.label.includes("CFW"),
+  (target) => target.version === "2.2.8.9" && target.label.includes("CFW"),
 );
 const stockTarget = TEMPLE_FLASH_TARGETS.find(
   (target) =>

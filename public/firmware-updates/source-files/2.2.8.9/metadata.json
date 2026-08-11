@@ -3,6 +3,7 @@
   "device": "Even Realities G2",
   "version": "2.2.8.9",
   "internalVersion": "2.2.8.9",
+  "reportedVersion": "2.2.8.9",
   "channel": "custom",
   "trust": "reviewed-custom",
   "hardwareValidated": false,
@@ -32,8 +33,8 @@
   "patchFile": "cfw_patches-2.2.8.9.json",
   "patchSha256": "f5d0a33f7a0ae4f759983bec370ef011b3d2cde546048e46818288ea32cbc64d",
   "manifestFile": "manifest.json",
-  "manifestSha256": "1aef6202980c8f8baa56528db22a556d6c1c8ffc5c0a2ac156512442e4297820",
-  "archivedAt": "2026-08-09T18:20:59.172Z",
+  "manifestSha256": "6b2464c5d59fa5e590f8c3b3f02fdde43cc9cc686c2db817140492cb285e4873",
+  "archivedAt": "2026-08-11T02:44:36.996Z",
   "mainFirmware": {
     "runBase": "0x00438000",
     "installedImageSize": 3585234,
@@ -132,8 +133,8 @@
     },
     {
       "name": "manifest.json",
-      "size": 4080,
-      "sha256": "1aef6202980c8f8baa56528db22a556d6c1c8ffc5c0a2ac156512442e4297820"
+      "size": 4114,
+      "sha256": "6b2464c5d59fa5e590f8c3b3f02fdde43cc9cc686c2db817140492cb285e4873"
     }
   ]
 }

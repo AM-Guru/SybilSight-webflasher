@@ -5,6 +5,7 @@
   "release": {
     "version": "2.2.8.9",
     "internalVersion": "2.2.8.9",
+    "reportedVersion": "2.2.8.9",
     "channel": "custom",
     "trust": "reviewed-custom",
     "baseVersion": "2.2.8.4",
