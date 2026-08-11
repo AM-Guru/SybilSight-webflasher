@@ -184,16 +184,16 @@ OpenCFW and deliberately omits the separate BLE-advertisement experiment:
 - stock SHA-256:
   `df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7`
 - CFW SHA-256:
-  `492947f498b9812d4e0846f8fe1ad7159fb83005e0a4bdba22ffbb531af41df4`
+  `be3922f3695e0b58a6b62f40f760b6c8754488c4e9a58c96b2c13e92ef33bd3a`
 - patch-manifest SHA-256:
-  `7c39a3302322ed351b56dde18033716ce311f8420ef32c40c9651129cf48b94e`
-- 39 expected-byte-gated operations: the 18 reviewed g2flash hook redirects,
-  thirteen running-application identity updates, the `2.2.8.11` package
-  identity, one upstream CFW blob append, and six required inner/outer size and
-  checksum updates
+  `1d5166704b666c35633c08ef37a7f60e6f2f936e78fc6c7f80beb8ff91dff831`
+- 36 expected-byte-gated operations: the 18 reviewed g2flash hook redirects,
+  nine live identity-pointer redirects, one binary-version response update, the
+  `2.2.8.11` package identity, one upstream CFW/blob identity append, and six
+  required inner/outer size and checksum updates
 
-The bundle identifies as `2.2.8.11`; both running temples retain the reviewed
-`2.2.8.9` reported identity and the official `2.2.8.4` Stock base. It advertises
+The bundle and both running temples identify as `2.2.8.11` while retaining the
+official `2.2.8.4` Stock base. It advertises
 `EVENCFW/8 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10`,
 matching the pinned g2flash main branch. The stock advertised-name call remains
 byte-for-byte unchanged, no `nameserial` capability exists, and the retired
@@ -1521,7 +1521,8 @@ The repository includes
 `deploy/homeassistant-addon` contains that relay app. It accepts one required
 `operator_key`, exposes no host port, stores no sessions on disk, and is
 reachable only through Caddy's same-origin HTTPS/WebSocket route. It validates
-the bounded single-port serial protocol but has no USB or host-computer access.
+the bounded single-port serial protocol and four fixed requester-side recovery
+tasks but has no USB, Bluetooth, shell, or host-computer access of its own.
 Install it as the local `sybilsight_remote_support` app and configure a unique
 technician key of at least 24 characters. The public health check is
 `/remote-support/healthz`.
@@ -1531,6 +1532,9 @@ Pushes to `main` run the test and build steps on the organization's
 then checksummed, staged over the runner's `homeassistant` SSH target, and
 atomically published to `/root/share/webflasher/` on that host. Home
 Assistant's Caddy container sees the same directory as `/share/webflasher`.
+The same release artifact atomically updates and rebuilds the local Remote
+Support app, then proves its advertised protocol and requester-side task list
+through the public health endpoint before the deployment can pass.
 The previous release is retained at `/root/share/.webflasher-previous`. Every
 build emits `release.json` with its full Git commit identity and the SHA-256 of
 the catalog shipped with that build. The same atomic web-root swap publishes
