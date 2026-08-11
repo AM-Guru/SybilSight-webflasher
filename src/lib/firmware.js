@@ -129,6 +129,26 @@ export const REVIEWED_CFW_2_2_8_10 = Object.freeze({
     "Withdrawn: hardware transcripts associate this build's advertised-name hook with temples disappearing from Bluetooth discovery.",
   ],
 });
+export const REVIEWED_CFW_2_2_8_11 = Object.freeze({
+  version: "2.2.8.11",
+  reportedVersion: "2.2.8.9",
+  baseVersion: "2.2.8.4",
+  baseSha256: "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7",
+  sha256: "492947f498b9812d4e0846f8fe1ad7159fb83005e0a4bdba22ffbb531af41df4",
+  mainPayloadBytes: 3584864,
+  mainPayloadSha256:
+    "5c23e40de9abc90d88e7ddc2e5575409a1160183c77121ab51415eecfa7f8f33",
+  capabilityMarker:
+    "EVENCFW/8 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10",
+  capabilities: [
+    ...REVIEWED_CFW_DISPLAY_CHANGES,
+    "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
+    "Keeps wear-status and compass updates available to connected apps.",
+    "Preserves the stock Bluetooth setup and advertising behavior.",
+    "Includes Korean system-language support from the official update.",
+    REVIEWED_CFW_PENDING_VALIDATION,
+  ],
+});
 const HARDWARE_VALIDATED_CFW_2_2_6_11 = Object.freeze({
   sha256: "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86",
 });
@@ -957,6 +977,7 @@ export function parseMainOTAPreamble(payload) {
 export function classifyG2Firmware(fileSha256) {
   const digest = fileSha256.toLowerCase();
   const reviewed = [
+    REVIEWED_CFW_2_2_8_11,
     REVIEWED_CFW_2_2_8_10,
     REVIEWED_CFW_2_2_8_9,
     REVIEWED_CFW_2_2_8_8,

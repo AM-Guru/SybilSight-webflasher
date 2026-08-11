@@ -38,9 +38,10 @@ Production deployment:
   Smart Glasses firmware bundle.
 - Accepts official five- or six-component `EVENOTA` bundles, wrapped
   `firmware_box.bin` components, and validated raw case images.
-- Recognizes all 14 archived official G2 SHA-256 values and offers the
-  last known-good SybilSight CFW 2.2.8.9 image. CFW 2.2.8.10 is withdrawn
-  from both direct-Bluetooth and Case-USB installation.
+- Recognizes all 14 archived official G2 SHA-256 values and offers SybilSight
+  CFW 2.2.8.11, rebuilt without any BLE-advertisement modification. The older
+  advertisement-patched CFW 2.2.8.9 and 2.2.8.10 images are excluded from both
+  direct-Bluetooth and Case-USB installation.
 - Validates the Apollo main application's independent preamble, CRC-32, target
   region, installed-image boundary, and vector.
 - Stages case firmware in the inactive bank and verifies a byte-for-byte
@@ -177,32 +178,33 @@ control:
   time-separates TX-only and RX-only operation.
 
 The current reviewed CFW is an exact, machine-described transformation of official
-2.2.8.4 using the pinned `jimrandomh/g2flash` patch set. It does not use OpenCFW:
+2.2.8.4 using the pinned `jimrandomh/g2flash` main-branch patch set. It does not use
+OpenCFW and deliberately omits the separate BLE-advertisement experiment:
 
 - stock SHA-256:
   `df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7`
 - CFW SHA-256:
-  `742a0241f7ba34c6fb45c9a3ec616ba0be2b92f9c3e656b9824f6bc21a5513ca`
+  `492947f498b9812d4e0846f8fe1ad7159fb83005e0a4bdba22ffbb531af41df4`
 - patch-manifest SHA-256:
--  `f5d0a33f7a0ae4f759983bec370ef011b3d2cde546048e46818288ea32cbc64d`
-- 40 expected-byte-gated operations, including the established CFW blob and an
-  isolated advertised-name hook blob, all thirteen main-firmware
-  `2.2.8.4` → `2.2.8.9` identity fields, and the required inner/outer size
-  and checksum updates
+  `7c39a3302322ed351b56dde18033716ce311f8420ef32c40c9651129cf48b94e`
+- 39 expected-byte-gated operations: the 18 reviewed g2flash hook redirects,
+  thirteen running-application identity updates, the `2.2.8.11` package
+  identity, one upstream CFW blob append, and six required inner/outer size and
+  checksum updates
 
-It reports numeric version `2.2.8.9` from both temples, retains `2.2.8.4` as
-its Stock base, and
-advertises `EVENCFW/9 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10 nameserial`.
-The `nameserial` hook wraps stock `_blePsnIntoADV`, where the real 14-character
-pair serial is already available. It keeps names such as
-`Even G2_32_L_XXXXXX` the same length while replacing the final six per-temple
-MAC characters in the stock name buffer with serial characters 8–13.
-The guarded Faceclaw trampoline resumes the untouched stock Even AI path when
-no wake lease is active. The image is reproducibly built and statically
-reviewed but does not claim a completed hardware flash. CFW 2.2.8.10 remains
-archived as diagnostic evidence, but hardware transcripts associate its new
-final-copy hook with loss of Bluetooth discovery, so its hash is no longer in
-either mutation allowlist.
+The bundle identifies as `2.2.8.11`; both running temples retain the reviewed
+`2.2.8.9` reported identity and the official `2.2.8.4` Stock base. It advertises
+`EVENCFW/8 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10`,
+matching the pinned g2flash main branch. The stock advertised-name call remains
+byte-for-byte unchanged, no `nameserial` capability exists, and the retired
+advertised-name blob is absent. The guarded Faceclaw trampoline still resumes
+the untouched stock Even AI path when no wake lease is active.
+
+Run `python3 scripts/build_g2flash_cfw.py` to reproduce the bundle and its
+stock-replay recipe. The image is statically reviewed but does not claim a
+completed hardware flash. CFW 2.2.8.9 and 2.2.8.10 remain archived only as
+diagnostic evidence; both contain BLE-advertisement changes and neither hash is
+present in a mutation allowlist.
 
 ### Application-alive pogo OTA
 
@@ -1372,8 +1374,8 @@ and both routes receive read-only liveness verification.
 ## Firmware archive
 
 The archive builder knows about all 14 official G2 releases evidenced by the
-SybilSight research plus only the last known-good CFW `2.2.8.9`, built from
-Stock `2.2.8.4`. It also verifies and archives every R1 Secure DFU package
+SybilSight research plus CFW `2.2.8.11`, built from Stock `2.2.8.4` without the
+BLE-advertisement patch. It also verifies and archives every R1 Secure DFU package
 exposed by the authenticated compatibility API, with exact CDN size, MD5,
 SHA-256, application, and signed init-packet pins:
 
@@ -1381,7 +1383,7 @@ SHA-256, application, and signed init-packet pins:
 2.0.1.14  2.0.3.20  2.0.5.12  2.0.6.14
 2.0.7.16  2.0.8.20  2.0.9.20  2.1.1.8
 2.1.1.12  2.2.0.24  2.2.4.34  2.2.6.10
-2.2.7.14  2.2.8.4  2.2.8.9
+2.2.7.14  2.2.8.4  2.2.8.11
 ```
 
 ```text
@@ -1441,9 +1443,9 @@ source-files/
     ota_s200_firmware_ota.bin
     metadata.json
     SHA256SUMS
-  2.2.8.9/
-    g2-2.2.8.9.bin
-    cfw_patches-2.2.8.9.json
+  2.2.8.11/
+    g2-2.2.8.11.bin
+    cfw_patches-2.2.8.11.json
     manifest.json
     firmware_codec.bin
     firmware_ble_em9305.bin

@@ -14,6 +14,7 @@ import {
   REVIEWED_CFW_2_2_8_8,
   REVIEWED_CFW_2_2_8_9,
   REVIEWED_CFW_2_2_8_10,
+  REVIEWED_CFW_2_2_8_11,
   additiveBigEndianWordSum,
   classifyG2Firmware,
   crc32,
@@ -223,6 +224,15 @@ test("recognizes withdrawn G2 2.2.8.10 evidence without claiming it is cold-star
   assert.equal(trust.baseVersion, "2.2.8.4");
   assert.equal(trust.capabilities.some((value) => /withdrawn/i.test(value)), true);
   assert.equal(trust.capabilities.some((value) => /cold-start-safe/i.test(value)), false);
+});
+
+test("recognizes stock-advertising G2 2.2.8.11 as the current reviewed CFW", () => {
+  const trust = classifyG2Firmware(REVIEWED_CFW_2_2_8_11.sha256);
+  assert.equal(trust.trust, "reviewed-custom");
+  assert.equal(trust.version, "2.2.8.11");
+  assert.equal(trust.baseVersion, "2.2.8.4");
+  assert.equal(trust.capabilities.some((value) => /stock Bluetooth/i.test(value)), true);
+  assert.equal(trust.capabilities.some((value) => /pair-serial/i.test(value)), false);
 });
 
 test("retains the superseded 2.2.8.7 trust pin without claiming its failed name patch", () => {
@@ -794,8 +804,8 @@ test("ships the complete official and reviewed-CFW development catalog", async (
   assert.equal(latestOfficial.sha256, OFFICIAL_G2_SHA256["2.2.8.4"]);
   assert.equal(latestOfficial.caseVersion, "1.2.57");
   const cfw = catalog.releases.find((release) => release.channel === "custom");
-  assert.equal(cfw.version, "2.2.8.9");
-  assert.equal(cfw.sha256, REVIEWED_CFW_2_2_8_9.sha256);
+  assert.equal(cfw.version, "2.2.8.11");
+  assert.equal(cfw.sha256, REVIEWED_CFW_2_2_8_11.sha256);
   assert.equal(cfw.baseVersion, "2.2.8.4");
   assert.equal(cfw.caseRecoveryEligible, false);
   assert.equal(cfw.hardwareValidated, false);
@@ -847,8 +857,7 @@ test("ships stock-based CFW 2.2.8.9 with bilateral version identity and the dire
   assert.equal(firmware.provenance.baseVersion, "2.2.8.4");
   assert.equal(firmware.mainComponent.payload.length, REVIEWED_CFW_2_2_8_9.mainPayloadBytes);
   assert.equal(firmware.mainComponent.payloadSha256, REVIEWED_CFW_2_2_8_9.mainPayloadSha256);
-  assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
-  assert.equal(firmware.templeFlashTarget.reportedVersion, "2.2.8.9");
+  assert.equal(firmware.templeFlashTarget, null);
   assert.equal(
     bundle.includes(Buffer.from(REVIEWED_CFW_2_2_8_9.capabilityMarker, "ascii")),
     true,
@@ -910,6 +919,61 @@ test("ships stock-based CFW 2.2.8.9 with bilateral version identity and the dire
     assert.equal(bytes.length, file.size);
     assert.equal(Buffer.from(digest).toString("hex"), file.sha256);
   }
+});
+
+test("ships CFW 2.2.8.11 from stock with every BLE advertisement change omitted", async () => {
+  const releaseDirectory = new URL(
+    "../public/firmware-updates/source-files/2.2.8.11/",
+    import.meta.url,
+  );
+  const bundle = await readFile(new URL("g2-2.2.8.11.bin", releaseDirectory));
+  const stock = await readFile(
+    new URL(
+      "../public/firmware-updates/source-files/2.2.8.4/d495a1dffb919795e95135e144345f04.bin",
+      import.meta.url,
+    ),
+  );
+  const firmware = await parseFirmwareInput(bundle, "g2-2.2.8.11.bin");
+  assert.equal(firmware.fileSha256, REVIEWED_CFW_2_2_8_11.sha256);
+  assert.equal(firmware.g2Version, "2.2.8.11");
+  assert.equal(firmware.provenance.baseVersion, "2.2.8.4");
+  assert.equal(firmware.mainComponent.payload.length, REVIEWED_CFW_2_2_8_11.mainPayloadBytes);
+  assert.equal(firmware.mainComponent.payloadSha256, REVIEWED_CFW_2_2_8_11.mainPayloadSha256);
+  assert.equal(firmware.templeFlashTarget.reportedVersion, "2.2.8.9");
+  assert.equal(bundle.includes(Buffer.from(REVIEWED_CFW_2_2_8_11.capabilityMarker)), true);
+  assert.equal(bundle.includes(Buffer.from("nameserial", "ascii")), false);
+  assert.equal(bundle.subarray(1000085, 1000089).toString("hex"), "fff74cff");
+  assert.equal(
+    bundle.subarray(1000085, 1000089).toString("hex"),
+    stock.subarray(1000085, 1000089).toString("hex"),
+  );
+
+  const patchSet = JSON.parse(
+    await readFile(new URL("cfw_patches-2.2.8.11.json", releaseDirectory), "utf8"),
+  );
+  assert.equal(patchSet.release_version, "2.2.8.11");
+  assert.equal(patchSet.vendor_base_version, "2.2.8.4");
+  assert.equal(patchSet.output_sha256, REVIEWED_CFW_2_2_8_11.sha256);
+  assert.equal(patchSet.capability_marker, REVIEWED_CFW_2_2_8_11.capabilityMarker);
+  assert.equal(patchSet.patches.length, 39);
+  assert.equal("ble_advertising_patch_sha256" in patchSet, false);
+  assert.equal("ble_advertising_sources" in patchSet, false);
+  assert.equal(patchSet.excluded_feature.id, "ble-advertised-name");
+  assert.equal(patchSet.excluded_feature.status, "omitted");
+  assert.equal(
+    patchSet.patches.some((operation) => operation.offset === 1000085),
+    false,
+  );
+
+  const manifest = JSON.parse(
+    await readFile(new URL("manifest.json", releaseDirectory), "utf8"),
+  );
+  assert.equal(manifest.release.version, "2.2.8.11");
+  assert.equal(manifest.release.reportedVersion, "2.2.8.9");
+  assert.equal(manifest.package.sha256, REVIEWED_CFW_2_2_8_11.sha256);
+  assert.equal(manifest.patchRecipe.operationCount, 39);
+  assert.equal(manifest.excludedFeature.id, "ble-advertised-name");
+  assert.equal(manifest.excludedFeature.status, "omitted");
 });
 
 test("retains withdrawn CFW 2.2.8.10 as evidence but excludes it from flashing", async () => {

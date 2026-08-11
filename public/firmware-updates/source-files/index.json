@@ -1,16 +1,16 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-11T02:44:39.507Z",
+  "generatedAt": "2026-08-11T03:32:29.142Z",
   "source": "Even Realities G2/R1 CDN plus SybilSight release evidence",
   "releases": [
     {
-      "id": "g2-custom-2.2.8.9",
-      "displayName": "SybilSight CFW (2.2.8.9)",
+      "id": "g2-custom-2.2.8.11",
+      "displayName": "SybilSight CFW (2.2.8.11)",
       "channel": "custom",
       "trust": "reviewed-custom",
       "hardwareValidated": false,
-      "version": "2.2.8.9",
-      "internalVersion": "2.2.8.9",
+      "version": "2.2.8.11",
+      "internalVersion": "2.2.8.11",
       "reportedVersion": "2.2.8.9",
       "baseVersion": "2.2.8.4",
       "notes": null,
@@ -22,30 +22,29 @@
         "Recognizes ring long presses and releases.",
         "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
         "Keeps wear-status and compass updates available to connected apps.",
-        "Shows the same pair identifier on both lenses during Bluetooth setup.",
-        "Reports the same custom firmware version from both temples.",
+        "Preserves the stock Bluetooth setup and advertising behavior.",
         "Includes Korean system-language support from the official update.",
         "Reviewed for consistency; testing on physical glasses is still pending."
       ],
       "recoveryTarget": "glasses",
       "caseRecoveryEligible": false,
       "caseVersion": "1.2.57",
-      "url": "/firmware-updates/source-files/2.2.8.9/g2-2.2.8.9.bin",
-      "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.9/g2-2.2.8.9.bin",
-      "fileName": "g2-2.2.8.9.bin",
-      "size": 4363045,
-      "md5": "3c59e54730e36a4834295df75caed59f",
-      "sha256": "742a0241f7ba34c6fb45c9a3ec616ba0be2b92f9c3e656b9824f6bc21a5513ca",
-      "patchUrl": "/firmware-updates/source-files/2.2.8.9/cfw_patches-2.2.8.9.json",
-      "patchSha256": "f5d0a33f7a0ae4f759983bec370ef011b3d2cde546048e46818288ea32cbc64d",
-      "manifestUrl": "/firmware-updates/source-files/2.2.8.9/manifest.json",
-      "manifestSha256": "6b2464c5d59fa5e590f8c3b3f02fdde43cc9cc686c2db817140492cb285e4873",
+      "url": "/firmware-updates/source-files/2.2.8.11/g2-2.2.8.11.bin",
+      "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.11/g2-2.2.8.11.bin",
+      "fileName": "g2-2.2.8.11.bin",
+      "size": 4362643,
+      "md5": "5ffd8d83cb8707b36653cf6e89f1af47",
+      "sha256": "492947f498b9812d4e0846f8fe1ad7159fb83005e0a4bdba22ffbb531af41df4",
+      "patchUrl": "/firmware-updates/source-files/2.2.8.11/cfw_patches-2.2.8.11.json",
+      "patchSha256": "7c39a3302322ed351b56dde18033716ce311f8420ef32c40c9651129cf48b94e",
+      "manifestUrl": "/firmware-updates/source-files/2.2.8.11/manifest.json",
+      "manifestSha256": "92ab0c2b81f70406b61083625b79a7f84198ec286dbd11b74b528b579bfb6384",
       "archivedFrom": "WebFlasher local evidence",
       "mainFirmware": {
         "runBase": "0x00438000",
-        "installedImageSize": 3585234,
-        "installedImageEnd": "0x007a34d2",
-        "crc32": "8440c661"
+        "installedImageSize": 3584832,
+        "installedImageEnd": "0x007a3340",
+        "crc32": "0475245a"
       },
       "components": [
         {
@@ -86,9 +85,9 @@
         {
           "name": "ota/s200_firmware_ota.bin",
           "typeId": 0,
-          "size": 3585266,
-          "crc32c": "f771e8d0",
-          "sha256": "fe834158de3ceb0770841b0f397f37be8063a1c08f40a8af7a11bfd2ffcfd7f5"
+          "size": 3584864,
+          "crc32c": "e0459dc1",
+          "sha256": "5c23e40de9abc90d88e7ddc2e5575409a1160183c77121ab51415eecfa7f8f33"
         }
       ]
     },

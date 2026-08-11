@@ -10,8 +10,8 @@ import { unzipSync } from "fflate";
 import { parseEvenOTA } from "../src/lib/firmware.js";
 
 const CDN_BASE = "https://cdn.evenreal.co/firmware";
-const REVIEWED_CFW_2_2_8_9_SHA256 =
-  "742a0241f7ba34c6fb45c9a3ec616ba0be2b92f9c3e656b9824f6bc21a5513ca";
+const REVIEWED_CFW_2_2_8_11_SHA256 =
+  "492947f498b9812d4e0846f8fe1ad7159fb83005e0a4bdba22ffbb531af41df4";
 const REVIEWED_CFW_2_2_8_4_BASE_SHA256 =
   "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7";
 const REVIEWED_CFW_BASE_SHA256 =
@@ -310,46 +310,48 @@ const RELEASES = [
     notes: "Added Korean system language support.",
   },
   {
-    id: "g2-custom-2.2.8.9",
-    displayName: "SybilSight CFW (2.2.8.9)",
-    version: "2.2.8.9",
-    internalVersion: "2.2.8.9",
+    id: "g2-custom-2.2.8.11",
+    displayName: "SybilSight CFW (2.2.8.11)",
+    version: "2.2.8.11",
+    internalVersion: "2.2.8.11",
     reportedVersion: "2.2.8.9",
     baseVersion: "2.2.8.4",
     baseSha256: REVIEWED_CFW_2_2_8_4_BASE_SHA256,
     channel: "custom",
     trust: "reviewed-custom",
-    hash: "3c59e54730e36a4834295df75caed59f",
-    sha256: REVIEWED_CFW_2_2_8_9_SHA256,
-    size: 4363045,
-    fileName: "g2-2.2.8.9.bin",
+    hash: "5ffd8d83cb8707b36653cf6e89f1af47",
+    sha256: REVIEWED_CFW_2_2_8_11_SHA256,
+    size: 4362643,
+    fileName: "g2-2.2.8.11.bin",
     sourceUrl:
-      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.9/g2-2.2.8.9.bin",
+      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.11/g2-2.2.8.11.bin",
     fallbacks: [[
       "webflasher",
-      "public/firmware-updates/source-files/2.2.8.9/g2-2.2.8.9.bin",
+      "public/firmware-updates/source-files/2.2.8.11/g2-2.2.8.11.bin",
     ]],
     preferLocalEvidence: true,
     patchUrl:
-      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.9/cfw_patches-2.2.8.9.json",
+      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.11/cfw_patches-2.2.8.11.json",
     patchFallbackRoot: "webflasher",
     patchFallback:
-      "public/firmware-updates/source-files/2.2.8.9/cfw_patches-2.2.8.9.json",
-    patchFileName: "cfw_patches-2.2.8.9.json",
-    patchCount: 40,
+      "public/firmware-updates/source-files/2.2.8.11/cfw_patches-2.2.8.11.json",
+    patchFileName: "cfw_patches-2.2.8.11.json",
+    patchCount: 39,
     manifestFileName: "manifest.json",
     capabilityMarker:
-      "EVENCFW/9 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10 nameserial",
+      "EVENCFW/8 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10",
     g2flashCommit: "877c8d9490db0d3717ca012dd0f54556af3701bd",
     g2flashRebasePatchSha256:
       "fdf8fcb5de6a658105a1d45e1376c3932bc59d0dd278314c242572449f7bcdfb",
-    bleAdvertisingPatchSha256:
-      "d570411dfcf7096cd641f5edb87019cc406e3033c99370220b4ebcb80b530827",
-    bleAdvertisingSources: {
-      "ble_advertised_name.c":
-        "3c2d7dbdce272f9ff2ead4dfccdc9a045932b4a68651ebf3f6b48e246fe620b4",
-      "ble_advertised_name.py":
-        "54937a57c0dfcd3b7d90a428ab6f4ed6354f23b966bae1acc15ad04c5cb6659c",
+    excludedFeature: {
+      id: "ble-advertised-name",
+      status: "omitted",
+      reason:
+        "Not present on the pinned g2flash main branch and withdrawn after hardware failure evidence.",
+      preservedStockHookOffset: 1000085,
+      preservedStockBytes: "fff74cff",
+      removedBlobSha256:
+        "68036760a3e3485e9ce6e995b8fd1bfcfbdb3c0381b47b9d9cc4688bc825f694",
     },
     directFramebufferCommits: [
       "235a8b304447e330df6a0bce0351e3b6dc3d6f08",
@@ -360,8 +362,7 @@ const RELEASES = [
       ...REVIEWED_CFW_DISPLAY_CHANGES,
       "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
       "Keeps wear-status and compass updates available to connected apps.",
-      "Shows the same pair identifier on both lenses during Bluetooth setup.",
-      "Reports the same custom firmware version from both temples.",
+      "Preserves the stock Bluetooth setup and advertising behavior.",
       "Includes Korean system-language support from the official update.",
       REVIEWED_CFW_PENDING_VALIDATION,
     ],
@@ -571,6 +572,11 @@ async function saveRelease(root, release, fallbackRoots) {
           JSON.stringify(release.bleAdvertisingSources) ||
           JSON.stringify(patchSet.source_provenance?.ble_advertising_sources) !==
             JSON.stringify(release.bleAdvertisingSources))) ||
+      (release.excludedFeature &&
+        (JSON.stringify(patchSet.excluded_feature) !==
+          JSON.stringify(release.excludedFeature) ||
+          JSON.stringify(patchSet.source_provenance?.excluded_feature) !==
+            JSON.stringify(release.excludedFeature))) ||
       (release.directFramebufferCommits &&
         JSON.stringify(patchSet.source_provenance?.direct_framebuffer_commits) !==
           JSON.stringify(release.directFramebufferCommits))
