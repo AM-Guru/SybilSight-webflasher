@@ -1518,10 +1518,9 @@ The previous release is retained at `/root/share/.webflasher-previous`. Every
 build emits `release.json` with its full Git commit identity and the SHA-256 of
 the catalog shipped with that build. The same atomic web-root swap publishes
 that exact catalog as `/firmware-catalog.json`; only the much larger versioned
-firmware archive remains separate. Caddy automatically serves any firmware
-file present in the atomic web root and falls back to the archive for
-historical files not bundled with that release; no per-version route update is
-required. The deploy job also stages any new versioned
+firmware archive remains separate. Caddy serves the tracked reviewed CFW
+directories from the atomic web root and falls back to the archive for
+historical official versions. The deploy job also stages any new versioned
 directories there and verifies the release-bound catalog plus its newest
 reviewed custom binary. This preserves the historical archive without allowing
 an external mirror refresh to change the running app's menu or reviewed target.
