@@ -444,6 +444,23 @@ export function g2BleTargetReportedVersion(firmware) {
   return firmware?.templeFlashTarget?.reportedVersion ?? firmware?.g2Version ?? null;
 }
 
+// A verified final END proves that every package byte was accepted, but it
+// does not prove that the rebooted Application image is reachable. Keep that
+// distinction explicit so the UI cannot call a transfer "complete" while the
+// exact failure operators care about — a temple disappearing after reboot —
+// is still unresolved. A fresh Case version/liveness interrogation is the
+// authoritative fallback when the bounded GATT reconnect is exhausted.
+export function g2BleRoutesAwaitingCaseVerification(routes) {
+  return ["left", "right"].filter((side) => {
+    const route = routes?.[side];
+    if (!route || route.skipped || route.outcome !== "success") return false;
+    const postUpdate = route.components?.at(-1)?.postUpdate;
+    return Boolean(
+      postUpdate?.freshReconnectAttempted && !postUpdate.reconnected,
+    );
+  });
+}
+
 // Build the chooser filter that admits only one specific pair.
 //
 // This is the closest a web page can get to "show the serial in the chooser".

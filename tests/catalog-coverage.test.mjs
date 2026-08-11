@@ -107,6 +107,11 @@ test("offers only the latest CFW while retaining official firmware", async () =>
     reviewed228,
     "the shipped catalog should serve CFW 2.2.8.11",
   );
+  assert.equal(reviewed228.archiveKey, "2.2.8.11-runtime-fix");
+  assert.equal(
+    reviewed228.url,
+    "/firmware-updates/source-files/2.2.8.11-runtime-fix/g2-2.2.8.11.bin",
+  );
   assert.equal(reviewed228.hardwareValidated, false);
   assert.deepEqual(
     catalog.filter((release) => release.channel === "custom").map((release) => release.version),

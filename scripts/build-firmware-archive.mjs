@@ -313,6 +313,7 @@ const RELEASES = [
     id: "g2-custom-2.2.8.11",
     displayName: "SybilSight CFW (2.2.8.11)",
     version: "2.2.8.11",
+    archiveKey: "2.2.8.11-runtime-fix",
     internalVersion: "2.2.8.11",
     reportedVersion: "2.2.8.11",
     baseVersion: "2.2.8.4",
@@ -324,17 +325,17 @@ const RELEASES = [
     size: 4362652,
     fileName: "g2-2.2.8.11.bin",
     sourceUrl:
-      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.11/g2-2.2.8.11.bin",
+      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.11-runtime-fix/g2-2.2.8.11.bin",
     fallbacks: [[
       "webflasher",
-      "public/firmware-updates/source-files/2.2.8.11/g2-2.2.8.11.bin",
+      "public/firmware-updates/source-files/2.2.8.11-runtime-fix/g2-2.2.8.11.bin",
     ]],
     preferLocalEvidence: true,
     patchUrl:
-      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.11/cfw_patches-2.2.8.11.json",
+      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.11-runtime-fix/cfw_patches-2.2.8.11.json",
     patchFallbackRoot: "webflasher",
     patchFallback:
-      "public/firmware-updates/source-files/2.2.8.11/cfw_patches-2.2.8.11.json",
+      "public/firmware-updates/source-files/2.2.8.11-runtime-fix/cfw_patches-2.2.8.11.json",
     patchFileName: "cfw_patches-2.2.8.11.json",
     patchCount: 36,
     manifestFileName: "manifest.json",
@@ -465,7 +466,11 @@ async function acquireRelease(release, sourceUrl, fallbackRoots) {
 }
 
 async function saveRelease(root, release, fallbackRoots) {
-  const directory = path.join(root, release.version);
+  const archiveKey = release.archiveKey ?? release.version;
+  if (!/^2\.[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*$/.test(archiveKey)) {
+    throw new Error(`G2 ${release.version} has an invalid archive key`);
+  }
+  const directory = path.join(root, archiveKey);
   await mkdir(directory, { recursive: true });
   const sourceFile = release.fileName ?? `${release.hash}.bin`;
   const sourceUrl = release.sourceUrl ?? `${CDN_BASE}/${sourceFile}`;
@@ -636,6 +641,7 @@ async function saveRelease(root, release, fallbackRoots) {
       device: "Even Realities G2",
       release: {
         version: release.version,
+        ...(archiveKey !== release.version ? { archiveKey } : {}),
         internalVersion: parsed.version,
         reportedVersion: release.reportedVersion ?? parsed.version,
         channel: release.channel ?? "official",
@@ -685,6 +691,7 @@ async function saveRelease(root, release, fallbackRoots) {
     schemaVersion: 2,
     device: "Even Realities G2",
     version: release.version,
+    ...(archiveKey !== release.version ? { archiveKey } : {}),
     internalVersion: parsed.version,
     reportedVersion: release.reportedVersion ?? parsed.version,
     channel: release.channel ?? "official",
@@ -750,6 +757,7 @@ async function saveRelease(root, release, fallbackRoots) {
     trust: release.trust ?? "official-pinned",
     hardwareValidated: HARDWARE_VALIDATED_TEMPLE_IMAGES.has(sha256),
     version: release.version,
+    ...(archiveKey !== release.version ? { archiveKey } : {}),
     internalVersion: parsed.version,
     reportedVersion: release.reportedVersion ?? parsed.version,
     baseVersion: release.baseVersion ?? null,
@@ -758,19 +766,19 @@ async function saveRelease(root, release, fallbackRoots) {
     recoveryTarget: release.channel === "custom" ? "glasses" : "case-and-glasses-bundle",
     caseRecoveryEligible: release.channel !== "custom",
     caseVersion: parsed.chargingCase.version,
-    url: `/firmware-updates/source-files/${release.version}/${sourceFile}`,
+    url: `/firmware-updates/source-files/${archiveKey}/${sourceFile}`,
     sourceUrl,
     fileName: sourceFile,
     size: bytes.length,
     md5,
     sha256,
     patchUrl: release.patchUrl
-      ? `/firmware-updates/source-files/${release.version}/${patchFile}`
+      ? `/firmware-updates/source-files/${archiveKey}/${patchFile}`
       : null,
     patchSha256,
     ...(manifestFile
       ? {
-          manifestUrl: `/firmware-updates/source-files/${release.version}/${manifestFile}`,
+          manifestUrl: `/firmware-updates/source-files/${archiveKey}/${manifestFile}`,
           manifestSha256,
         }
       : {}),

@@ -84,6 +84,12 @@ and tracked official firmware directories from that atomic web root; other
 official versioned paths fall back to the historical archive. Superseded CFW
 releases are not offered by WebFlasher.
 
+A published archive path is immutable even when a firmware build later needs a
+metadata or runtime-identity correction. In that case the human-facing firmware
+version remains accurate, but the corrected bytes receive a distinct
+`archiveKey` and URL. The old directory remains byte-for-byte available for
+catalogs that already pinned it.
+
 The production Caddy block must therefore contain explicit `/share/webflasher`
 handlers for every G2 version directory bundled with the release as well as the
 release-bound source-files index. Without one of those handlers, the broader

@@ -18,6 +18,7 @@ import {
   provenanceFromSuccessfulAudit,
   resolveAutomaticCaseUpdatePlan,
   resolveAutomaticApplyPlan,
+  summarizeAutomaticApplyTransfer,
   templeVersionObservationsFromFlashAudit,
   verifyAutomaticCaseReadiness,
 } from "../src/lib/automaticRecovery.js";
@@ -1049,6 +1050,103 @@ test("Update becomes reset-and-verify when both temples already prove target", (
   });
   assert.equal(result.executable, true);
   assert.equal(result.action, "verify-only");
+});
+
+test("Update sends no firmware when fresh bilateral versions already match the target", () => {
+  const result = resolveAutomaticApplyPlan({
+    installMode: "update",
+    targetFirmware: {
+      ...firmware(CFW_SHA),
+      g2Version: "2.2.6.11",
+    },
+    installedProvenance: {},
+    observedTempleVersions: observedBoth("2.2.6.11"),
+  });
+  assert.equal(result.action, "verify-only");
+  assert.match(result.reason, /send no firmware bytes/i);
+});
+
+test("Update skips a live target-matching temple and differentially updates only the source side", () => {
+  const result = resolveAutomaticApplyPlan({
+    installMode: "update",
+    targetFirmware: {
+      ...firmware(CFW_SHA),
+      g2Version: "2.2.6.11",
+    },
+    installedProvenance: {},
+    differenceSourceFirmware: firmware(STOCK_SHA),
+    differencePlan,
+    observedTempleVersions: {
+      right: { firmwareVersion: "2.2.6.11", hardwareRevision: 5 },
+      left: { firmwareVersion: "2.2.6.10", hardwareRevision: 5 },
+    },
+  });
+  assert.equal(result.action, "flash");
+  assert.equal(result.route, "left");
+  assert.equal(result.flashMode, "differences");
+  assert.equal(result.sourceProofMode, "live-compatible-pair-preflight");
+});
+
+test("Update skips a live target-matching temple and completely updates only an unrelated side", () => {
+  const result = resolveAutomaticApplyPlan({
+    installMode: "update",
+    targetFirmware: {
+      ...firmware(CFW_SHA),
+      g2Version: "2.2.6.11",
+    },
+    installedProvenance: {},
+    observedTempleVersions: {
+      right: { firmwareVersion: "2.2.6.11", hardwareRevision: 5 },
+      left: { firmwareVersion: "2.1.1.12", hardwareRevision: 5 },
+    },
+  });
+  assert.equal(result.action, "flash");
+  assert.equal(result.route, "left");
+  assert.equal(result.flashMode, "complete");
+  assert.match(result.reason, /left temple only/i);
+});
+
+test("USB transfer summary distinguishes semantic byte differences from wire bytes", () => {
+  const summary = summarizeAutomaticApplyTransfer({
+    plan: {
+      executable: true,
+      action: "flash",
+      route: "left",
+      flashMode: "differences",
+      reason: "test",
+    },
+    targetFirmware: {
+      mainComponent: { payload: new Uint8Array(3_500_000) },
+    },
+    differencePlan: {
+      mainDifferences: { changedBytes: 20_249 },
+    },
+  });
+  assert.deepEqual(summary.routes, ["left"]);
+  assert.deepEqual(summary.skippedRoutes, ["right"]);
+  assert.equal(summary.semanticChangedBytes, 20_249);
+  assert.equal(summary.firmwareBytes, 3_500_000);
+  assert.equal(summary.sparseByteRangesSupported, false);
+  assert.match(summary.protocolBoundary, /no destination-offset field/i);
+});
+
+test("same-version USB transfer summary reports no firmware routes", () => {
+  const summary = summarizeAutomaticApplyTransfer({
+    plan: {
+      executable: true,
+      action: "verify-only",
+      route: "both",
+      flashMode: null,
+      reason: "already current",
+    },
+    targetFirmware: {
+      mainComponent: { payload: new Uint8Array(3_500_000) },
+    },
+  });
+  assert.deepEqual(summary.routes, []);
+  assert.deepEqual(summary.skippedRoutes, ["right", "left"]);
+  assert.deepEqual(summary.verificationRoutes, ["right", "left"]);
+  assert.equal(summary.firmwareBytes, 0);
 });
 
 test("fresh temple identity overrides stale saved target provenance", () => {

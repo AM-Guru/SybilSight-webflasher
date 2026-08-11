@@ -1,4 +1,5 @@
 import { decodeOptionBytes } from "./firmware.js";
+import { describeByteDifferences } from "./differential.js";
 
 export const DEFAULT_INTERFACE_MODE = "easy";
 export const DEFAULT_AUTOMATIC_INSTALL_MODE = "update";
@@ -831,17 +832,6 @@ export function describeAutomaticApplyFailure(error) {
   };
 }
 
-function bothRoutesMatch(provenance, imageSha256) {
-  const normalized = String(imageSha256 ?? "").toLowerCase();
-  return Boolean(
-    normalized &&
-      ROUTES.every(
-        (route) =>
-          provenance?.[route]?.imageSha256?.toLowerCase() === normalized,
-      ),
-  );
-}
-
 function knownRouteProofsBelongToPair(
   provenance,
   sourceSha256,
@@ -1005,11 +995,11 @@ function isReusableTempleReadiness(readiness, expectedVersion) {
   );
 }
 
-function completeAutomaticUpdatePlan(targetSha256, reason) {
+function completeAutomaticUpdatePlan(targetSha256, reason, route = "both") {
   return {
     executable: true,
     action: "flash",
-    route: "both",
+    route,
     flashMode: "complete",
     sourceProofMode: "complete-target-main",
     targetSha256,
@@ -1209,16 +1199,6 @@ export function resolveAutomaticApplyPlan({
       observedTempleIdentity(observedTempleVersions, route),
     ]),
   );
-  const observedTargetContradiction = ROUTES.some((route) => {
-    const observed = observedIdentities[route];
-    return Boolean(
-      (targetVersion &&
-        observed.firmwareVersion &&
-        observed.firmwareVersion !== targetVersion) ||
-        (observed.hardwareRevision != null &&
-          observed.hardwareRevision !== 5),
-    );
-  });
   if (installMode === "restore") {
     return {
       executable: true,
@@ -1230,10 +1210,35 @@ export function resolveAutomaticApplyPlan({
     };
   }
 
-  if (
-    bothRoutesMatch(installedProvenance, targetSha256) &&
-    !observedTargetContradiction
-  ) {
+  const liveTargetRoutes = targetVersion
+    ? ROUTES.filter(
+        (route) =>
+          observedIdentities[route].firmwareVersion === targetVersion &&
+          observedIdentities[route].hardwareRevision === 5,
+      )
+    : [];
+  const auditedTargetRoutes = ROUTES.filter((route) => {
+    const observed = observedIdentities[route];
+    return Boolean(
+      installedProvenance?.[route]?.imageSha256?.toLowerCase() ===
+        targetSha256 &&
+        !(
+          targetVersion &&
+          observed.firmwareVersion &&
+          observed.firmwareVersion !== targetVersion
+        ) &&
+        !(observed.hardwareRevision != null && observed.hardwareRevision !== 5),
+    );
+  });
+  const targetProvenRoutes = ROUTES.filter(
+    (route) =>
+      liveTargetRoutes.includes(route) || auditedTargetRoutes.includes(route),
+  );
+  const savedTargetAuditRoutes = ROUTES.filter(
+    (route) =>
+      installedProvenance?.[route]?.imageSha256?.toLowerCase() === targetSha256,
+  );
+  if (targetProvenRoutes.length === ROUTES.length) {
     return {
       executable: true,
       action: "verify-only",
@@ -1241,49 +1246,36 @@ export function resolveAutomaticApplyPlan({
       flashMode: null,
       targetSha256,
       reason:
-        "Both temples already have a verified audit for the selected target; reset and liveness verification are sufficient.",
+        liveTargetRoutes.length === ROUTES.length
+          ? `Fresh checksum-valid replies show both temples already running ${targetVersion}/hardware 5. Update mode will send no firmware bytes; use Restore only to force an exact pinned-image reinstall.`
+          : "Both temples already have a verified audit for the selected target; reset and liveness verification are sufficient.",
     };
   }
   if (
-    bothRoutesMatch(installedProvenance, targetSha256) &&
-    observedTargetContradiction
+    savedTargetAuditRoutes.length === ROUTES.length &&
+    targetProvenRoutes.length === 0
   ) {
     return completeAutomaticUpdatePlan(
       targetSha256,
       `Fresh Smart Glasses identity contradicts the saved target audit${targetVersion ? ` for ${targetVersion}` : ""}; write the complete pinned target Apollo main on both temples.`,
     );
   }
-
-  // One temple can carry a complete verified install from an interrupted
-  // bilateral run. Rewriting it costs a full extra transfer for nothing:
-  // flash only the unproven route, and let the mandatory final bilateral
-  // DEB0 reset and liveness check cover both temples.
-  const targetProvenRoutes = ROUTES.filter((route) => {
-    const observed = observedIdentities[route];
-    return (
-      installedProvenance?.[route]?.imageSha256?.toLowerCase() ===
-        targetSha256 &&
-      !(
-        targetVersion &&
-        observed.firmwareVersion &&
-        observed.firmwareVersion !== targetVersion
-      ) &&
-      !(observed.hardwareRevision != null && observed.hardwareRevision !== 5)
-    );
-  });
-  if (targetProvenRoutes.length === 1) {
-    const unprovenRoute = ROUTES.find(
-      (route) => !targetProvenRoutes.includes(route),
-    );
-    return {
-      executable: true,
-      action: "flash",
-      route: unprovenRoute,
-      flashMode: "complete",
-      targetSha256,
-      reason: `The ${targetProvenRoutes[0]} temple already holds a verified install of the selected target; write the complete pinned Apollo main to the ${unprovenRoute} temple only. The final bilateral DEB0 reset and liveness check still cover both temples.`,
-    };
-  }
+  // A fresh checksum-valid target version is sufficient to skip mutation in
+  // Update mode. It is not claimed as an exact image hash; Restore remains the
+  // explicit path for an operator who wants byte-for-byte reinstallation.
+  const routesToUpdate = ROUTES.filter(
+    (route) => !targetProvenRoutes.includes(route),
+  );
+  const routeSelection =
+    routesToUpdate.length === ROUTES.length ? "both" : routesToUpdate[0];
+  const routeDescription =
+    routeSelection === "both" ? "both temples" : `the ${routeSelection} temple only`;
+  const preservedRoutePrefix =
+    targetProvenRoutes.length === 1
+      ? auditedTargetRoutes.includes(targetProvenRoutes[0])
+        ? `The ${targetProvenRoutes[0]} temple already holds a verified install of the selected target; `
+        : `The ${targetProvenRoutes[0]} temple already returns the selected target version in a fresh hardware-5 Application reply; `
+      : "";
 
   const sourceSha256 = differenceSourceFirmware?.fileSha256?.toLowerCase();
   if (
@@ -1294,16 +1286,17 @@ export function resolveAutomaticApplyPlan({
   ) {
     return completeAutomaticUpdatePlan(
       targetSha256,
-      "The installed firmware is not proven as the exact reviewed differential source; write the complete pinned target Apollo main on both temples.",
+      `${preservedRoutePrefix}the installed firmware on ${routeDescription} is not the exact reviewed differential source; write the complete pinned target Apollo main on ${routeDescription}.`,
+      routeSelection,
     );
   }
   const sourceVersion = differencePlan.source?.version;
-  const observedSourceCompatible = ROUTES.every(
+  const observedSourceCompatible = routesToUpdate.every(
     (route) =>
       observedIdentities[route].firmwareVersion === sourceVersion &&
       observedIdentities[route].hardwareRevision === 5,
   );
-  const observedSourceContradiction = ROUTES.some((route) => {
+  const observedSourceContradiction = routesToUpdate.some((route) => {
     const observed = observedIdentities[route];
     return Boolean(
       (observed.firmwareVersion &&
@@ -1321,34 +1314,36 @@ export function resolveAutomaticApplyPlan({
   ) {
     return completeAutomaticUpdatePlan(
       targetSha256,
-      "Saved proof identifies firmware outside the exact reviewed Stock ↔ CFW pair; write the complete pinned target Apollo main on both temples.",
+      `${preservedRoutePrefix}saved proof identifies firmware outside the exact reviewed Stock ↔ CFW pair; write the complete pinned target Apollo main on ${routeDescription}.`,
+      routeSelection,
     );
   }
 
-  const exactSourceProven = bothRoutesMatch(
-    installedProvenance,
-    sourceSha256,
+  const exactSourceProven = routesToUpdate.every(
+    (route) =>
+      installedProvenance?.[route]?.imageSha256?.toLowerCase() === sourceSha256,
   );
   if (
     observedSourceContradiction ||
     !supportsLiveCompatiblePairProof(differencePlan) ||
     (!exactSourceProven && !observedSourceCompatible)
   ) {
-    const observed = ROUTES
+    const observed = routesToUpdate
       .map((route) => observedIdentities[route].firmwareVersion)
       .filter(Boolean);
     return completeAutomaticUpdatePlan(
       targetSha256,
       observedSourceContradiction
-        ? `Observed Smart Glasses firmware ${[...new Set(observed)].join(" / ")} is outside the exact ${sourceVersion} differential source; write the complete pinned target Apollo main on both temples.`
-        : "No exact bilateral Stock ↔ CFW source proof is available; write the complete pinned target Apollo main on both temples.",
+        ? `${preservedRoutePrefix}observed Smart Glasses firmware ${[...new Set(observed)].join(" / ")} on ${routeDescription} is outside the exact ${sourceVersion} differential source; write the complete pinned target Apollo main on ${routeDescription}.`
+        : `${preservedRoutePrefix}no exact Stock ↔ CFW source proof is available for ${routeDescription}; write the complete pinned target Apollo main on ${routeDescription}.`,
+      routeSelection,
     );
   }
 
   return {
     executable: true,
     action: "flash",
-    route: "both",
+    route: routeSelection,
     flashMode: "differences",
     sourceProofMode: exactSourceProven
       ? "verified-source-audits"
@@ -1357,8 +1352,75 @@ export function resolveAutomaticApplyPlan({
     sourceSha256,
     targetSha256,
     reason: exactSourceProven
-      ? "Saved bilateral audits prove the exact source. Skip byte-identical bundle components and transfer the changed, CRC-gated Apollo main to both temples."
-      : `Fresh bilateral analysis reports the exact reviewed source. Each temple must still return a just-in-time checksum-valid ${differencePlan.source.version}/hardware-5 reply before START.`,
+      ? `Saved audits prove the exact source on ${routeDescription}. Skip byte-identical bundle components and transfer the changed, CRC-gated Apollo main to ${routeDescription}.`
+      : `Fresh analysis reports the exact reviewed source on ${routeDescription}. Each selected temple must still return a just-in-time checksum-valid ${differencePlan.source.version}/hardware-5 reply before START.`,
+  };
+}
+
+export function summarizeAutomaticApplyTransfer({
+  plan,
+  targetFirmware,
+  differencePlan = null,
+  comparisonSourceFirmwareByRoute = {},
+} = {}) {
+  if (!plan?.executable) {
+    return {
+      executable: false,
+      reason: plan?.reason ?? "No executable USB update plan is available.",
+    };
+  }
+  const routes =
+    plan.action !== "flash"
+      ? []
+      : plan.route === "both"
+        ? [...ROUTES]
+        : plan.route
+          ? [plan.route]
+          : [];
+  const payloadBytesPerRoute = targetFirmware?.mainComponent?.payload?.length ?? 0;
+  const firmwareBytes =
+    plan.action === "flash" ? payloadBytesPerRoute * routes.length : 0;
+  const semanticDifferencesByRoute = Object.fromEntries(
+    routes.map((route) => {
+      const source = comparisonSourceFirmwareByRoute?.[route];
+      const comparison = source?.mainComponent?.payload
+        ? describeByteDifferences(
+            source.mainComponent.payload,
+            targetFirmware?.mainComponent?.payload,
+          )
+        : plan.flashMode === "differences"
+          ? differencePlan?.mainDifferences ?? null
+          : null;
+      return [route, comparison];
+    }),
+  );
+  const comparableDifferences = Object.values(semanticDifferencesByRoute).filter(
+    Boolean,
+  );
+  const semanticChangedBytes =
+    comparableDifferences.length === routes.length
+      ? comparableDifferences.reduce(
+          (total, comparison) => total + comparison.changedBytes,
+          0,
+        )
+      : null;
+  return {
+    executable: true,
+    action: plan.action,
+    flashMode: plan.flashMode,
+    routes,
+    payloadBytesPerRoute,
+    firmwareBytes,
+    semanticChangedBytes,
+    semanticDifferencesByRoute,
+    sparseByteRangesSupported: false,
+    skippedRoutes: ROUTES.filter((route) => !routes.includes(route)),
+    verificationRoutes: [...ROUTES],
+    reason: plan.reason,
+    protocolBoundary:
+      plan.action === "flash"
+        ? "The running-temple 0x54 DATA command is sequential and has no destination-offset field. The receiver requires the complete changed component plus its declared size and CRC before FINISH."
+        : "No firmware component transfer is planned.",
   };
 }
 

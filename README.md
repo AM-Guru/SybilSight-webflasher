@@ -1146,18 +1146,26 @@ Restore revalidates the selected bundle and rewrites the complete pinned
 Apollo main on both temples. It starts right then left, but may reverse that
 order only when the retained zero-write setup proof identifies the opposite
 allowlisted Case phase. Update also writes the complete pinned Apollo main for
-cross-version and unknown-source installs. It uses the component-difference
+cross-version and unknown-source installs. Before Apply, the no-write transfer
+preview reports the selected routes, the firmware bytes that will cross USB,
+and—when the installed catalog image is known—the number of source bytes that
+actually differ. A fresh checksum-valid Application-mode reply matching the
+selected target skips that temple; if both temples match, Update sends zero
+firmware bytes and performs only reset/liveness verification. Restore remains
+available when an exact pinned-image reinstall is intentional.
+
+Update uses the component-difference
 optimization only when saved audits or fresh bilateral analysis prove the
 exact reviewed Stock/CFW source pair. That plan omits every byte-identical
 component and transfers the one changed, complete CRC-gated Apollo main. The
 receiver has no safe sparse-write offset, so Update never transmits arbitrary
 changed byte ranges inside that component.
 
-Stock reports version 2.2.6.10 and current reviewed CFW reports 2.2.6.12; installed
+The current reviewed pair is Stock 2.2.8.4 and CFW 2.2.8.11; installed
 Apollo MRAM readback is unavailable. Saved recovery audits remain useful
 source proof, but they are browser-origin-local and are not portable from a
 localhost hardware test to the hosted site. For the exact reviewed Stock
-2.2.6.10 ↔ compatible reviewed-CFW pair, Automatic Update uses the difference plan only
+2.2.8.4 ↔ CFW 2.2.8.11 pair, Automatic Update uses the difference plan only
 when the fresh bilateral preflight reports the exact source version and
 hardware. The plan omits five byte-identical components and transfers the
 **complete** pinned target Apollo main, not sparse byte ranges. Every route
@@ -1176,12 +1184,14 @@ fallback because this route requires the running application. The successful
 audit records the live compatibility proof, recovery reset, and any safe
 fallback.
 
-If both saved routes already prove the selected target, Apply performs only
-the required bilateral reset and liveness verification. An older version,
-unknown source, or saved proof outside the reviewed pair selects a complete
-target-main write instead of attempting the differential path. A successful
-Restore or Update saves fresh per-route proof locally, keyed by Case serial,
-for later fail-closed updates.
+If fresh Application-mode replies or saved route audits prove the selected
+target on both temples, Apply performs only the required bilateral reset and
+liveness verification. If only one temple proves the target, it is preserved
+and only the other route is eligible for transfer. An older version, unknown
+source, or saved proof outside the reviewed pair selects a complete target-main
+write for each remaining route instead of attempting the differential path. A
+successful Restore or Update saves fresh per-route proof locally, keyed by
+Case serial, for later fail-closed updates.
 
 Automatic Apply handles the reviewed failure boundaries as follows:
 
@@ -1190,6 +1200,8 @@ Automatic Apply handles the reviewed failure boundaries as follows:
 | Case older than 1.2.57 | Stage 1.2.57 in the inactive bank, verify readback, switch banks, re-analyze, issue fresh `DEA0`, and recheck both vectors |
 | Case option bytes, bank aliases, or fallback vector disagree | Stop before any temple reset or firmware transfer |
 | One seated contact is initially missing | Issue the bounded traced bilateral reset and require contact plus application liveness to return |
+| Both fresh hardware-5 Application replies already match the selected target | Send zero firmware bytes; perform reset and bilateral liveness verification only |
+| One fresh hardware-5 Application reply already matches the selected target | Preserve that temple and update only the other route |
 | Responsive hardware-5 temples run an older version such as 2.1.1.12 | Transfer the complete pinned target main; never select Stock ↔ CFW differential mode |
 | Saved proof disagrees with fresh bilateral identity | Discard the saved plan and transfer the complete pinned target main |
 | Just-in-time differential preflight changes before `START` | Retry complete only with proof of zero accepted firmware bytes, exact cleanup, Case 1.2.57 return, and bilateral reset/liveness |

@@ -938,7 +938,7 @@ test("ships stock-based CFW 2.2.8.9 with bilateral version identity and the dire
 
 test("ships CFW 2.2.8.11 from stock with every BLE advertisement change omitted", async () => {
   const releaseDirectory = new URL(
-    "../public/firmware-updates/source-files/2.2.8.11/",
+    "../public/firmware-updates/source-files/2.2.8.11-runtime-fix/",
     import.meta.url,
   );
   const bundle = await readFile(new URL("g2-2.2.8.11.bin", releaseDirectory));
@@ -1006,11 +1006,26 @@ test("ships CFW 2.2.8.11 from stock with every BLE advertisement change omitted"
     await readFile(new URL("manifest.json", releaseDirectory), "utf8"),
   );
   assert.equal(manifest.release.version, "2.2.8.11");
+  assert.equal(manifest.release.archiveKey, "2.2.8.11-runtime-fix");
   assert.equal(manifest.release.reportedVersion, "2.2.8.11");
   assert.equal(manifest.package.sha256, REVIEWED_CFW_2_2_8_11.sha256);
   assert.equal(manifest.patchRecipe.operationCount, 36);
   assert.equal(manifest.excludedFeature.id, "ble-advertised-name");
   assert.equal(manifest.excludedFeature.status, "omitted");
+});
+
+test("preserves the originally published 2.2.8.11 package at its immutable URL", async () => {
+  const original = await readFile(
+    new URL(
+      "../public/firmware-updates/source-files/2.2.8.11/g2-2.2.8.11.bin",
+      import.meta.url,
+    ),
+  );
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", original);
+  assert.equal(
+    Buffer.from(digest).toString("hex"),
+    "492947f498b9812d4e0846f8fe1ad7159fb83005e0a4bdba22ffbb531af41df4",
+  );
 });
 
 test("retains withdrawn CFW 2.2.8.10 as evidence but excludes it from flashing", async () => {

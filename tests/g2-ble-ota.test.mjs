@@ -11,6 +11,7 @@ import {
   crc16CcittFalse,
   flashG2BleSessionsConcurrently,
   g2BleDeviceSide,
+  g2BleRoutesAwaitingCaseVerification,
   g2BleTargetReportedVersion,
   g2BleTargetVersionProof,
   isG2BleConnectionLoss,
@@ -676,6 +677,37 @@ test("an explicit final END preserves the transfer when bounded reboot reconnect
   assert.match(logs.at(-1).message, /No firmware will be replayed/);
 });
 
+test("a completed transfer remains pending when reboot GATT liveness is absent", () => {
+  const routes = {
+    left: {
+      outcome: "success",
+      components: [
+        {
+          postUpdate: {
+            freshReconnectAttempted: true,
+            reconnected: false,
+          },
+        },
+      ],
+    },
+    right: {
+      outcome: "success",
+      components: [
+        {
+          postUpdate: {
+            freshReconnectAttempted: true,
+            reconnected: true,
+          },
+        },
+      ],
+    },
+  };
+  assert.deepEqual(g2BleRoutesAwaitingCaseVerification(routes), ["left"]);
+  routes.left.skipped = true;
+  routes.left.verifiedBy = "fresh-case-version-proof";
+  assert.deepEqual(g2BleRoutesAwaitingCaseVerification(routes), []);
+});
+
 test("the final reboot reconnect is bounded and succeeds on the selected device handle", async () => {
   let connectAttempts = 0;
   const device = {
@@ -774,7 +806,7 @@ test("the direct BLE writer accepts only the complete pinned topology", () => {
 test("the current SybilSight CFW is a complete direct-BLE package", async () => {
   const bytes = await readFile(
     new URL(
-      "../public/firmware-updates/source-files/2.2.8.11/g2-2.2.8.11.bin",
+      "../public/firmware-updates/source-files/2.2.8.11-runtime-fix/g2-2.2.8.11.bin",
       import.meta.url,
     ),
   );

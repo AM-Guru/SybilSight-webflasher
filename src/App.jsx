@@ -88,6 +88,8 @@ import {
   mergeInstalledProvenance,
   prepareAutomaticTempleUpdate,
   resolveAutomaticCaseUpdatePlan,
+  resolveAutomaticApplyPlan,
+  summarizeAutomaticApplyTransfer,
   templeVersionObservationsFromFlashAudit,
   verifyAutomaticCaseReadiness,
 } from "./lib/automaticRecovery.js";
@@ -106,6 +108,7 @@ import {
   assertPinnedG2BleBundle,
   flashG2BleSessionsConcurrently,
   g2BleDeviceSide,
+  g2BleRoutesAwaitingCaseVerification,
   g2BleSupported,
   G2_KNOWN_NAME_TOKENS,
   g2BleTargetReportedVersion,
@@ -222,6 +225,7 @@ const OPERATION_LABELS = Object.freeze({
   "ble-temple-flash": "Restore Smart Glasses over Bluetooth",
   "bluetooth-probe": "Check Bluetooth Application mode",
   "automatic-apply": "Recover Smart Glasses over USB",
+  "automatic-plan": "Preview Smart Glasses USB transfer",
   "automatic-recovery": "Diagnose and recover without flashing",
   "ring-dfu-enter": "Restart R1 in update mode",
   "ring-dfu": "Update R1 Ring",
@@ -906,6 +910,9 @@ function BluetoothRecoveryCard({
             className={cx(
               "tiny-dot",
               bleResults?.outcome === "success" ? "tiny-dot-success" : "",
+              bleResults?.outcome === "awaiting_case_verification"
+                ? "tiny-dot-warm"
+                : "",
             )}
           />
           <span>{bleStatus}</span>
@@ -1449,6 +1456,8 @@ function App() {
   );
   const [automaticRecoveryDiagnosis, setAutomaticRecoveryDiagnosis] =
     useState(null);
+  const [automaticTransferPreview, setAutomaticTransferPreview] =
+    useState(null);
   const [installedProvenance, setInstalledProvenance] = useState({});
   const [deviceHistory, setDeviceHistory] = useState(() => readDeviceHistory());
   const [deviceLabelDraft, setDeviceLabelDraft] = useState("");
@@ -1675,6 +1684,64 @@ function App() {
       templeFlashAudit,
     ],
   );
+
+  // A Bluetooth transfer whose final reboot did not re-advertise stays
+  // pending until both checksum-valid Case routes report the target runtime.
+  // This is deliberately a state transition rather than just presentation:
+  // downloaded evidence and the Easy Mode completion badge must agree that a
+  // vanished temple has not yet been proven healthy.
+  useEffect(() => {
+    if (bleResults?.outcome !== "awaiting_case_verification") return;
+    const targetReportedVersion = bleResults.reportedVersion;
+    if (
+      !["left", "right"].every((side) =>
+        g2BleTargetVersionProof(pogoResults[side], targetReportedVersion),
+      )
+    ) {
+      return;
+    }
+    const verifiedAt = new Date().toISOString();
+    const finalized = {
+      ...bleResults,
+      outcome: "success",
+      caseVerifiedAt: verifiedAt,
+      routes: Object.fromEntries(
+        ["left", "right"].map((side) => [
+          side,
+          {
+            ...bleResults.routes?.[side],
+            verifiedBy: "fresh-case-version-proof",
+            caseVerifiedAt: verifiedAt,
+          },
+        ]),
+      ),
+    };
+    setBleResults(finalized);
+    setBleStatus(
+      `Bluetooth update complete · the Case verified checksum-valid left + right Application liveness at reported G2 ${targetReportedVersion}.`,
+    );
+    addLog(
+      `Direct Bluetooth restore completed only after fresh Case proof · both routes report checksum-valid G2 ${targetReportedVersion} Application liveness.`,
+      "success",
+    );
+    addLog(
+      formatBluetoothRecoveryTranscript(finalized, {
+        phase: "bluetooth-smart-glasses-recovery-case-verified",
+        buildLabel: WEBFLASHER_BUILD_LABEL,
+      }),
+      "evidence",
+    );
+    recordShellEvidenceSnapshot({
+      phase: "post-bluetooth-smart-glasses-recovery-case-verified",
+      results: pogoResults,
+      bluetoothFlashAuditSnapshot: finalized,
+    });
+  }, [
+    addLog,
+    bleResults,
+    pogoResults,
+    recordShellEvidenceSnapshot,
+  ]);
 
   const recordSupportEvent = useCallback((label, value, ok = true) => {
     const detail =
@@ -2038,6 +2105,10 @@ function App() {
   }, []);
 
   useEffect(() => {
+    setAutomaticTransferPreview(null);
+  }, [automaticInstallMode, selectedReleaseId]);
+
+  useEffect(() => {
     const key = installedProvenanceStorageKey(
       report?.console?.serialNumber,
       report?.console?.identifier,
@@ -2193,10 +2264,18 @@ function App() {
         `The previous console transcript could not be read (${error.message}); it has been left untouched and this session will not overwrite it.`,
         "warn",
       );
+      addLog(
+        `Current WebFlasher session opened · build ${WEBFLASHER_BUILD_LABEL}.`,
+      );
       return;
     }
     transcriptCustodyRef.current = true;
-    if (!stored) return;
+    if (!stored) {
+      addLog(
+        `Current WebFlasher session opened · build ${WEBFLASHER_BUILD_LABEL}.`,
+      );
+      return;
+    }
     // Drop the bookkeeping lines a previous recovery wrote. Persisting them
     // made every reload add two permanent entries, so a tab reloaded often
     // slowly filled its own transcript with recovery notices instead of
@@ -2204,20 +2283,26 @@ function App() {
     const deviceEntries = stored.entries.filter(
       (entry) => !isTranscriptRecoveryNotice(entry),
     );
-    if (!deviceEntries.length) return;
-    // Prepend the recovered entries so they persist again and appear in
-    // downloads; the visible console only announces the recovery.
-    transcriptRef.current = [
-      ...deviceEntries,
-      {
-        time: TRANSCRIPT_NOTICE_TIME,
-        message: `———— end of previous session transcript${stored.savedAt ? ` (last saved ${stored.savedAt})` : ""} ————`,
-        tone: "info",
-      },
-      ...transcriptRef.current,
-    ].slice(-CONSOLE_TRANSCRIPT_ENTRY_LIMIT);
+    if (deviceEntries.length) {
+      // Prepend the recovered entries so they persist again and appear in
+      // downloads; the visible console only announces the recovery.
+      transcriptRef.current = [
+        ...deviceEntries,
+        {
+          time: TRANSCRIPT_NOTICE_TIME,
+          message: `———— end of previous session transcript${stored.savedAt ? ` (last saved ${stored.savedAt})` : ""} ————`,
+          tone: "info",
+        },
+        ...transcriptRef.current,
+      ].slice(-CONSOLE_TRANSCRIPT_ENTRY_LIMIT);
+      addLog(
+        `Recovered ${deviceEntries.length} console ${deviceEntries.length === 1 ? "entry" : "entries"} from the previous session; Download log includes them.`,
+      );
+    }
     addLog(
-      `Recovered ${deviceEntries.length} console ${deviceEntries.length === 1 ? "entry" : "entries"} from the previous session; Download log includes them.`,
+      deviceEntries.length
+        ? `Current WebFlasher session opened · build ${WEBFLASHER_BUILD_LABEL}. Entries above the separator belong to earlier browser sessions.`
+        : `Current WebFlasher session opened · build ${WEBFLASHER_BUILD_LABEL}.`,
     );
     // Recover exactly once per load.
   }, []);
@@ -3279,18 +3364,20 @@ function App() {
               `${sessionSummary} with ${failedOutcomes.length} failed side${failedOutcomes.length === 1 ? "" : "s"}. ${failureSummary}`,
             );
           }
+          const awaitingCaseSides =
+            g2BleRoutesAwaitingCaseVerification(completedRoutes);
+          const awaitingCaseVerification = awaitingCaseSides.length > 0;
           const result = {
             imageSha256: prepared.fileSha256,
             version: prepared.g2Version,
+            reportedVersion: targetReportedVersion,
             routes: completedRoutes,
-            outcome: "success",
+            outcome: awaitingCaseVerification
+              ? "awaiting_case_verification"
+              : "success",
           };
           setBleResults(result);
           setBleReady(false);
-          setSessionProgress(
-            1,
-            "Both temples proven at target by transfer or fresh Case version",
-          );
           const retainedSides = ["right", "left"].filter(
             (side) => completedRoutes[side]?.skipped,
           );
@@ -3307,22 +3394,45 @@ function App() {
           ]
             .filter(Boolean)
             .join("; ");
-          setBleStatus(
-            `Bluetooth target established on right + left · ${routeSummary}. Re-seat both temples in the Case for the final reset and version-liveness check.`,
-          );
-          addLog(
-            `Direct Bluetooth restore completed · ${routeSummary}. Re-seat both temples for the final Case DEB0 reset and reported ${targetReportedVersion} liveness proof for package ${prepared.g2Version}.`,
-            "success",
-          );
+          if (awaitingCaseVerification) {
+            setUsbRecoveryRequested(true);
+            setSessionProgress(
+              1,
+              `Bluetooth transfer accepted; awaiting Case proof for ${awaitingCaseSides.join(" + ")}`,
+            );
+            setBleStatus(
+              `Bluetooth transfer accepted, but ${awaitingCaseSides.join(" + ")} did not complete a fresh reboot reconnect. Recovery is pending: re-seat both temples, select the Case, and run the no-flash recovery or Smart Glasses analysis.`,
+            );
+            addLog(
+              `Direct Bluetooth transfer is not yet a completed recovery · ${awaitingCaseSides.join(" + ")} exhausted the fresh post-END reconnect. Re-seat both temples and obtain checksum-valid Case proof of reported G2 ${targetReportedVersion}; firmware will not be replayed.`,
+              "warn",
+            );
+          } else {
+            setSessionProgress(
+              1,
+              "Both temples proven at target by transfer or fresh Case version",
+            );
+            setBleStatus(
+              `Bluetooth update complete on right + left · ${routeSummary}. Both routes have post-reboot Application proof.`,
+            );
+            addLog(
+              `Direct Bluetooth restore completed · ${routeSummary}. Both routes have fresh post-reboot Application proof for package ${prepared.g2Version}.`,
+              "success",
+            );
+          }
           addLog(
             formatBluetoothRecoveryTranscript(result, {
-              phase: "bluetooth-smart-glasses-recovery",
+              phase: awaitingCaseVerification
+                ? "bluetooth-smart-glasses-recovery-awaiting-case-verification"
+                : "bluetooth-smart-glasses-recovery",
               buildLabel: WEBFLASHER_BUILD_LABEL,
             }),
             "evidence",
           );
           recordShellEvidenceSnapshot({
-            phase: "post-bluetooth-smart-glasses-recovery",
+            phase: awaitingCaseVerification
+              ? "post-bluetooth-smart-glasses-recovery-awaiting-case-verification"
+              : "post-bluetooth-smart-glasses-recovery",
             bluetoothFlashAuditSnapshot: result,
           });
           return result;
@@ -3737,6 +3847,129 @@ function App() {
       }
     }, {
       total: templeFlashRoute === "both" ? 14 : 9,
+    });
+  };
+
+  const previewAutomaticUsbTransfer = async () => {
+    const release = catalog.find((item) => item.id === selectedReleaseId);
+    if (!report) {
+      setError("Select and analyze the G2 Case before previewing the USB transfer.");
+      return;
+    }
+    if (!release) {
+      setError("Choose a firmware release before previewing the USB transfer.");
+      return;
+    }
+
+    return run("automatic-plan", async () => {
+      setAutomaticStatus("Building a no-write USB transfer preview…");
+      setSessionProgress(0.1, "Loading the selected pinned firmware");
+      const targetFirmware = acceptPreparedFirmware(
+        await fetchCatalogFirmware(release),
+      );
+      let sourceFirmware = null;
+      let differencePlan = null;
+      if (automaticInstallMode === "update") {
+        const counterpart = findStockCfwCounterpartRelease(
+          catalog,
+          targetFirmware,
+        );
+        if (counterpart) {
+          sourceFirmware = await fetchCatalogFirmware(counterpart);
+          try {
+            differencePlan = buildBundleDifferencePlan(
+              sourceFirmware,
+              targetFirmware,
+            );
+          } catch {
+            sourceFirmware = null;
+            differencePlan = null;
+          }
+        }
+      }
+
+      const observedTempleVersions = Object.fromEntries(
+        ["right", "left"].map((route) => {
+          const decoded = pogoResults?.[route]?.version?.decoded;
+          if (
+            decoded?.kind !== "version" ||
+            !decoded.firmwareVersion ||
+            decoded.hardwareRevision !== 5
+          ) {
+            throw new Error(
+              `Run the Smart Glasses version analysis before previewing; ${route} has no checksum-valid Application-mode version reply.`,
+            );
+          }
+          return [
+            route,
+            {
+              firmwareVersion: decoded.firmwareVersion,
+              hardwareRevision: decoded.hardwareRevision,
+            },
+          ];
+        }),
+      );
+      const plan = resolveAutomaticApplyPlan({
+        installMode: automaticInstallMode,
+        targetFirmware,
+        installedProvenance,
+        differenceSourceFirmware: sourceFirmware,
+        differencePlan,
+        observedTempleVersions,
+      });
+
+      const comparisonCache = new Map();
+      const comparisonSourceFirmwareByRoute = {};
+      for (const route of ["right", "left"]) {
+        const observedVersion = observedTempleVersions[route].firmwareVersion;
+        if (plan.route !== "both" && plan.route !== route) continue;
+        if (
+          sourceFirmware &&
+          differencePlan?.source?.version === observedVersion
+        ) {
+          comparisonSourceFirmwareByRoute[route] = sourceFirmware;
+          continue;
+        }
+        if (!comparisonCache.has(observedVersion)) {
+          const observedRelease = catalog.find(
+            (item) =>
+              item.channel !== "custom" &&
+              (item.reportedVersion ?? item.internalVersion ?? item.version) ===
+                observedVersion,
+          );
+          comparisonCache.set(
+            observedVersion,
+            observedRelease
+              ? await fetchCatalogFirmware(observedRelease)
+              : null,
+          );
+        }
+        comparisonSourceFirmwareByRoute[route] =
+          comparisonCache.get(observedVersion);
+      }
+      const summary = summarizeAutomaticApplyTransfer({
+        plan,
+        targetFirmware,
+        differencePlan,
+        comparisonSourceFirmwareByRoute,
+      });
+      setAutomaticTransferPreview(summary);
+      setSessionProgress(1, "USB transfer preview ready; no firmware sent");
+      const routeLabel = summary.routes.length
+        ? summary.routes.join(" + ")
+        : "none";
+      setAutomaticStatus(
+        summary.action === "verify-only"
+          ? "Preview complete · both live versions match; Update will send 0 firmware bytes."
+          : `Preview complete · ${routeLabel} · ${formatBytes(summary.firmwareBytes)} will cross USB. No firmware was sent by this preview.`,
+      );
+      addLog(
+        summary.action === "verify-only"
+          ? `USB transfer preview · target already live on both temples · 0 firmware bytes planned.`
+          : `USB transfer preview · ${routeLabel} · ${formatBytes(summary.firmwareBytes)} on the wire${summary.semanticChangedBytes == null ? "" : ` for ${formatBytes(summary.semanticChangedBytes)} of known source-byte differences`} · sparse records unavailable in the running-temple OTA protocol.`,
+        summary.action === "verify-only" ? "success" : "warn",
+      );
+      return summary;
     });
   };
 
@@ -4393,9 +4626,12 @@ function App() {
     bleResults?.imageSha256 === selectedRelease?.sha256;
   const bluetoothUpdateFailed =
     bleResults?.outcome === "failed_or_partial";
+  const bluetoothUpdateAwaitingCase =
+    bleResults?.outcome === "awaiting_case_verification";
   const usbRecoveryVisible =
     !directBleSupported ||
     bluetoothUpdateFailed ||
+    bluetoothUpdateAwaitingCase ||
     usbRecoveryRequested;
   const caseUpdateNeeded = Boolean(
     report?.console?.caseVersion &&
@@ -4440,6 +4676,12 @@ function App() {
     pogoResults.left?.status &&
     pogoResults.right?.version &&
     pogoResults.right?.status,
+  );
+  const glassesVersionAnalysisComplete = Boolean(
+    pogoResults.left?.version?.decoded?.kind === "version" &&
+    pogoResults.left.version.decoded.firmwareVersion &&
+    pogoResults.right?.version?.decoded?.kind === "version" &&
+    pogoResults.right.version.decoded.firmwareVersion,
   );
   const clearConsole = useCallback(() => {
     setLogs([]);
@@ -4618,14 +4860,18 @@ function App() {
               tone={
                 !directBleSupported
                   ? "warm"
-                  : bluetoothUpdateComplete ||
-                      (bleDevices.left && bleDevices.right)
-                    ? "success"
-                    : "quiet"
+                  : bluetoothUpdateAwaitingCase
+                    ? "warm"
+                    : bluetoothUpdateComplete ||
+                        (bleDevices.left && bleDevices.right)
+                      ? "success"
+                      : "quiet"
               }
             >
               {!directBleSupported
                 ? "Bluetooth unavailable · use USB recovery"
+                : bluetoothUpdateAwaitingCase
+                  ? "Case verification required"
                 : bluetoothUpdateComplete
                   ? "Bluetooth update complete"
                   : bleDevices.left && bleDevices.right
@@ -4726,7 +4972,7 @@ function App() {
                   <span>{report ? caseDisplayIdentity : "No Case selected"}</span>
                   <strong>
                     {report
-                      ? fullGlassesAnalysisComplete
+                      ? glassesVersionAnalysisComplete
                         ? `L ${pogoResults.left.version.decoded?.firmwareVersion ?? "captured"} · R ${pogoResults.right.version.decoded?.firmwareVersion ?? "captured"}`
                         : `${telemetry?.leftPresent ? "L ready" : "L absent"} · ${telemetry?.rightPresent ? "R ready" : "R absent"}`
                       : "Both temples must be seated"}
@@ -4825,11 +5071,43 @@ function App() {
                 <span>
                   <Icon name="check" />
                   {automaticInstallMode === "update"
-                    ? "Differential first → verified full fallback"
+                    ? "Skip target-matching temples → component-level delta when eligible"
                     : "Complete right + left restore"}
                 </span>
                 <span><Icon name="check" /> Boot + bilateral liveness proof</span>
               </div>
+              <Button
+                tone="secondary"
+                onClick={previewAutomaticUsbTransfer}
+                busy={operation === "automatic-plan"}
+                disabled={
+                  !report ||
+                  !selectedRelease ||
+                  !glassesVersionAnalysisComplete ||
+                  Boolean(operation)
+                }
+              >
+                Preview USB transfer · no firmware write
+              </Button>
+              {automaticTransferPreview ? (
+                <div className="automatic-task-list automatic-transfer-preview" aria-live="polite">
+                  <span>
+                    <Icon name="scan" /> Routes: {automaticTransferPreview.routes.join(" + ") || "none"}
+                    {automaticTransferPreview.skippedRoutes.length
+                      ? ` · skipped ${automaticTransferPreview.skippedRoutes.join(" + ")}`
+                      : ""}
+                  </span>
+                  <span>
+                    <Icon name="check" /> Planned firmware bytes on USB: {formatBytes(automaticTransferPreview.firmwareBytes)}
+                  </span>
+                  {automaticTransferPreview.semanticChangedBytes != null ? (
+                    <span>
+                      <Icon name="scan" /> Known source-byte differences: {formatBytes(automaticTransferPreview.semanticChangedBytes)}
+                    </span>
+                  ) : null}
+                  <small>{automaticTransferPreview.protocolBoundary}</small>
+                </div>
+              ) : null}
               <Button
                 className="automatic-apply-button"
                 onClick={automaticApply}
@@ -4860,10 +5138,12 @@ function App() {
               {automaticInstallMode === "update" ? (
                 <small className="automatic-boundary">
                   Update writes the complete pinned target main for cross-version or
-                  unknown-source installs. It uses the Stock ↔ CFW optimization only
-                  when saved audits or fresh bilateral analysis prove the exact
-                  source, then rechecks it immediately before each temple START. If
-                  the differential reaches FINISH but target boot/liveness fails,
+                  unknown-source installs, but now skips any temple already returning
+                  the selected target version in a fresh hardware-5 Application reply.
+                  The Stock ↔ CFW optimization omits unchanged bundle components; the
+                  running-temple protocol still requires the complete changed Apollo
+                  main because DATA has no destination offset. If that transfer reaches
+                  FINISH but target boot/liveness fails,
                   Update resets both temples and starts the complete image only when
                   Case cleanup and bilateral application reachability are proven.
                 </small>
@@ -5641,6 +5921,34 @@ function App() {
                   currentVersion={report?.console?.caseVersion}
                   targetVersion={latestCaseFirmwareRelease?.caseVersion}
                 />
+                <Button
+                  tone="secondary"
+                  onClick={previewAutomaticUsbTransfer}
+                  busy={operation === "automatic-plan"}
+                  disabled={
+                    !report ||
+                    !selectedRelease ||
+                    !glassesVersionAnalysisComplete ||
+                    Boolean(operation)
+                  }
+                >
+                  Preview USB transfer · no firmware write
+                </Button>
+                {automaticTransferPreview ? (
+                  <div className="automatic-task-list automatic-transfer-preview">
+                    <span>
+                      Routes: {automaticTransferPreview.routes.join(" + ") || "none"}
+                      {automaticTransferPreview.skippedRoutes.length
+                        ? ` · skipped ${automaticTransferPreview.skippedRoutes.join(" + ")}`
+                        : ""}
+                    </span>
+                    <span>USB payload: {formatBytes(automaticTransferPreview.firmwareBytes)}</span>
+                    {automaticTransferPreview.semanticChangedBytes != null ? (
+                      <span>Known source-byte differences: {formatBytes(automaticTransferPreview.semanticChangedBytes)}</span>
+                    ) : null}
+                    <small>{automaticTransferPreview.protocolBoundary}</small>
+                  </div>
+                ) : null}
                 <Button
                   onClick={automaticApply}
                   busy={operation === "automatic-apply"}

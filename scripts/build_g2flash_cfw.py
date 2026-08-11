@@ -39,8 +39,9 @@ REBASE_RECIPE = (
     / "cfw_patches-2.2.8.9.json"
 )
 OUTPUT_VERSION = "2.2.8.11"
+OUTPUT_ARCHIVE_KEY = "2.2.8.11-runtime-fix"
 OUTPUT_DIR = (
-    ROOT / "public" / "firmware-updates" / "source-files" / OUTPUT_VERSION
+    ROOT / "public" / "firmware-updates" / "source-files" / OUTPUT_ARCHIVE_KEY
 )
 OUTPUT_BUNDLE = OUTPUT_DIR / f"g2-{OUTPUT_VERSION}.bin"
 OUTPUT_RECIPE = OUTPUT_DIR / f"cfw_patches-{OUTPUT_VERSION}.json"

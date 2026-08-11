@@ -38,15 +38,19 @@ test("Caddy serves release-bound firmware from the atomic WebFlasher root", asyn
   }
   assert.ok(releaseBound.length > 0);
   for (const release of releaseBound) {
+    const archiveKey = release.url.match(
+      /^\/firmware-updates\/source-files\/([^/]+)\/[^/]+$/,
+    )?.[1];
+    assert.ok(archiveKey, `${release.version} must use a versioned firmware URL`);
     const route = escapeRegExp(
-      `/firmware-updates/source-files/${release.version}/*`,
+      `/firmware-updates/source-files/${archiveKey}/*`,
     );
     assert.match(
       caddy,
       new RegExp(
         `handle ${route}\\s*\\{\\s*root \\* /share/webflasher\\s+file_server\\s*\\}`,
       ),
-      `${release.version} must not fall through to the mutable historical archive`,
+      `${release.version} (${archiveKey}) must not fall through to the mutable historical archive`,
     );
   }
   assert.match(
