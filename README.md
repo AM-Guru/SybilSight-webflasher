@@ -1502,11 +1502,23 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+The development server is for UI work only. Its hot reload can replace the
+page while a temple is committing firmware, so device mutation is blocked
+there. For a local hardware session, use the static production build instead:
+
+```bash
+npm run hardware
+```
+
+Then open [http://127.0.0.1:3000](http://127.0.0.1:3000). Rebuild and restart
+only when no device operation is active.
+
 Available commands:
 
 | Command | Purpose |
 | --- | --- |
 | `npm run dev` | Start the Vite development server on port 3000 |
+| `npm run hardware` | Build and serve a non-hot-reloading local hardware test on `127.0.0.1:3000` |
 | `npm test` | Run firmware-parser and safety tests |
 | `npm run test:python` | Run the offline Python protocol/transport tests |
 | `npm run build` | Create the static production build in `dist/` |

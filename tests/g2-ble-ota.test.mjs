@@ -868,10 +868,17 @@ test("the chooser rejects a temple from the wrong side", async () => {
       },
     }),
   };
-  await assert.rejects(
-    requestG2BleDevice("right", bluetooth),
-    /Select the right temple/,
-  );
+  let failure;
+  try {
+    await requestG2BleDevice("right", bluetooth);
+  } catch (caught) {
+    failure = caught;
+  }
+  assert.match(failure?.message ?? "", /Select the right temple/);
+  assert.equal(failure.code, "WRONG_G2_SIDE");
+  assert.equal(failure.requestedSide, "right");
+  assert.equal(failure.observedSide, "left");
+  assert.equal(failure.deviceName, "Even G2_32_L_693CCB");
   assert.equal(disconnected, true);
 });
 

@@ -97,6 +97,7 @@ import { REVIEWED_CASE_VERSION } from "./lib/pogoFlashBridge.js";
 import {
   WEBFLASHER_BUILD_LABEL,
   WEBFLASHER_FIRMWARE_CATALOG_URL,
+  assertStableMutationRuntime,
   assertCurrentWebFlasherRelease,
 } from "./lib/releaseIntegrity.js";
 import {
@@ -1497,6 +1498,7 @@ function App() {
     "Choose firmware, disconnect the Even app, then pair the explicitly labeled Left and Right temples.",
   );
   const [bleResults, setBleResults] = useState(null);
+  const [bleRecoveryHint, setBleRecoveryHint] = useState(null);
   const [bleRouteProgress, setBleRouteProgress] = useState(
     EMPTY_BLE_ROUTE_PROGRESS,
   );
@@ -2419,6 +2421,7 @@ function App() {
     );
     try {
       if (PERSISTENT_MUTATION_OPERATIONS.has(name)) {
+        assertStableMutationRuntime();
         mutationWakeLock = new MutationWakeLock({
           onStatus: handleWakeLockStatus,
         });
@@ -3071,6 +3074,9 @@ function App() {
         ...current,
         [side]: device,
       }));
+      setBleRecoveryHint((current) =>
+        current?.side === side ? null : current,
+      );
       setBleResults(null);
       setBleStatus(
         `${side} selected · ${device.name} · advertised ${observedSide} marker verified. Select the other temple before updating.`,
@@ -3080,23 +3086,52 @@ function App() {
         "success",
       );
     } catch (caught) {
+      const requestedSideUnavailable =
+        caught?.name === "NotFoundError" ||
+        caught?.code === "WRONG_G2_SIDE" ||
+        caught?.code === "AMBIGUOUS_G2_SIDE";
       const message =
         caught?.name === "NotFoundError"
           ? `The ${side} Bluetooth chooser closed without a selection. Chrome uses the same result when no matching advertisement is visible; wake and remove that temple from the Case, disconnect it from the Even app or phone, then retry.`
           : caught?.message || String(caught);
-      setBleStatus(message);
+      if (requestedSideUnavailable) {
+        setBleRecoveryHint({
+          side,
+          reason:
+            caught?.name === "NotFoundError"
+              ? "no matching advertisement was selectable"
+              : caught?.code === "WRONG_G2_SIDE"
+                ? `Chrome returned the ${caught.observedSide} temple instead`
+                : "the returned device had no trustworthy side marker",
+          observedSide: caught?.observedSide ?? null,
+          observedName: caught?.deviceName ?? null,
+          observedAt: new Date().toISOString(),
+        });
+        setUsbRecoveryRequested(true);
+        setBleStatus(
+          `${message} The Case recovery panel is open: select the Case and run “Diagnose & recover without flashing” before considering a firmware rewrite.`,
+        );
+      } else {
+        setBleStatus(message);
+      }
       if (caught?.name === "NotFoundError") {
-        addLog(message, "warn");
+        addLog(
+          `${message} Opening the Case no-flash recovery path for one bounded reset and bilateral Application proof.`,
+          "warn",
+        );
       } else {
         if (
-          /Web Bluetooth is unavailable|without one unambiguous Left\/Right marker/i.test(
-            message,
-          )
+          /Web Bluetooth is unavailable/i.test(message)
         ) {
           setUsbRecoveryRequested(true);
         }
         setError(message);
-        addLog(message, "error");
+        addLog(
+          requestedSideUnavailable
+            ? `${message} The requested ${side} side remains unproven over Bluetooth; opening the Case no-flash recovery path before any firmware rewrite.`
+            : message,
+          "error",
+        );
       }
     }
   };
@@ -3539,7 +3574,10 @@ function App() {
       try {
         const diagnosis = await diagnoseAndRecoverAutomaticUsb({
           session: getSession(),
-          onStep: ({ step, route }) => {
+          forceResetReason: bleRecoveryHint
+            ? `${bleRecoveryHint.side} Bluetooth selection failed because ${bleRecoveryHint.reason}`
+            : null,
+          onStep: ({ step, route, reason }) => {
             if (step === "telemetry") {
               setSessionProgress(0.03, "Refreshing Case and temple contacts");
             } else if (step === "probe") {
@@ -3549,9 +3587,15 @@ function App() {
               );
             } else if (step === "reset") {
               setAutomaticStatus(
-                "A temple is outside proven Application mode; issuing the bounded bilateral reboot…",
+                bleRecoveryHint
+                  ? `Both applications answer through the Case, but ${bleRecoveryHint.side} Bluetooth is unavailable; issuing one bounded bilateral reboot before any firmware write…`
+                  : "A temple is outside proven Application mode; issuing the bounded bilateral reboot…",
               );
               setSessionProgress(0.4, "Rebooting both temples and verifying liveness");
+              addLog(
+                `No-flash bilateral reset requested · ${reason}`,
+                "warn",
+              );
             }
           },
         });
@@ -3619,6 +3663,15 @@ function App() {
             ? `Healthy · both temples were already in Application mode; ${bluetoothDetail}.`
             : `Recovered without firmware · both temples rebooted into Application mode; ${bluetoothDetail}.`,
         );
+        if (diagnosis.action === "reset-for-bluetooth-and-verify") {
+          setBleStatus(
+            `The Case reset and checksum-valid left + right Application proof completed with zero firmware bytes. Remove the ${bleRecoveryHint?.side ?? "missing"} temple from the Case and retry its Bluetooth selection.`,
+          );
+          // A successful reset consumes this recovery request. A subsequent
+          // chooser failure will create a fresh hint; repeated button presses
+          // must not keep rebooting healthy temples without a new observation.
+          setBleRecoveryHint(null);
+        }
         addLog(
           `${diagnosis.action === "none" ? "No-flash diagnosis" : "No-flash recovery"} complete · firmware bytes sent 0 · ${bluetoothDetail}.`,
           complete ? "success" : "warn",

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   WEBFLASHER_FIRMWARE_CATALOG_URL,
   WebFlasherReleaseIntegrityError,
+  assertStableMutationRuntime,
   assertCurrentWebFlasherRelease,
 } from "../src/lib/releaseIntegrity.js";
 
@@ -28,6 +29,23 @@ function catalogResponse(bytes = CATALOG_BYTES, { ok = true, status = 200 } = {}
       bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
   };
 }
+
+test("blocks device mutation in a hot-reloading development runtime", () => {
+  assert.throws(
+    () => assertStableMutationRuntime({ hotReloadEnabled: true }),
+    (error) => {
+      assert.equal(error instanceof WebFlasherReleaseIntegrityError, true);
+      assert.equal(error.releaseIntegrity.hotReloadEnabled, true);
+      assert.match(error.message, /npm run hardware/);
+      assert.match(error.message, /No device mutation was started/);
+      return true;
+    },
+  );
+  assert.equal(
+    assertStableMutationRuntime({ hotReloadEnabled: false }),
+    true,
+  );
+});
 
 test("permits mutation only when the running and cache-busted deployed releases match", async () => {
   const requests = [];

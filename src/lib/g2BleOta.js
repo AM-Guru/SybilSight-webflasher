@@ -530,11 +530,16 @@ export async function requestG2BleDevice(
   const observedSide = g2BleDeviceSide(device?.name);
   if (observedSide !== side) {
     device?.gatt?.disconnect();
-    throw new Error(
+    const error = new Error(
       observedSide
         ? `Select the ${side} temple. Chrome returned ${JSON.stringify(device?.name ?? "unnamed G2")}, which identifies the ${observedSide} temple. The ${side} pairing accepts only an explicit ${side}-side name.`
         : `Select the ${side} temple. Chrome returned ${JSON.stringify(device?.name ?? "unnamed G2")} without one unambiguous Left/Right marker. The ${side} pairing accepts only a G2 device whose advertised name explicitly identifies the ${side} side.`,
     );
+    error.code = observedSide ? "WRONG_G2_SIDE" : "AMBIGUOUS_G2_SIDE";
+    error.requestedSide = side;
+    error.observedSide = observedSide;
+    error.deviceName = device?.name ?? null;
+    throw error;
   }
   return device;
 }

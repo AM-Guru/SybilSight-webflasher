@@ -178,6 +178,46 @@ test("automatic USB diagnosis does not reboot two healthy applications", async (
   assert.equal(resetCalls, 0);
   assert.equal(result.firmwareBytesTransmitted, 0);
 });
+
+test("chooser-proven Bluetooth loss resets healthy applications without flashing", async () => {
+  const steps = [];
+  let resetCalls = 0;
+  const session = {
+    async readTempleFlashPreflight() {
+      return {
+        telemetry: { leftPresent: true, rightPresent: true },
+      };
+    },
+    async probeRunningTemple() {
+      return versionProbe("2.2.8.11");
+    },
+    async restartAndVerifyBothTemples(options) {
+      resetCalls += 1;
+      assert.equal(
+        options.purpose,
+        "Automatic Bluetooth-advertising recovery",
+      );
+      return verifiedReadiness("2.2.8.11");
+    },
+  };
+  const result = await diagnoseAndRecoverAutomaticUsb({
+    session,
+    forceResetReason:
+      "left Bluetooth selection failed because no matching advertisement was selectable",
+    onStep(step) {
+      steps.push(step);
+    },
+  });
+  assert.equal(resetCalls, 1);
+  assert.equal(result.outcome, "recovered");
+  assert.equal(result.action, "reset-for-bluetooth-and-verify");
+  assert.equal(result.firmwareBytesTransmitted, 0);
+  assert.match(result.resetReason, /left Bluetooth selection failed/);
+  assert.deepEqual(
+    steps.map(({ step }) => step),
+    ["telemetry", "probe", "probe", "reset"],
+  );
+});
 const caseOptionBytes = (swapBank = false) => {
   const bytes = new Uint8Array(128);
   const userWord =

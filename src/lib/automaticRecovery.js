@@ -108,6 +108,7 @@ export function minimumAutomaticRecoveryPlan(temples) {
 export async function diagnoseAndRecoverAutomaticUsb({
   session,
   onStep = () => {},
+  forceResetReason = null,
 } = {}) {
   if (
     !session?.readTempleFlashPreflight ||
@@ -152,7 +153,7 @@ export async function diagnoseAndRecoverAutomaticUsb({
     error.diagnosis = { preflight, temples, probes, initialPlan };
     throw error;
   }
-  if (initialPlan.action === "none") {
+  if (initialPlan.action === "none" && !forceResetReason) {
     return {
       outcome: "healthy",
       action: "none",
@@ -165,12 +166,17 @@ export async function diagnoseAndRecoverAutomaticUsb({
     };
   }
 
-  await onStep({ step: "reset" });
+  const resetReason = forceResetReason
+    ? String(forceResetReason)
+    : initialPlan.reason;
+  await onStep({ step: "reset", reason: resetReason });
   try {
     const verification = await session.restartAndVerifyBothTemples({
       progressBase: 0.4,
       progressSpan: 0.58,
-      purpose: "Automatic no-flash recovery",
+      purpose: forceResetReason
+        ? "Automatic Bluetooth-advertising recovery"
+        : "Automatic no-flash recovery",
     });
     const recoveredTemples = Object.fromEntries(
       ROUTES.map((route) => [
@@ -187,7 +193,10 @@ export async function diagnoseAndRecoverAutomaticUsb({
     );
     return {
       outcome: "recovered",
-      action: "reset-and-verify",
+      action: forceResetReason
+        ? "reset-for-bluetooth-and-verify"
+        : "reset-and-verify",
+      resetReason,
       firmwareBytesTransmitted: 0,
       preflight,
       temples,

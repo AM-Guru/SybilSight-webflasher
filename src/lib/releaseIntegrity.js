@@ -26,6 +26,16 @@ export class WebFlasherReleaseIntegrityError extends Error {
   }
 }
 
+export function assertStableMutationRuntime({
+  hotReloadEnabled = Boolean(import.meta.hot),
+} = {}) {
+  if (!hotReloadEnabled) return true;
+  throw new WebFlasherReleaseIntegrityError(
+    "Firmware mutation is disabled in the hot-reloading development server. Run `npm run hardware` and reopen the static local build before changing device firmware. No device mutation was started.",
+    { hotReloadEnabled: true },
+  );
+}
+
 function requireBuildSha(value, label) {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (!BUILD_SHA_PATTERN.test(normalized)) {
