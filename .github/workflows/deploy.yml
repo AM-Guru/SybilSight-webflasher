@@ -622,7 +622,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          health_url="https://webflasher.sybilsight.com/remote-support/healthz?verify=${GITHUB_SHA}&run=${GITHUB_RUN_ID}"
+          health_url="https://webflasher.sybilsight.com/remote-support/healthz"
           observed_health_file="${RUNNER_TEMP}/observed-remote-support-health.json"
           health_ready=false
           for _ in $(seq 1 30); do
