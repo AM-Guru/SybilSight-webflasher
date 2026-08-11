@@ -107,6 +107,7 @@ import {
   g2BleDeviceSide,
   g2BleSupported,
   G2_KNOWN_NAME_TOKENS,
+  g2BleTargetReportedVersion,
   g2BleTargetVersionProof,
   g2NameToken,
   requestG2BleDevice,
@@ -2751,6 +2752,11 @@ function App() {
   };
 
   const acceptPreparedFirmware = (accepted) => {
+    if (accepted.firmwareRevocation) {
+      throw new Error(
+        `G2 firmware ${accepted.firmwareRevocation.version} is revoked from all recovery paths: ${accepted.firmwareRevocation.reason}.`,
+      );
+    }
     setFirmware(accepted);
     setStaged(null);
     setTempleFlashAudit(null);
@@ -2842,7 +2848,7 @@ function App() {
     } catch (caught) {
       const message =
         caught?.name === "NotFoundError"
-          ? `The ${side} Bluetooth chooser was dismissed without selecting a temple.`
+          ? `The ${side} Bluetooth chooser closed without a selection. Chrome uses the same result when no matching advertisement is visible; wake and remove that temple from the Case, disconnect it from the Even app or phone, then retry.`
           : caught?.message || String(caught);
       setBleStatus(message);
       if (caught?.name === "NotFoundError") {
@@ -2880,6 +2886,8 @@ function App() {
           const prepared = await fetchCatalogFirmware(release);
           assertPinnedG2BleBundle(prepared);
           acceptPreparedFirmware(prepared);
+          const targetReportedVersion =
+            g2BleTargetReportedVersion(prepared);
           addLog(
             `Direct Bluetooth gate passed · exact package ${prepared.fileSha256.slice(0, 16)}… · ${prepared.componentImages.length} component headers, payload CRC32Cs, and Apollo MRAM bounds verified.`,
             "success",
@@ -2922,7 +2930,7 @@ function App() {
             if (
               g2BleTargetVersionProof(
                 pogoResults[side],
-                prepared.g2Version,
+                targetReportedVersion,
               )
             ) {
               completedRoutes[side] = {
@@ -2931,6 +2939,7 @@ function App() {
                 deviceName: device.name,
                 imageSha256: prepared.fileSha256,
                 version: prepared.g2Version,
+                reportedVersion: targetReportedVersion,
                 components: [],
                 blockAcks: 0,
                 verifiedBy: "fresh-case-version-proof",
@@ -2946,11 +2955,11 @@ function App() {
               setRouteProgress(
                 side,
                 1,
-                `${side}: retaining fresh Case proof of G2 ${prepared.g2Version}`,
+                `${side}: retaining fresh Case proof of reported G2 ${targetReportedVersion}`,
                 "retained",
               );
               addLog(
-                `${side}: fresh checksum-valid Case interrogation already proves G2 ${prepared.g2Version} with exact route restoration. Bluetooth will not rewrite this temple.`,
+                `${side}: fresh checksum-valid Case interrogation already proves reported G2 ${targetReportedVersion} for package ${prepared.g2Version} with exact route restoration. Bluetooth will not rewrite this temple.`,
                 "success",
               );
               continue;
@@ -3083,6 +3092,7 @@ function App() {
                   deviceName: device.name,
                   imageSha256: prepared.fileSha256,
                   version: prepared.g2Version,
+                  reportedVersion: targetReportedVersion,
                   components: [],
                   completedComponentCount: 0,
                   blockAcks: 0,
@@ -3097,6 +3107,7 @@ function App() {
           setBleResults({
             imageSha256: prepared.fileSha256,
             version: prepared.g2Version,
+            reportedVersion: targetReportedVersion,
             routes: { ...completedRoutes },
             outcome: "in_progress",
           });
@@ -3151,7 +3162,7 @@ function App() {
             `Bluetooth target established on right + left · ${routeSummary}. Re-seat both temples in the Case for the final reset and version-liveness check.`,
           );
           addLog(
-            `Direct Bluetooth restore completed · ${routeSummary}. Re-seat both temples for the final Case DEB0 reset and ${prepared.g2Version} liveness proof.`,
+            `Direct Bluetooth restore completed · ${routeSummary}. Re-seat both temples for the final Case DEB0 reset and reported ${targetReportedVersion} liveness proof for package ${prepared.g2Version}.`,
             "success",
           );
           addLog(

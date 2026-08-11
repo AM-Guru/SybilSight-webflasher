@@ -13,6 +13,10 @@ import { TEMPLE_FLASH_TARGETS } from "../src/lib/templeFlashTargets.js";
 
 const LEGACY_CFW_SHA256 =
   "5c1539fd39c599e6035f6a8ec0779ba687c250d342a24c21a39952fed6c56aa0";
+const SUPERSEDED_ADVERTISED_CFW_2_2_8_7_SHA256 =
+  "e9d9e8b30d5f240fb8e2fc157f552515cee4c785af6886840d420ec27e86f4e0";
+const SUPERSEDED_ADVERTISED_CFW_2_2_8_8_SHA256 =
+  "9a7ebf7b7989730ca30195af46219c188fff3c3023533b763d0ca5abf8243944";
 const REVIEWED_CFW_2_2_8_11_SHA256 =
   "492947f498b9812d4e0846f8fe1ad7159fb83005e0a4bdba22ffbb531af41df4";
 const SUPERSEDED_ADVERTISED_CFW_2_2_8_9_SHA256 =
@@ -133,6 +137,8 @@ test("excludes advertisement-patched CFW releases from both mutation paths", asy
   ).releases;
 
   for (const digest of [
+    SUPERSEDED_ADVERTISED_CFW_2_2_8_7_SHA256,
+    SUPERSEDED_ADVERTISED_CFW_2_2_8_8_SHA256,
     SUPERSEDED_ADVERTISED_CFW_2_2_8_9_SHA256,
     WITHDRAWN_CFW_2_2_8_10_SHA256,
   ]) {

@@ -8,14 +8,7 @@ export const AUTOMATIC_INSTALL_MODES = Object.freeze(["update", "restore"]);
 const ROUTES = Object.freeze(["right", "left"]);
 const REVIEWED_STOCK_CFW_PAIRS = Object.freeze([
   Object.freeze(["2.2.6.10", "2.2.6.11", "2.2.6.12"]),
-  Object.freeze([
-    "2.2.8.4",
-    "2.2.8.7",
-    "2.2.8.8",
-    "2.2.8.9",
-    "2.2.8.10",
-    "2.2.8.11",
-  ]),
+  Object.freeze(["2.2.8.4", "2.2.8.11"]),
 ]);
 const MAIN_COMPONENT = "ota/s200_firmware_ota.bin";
 
@@ -993,6 +986,12 @@ export function resolveAutomaticApplyPlan({
     return {
       executable: false,
       reason: `Unknown install mode: ${installMode}.`,
+    };
+  }
+  if (targetFirmware?.firmwareRevocation) {
+    return {
+      executable: false,
+      reason: `G2 firmware ${targetFirmware.firmwareRevocation.version} is revoked from recovery: ${targetFirmware.firmwareRevocation.reason}.`,
     };
   }
   if (!targetFirmware?.templeFlashEligible) {

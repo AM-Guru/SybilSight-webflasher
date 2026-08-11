@@ -149,6 +149,38 @@ export const REVIEWED_CFW_2_2_8_11 = Object.freeze({
     REVIEWED_CFW_PENDING_VALIDATION,
   ],
 });
+export const G2_FIRMWARE_REVOCATIONS = Object.freeze([
+  Object.freeze({
+    version: "2.2.8.7",
+    sha256: REVIEWED_CFW_2_2_8_7.sha256,
+    reason: "contains the retired BLE advertised-name modification",
+  }),
+  Object.freeze({
+    version: "2.2.8.8",
+    sha256: REVIEWED_CFW_2_2_8_8.sha256,
+    reason: "contains the retired BLE advertised-name modification",
+  }),
+  Object.freeze({
+    version: "2.2.8.9",
+    sha256: REVIEWED_CFW_2_2_8_9.sha256,
+    reason: "contains the retired BLE advertised-name modification",
+  }),
+  Object.freeze({
+    version: "2.2.8.10",
+    sha256: REVIEWED_CFW_2_2_8_10.sha256,
+    reason:
+      "hardware transcripts associate its BLE advertised-name hook with loss of Bluetooth discovery",
+  }),
+]);
+
+export function findG2FirmwareRevocation(fileSha256) {
+  const digest = String(fileSha256 ?? "").toLowerCase();
+  return (
+    G2_FIRMWARE_REVOCATIONS.find(
+      (revocation) => revocation.sha256 === digest,
+    ) ?? null
+  );
+}
 const HARDWARE_VALIDATED_CFW_2_2_6_11 = Object.freeze({
   sha256: "d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86",
 });
@@ -1172,6 +1204,7 @@ export async function parseFirmwareInput(input, fileName = "firmware.bin") {
     );
     const mainEntry = componentImages.find((component) => component.typeId === 0);
     const mainPayloadSha256 = mainEntry?.payloadSha256 ?? null;
+    const firmwareRevocation = findG2FirmwareRevocation(fileSha256);
     const mainComponent = mainEntry
       ? {
           name: mainEntry.name,
@@ -1185,6 +1218,7 @@ export async function parseFirmwareInput(input, fileName = "firmware.bin") {
     // assertPinnedTempleFlashCandidate(), which re-hashes the payload against
     // the writer's own compiled-in pin table before any bytes are sent.
     const templeFlashTarget =
+      !firmwareRevocation &&
       mainComponent?.name === "ota/s200_firmware_ota.bin" &&
       mainComponent?.typeId === 0
         ? findTempleFlashTarget(fileSha256)
@@ -1206,6 +1240,7 @@ export async function parseFirmwareInput(input, fileName = "firmware.bin") {
       mainFirmware: bundle.mainFirmware,
       mainComponent,
       provenance,
+      firmwareRevocation,
       caseRecoveryEligible: provenance.channel !== "custom",
       templeFlashEligible,
       templeFlashTarget: templeFlashEligible ? templeFlashTarget : null,

@@ -6,6 +6,7 @@ import {
   APOLLO_BOOTLOADER_BASE,
   EXPECTED_COMPONENTS,
   EXPECTED_COMPONENT_TYPES,
+  G2_FIRMWARE_REVOCATIONS,
   OFFICIAL_G2_SHA256,
   POGO_TRANSFER_RESEARCH,
   REVIEWED_CFW,
@@ -22,6 +23,7 @@ import {
   decodeOptionBytes,
   describePogoOtaComponent,
   describePogoOtaTransfer,
+  findG2FirmwareRevocation,
   parseConsoleReport,
   parseEvenOTA,
   parseFirmwareInput,
@@ -233,6 +235,18 @@ test("recognizes stock-advertising G2 2.2.8.11 as the current reviewed CFW", () 
   assert.equal(trust.baseVersion, "2.2.8.4");
   assert.equal(trust.capabilities.some((value) => /stock Bluetooth/i.test(value)), true);
   assert.equal(trust.capabilities.some((value) => /pair-serial/i.test(value)), false);
+  assert.equal(findG2FirmwareRevocation(trust.sha256), null);
+});
+
+test("revokes every advertisement-modified 2.2.8 CFW hash", () => {
+  assert.deepEqual(
+    G2_FIRMWARE_REVOCATIONS.map(({ version }) => version),
+    ["2.2.8.7", "2.2.8.8", "2.2.8.9", "2.2.8.10"],
+  );
+  for (const revocation of G2_FIRMWARE_REVOCATIONS) {
+    assert.equal(findG2FirmwareRevocation(revocation.sha256), revocation);
+    assert.match(revocation.reason, /advertised-name|Bluetooth discovery/i);
+  }
 });
 
 test("retains the superseded 2.2.8.7 trust pin without claiming its failed name patch", () => {
@@ -858,6 +872,7 @@ test("ships stock-based CFW 2.2.8.9 with bilateral version identity and the dire
   assert.equal(firmware.mainComponent.payload.length, REVIEWED_CFW_2_2_8_9.mainPayloadBytes);
   assert.equal(firmware.mainComponent.payloadSha256, REVIEWED_CFW_2_2_8_9.mainPayloadSha256);
   assert.equal(firmware.templeFlashTarget, null);
+  assert.equal(firmware.firmwareRevocation.version, "2.2.8.9");
   assert.equal(
     bundle.includes(Buffer.from(REVIEWED_CFW_2_2_8_9.capabilityMarker, "ascii")),
     true,
@@ -990,6 +1005,7 @@ test("retains withdrawn CFW 2.2.8.10 as evidence but excludes it from flashing",
   assert.equal(firmware.mainComponent.payload.length, REVIEWED_CFW_2_2_8_10.mainPayloadBytes);
   assert.equal(firmware.mainComponent.payloadSha256, REVIEWED_CFW_2_2_8_10.mainPayloadSha256);
   assert.equal(firmware.templeFlashTarget, null);
+  assert.equal(firmware.firmwareRevocation.version, "2.2.8.10");
 
   const patchSet = JSON.parse(
     await readFile(new URL("cfw_patches-2.2.8.10.json", releaseDirectory), "utf8"),

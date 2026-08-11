@@ -1,6 +1,7 @@
 import {
   EXPECTED_COMPONENTS,
   EXPECTED_COMPONENT_TYPES,
+  findG2FirmwareRevocation,
 } from "./firmware.js";
 import {
   GLASSES_SERIAL_MIN_LENGTH,
@@ -261,9 +262,9 @@ export const G2_NAME_PATTERN =
 
 // Tokens seen in the field. Used only to build side-specific name prefixes for
 // the FIRST arm, where nothing else is known yet. A G2 advertising an
-// unrecorded token is invisible to a prefix built from this list, which is why
-// every caller must offer the unfiltered chooser when the filtered one comes
-// up empty, and why `g2NameToken` feeds newly observed tokens back in.
+// unrecorded token is invisible to a prefix built from this list. Remembered
+// names therefore contribute both an exact-name hint and their token's broad
+// side prefix, and `g2NameToken` feeds newly observed tokens back in.
 export const G2_KNOWN_NAME_TOKENS = Object.freeze(["32"]);
 
 export function g2NameToken(name) {
@@ -296,25 +297,35 @@ export function buildG2ChooserFilters(
   { expectedSerial = null, expectedName = null, tokens = G2_KNOWN_NAME_TOKENS } = {},
 ) {
   const serialFilter = glassesSerialChooserFilter(expectedSerial);
-  // Strongest case: this same side's own name, remembered from a previous
-  // session. It pins one device exactly, with no token assumption. It can only
-  // ever come from having seen THIS arm before - one arm's name says nothing
-  // about the other's, because the trailing hex is per-arm.
+  const filters = [];
+  // A remembered name is useful as the strongest first choice, but it must not
+  // be the only choice. Stock and the retired advertised-name CFW builds can
+  // give one physical arm different trailing name bytes. Treating the old
+  // exact name as exclusive made a healthy temple disappear from Chrome's
+  // chooser after a firmware transition.
   const remembered = String(expectedName ?? "").trim();
+  let rememberedToken = null;
   if (remembered && G2_NAME_PATTERN.test(remembered)) {
     const marker = side === "left" ? "L" : "R";
     // Refuse a remembered name for the wrong side rather than pinning the
     // chooser to the opposite temple.
     if (G2_NAME_PATTERN.exec(remembered)[2] === marker) {
-      return [{ name: remembered, ...(serialFilter ?? {}) }];
+      rememberedToken = g2NameToken(remembered);
+      filters.push({ name: remembered, ...(serialFilter ?? {}) });
     }
   }
-  const prefixes = g2SideNamePrefixes(side, tokens);
+  const prefixes = g2SideNamePrefixes(side, [
+    ...(tokens ?? []),
+    rememberedToken,
+  ]);
   if (prefixes.length) {
-    return prefixes.map((namePrefix) => ({
-      namePrefix,
-      ...(serialFilter ?? {}),
-    }));
+    filters.push(
+      ...prefixes.map((namePrefix) => ({
+        namePrefix,
+        ...(serialFilter ?? {}),
+      })),
+    );
+    return filters;
   }
   // No token to build a side prefix from. Fall back to the pair-wide filters;
   // the post-chooser side check still refuses a wrong-side selection.
@@ -357,6 +368,10 @@ export function g2BleTargetVersionProof(
       ageMs >= 0 &&
       ageMs <= maxAgeMs,
   );
+}
+
+export function g2BleTargetReportedVersion(firmware) {
+  return firmware?.templeFlashTarget?.reportedVersion ?? firmware?.g2Version ?? null;
 }
 
 // Build the chooser filter that admits only one specific pair.
@@ -786,6 +801,12 @@ export function evaluateG2PairIdentity(left, right) {
 }
 
 export function assertPinnedG2BleBundle(firmware) {
+  const revocation = findG2FirmwareRevocation(firmware?.fileSha256);
+  if (revocation) {
+    throw new Error(
+      `G2 firmware ${revocation.version} is revoked from Bluetooth recovery: ${revocation.reason}`,
+    );
+  }
   if (
     !firmware?.templeFlashEligible ||
     !firmware?.templeFlashTarget ||
@@ -1566,6 +1587,7 @@ export class G2BleOtaSession {
         deviceName: this.device.name,
         imageSha256: firmware.fileSha256,
         version: firmware.g2Version,
+        reportedVersion: g2BleTargetReportedVersion(firmware),
         components: [...componentResults],
         completedComponentCount: componentResults.length,
         blockAcks: componentResults.reduce(
@@ -1614,6 +1636,7 @@ export class G2BleOtaSession {
       deviceName: this.device.name,
       imageSha256: firmware.fileSha256,
       version: firmware.g2Version,
+      reportedVersion: g2BleTargetReportedVersion(firmware),
       components: componentResults,
       blockAcks: componentResults.reduce(
         (sum, component) => sum + component.blocks,

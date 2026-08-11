@@ -25,6 +25,21 @@ const firmware = (sha) => ({
   fileSha256: sha,
   templeFlashEligible: true,
 });
+
+test("Automatic Apply rejects a revoked firmware before planning a write", () => {
+  const plan = resolveAutomaticApplyPlan({
+    installMode: "restore",
+    targetFirmware: {
+      ...firmware(CFW_SHA),
+      firmwareRevocation: {
+        version: "2.2.8.10",
+        reason: "BLE advertised-name hook caused loss of Bluetooth discovery",
+      },
+    },
+  });
+  assert.equal(plan.executable, false);
+  assert.match(plan.reason, /2\.2\.8\.10 is revoked.*Bluetooth discovery/i);
+});
 const both = (sha) => ({
   right: { imageSha256: sha },
   left: { imageSha256: sha },

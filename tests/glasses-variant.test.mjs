@@ -321,10 +321,21 @@ test("one arm's name says nothing about the other arm's name", () => {
   assert.equal(g2NameToken("nonsense"), null);
 });
 
-test("this side's remembered name pins the chooser to one exact device", () => {
-  assert.deepEqual(
-    buildG2ChooserFilters("right", { expectedName: "Even G2_32_R_1412E0" }),
-    [{ name: "Even G2_32_R_1412E0" }],
+test("this side's remembered name is a hint, not an availability trap", () => {
+  const filters = buildG2ChooserFilters("right", {
+    expectedName: "Even G2_32_R_1412E0",
+  });
+  assert.deepEqual(filters, [
+    { name: "Even G2_32_R_1412E0" },
+    { namePrefix: "Even G2_32_R_" },
+    { namePrefix: "G2_32_R_" },
+  ]);
+  assert.ok(
+    filters.some(
+      (filter) =>
+        filter.namePrefix && "Even G2_32_R_180304".startsWith(filter.namePrefix),
+    ),
+    "a firmware-changed suffix must still leave the same right temple selectable",
   );
   // A remembered name for the OTHER side must never pin this chooser.
   assert.deepEqual(

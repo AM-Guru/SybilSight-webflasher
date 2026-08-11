@@ -11,6 +11,7 @@ import {
   crc16CcittFalse,
   flashG2BleSessionsConcurrently,
   g2BleDeviceSide,
+  g2BleTargetReportedVersion,
   g2BleTargetVersionProof,
   isG2BleConnectionLoss,
   makeBleControlFrames,
@@ -746,6 +747,22 @@ test("the current SybilSight CFW is a complete direct-BLE package", async () => 
   );
   assert.equal(assertPinnedG2BleBundle(firmware), firmware);
   assert.equal(firmware.g2Version, "2.2.8.11");
+  assert.equal(g2BleTargetReportedVersion(firmware), "2.2.8.9");
+  assert.equal(
+    g2BleTargetVersionProof(
+      {
+        version: {
+          decoded: { firmwareVersion: "2.2.8.9" },
+          transportProof: { restoredMask: 0x3ff },
+          observedAt: "2026-08-11T04:12:49.248Z",
+        },
+      },
+      g2BleTargetReportedVersion(firmware),
+      { now: Date.parse("2026-08-11T04:13:00.000Z") },
+    ),
+    true,
+    "a fresh 2.2.8.9 runtime proof must retain package 2.2.8.11 instead of rewriting it",
+  );
   assert.equal(
     firmware.componentImages.reduce(
       (sum, component) =>
@@ -753,6 +770,20 @@ test("the current SybilSight CFW is a complete direct-BLE package", async () => 
       0,
     ),
     1068,
+  );
+});
+
+test("the direct BLE writer explicitly rejects the advertisement-modified CFW", async () => {
+  const bytes = await readFile(
+    new URL(
+      "../public/firmware-updates/source-files/2.2.8.10/g2-2.2.8.10.bin",
+      import.meta.url,
+    ),
+  );
+  const firmware = await parseFirmwareInput(bytes, "g2-2.2.8.10.bin");
+  assert.throws(
+    () => assertPinnedG2BleBundle(firmware),
+    /2\.2\.8\.10 is revoked.*loss of Bluetooth discovery/i,
   );
 });
 
