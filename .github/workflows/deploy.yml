@@ -134,13 +134,16 @@ jobs:
             rootfs
           cp deploy/webflasher.caddy "${artifact_dir}/webflasher.caddy"
           cp scripts/verify-webflasher-caddy.sh "${artifact_dir}/verify-webflasher-caddy.sh"
+          cp scripts/activate-homeassistant-app.sh "${artifact_dir}/activate-homeassistant-app.sh"
           chmod 755 "${artifact_dir}/verify-webflasher-caddy.sh"
+          chmod 755 "${artifact_dir}/activate-homeassistant-app.sh"
           (
             cd "${artifact_dir}"
             sha256sum \
               webflasher-site.tar.gz \
               webflasher-remote-support-addon.tar.gz \
               webflasher.caddy \
+              activate-homeassistant-app.sh \
               verify-webflasher-caddy.sh \
               > webflasher-release.sha256
           )
@@ -153,6 +156,7 @@ jobs:
             ${{ runner.temp }}/webflasher-artifact/webflasher-site.tar.gz
             ${{ runner.temp }}/webflasher-artifact/webflasher-remote-support-addon.tar.gz
             ${{ runner.temp }}/webflasher-artifact/webflasher.caddy
+            ${{ runner.temp }}/webflasher-artifact/activate-homeassistant-app.sh
             ${{ runner.temp }}/webflasher-artifact/verify-webflasher-caddy.sh
             ${{ runner.temp }}/webflasher-artifact/webflasher-release.sha256
           if-no-files-found: error
@@ -198,6 +202,7 @@ jobs:
         run: |
           set -euo pipefail
           archive="${RUNNER_TEMP}/webflasher-release/webflasher-remote-support-addon.tar.gz"
+          activate_script="${RUNNER_TEMP}/webflasher-release/activate-homeassistant-app.sh"
           remote_stage="/addons/.sybilsight-remote-support-deploy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           remote_target="/addons/sybilsight-remote-support"
           remote_backup="/addons/.sybilsight-remote-support-previous"
@@ -277,23 +282,22 @@ jobs:
           fi
           PUBLISH_RELAY_SCRIPT
 
-          if ! ssh "${ssh_options[@]}" "${SSH_TARGET}" \
-            ha addons rebuild "${REMOTE_SUPPORT_APP}" --no-progress; then
+          if ! ssh "${ssh_options[@]}" "${SSH_TARGET}" sh -s -- \
+            "${REMOTE_SUPPORT_APP}" "${remote_target}" < "${activate_script}"; then
             ssh "${ssh_options[@]}" "${SSH_TARGET}" sh -s -- \
-              "${remote_target}" "${remote_backup}" "${REMOTE_SUPPORT_APP}" <<'ROLLBACK_RELAY_SCRIPT'
+              "${remote_target}" "${remote_backup}" <<'ROLLBACK_RELAY_SCRIPT'
           set -eu
           target="$1"
           backup="$2"
-          app="$3"
           [ "${target}" = /addons/sybilsight-remote-support ]
           [ "${backup}" = /addons/.sybilsight-remote-support-previous ]
-          [ "${app}" = local_sybilsight_remote_support ]
           failed="/addons/.sybilsight-remote-support-failed"
           rm -rf -- "${failed}"
           mv "${target}" "${failed}"
           mv "${backup}" "${target}"
-          ha addons rebuild "${app}" --no-progress || true
           ROLLBACK_RELAY_SCRIPT
+            ssh "${ssh_options[@]}" "${SSH_TARGET}" sh -s -- \
+              "${REMOTE_SUPPORT_APP}" "${remote_target}" < "${activate_script}" || true
             exit 1
           fi
 

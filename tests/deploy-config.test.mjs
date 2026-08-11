@@ -191,6 +191,33 @@ test("deployment verifies the active production Caddy block before publishing", 
   );
 });
 
+test("deployment updates a version-changing local app and rebuilds same-version sources", async () => {
+  const workflow = await readFile(
+    new URL("../.github/workflows/deploy.yml", import.meta.url),
+    "utf8",
+  );
+  const activator = await readFile(
+    new URL("../scripts/activate-homeassistant-app.sh", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    workflow,
+    /cp scripts\/activate-homeassistant-app\.sh .*activate-homeassistant-app\.sh/,
+  );
+  assert.match(workflow, /activate-homeassistant-app\.sh[\s\\]+verify-webflasher-caddy\.sh/);
+  assert.match(
+    workflow,
+    /sh -s --[\s\\]+"\$\{REMOTE_SUPPORT_APP\}" "\$\{remote_target\}" < "\$\{activate_script\}"/,
+  );
+  assert.doesNotMatch(workflow, /ha addons/);
+  assert.match(activator, /ha store reload --no-progress/);
+  assert.match(activator, /action=rebuild/);
+  assert.match(activator, /action=update/);
+  assert.match(activator, /ha apps "\$\{action\}" "\$\{app_slug\}" --no-progress/);
+  assert.match(activator, /observed_state.*started/);
+});
+
 test("deployment preserves immutable package bytes while allowing archive enrichment", async () => {
   const workflow = await readFile(
     new URL("../.github/workflows/deploy.yml", import.meta.url),
