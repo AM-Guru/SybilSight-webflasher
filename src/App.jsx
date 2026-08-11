@@ -117,6 +117,7 @@ import {
   enterR1DfuMode,
   flashR1SecureDfu,
   prepareR1DfuPackage,
+  R1_OWNER_RECOVERY_RELEASE,
   requestR1ApplicationDevice,
   requestR1DfuDevice,
 } from "./lib/r1Dfu.js";
@@ -1956,9 +1957,15 @@ function App() {
           : [];
         setCatalog(releases);
         setSelectedReleaseId(findDefaultFirmwareRelease(releases)?.id ?? "");
-        const ringReleases = Array.isArray(value.ringReleases)
+        const catalogRingReleases = Array.isArray(value.ringReleases)
           ? value.ringReleases
           : [];
+        const ringReleases = [
+          R1_OWNER_RECOVERY_RELEASE,
+          ...catalogRingReleases.filter(
+            (release) => release.id !== R1_OWNER_RECOVERY_RELEASE.id,
+          ),
+        ];
         setRingCatalog(ringReleases);
         setSelectedRingReleaseId(ringReleases[0]?.id ?? "");
         setCatalogState("ready");
