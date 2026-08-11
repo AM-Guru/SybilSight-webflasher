@@ -240,6 +240,76 @@ export function g2BleSupported(bluetooth = globalThis.navigator?.bluetooth) {
   return Boolean(bluetooth?.requestDevice);
 }
 
+export async function probeAuthorizedG2BleDevices({
+  bluetooth = globalThis.navigator?.bluetooth,
+  devices = null,
+} = {}) {
+  let candidates = devices
+    ? Object.entries(devices)
+        .filter(([, device]) => Boolean(device))
+        .map(([side, device]) => ({ side, device }))
+    : [];
+  if (!candidates.length && typeof bluetooth?.getDevices === "function") {
+    const authorized = await bluetooth.getDevices();
+    candidates = authorized
+      .map((device) => ({ side: g2BleDeviceSide(device?.name), device }))
+      .filter(({ side }) => Boolean(side));
+  }
+
+  const results = { left: null, right: null };
+  for (const { side: expectedSide, device } of candidates) {
+    const observedSide = g2BleDeviceSide(device?.name);
+    const side = observedSide ?? expectedSide;
+    if (!results[side] && ["left", "right"].includes(side)) {
+      const result = {
+        side,
+        deviceId: device?.id ?? null,
+        deviceName: device?.name ?? null,
+        authorized: true,
+        reachable: false,
+        applicationGattVerified: false,
+        error: null,
+      };
+      try {
+        if (!device?.gatt?.connect) {
+          throw new Error("The authorized Bluetooth handle has no GATT connection.");
+        }
+        const server = await device.gatt.connect();
+        // A successful primary-service lookup proves more than a cached device
+        // handle: the normal G2 application is accepting its OTA GATT service.
+        await server.getPrimaryService(G2_BLE_CONTROL_SERVICE);
+        result.reachable = true;
+        result.applicationGattVerified = true;
+      } catch (error) {
+        result.error = error?.message ?? String(error);
+      } finally {
+        try {
+          device?.gatt?.disconnect?.();
+        } catch {
+          // A failed connection is already disconnected.
+        }
+      }
+      results[side] = result;
+    }
+  }
+
+  const authorizedSides = ["left", "right"].filter(
+    (side) => results[side]?.authorized,
+  );
+  const reachableSides = ["left", "right"].filter(
+    (side) => results[side]?.applicationGattVerified,
+  );
+  return {
+    supported: Boolean(bluetooth),
+    permissionApiAvailable: typeof bluetooth?.getDevices === "function",
+    authorizedSides,
+    reachableSides,
+    bothApplicationsReachable: reachableSides.length === 2,
+    chooserRequired: authorizedSides.length < 2,
+    results,
+  };
+}
+
 // G2 advertised names are `Even G2_<token>_<side>_<addressTail>`, for example
 // `Even G2_32_L_4FB39E`.
 //

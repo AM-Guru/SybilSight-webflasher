@@ -1,4 +1,13 @@
-export const REMOTE_SUPPORT_PROTOCOL = 2;
+export const REMOTE_SUPPORT_PROTOCOL = 3;
+
+export const REMOTE_SUPPORT_TASKS = Object.freeze([
+  "automatic_usb_recovery",
+  "automatic_apply",
+  "bluetooth_probe",
+  "bluetooth_recovery",
+]);
+
+export const REMOTE_TASK_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
 const MAX_REMOTE_DEPTH = 12;
 const MAX_REMOTE_STRING_LENGTH = 24_000;
@@ -104,6 +113,7 @@ export class RemoteSupportConnection {
     this.resumeToken = null;
     this.userClosed = false;
     this.messageListeners = new Set();
+    this.pendingTasks = new Map();
   }
 
   async connect(hello) {
@@ -150,6 +160,9 @@ export class RemoteSupportConnection {
                   (value) => typeof value === "string",
                 )
               : null;
+            this.tasks = Array.isArray(message.tasks)
+              ? message.tasks.filter((value) => typeof value === "string")
+              : null;
             this.onState({
               status: "connected",
               role: this.role,
@@ -162,6 +175,15 @@ export class RemoteSupportConnection {
             clearTimeout(timeout);
             fail(new Error(message.error));
             return;
+          }
+          if (message.type === "task_result") {
+            const pending = this.pendingTasks.get(message.id);
+            if (pending) {
+              clearTimeout(pending.timer);
+              this.pendingTasks.delete(message.id);
+              if (message.ok) pending.resolve(message.result);
+              else pending.reject(new Error(message.error));
+            }
           }
           this.onMessage(message);
           for (const listener of this.messageListeners) listener(message);
@@ -207,6 +229,11 @@ export class RemoteSupportConnection {
                 ? "The support session was closed."
                 : `The remote-support relay disconnected (${event.code}).`),
           };
+          for (const [id, pending] of this.pendingTasks) {
+            clearTimeout(pending.timer);
+            pending.reject(new Error(closure.reason));
+            this.pendingTasks.delete(id);
+          }
           for (const listener of this.messageListeners) {
             try {
               listener(closure);
@@ -274,6 +301,57 @@ export class RemoteSupportConnection {
     });
   }
 
+  requestTask(task, args = {}) {
+    if (this.role !== "operator") {
+      return Promise.reject(
+        new Error("Only the authenticated technician can request a recovery task."),
+      );
+    }
+    if (!REMOTE_SUPPORT_TASKS.includes(task)) {
+      return Promise.reject(new Error(`Unsupported remote recovery task ${task}.`));
+    }
+    const id = makeRemoteMessageId();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingTasks.delete(id);
+        reject(new Error(`Remote recovery task ${task} timed out.`));
+      }, REMOTE_TASK_TIMEOUT_MS);
+      this.pendingTasks.set(id, { resolve, reject, timer, task });
+      try {
+        this.send({
+          type: "task_request",
+          id,
+          task,
+          args: remoteJsonValue(args),
+        });
+      } catch (error) {
+        clearTimeout(timer);
+        this.pendingTasks.delete(id);
+        reject(error);
+      }
+    });
+  }
+
+  sendTaskResult(id, { ok, result, error }) {
+    this.send({
+      type: "task_result",
+      id,
+      ok: Boolean(ok),
+      ...(ok
+        ? { result: remoteJsonValue(result) }
+        : { error: String(error ?? "Remote recovery task failed.") }),
+    });
+  }
+
+  sendTaskEvent(id, event, value) {
+    this.send({
+      type: "task_event",
+      id,
+      event,
+      value: remoteJsonValue(value),
+    });
+  }
+
   addMessageListener(listener) {
     this.messageListeners.add(listener);
     return () => this.messageListeners.delete(listener);
@@ -284,6 +362,11 @@ export class RemoteSupportConnection {
     if (this.socket) {
       this.socket.close(1000, "Support session closed");
       this.socket = null;
+    }
+    for (const [id, pending] of this.pendingTasks) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error("The support session was closed."));
+      this.pendingTasks.delete(id);
     }
   }
 }

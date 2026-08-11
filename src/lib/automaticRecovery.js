@@ -12,6 +12,205 @@ const REVIEWED_STOCK_CFW_PAIRS = Object.freeze([
 ]);
 const MAIN_COMPONENT = "ota/s200_firmware_ota.bin";
 
+function automaticProbeIdentity(probe) {
+  const decoded = probe?.decoded;
+  if (
+    decoded?.kind !== "version" ||
+    !decoded.firmwareVersion ||
+    !Number.isInteger(decoded.hardwareRevision)
+  ) {
+    return null;
+  }
+  return {
+    firmwareVersion: decoded.firmwareVersion,
+    hardwareRevision: decoded.hardwareRevision,
+  };
+}
+
+export function classifyAutomaticTempleBootState({
+  present,
+  probe = null,
+  error = null,
+} = {}) {
+  if (present !== true) {
+    return {
+      state: present === false ? "not-seated" : "contact-unknown",
+      applicationResponsive: null,
+      firmwareVersion: null,
+      hardwareRevision: null,
+      detail:
+        present === false
+          ? "The Charging Case does not report this temple as seated."
+          : "Fresh Charging Case contact telemetry is unavailable.",
+    };
+  }
+  const identity = automaticProbeIdentity(probe);
+  if (identity) {
+    return {
+      state: "application",
+      applicationResponsive: true,
+      ...identity,
+      detail: `Checksum-valid Application-mode version reply ${identity.firmwareVersion}/hardware ${identity.hardwareRevision}.`,
+    };
+  }
+  return {
+    // The reviewed Case bridge can prove a running application, but it cannot
+    // interrogate Apollo's ROM/secondary bootloader. Keep the uncertain half
+    // explicit instead of mislabelling every silent application as recovery.
+    state: "recovery-or-unresponsive",
+    applicationResponsive: false,
+    firmwareVersion: null,
+    hardwareRevision: null,
+    detail:
+      error?.message ??
+      "No checksum-valid Application-mode version reply was received; the temple may be in recovery, rebooting, charging negotiation, or otherwise unresponsive.",
+  };
+}
+
+export function minimumAutomaticRecoveryPlan(temples) {
+  const routes = ROUTES.map((route) => temples?.[route]);
+  if (routes.some((temple) => temple?.state === "contact-unknown")) {
+    return {
+      action: "refresh-telemetry",
+      executable: false,
+      firmwareWriteRequired: false,
+      reason: "Fresh left/right Charging Case contact telemetry is required.",
+    };
+  }
+  if (routes.some((temple) => temple?.state === "not-seated")) {
+    return {
+      action: "reseat",
+      executable: false,
+      firmwareWriteRequired: false,
+      reason:
+        "Both temples must be seated before the bilateral reboot can be issued and verified.",
+    };
+  }
+  if (routes.every((temple) => temple?.state === "application")) {
+    return {
+      action: "none",
+      executable: true,
+      firmwareWriteRequired: false,
+      reason:
+        "Both temples already returned checksum-valid Application-mode version replies; no recovery mutation is needed.",
+    };
+  }
+  return {
+    action: "reset-and-verify",
+    executable: true,
+    firmwareWriteRequired: false,
+    reason:
+      "At least one seated temple did not answer in Application mode. Issue the traced bilateral reboot once, then prove both applications before considering firmware transfer.",
+  };
+}
+
+export async function diagnoseAndRecoverAutomaticUsb({
+  session,
+  onStep = () => {},
+} = {}) {
+  if (
+    !session?.readTempleFlashPreflight ||
+    !session?.probeRunningTemple ||
+    !session?.restartAndVerifyBothTemples
+  ) {
+    throw new Error(
+      "A G2 Case session with telemetry, version-probe, and bilateral-reset support is required.",
+    );
+  }
+
+  await onStep({ step: "telemetry" });
+  const preflight = await session.readTempleFlashPreflight([]);
+  const telemetry = preflight?.telemetry;
+  const temples = {};
+  const probes = {};
+  for (let index = 0; index < ROUTES.length; index += 1) {
+    const route = ROUTES[index];
+    const present =
+      route === "left" ? telemetry?.leftPresent : telemetry?.rightPresent;
+    if (present !== true) {
+      temples[route] = classifyAutomaticTempleBootState({ present });
+      continue;
+    }
+    await onStep({ step: "probe", route });
+    try {
+      const probe = await session.probeRunningTemple("version", route, {
+        progressBase: 0.08 + index * 0.16,
+        progressSpan: 0.16,
+      });
+      probes[route] = probe;
+      temples[route] = classifyAutomaticTempleBootState({ present, probe });
+    } catch (error) {
+      probes[route] = { error: error?.message ?? String(error) };
+      temples[route] = classifyAutomaticTempleBootState({ present, error });
+    }
+  }
+
+  const initialPlan = minimumAutomaticRecoveryPlan(temples);
+  if (!initialPlan.executable) {
+    const error = new Error(initialPlan.reason);
+    error.diagnosis = { preflight, temples, probes, initialPlan };
+    throw error;
+  }
+  if (initialPlan.action === "none") {
+    return {
+      outcome: "healthy",
+      action: "none",
+      firmwareBytesTransmitted: 0,
+      preflight,
+      temples,
+      probes,
+      initialPlan,
+      finalPlan: initialPlan,
+    };
+  }
+
+  await onStep({ step: "reset" });
+  try {
+    const verification = await session.restartAndVerifyBothTemples({
+      progressBase: 0.4,
+      progressSpan: 0.58,
+      purpose: "Automatic no-flash recovery",
+    });
+    const recoveredTemples = Object.fromEntries(
+      ROUTES.map((route) => [
+        route,
+        {
+          state: "application",
+          applicationResponsive: true,
+          firmwareVersion: verification?.versions?.[route]?.firmware ?? null,
+          hardwareRevision: verification?.versions?.[route]?.hardware ?? null,
+          detail:
+            "The bilateral reboot completed and a checksum-valid Application-mode version reply was verified.",
+        },
+      ]),
+    );
+    return {
+      outcome: "recovered",
+      action: "reset-and-verify",
+      firmwareBytesTransmitted: 0,
+      preflight,
+      temples,
+      probes,
+      initialPlan,
+      verification,
+      recoveredTemples,
+      finalPlan: minimumAutomaticRecoveryPlan(recoveredTemples),
+    };
+  } catch (error) {
+    error.diagnosis = {
+      preflight,
+      temples,
+      probes,
+      initialPlan,
+      outcome: "needs-firmware-or-service",
+      firmwareBytesTransmitted: 0,
+      minimumNextStep:
+        "Use a previously authorized direct Bluetooth endpoint if it is reachable. The reviewed Case-USB writer requires a running temple application and cannot repair an Apollo bootloader or read temple flash sectors.",
+    };
+    throw error;
+  }
+}
+
 export function assessAutomaticTempleContacts(telemetry) {
   if (
     typeof telemetry?.leftPresent !== "boolean" ||

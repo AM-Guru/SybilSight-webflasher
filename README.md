@@ -941,23 +941,29 @@ normal application and ROM-loader modes.
 
 ### Start remote troubleshooting
 
-1. The person with the glasses connects and analyzes their Case with Web
-   Serial.
-2. They open **Remote Support**, authorize the technician to control that one
-   selected G2 Case serial interface, and start a session.
+1. The person with the glasses selects and analyzes their Case and/or selects
+   the G2 Bluetooth temples they want to expose.
+2. They open **Remote Support**, authorize the technician to control only those
+   selected G2 USB/Bluetooth handles, and start a session.
 3. They tell the technician the displayed eight-character code.
 4. The technician opens **Remote Support**, selects **Technician**, enters the
    session code and separately held technician key, then joins.
-5. The technician clicks **Open remote Case in WebFlasher**. The complete
-   WebFlasher now uses a serial-compatible remote port, so its analysis,
-   backups, Case recovery, left/right probes, resets, and guarded Smart Glasses
-   reinstall workflows operate exactly as they do with a local Case.
+5. The technician can attach the serial-compatible remote Case, or start one of
+   the allowlisted requester-side tasks: no-flash USB recovery, Automatic
+   Apply, Bluetooth Application-mode check, or Bluetooth recovery. The latter
+   tasks run in the person's browser against its already selected devices, so
+   device exchanges do not traverse the relay. Chrome's protected Bluetooth
+   chooser still requires the person to make each initial Left/Right selection.
 6. Either side ends the session when finished. An idle session also expires
    after 24 hours — long enough for repeated ~40-minute firmware
    restorations — and the relay keeps no session database.
 
-The browser holding the physical Case performs every serial operation. The
-relay is a small authenticated rendezvous service; it never opens USB itself.
+The browser holding the physical devices performs every USB and Bluetooth
+operation. The relay is a small authenticated rendezvous service; it never
+opens hardware itself. Requester-side tasks are fixed WebFlasher workflows,
+not JavaScript or shell execution: their argument objects are empty, the relay
+allowlists each task name, and firmware/device selection stays visible in the
+person's browser.
 
 For distant sessions, latency-critical serial loops are batched: the
 technician's WebFlasher sends the flash bridge's token-paced transaction
@@ -1095,11 +1101,20 @@ generally non-working or inaccessible over Bluetooth, click **Open USB
 recovery**. This reveals the Case-based backup workflow:
 
 1. Click **Select Case** and choose the G2 Case USB device.
-2. Leave **Update** selected, or choose **Restore**.
-3. Leave **Update Charging Case first** enabled. It is on by default; no Case
+2. Click **Diagnose & recover without flashing** first. It classifies each
+   seated side as proven Application mode or `recovery-or-unresponsive`; the
+   latter intentionally does not claim a specific Apollo bootloader state the
+   Case cannot observe. If either side is silent, it issues the bounded traced
+   bilateral reboot and proves both checksum-valid Application-mode version
+   replies. It then checks previously authorized Bluetooth handles for the
+   normal G2 control service. If both sides were already healthy, it performs
+   no reset; in either successful case it transmits zero firmware bytes.
+3. Only if no-flash recovery is insufficient, leave **Update** selected or
+   choose **Restore**.
+4. Leave **Update Charging Case first** enabled. It is on by default; no Case
    write occurs when the Case is already current, and the updater never
    downgrades a newer or unknown Case version.
-4. Click **Recover … over USB** and keep the Case, glasses, and cable still.
+5. Click **Recover … over USB** and keep the Case, glasses, and cable still.
 
 Every USB recovery begins with a fresh full Case analysis, including both physical
 banks and all 128 option bytes. When enabled and needed, Apply validates the

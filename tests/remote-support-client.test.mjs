@@ -187,4 +187,19 @@ test("browser clients exchange only authenticated relay messages", async (t) => 
       },
     },
   );
+
+  const taskPromise = operator.requestTask("bluetooth_probe", {});
+  const taskRequest = await deviceInbox.next(
+    ({ type }) => type === "task_request",
+  );
+  assert.equal(taskRequest.task, "bluetooth_probe");
+  assert.deepEqual(taskRequest.args, {});
+  device.sendTaskEvent(taskRequest.id, "started", {
+    executedOn: "requester-browser",
+  });
+  device.sendTaskResult(taskRequest.id, {
+    ok: true,
+    result: { bothApplicationsReachable: true },
+  });
+  assert.deepEqual(await taskPromise, { bothApplicationsReachable: true });
 });

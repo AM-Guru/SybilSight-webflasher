@@ -3004,6 +3004,12 @@ code {
   gap: 10px;
 }
 
+.remote-support-task-actions {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .remote-support-events > div {
   display: grid;
   padding-bottom: 10px;
@@ -3485,6 +3491,24 @@ code {
 
 .automatic-task-list .icon {
   color: var(--accent);
+}
+
+.automatic-no-flash {
+  display: grid;
+  gap: 7px;
+}
+
+.automatic-no-flash small {
+  color: #8d9691;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.automatic-divider {
+  width: 100%;
+  margin: 2px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
 }
 
 .automatic-apply-button {

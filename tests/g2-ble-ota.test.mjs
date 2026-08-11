@@ -17,6 +17,7 @@ import {
   makeBleControlFrames,
   makeBleEnvelopeFrames,
   parseBleAck,
+  probeAuthorizedG2BleDevices,
   requestG2BleDevice,
 } from "../src/lib/g2BleOta.js";
 import {
@@ -28,6 +29,42 @@ import {
 function hex(bytes) {
   return Buffer.from(bytes).toString("hex");
 }
+
+test("probes only previously authorized G2 handles and verifies application GATT", async () => {
+  const services = [];
+  const makeDevice = (name, id, reachable = true) => ({
+    name,
+    id,
+    gatt: {
+      async connect() {
+        if (!reachable) throw new Error("not advertising");
+        return {
+          async getPrimaryService(service) {
+            services.push({ id, service });
+            return {};
+          },
+        };
+      },
+      disconnect() {},
+    },
+  });
+  const bluetooth = {
+    async getDevices() {
+      return [
+        makeDevice("Even G2_32_L_AAAAAA", "left"),
+        makeDevice("Even G2_32_R_BBBBBB", "right", false),
+        makeDevice("Unrelated", "other"),
+      ];
+    },
+  };
+  const result = await probeAuthorizedG2BleDevices({ bluetooth });
+  assert.deepEqual(result.authorizedSides, ["left", "right"]);
+  assert.deepEqual(result.reachableSides, ["left"]);
+  assert.equal(result.bothApplicationsReachable, false);
+  assert.equal(result.chooserRequired, false);
+  assert.match(result.results.right.error, /not advertising/);
+  assert.equal(services.length, 1);
+});
 
 test("matches the captured G2 AA21 CRC and envelope vectors", () => {
   assert.equal(crc16CcittFalse(Buffer.from("123456789")), 0x29b1);

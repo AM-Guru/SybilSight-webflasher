@@ -280,6 +280,36 @@ test("reports unqueried temples as unknown rather than unresponsive", () => {
   );
 });
 
+test("reports a failed seated probe as recovery-or-unresponsive and chooses reset first", () => {
+  const analytics = buildG2DeviceAnalytics({
+    report: report(),
+    pogoResults: {
+      left: {
+        lastProbeFailure: {
+          at: "now",
+          message: "No checksum-valid application reply",
+        },
+      },
+      right: { version: probe("right", "version", "2.2.8.4") },
+    },
+  });
+  assert.equal(analytics.schemaVersion, 5);
+  assert.equal(analytics.smartGlasses.left.analysisState, "failed");
+  assert.equal(analytics.smartGlasses.left.applicationResponsive, false);
+  assert.equal(
+    analytics.smartGlasses.left.bootState,
+    "recovery-or-unresponsive",
+  );
+  assert.equal(
+    analytics.smartGlasses.recoveryAssessment.minimumPlan.action,
+    "reset-and-verify",
+  );
+  assert.equal(
+    analytics.smartGlasses.recoveryAssessment.minimumPlan.firmwareWriteRequired,
+    false,
+  );
+});
+
 test("reports an empty Case as no contacts, not dead Smart Glasses", () => {
   const emptyReport = report();
   emptyReport.console.telemetry.leftPresent = false;

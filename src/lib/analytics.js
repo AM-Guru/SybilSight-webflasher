@@ -9,13 +9,16 @@ import {
   REVIEWED_CFW_BASE_VERSION,
   REVIEWED_CFW_VERSION,
 } from "./pogoFlashBridge.js";
-import { assessAutomaticTempleContacts } from "./automaticRecovery.js";
+import {
+  assessAutomaticTempleContacts,
+  minimumAutomaticRecoveryPlan,
+} from "./automaticRecovery.js";
 import {
   WEBFLASHER_BUILD_LABEL,
   WEBFLASHER_BUILD_SHA,
 } from "./releaseIntegrity.js";
 
-export const DEVICE_ANALYTICS_SCHEMA_VERSION = 4;
+export const DEVICE_ANALYTICS_SCHEMA_VERSION = 5;
 
 const FACTORY_QUERIES = Object.freeze([
   Object.freeze({ command: "DEA0", scope: "case", data: "case firmware banner and serial" }),
@@ -59,11 +62,17 @@ function templeAnalytics(side, present, results) {
       ? "complete"
       : version || status
         ? "partial"
-        : "not-analyzed";
+        : results?.lastProbeFailure
+          ? "failed"
+          : "not-analyzed";
   const firmwareVersion = version?.decoded?.firmwareVersion ?? null;
   const hardwareRevision = version?.decoded?.hardwareRevision ?? null;
   const applicationResponsive =
-    analysisState === "not-analyzed" ? null : true;
+    analysisState === "not-analyzed"
+      ? null
+      : analysisState === "failed"
+        ? false
+        : true;
   const completeMainWriterCompatible = version
     ? Boolean(firmwareVersion && hardwareRevision === 5)
     : null;
@@ -80,6 +89,17 @@ function templeAnalytics(side, present, results) {
       ? { ...results.lastProbeFailure }
       : null,
     applicationResponsive,
+    bootState: !present
+      ? "not-seated"
+      : applicationResponsive === true
+        ? "application"
+        : applicationResponsive === false
+          ? "recovery-or-unresponsive"
+          : "not-analyzed",
+    bootStateBoundary:
+      applicationResponsive === false
+        ? "The Case bridge did not receive an Application-mode reply. It cannot distinguish Apollo recovery/bootloader state from a rebooting, charging-negotiation, or otherwise silent application."
+        : null,
     firmwareVersion,
     hardwareRevision,
     batteryPercent: status?.decoded?.batteryPercent ?? null,
@@ -256,6 +276,18 @@ export function buildG2DeviceAnalytics({
         right.present &&
         bothTemplesResponsive &&
         bothTemplesWriterCompatible;
+  const minimumPlan = bothTemplesAnalyzed
+    ? minimumAutomaticRecoveryPlan({
+        left: { state: left.bootState },
+        right: { state: right.bootState },
+      })
+    : {
+        action: "probe-applications",
+        executable: true,
+        firmwareWriteRequired: false,
+        reason:
+          "Probe both seated temples for checksum-valid Application-mode version replies before choosing any recovery mutation.",
+      };
 
   return {
     schemaVersion: DEVICE_ANALYTICS_SCHEMA_VERSION,
@@ -334,10 +366,13 @@ export function buildG2DeviceAnalytics({
         bothTemplesResponsive,
         bothTemplesWriterCompatible,
         bothRoutesReady,
+        minimumPlan,
+        noFlashBilateralResetAvailable:
+          left.present && right.present && caseCompatible,
         applicationDeadRecoveryAvailable: false,
         bootloaderWriteAllowed: false,
         limitation:
-          "The validated Case-USB path reinstalls only a pinned Apollo main while each temple application and pogo UART task remain alive. Cross-version installs use the complete target main; only the exact reviewed Stock-CFW pair may use differential mode.",
+          "The no-flash path can issue the traced bilateral reset and verify Application-mode return. The validated Case-USB writer can reinstall only a pinned Apollo main while each temple application and pogo UART task remain alive. It cannot read temple flash or address sparse sectors; cross-version installs use the complete target main, and only the exact reviewed Stock-CFW pair may omit unchanged bundle components.",
       },
       offlineRecoveryProvisioning: recoveryConfig,
     },

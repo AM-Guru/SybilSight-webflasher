@@ -6,11 +6,14 @@ import {
   DEFAULT_AUTOMATIC_INSTALL_MODE,
   DEFAULT_INTERFACE_MODE,
   assessAutomaticTempleContacts,
+  classifyAutomaticTempleBootState,
   describeAutomaticApplyFailure,
+  diagnoseAndRecoverAutomaticUsb,
   executeAutomaticCaseUpdate,
   executeAutomaticApply,
   installedProvenanceStorageKey,
   mergeInstalledProvenance,
+  minimumAutomaticRecoveryPlan,
   prepareAutomaticTempleUpdate,
   provenanceFromSuccessfulAudit,
   resolveAutomaticCaseUpdatePlan,
@@ -73,6 +76,106 @@ const verifiedReadiness = (version = "2.2.6.10") => ({
       yhmRestoreVerified: true,
     },
   },
+});
+
+test("classifies Application mode only from a checksum-valid version reply", () => {
+  assert.deepEqual(
+    classifyAutomaticTempleBootState({
+      present: true,
+      probe: versionProbe("2.2.8.4"),
+    }),
+    {
+      state: "application",
+      applicationResponsive: true,
+      firmwareVersion: "2.2.8.4",
+      hardwareRevision: 5,
+      detail:
+        "Checksum-valid Application-mode version reply 2.2.8.4/hardware 5.",
+    },
+  );
+  assert.equal(
+    classifyAutomaticTempleBootState({
+      present: true,
+      error: new Error("no pogo response"),
+    }).state,
+    "recovery-or-unresponsive",
+  );
+  assert.equal(
+    classifyAutomaticTempleBootState({ present: false }).state,
+    "not-seated",
+  );
+});
+
+test("the minimum recovery plan stops healthy temples without firmware", () => {
+  const healthy = classifyAutomaticTempleBootState({
+    present: true,
+    probe: versionProbe("2.2.8.4"),
+  });
+  assert.deepEqual(minimumAutomaticRecoveryPlan({ left: healthy, right: healthy }), {
+    action: "none",
+    executable: true,
+    firmwareWriteRequired: false,
+    reason:
+      "Both temples already returned checksum-valid Application-mode version replies; no recovery mutation is needed.",
+  });
+});
+
+test("automatic USB diagnosis reboots a silent temple before considering firmware", async () => {
+  const steps = [];
+  let resetCalls = 0;
+  const session = {
+    async readTempleFlashPreflight() {
+      return {
+        caseVersion: "1.2.57",
+        telemetry: { leftPresent: true, rightPresent: true },
+      };
+    },
+    async probeRunningTemple(_operation, route) {
+      if (route === "left") throw new Error("no application reply");
+      return versionProbe("2.2.8.4");
+    },
+    async restartAndVerifyBothTemples(options) {
+      resetCalls += 1;
+      assert.equal(options.purpose, "Automatic no-flash recovery");
+      return verifiedReadiness("2.2.8.4");
+    },
+  };
+  const result = await diagnoseAndRecoverAutomaticUsb({
+    session,
+    onStep(step) {
+      steps.push(step);
+    },
+  });
+  assert.equal(resetCalls, 1);
+  assert.equal(result.outcome, "recovered");
+  assert.equal(result.firmwareBytesTransmitted, 0);
+  assert.equal(result.temples.left.state, "recovery-or-unresponsive");
+  assert.equal(result.recoveredTemples.left.state, "application");
+  assert.deepEqual(
+    steps.map(({ step }) => step),
+    ["telemetry", "probe", "probe", "reset"],
+  );
+});
+
+test("automatic USB diagnosis does not reboot two healthy applications", async () => {
+  let resetCalls = 0;
+  const session = {
+    async readTempleFlashPreflight() {
+      return {
+        telemetry: { leftPresent: true, rightPresent: true },
+      };
+    },
+    async probeRunningTemple() {
+      return versionProbe("2.2.8.4");
+    },
+    async restartAndVerifyBothTemples() {
+      resetCalls += 1;
+    },
+  };
+  const result = await diagnoseAndRecoverAutomaticUsb({ session });
+  assert.equal(result.action, "none");
+  assert.equal(resetCalls, 0);
+  assert.equal(result.firmwareBytesTransmitted, 0);
 });
 const caseOptionBytes = (swapBank = false) => {
   const bytes = new Uint8Array(128);

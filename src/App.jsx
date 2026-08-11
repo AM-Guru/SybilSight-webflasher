@@ -81,6 +81,7 @@ import {
   DEFAULT_INTERFACE_MODE,
   assessAutomaticTempleContacts,
   describeAutomaticApplyFailure,
+  diagnoseAndRecoverAutomaticUsb,
   executeAutomaticCaseUpdate,
   executeAutomaticApply,
   installedProvenanceStorageKey,
@@ -110,6 +111,7 @@ import {
   g2BleTargetReportedVersion,
   g2BleTargetVersionProof,
   g2NameToken,
+  probeAuthorizedG2BleDevices,
   requestG2BleDevice,
 } from "./lib/g2BleOta.js";
 import {
@@ -218,7 +220,9 @@ const OPERATION_LABELS = Object.freeze({
   recheck: "Reset and recheck",
   "temple-flash": "Restore Smart Glasses",
   "ble-temple-flash": "Restore Smart Glasses over Bluetooth",
+  "bluetooth-probe": "Check Bluetooth Application mode",
   "automatic-apply": "Recover Smart Glasses over USB",
+  "automatic-recovery": "Diagnose and recover without flashing",
   "ring-dfu-enter": "Restart R1 in update mode",
   "ring-dfu": "Update R1 Ring",
   stage: "Stage Case bank",
@@ -227,6 +231,7 @@ const OPERATION_LABELS = Object.freeze({
 
 const PERSISTENT_MUTATION_OPERATIONS = new Set([
   "automatic-apply",
+  "automatic-recovery",
   "ble-temple-flash",
   "temple-flash",
   "stage",
@@ -1036,6 +1041,7 @@ function RemoteSupportDialog({
   onJoinOperator,
   onStop,
   onOpenRemoteCase,
+  onRequestTask,
 }) {
   if (!open) return null;
   const connected = state.status === "connected";
@@ -1084,11 +1090,11 @@ function RemoteSupportDialog({
         {mode === "device" ? (
           <div className="remote-support-body">
             <p>
-              The Case stays connected to this browser. After you start the
-              session, the authenticated technician can use only this selected
-              G2 Case USB serial interface until you end the session. This
-              includes diagnostics, backup, resets, and firmware recovery for
-              the Case and seated Smart Glasses.
+              Selected G2 USB and Bluetooth devices stay connected to this
+              browser. After you start the session, the authenticated technician
+              can run only WebFlasher's allowlisted diagnostics and recovery
+              tasks until you end it. Hardware commands execute here on this
+              computer, avoiding a relay round trip for every device exchange.
             </p>
             <div className="remote-support-facts">
               <span>
@@ -1126,8 +1132,8 @@ function RemoteSupportDialog({
                 <div className="remote-support-consent">
                   <span>
                     Selecting the button below authorizes the authenticated
-                    technician to control this selected G2 Case USB serial
-                    interface until you end the session. It does not grant
+                    technician to control only the selected G2 Case and Bluetooth
+                    temple handles until you end the session. It does not grant
                     access to files, applications, cameras, microphones, or any
                     other device on this computer.
                   </span>
@@ -1195,6 +1201,36 @@ function RemoteSupportDialog({
                 >
                   Open remote Case in WebFlasher
                 </Button>
+                <div className="remote-support-task-actions">
+                  <Button
+                    tone="secondary"
+                    onClick={() => onRequestTask("automatic_usb_recovery")}
+                    disabled={!peerOnline}
+                  >
+                    Run no-flash USB recovery remotely
+                  </Button>
+                  <Button
+                    tone="secondary"
+                    onClick={() => onRequestTask("bluetooth_probe")}
+                    disabled={!peerOnline}
+                  >
+                    Check remote Bluetooth
+                  </Button>
+                  <Button
+                    tone="secondary"
+                    onClick={() => onRequestTask("automatic_apply")}
+                    disabled={!peerOnline}
+                  >
+                    Run selected USB recovery locally
+                  </Button>
+                  <Button
+                    tone="secondary"
+                    onClick={() => onRequestTask("bluetooth_recovery")}
+                    disabled={!peerOnline}
+                  >
+                    Run selected Bluetooth recovery locally
+                  </Button>
+                </div>
                 <div className="remote-support-events" aria-live="polite">
                   {events.length ? (
                     events.slice(-40).map((event, index) => (
@@ -1411,6 +1447,8 @@ function App() {
   const [automaticStatus, setAutomaticStatus] = useState(
     "Open USB recovery, select a Case, then choose the recovery method.",
   );
+  const [automaticRecoveryDiagnosis, setAutomaticRecoveryDiagnosis] =
+    useState(null);
   const [installedProvenance, setInstalledProvenance] = useState({});
   const [deviceHistory, setDeviceHistory] = useState(() => readDeviceHistory());
   const [deviceLabelDraft, setDeviceLabelDraft] = useState("");
@@ -1474,6 +1512,8 @@ function App() {
   const supportConnectionRef = useRef(null);
   const remoteDeviceBridgeRef = useRef(null);
   const remoteOperatorPortRef = useRef(null);
+  const remoteTaskExecutorRef = useRef(null);
+  const remoteTaskQueueRef = useRef(Promise.resolve());
 
   const writeTranscriptNow = useCallback(() => {
     if (transcriptPersistTimerRef.current) {
@@ -1700,9 +1740,16 @@ function App() {
           if (message.online) {
             try {
               supportConnectionRef.current.sendState({
-                transport: g2CaseTransportLabel(portRef.current),
+                transport: portRef.current
+                  ? g2CaseTransportLabel(portRef.current)
+                  : "Bluetooth only",
                 caseReport: report,
                 templeResults: pogoResults,
+                bluetooth: {
+                  left: bleDevices.left?.name ?? null,
+                  right: bleDevices.right?.name ?? null,
+                },
+                requesterSideTasks: true,
               });
             } catch {
               // The peer notification can race a technician disconnect.
@@ -1714,7 +1761,65 @@ function App() {
         return;
       }
       if (message.type === "serial_request") {
-        remoteDeviceBridgeRef.current?.handleMessage(message);
+        if (remoteDeviceBridgeRef.current) {
+          remoteDeviceBridgeRef.current.handleMessage(message);
+        } else {
+          try {
+            supportConnectionRef.current?.send({
+              type: "serial_result",
+              id: message.id,
+              ok: false,
+              error:
+                "The person authorized Bluetooth-only support and did not select a G2 Case USB interface.",
+            });
+          } catch {
+            // The relay may have closed with the request.
+          }
+        }
+        return;
+      }
+      if (message.type === "task_request") {
+        const connection = supportConnectionRef.current;
+        const executor = remoteTaskExecutorRef.current;
+        recordSupportEvent(
+          `Requester-side task · ${message.task}`,
+          "Queued in the person's browser; device traffic stays local.",
+        );
+        remoteTaskQueueRef.current = remoteTaskQueueRef.current
+          .catch(() => undefined)
+          .then(async () => {
+            try {
+              if (!executor) {
+                throw new Error("The local recovery task runner is not ready.");
+              }
+              connection?.sendTaskEvent(message.id, "started", {
+                task: message.task,
+                executedOn: "requester-browser",
+              });
+              const result = await executor(message.task, message.args ?? {});
+              connection?.sendTaskResult(message.id, { ok: true, result });
+            } catch (error) {
+              connection?.sendTaskResult(message.id, {
+                ok: false,
+                error: error?.message ?? String(error),
+              });
+            }
+          });
+        return;
+      }
+      if (message.type === "task_event") {
+        recordSupportEvent(
+          `Remote task · ${message.event}`,
+          message.value,
+        );
+        return;
+      }
+      if (message.type === "task_result") {
+        recordSupportEvent(
+          message.ok ? "Requester-side task completed" : "Requester-side task failed",
+          message.ok ? message.result : message.error,
+          message.ok,
+        );
         return;
       }
       if (message.type.startsWith("serial_")) {
@@ -1746,7 +1851,7 @@ function App() {
         }));
       }
     },
-    [addLog, pogoResults, recordSupportEvent, report],
+    [addLog, bleDevices, pogoResults, recordSupportEvent, report],
   );
 
   const newSupportConnection = useCallback(() => {
@@ -1760,25 +1865,36 @@ function App() {
   }, [handleSupportMessage, handleSupportState]);
 
   const startRemoteSupport = useCallback(async () => {
-    if (!report || !portRef.current) return;
+    const usbReady = Boolean(report && portRef.current);
+    const bluetoothReady = Boolean(bleDevices.left || bleDevices.right);
+    if (!usbReady && !bluetoothReady) return;
     const connection = newSupportConnection();
     setSupportEvents([]);
     try {
       await remoteDeviceBridgeRef.current?.close();
-      remoteDeviceBridgeRef.current = new RemoteSerialDeviceBridge(
-        connection,
-        portRef.current,
-        { log: addLog },
-      );
+      remoteDeviceBridgeRef.current = usbReady
+        ? new RemoteSerialDeviceBridge(
+            connection,
+            portRef.current,
+            { log: addLog },
+          )
+        : null;
       const ready = await connection.startDevice();
       setSupportCode(ready.session.code);
       connection.sendState({
-        transport: g2CaseTransportLabel(portRef.current),
+        transport: usbReady
+          ? g2CaseTransportLabel(portRef.current)
+          : "Bluetooth only",
         caseReport: report,
         templeResults: pogoResults,
+        bluetooth: {
+          left: bleDevices.left?.name ?? null,
+          right: bleDevices.right?.name ?? null,
+        },
+        requesterSideTasks: true,
       });
       addLog(
-        `Remote support started · session ${ready.session.code} · access is restricted to the selected G2 Case USB serial interface.`,
+        `Remote support started · session ${ready.session.code} · access is restricted to selected G2 USB/Bluetooth devices and allowlisted requester-side recovery tasks.`,
         "success",
       );
     } catch (caught) {
@@ -1793,6 +1909,7 @@ function App() {
     }
   }, [
     addLog,
+    bleDevices,
     newSupportConnection,
     pogoResults,
     report,
@@ -1832,6 +1949,31 @@ function App() {
     supportCode,
     supportOperatorKey,
   ]);
+
+  const requestRemoteTask = useCallback(
+    async (task) => {
+      const connection = supportConnectionRef.current;
+      if (connection?.role !== "operator") return;
+      recordSupportEvent(
+        `Starting requester-side task · ${task}`,
+        "The person's browser will execute the hardware workflow locally.",
+      );
+      try {
+        const result = await connection.requestTask(task, {});
+        recordSupportEvent(
+          `Requester-side task complete · ${task}`,
+          result,
+        );
+      } catch (error) {
+        recordSupportEvent(
+          `Requester-side task failed · ${task}`,
+          error.message,
+          false,
+        );
+      }
+    },
+    [recordSupportEvent],
+  );
 
   const stopRemoteSupport = useCallback(() => {
     const remoteOperatorPort = remoteOperatorPortRef.current;
@@ -2881,7 +3023,7 @@ function App() {
       left: { ...EMPTY_BLE_ROUTE_PROGRESS.left },
       right: { ...EMPTY_BLE_ROUTE_PROGRESS.right },
     });
-    await run(
+    return run(
       "ble-temple-flash",
       async () => {
         const completedRoutes =
@@ -3183,6 +3325,7 @@ function App() {
             phase: "post-bluetooth-smart-glasses-recovery",
             bluetoothFlashAuditSnapshot: result,
           });
+          return result;
         } catch (caught) {
           const failureResult = {
             imageSha256: release.sha256,
@@ -3277,6 +3420,114 @@ function App() {
         "success",
       );
     });
+  };
+
+  const automaticRecoverWithoutFlash = async () => {
+    if (!report) return null;
+    setAutomaticStatus("Diagnosing Application mode on both temples…");
+    return run("automatic-recovery", async () => {
+      try {
+        const diagnosis = await diagnoseAndRecoverAutomaticUsb({
+          session: getSession(),
+          onStep: ({ step, route }) => {
+            if (step === "telemetry") {
+              setSessionProgress(0.03, "Refreshing Case and temple contacts");
+            } else if (step === "probe") {
+              setSessionProgress(
+                route === "right" ? 0.1 : 0.26,
+                `Checking ${route} Application-mode liveness`,
+              );
+            } else if (step === "reset") {
+              setAutomaticStatus(
+                "A temple is outside proven Application mode; issuing the bounded bilateral reboot…",
+              );
+              setSessionProgress(0.4, "Rebooting both temples and verifying liveness");
+            }
+          },
+        });
+        setAutomaticRecoveryDiagnosis(diagnosis);
+        const observedAt = new Date().toISOString();
+        const versionResults = Object.fromEntries(
+          ["left", "right"].flatMap((route) => {
+            const initial = diagnosis.probes?.[route];
+            const verified = diagnosis.verification?.versions?.[route];
+            if (!initial?.decoded && !verified) return [];
+            return [[
+              route,
+              {
+                version: initial?.decoded
+                  ? { ...initial, observedAt }
+                  : {
+                      operation: "version",
+                      route,
+                      decoded: {
+                        kind: "version",
+                        firmwareVersion: verified.firmware,
+                        hardwareRevision: verified.hardware,
+                      },
+                      transportProof: {
+                        restoredMask: verified.yhmRestoreVerified ? 0x3ff : null,
+                      },
+                      observedAt,
+                    },
+              },
+            ]];
+          }),
+        );
+        setPogoResults((current) => ({ ...current, ...versionResults }));
+        if (diagnosis.verification) {
+          setRecheckReport(diagnosis.verification);
+          setReport((current) =>
+            current
+              ? {
+                  ...current,
+                  console: {
+                    ...current.console,
+                    ...diagnosis.verification,
+                    telemetry: diagnosis.verification.telemetry,
+                  },
+                }
+              : current,
+          );
+        }
+
+        setSessionProgress(0.98, "Checking previously authorized Bluetooth endpoints");
+        const bluetooth = await probeAuthorizedG2BleDevices({
+          devices: bleDevices,
+        });
+        const complete = bluetooth.bothApplicationsReachable;
+        const bluetoothDetail = complete
+          ? "both previously authorized Bluetooth Application services are reachable"
+          : bluetooth.chooserRequired
+            ? "Bluetooth verification needs the local user to select both temples once"
+            : `Bluetooth Application service reachable on ${bluetooth.reachableSides.join(" + ") || "neither side"}`;
+        const completed = { ...diagnosis, bluetooth };
+        setAutomaticRecoveryDiagnosis(completed);
+        setSessionProgress(1, "Minimum recovery complete");
+        setAutomaticStatus(
+          diagnosis.action === "none"
+            ? `Healthy · both temples were already in Application mode; ${bluetoothDetail}.`
+            : `Recovered without firmware · both temples rebooted into Application mode; ${bluetoothDetail}.`,
+        );
+        addLog(
+          `${diagnosis.action === "none" ? "No-flash diagnosis" : "No-flash recovery"} complete · firmware bytes sent 0 · ${bluetoothDetail}.`,
+          complete ? "success" : "warn",
+        );
+        return completed;
+      } catch (caught) {
+        if (caught?.diagnosis) {
+          setAutomaticRecoveryDiagnosis(caught.diagnosis);
+          addLog(
+            `Automatic no-flash diagnosis · ${JSON.stringify(caught.diagnosis)}`,
+            "evidence",
+          );
+        }
+        setAutomaticStatus(
+          `No-flash recovery stopped · ${caught?.message ?? String(caught)}`,
+        );
+        throw caught;
+      }
+    }, { total: 8 });
   };
 
   const analyzeSmartGlasses = async () => {
@@ -3504,7 +3755,7 @@ function App() {
     }
 
     setAutomaticStatus("Running automatic preflight…");
-    await run(
+    return run(
       "automatic-apply",
       async () => {
         try {
@@ -3861,7 +4112,7 @@ function App() {
             setAutomaticStatus(
               "Already up to date · both temples reset and verified.",
             );
-            return;
+            return execution;
           }
 
           const audit = execution.audit;
@@ -3884,6 +4135,7 @@ function App() {
             `Automatic ${automaticInstallMode} completed on right + left${execution.initialPlan ? " after safe differential-to-complete fallback" : ""} with FINISH, route restoration, final DEB0 reset, contacts, and application liveness verified.`,
             "success",
           );
+          return execution;
         } catch (caught) {
           if (caught?.audit) {
             setTempleFlashAudit(caught.audit);
@@ -3910,6 +4162,60 @@ function App() {
       },
       { total: automaticCaseUpdate ? 22 : 16 },
     );
+  };
+
+  const probeBluetoothApplications = async () =>
+    run("bluetooth-probe", async () => {
+      setSessionProgress(0.1, "Checking previously authorized G2 Bluetooth handles");
+      const result = await probeAuthorizedG2BleDevices({ devices: bleDevices });
+      setSessionProgress(1, "Bluetooth Application-service check complete");
+      setBleStatus(
+        result.bothApplicationsReachable
+          ? "Bluetooth check passed · both G2 Application services are reachable from this computer."
+          : result.chooserRequired
+            ? "Bluetooth check needs the person at the glasses to select both temples once. Remote browser commands cannot open Chrome's protected device chooser."
+            : `Bluetooth check reached ${result.reachableSides.join(" + ") || "neither side"}; wake or remove the unavailable temple from the Case and retry.`,
+      );
+      addLog(
+        `Bluetooth Application-mode check · authorized ${result.authorizedSides.join(" + ") || "none"} · reachable ${result.reachableSides.join(" + ") || "none"}.`,
+        result.bothApplicationsReachable ? "success" : "warn",
+      );
+      return result;
+    }, { total: 2 });
+
+  remoteTaskExecutorRef.current = async (task) => {
+    if (operation) {
+      throw new Error(`The person's browser is already running ${operation}.`);
+    }
+    let result;
+    if (task === "automatic_usb_recovery") {
+      if (!report || !portRef.current) {
+        throw new Error("The person must select and analyze the G2 Case first.");
+      }
+      result = await automaticRecoverWithoutFlash();
+    } else if (task === "automatic_apply") {
+      if (!report || !portRef.current) {
+        throw new Error("The person must select and analyze the G2 Case first.");
+      }
+      result = await automaticApply();
+    } else if (task === "bluetooth_probe") {
+      result = await probeBluetoothApplications();
+    } else if (task === "bluetooth_recovery") {
+      if (!bleDevices.left || !bleDevices.right || !bleReady) {
+        throw new Error(
+          "The person must locally select Left and Right Bluetooth temples and confirm the Bluetooth recovery safety check first.",
+        );
+      }
+      result = await flashBleTempleFirmware();
+    } else {
+      throw new Error(`Unsupported requester-side recovery task ${task}.`);
+    }
+    if (result == null) {
+      throw new Error(
+        "The requester-side recovery task stopped; inspect the relayed device console for the exact failure.",
+      );
+    }
+    return result;
   };
 
   const stageFirmware = async () => {
@@ -4441,6 +4747,58 @@ function App() {
                   </small>
                 </div>
               </div>
+              <div className="automatic-no-flash">
+                <Button
+                  tone="secondary"
+                  onClick={automaticRecoverWithoutFlash}
+                  busy={operation === "automatic-recovery"}
+                  disabled={
+                    !report ||
+                    !telemetry?.leftPresent ||
+                    !telemetry?.rightPresent ||
+                    Boolean(operation)
+                  }
+                >
+                  Diagnose & recover without flashing
+                </Button>
+                <small>
+                  First checks each running application. If either side is silent,
+                  it performs only the bounded bilateral reboot and proves both
+                  Application-mode version replies before any firmware is considered.
+                </small>
+              </div>
+              {automaticRecoveryDiagnosis ? (
+                <div className="automatic-task-list" aria-live="polite">
+                  {["left", "right"].map((side) => {
+                    const temple =
+                      automaticRecoveryDiagnosis.recoveredTemples?.[side] ??
+                      automaticRecoveryDiagnosis.temples?.[side];
+                    return (
+                      <span key={side}>
+                        <Icon name={temple?.state === "application" ? "check" : "scan"} />
+                        {side}: {temple?.state ?? "unknown"}
+                        {temple?.firmwareVersion
+                          ? ` · ${temple.firmwareVersion}/hardware ${temple.hardwareRevision}`
+                          : ""}
+                      </span>
+                    );
+                  })}
+                  <span>
+                    <Icon name="check" /> Firmware bytes sent: {automaticRecoveryDiagnosis.firmwareBytesTransmitted ?? 0}
+                  </span>
+                  {automaticRecoveryDiagnosis.bluetooth ? (
+                    <span>
+                      <Icon name={automaticRecoveryDiagnosis.bluetooth.bothApplicationsReachable ? "check" : "scan"} />
+                      Bluetooth Application service: {automaticRecoveryDiagnosis.bluetooth.bothApplicationsReachable
+                        ? "left + right reachable"
+                        : automaticRecoveryDiagnosis.bluetooth.chooserRequired
+                          ? "local pairing required"
+                          : `${automaticRecoveryDiagnosis.bluetooth.reachableSides.join(" + ") || "not reachable"}`}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+              <hr className="automatic-divider" />
               <InstallModeSelector
                 idPrefix="easy"
                 value={automaticInstallMode}
@@ -6274,13 +6632,24 @@ function App() {
         onSupportCodeChange={setSupportCode}
         operatorKey={supportOperatorKey}
         onOperatorKeyChange={setSupportOperatorKey}
-        deviceReady={Boolean(report && portRef.current)}
-        transport={selectedTransport}
+        deviceReady={Boolean(
+          (report && portRef.current) || bleDevices.left || bleDevices.right
+        )}
+        transport={[
+          report && portRef.current ? selectedTransport : null,
+          bleDevices.left || bleDevices.right
+            ? `Bluetooth ${[
+                bleDevices.left && "Left",
+                bleDevices.right && "Right",
+              ].filter(Boolean).join(" + ")}`
+            : null,
+        ].filter(Boolean).join(" · ") || "Select a G2 Case or Bluetooth temple first"}
         events={supportEvents}
         onStartDevice={startRemoteSupport}
         onJoinOperator={joinRemoteSupport}
         onStop={stopRemoteSupport}
         onOpenRemoteCase={openRemoteSupportCase}
+        onRequestTask={requestRemoteTask}
       />
     </div>
   );

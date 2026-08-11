@@ -4,6 +4,7 @@ import test from "node:test";
 import { WebSocket } from "ws";
 import {
   REMOTE_SERIAL_OPERATIONS,
+  REMOTE_SUPPORT_TASKS,
   REMOTE_SUPPORT_PROTOCOL,
   createRemoteSupportServer,
 } from "../deploy/homeassistant-addon/server.mjs";
@@ -79,6 +80,7 @@ test("pairs an authenticated technician with one ephemeral device session", asyn
     protocol: REMOTE_SUPPORT_PROTOCOL,
     sessions: 0,
     serialOperations: [...REMOTE_SERIAL_OPERATIONS],
+    tasks: [...REMOTE_SUPPORT_TASKS],
     sessionTtlMs: 24 * 60 * 60 * 1000,
   });
 
@@ -165,6 +167,41 @@ test("pairs an authenticated technician with one ephemeral device session", asyn
       id: "command_12345678",
       ok: true,
       result: { opened: true },
+    },
+  );
+
+  operator.socket.send(
+    JSON.stringify({
+      type: "task_request",
+      id: "task_request_12345678",
+      task: "bluetooth_probe",
+      args: {},
+    }),
+  );
+  assert.deepEqual(
+    await device.queue.next(({ type }) => type === "task_request"),
+    {
+      type: "task_request",
+      id: "task_request_12345678",
+      task: "bluetooth_probe",
+      args: {},
+    },
+  );
+  device.socket.send(
+    JSON.stringify({
+      type: "task_result",
+      id: "task_request_12345678",
+      ok: true,
+      result: { executedOn: "requester-browser", reachable: ["left", "right"] },
+    }),
+  );
+  assert.deepEqual(
+    await operator.queue.next(({ type }) => type === "task_result"),
+    {
+      type: "task_result",
+      id: "task_request_12345678",
+      ok: true,
+      result: { executedOn: "requester-browser", reachable: ["left", "right"] },
     },
   );
 });

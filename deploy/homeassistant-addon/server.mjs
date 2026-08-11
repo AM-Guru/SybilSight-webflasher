@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
 
-export const REMOTE_SUPPORT_PROTOCOL = 2;
+export const REMOTE_SUPPORT_PROTOCOL = 3;
 export const REMOTE_SERIAL_OPERATIONS = Object.freeze([
   "get_info",
   "open",
@@ -11,6 +11,12 @@ export const REMOTE_SERIAL_OPERATIONS = Object.freeze([
   "set_signals",
   "close",
   "exchange_batch",
+]);
+export const REMOTE_SUPPORT_TASKS = Object.freeze([
+  "automatic_usb_recovery",
+  "automatic_apply",
+  "bluetooth_probe",
+  "bluetooth_recovery",
 ]);
 
 const SESSION_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -119,6 +125,17 @@ function validMessageId(value) {
   return typeof value === "string" && /^[A-Za-z0-9_-]{8,80}$/.test(value);
 }
 
+function validTaskArgs(task, args) {
+  if (typeof args !== "object" || args === null || Array.isArray(args)) {
+    return false;
+  }
+  // Task inputs intentionally stay empty. Firmware and selected device handles
+  // remain visible in the customer browser, so a technician cannot smuggle an
+  // unreviewed URL, payload, shell command, or device identifier through the
+  // relay. The customer chooses those before authorizing the session.
+  return REMOTE_SUPPORT_TASKS.includes(task) && Object.keys(args).length === 0;
+}
+
 function publicSession(session) {
   return {
     code: displayCode(session.code),
@@ -169,6 +186,7 @@ export function createRemoteSupportServer({
           // disabled batched exchanges and kept the old 2-hour expiry, and
           // neither was detectable without opening a WebSocket.
           serialOperations: REMOTE_SERIAL_OPERATIONS,
+          tasks: REMOTE_SUPPORT_TASKS,
           sessionTtlMs,
         })}\n`,
       );
@@ -231,6 +249,7 @@ export function createRemoteSupportServer({
         operator: null,
         expiresAt: Date.now() + sessionTtlMs,
         pendingSerialRequests: new Set(),
+        pendingTaskRequests: new Set(),
       };
       sessions.set(code, session);
     }
@@ -243,6 +262,7 @@ export function createRemoteSupportServer({
       session: publicSession(session),
       resumeToken: session.resumeToken,
       serialOperations: REMOTE_SERIAL_OPERATIONS,
+      tasks: REMOTE_SUPPORT_TASKS,
     });
     send(session.operator, {
       type: "peer",
@@ -277,6 +297,7 @@ export function createRemoteSupportServer({
       role: "operator",
       session: publicSession(session),
       serialOperations: REMOTE_SERIAL_OPERATIONS,
+      tasks: REMOTE_SUPPORT_TASKS,
     });
     send(session.device, {
       type: "peer",
@@ -304,6 +325,8 @@ export function createRemoteSupportServer({
         "serial_result",
         "serial_data",
         "serial_event",
+        "task_result",
+        "task_event",
       ].includes(message.type)
     ) {
       throw new Error("The device sent a message type outside its allowlist.");
@@ -317,6 +340,24 @@ export function createRemoteSupportServer({
       }
       connection.session.pendingSerialRequests.delete(message.id);
     }
+    if (message.type === "task_result") {
+      if (
+        !validMessageId(message.id) ||
+        !connection.session.pendingTaskRequests.has(message.id)
+      ) {
+        throw new Error("The device returned an unknown recovery task id.");
+      }
+      connection.session.pendingTaskRequests.delete(message.id);
+    }
+    if (
+      message.type === "task_event" &&
+      (!validMessageId(message.id) ||
+        !connection.session.pendingTaskRequests.has(message.id) ||
+        typeof message.event !== "string" ||
+        message.event.length > 80)
+    ) {
+      throw new Error("The device recovery-task event is invalid.");
+    }
     if (
       message.type === "serial_data" &&
       (typeof message.data !== "string" ||
@@ -329,6 +370,40 @@ export function createRemoteSupportServer({
   };
 
   const forwardOperatorMessage = (connection, message) => {
+    if (message.type === "task_request") {
+      if (
+        !validMessageId(message.id) ||
+        !validTaskArgs(message.task, message.args)
+      ) {
+        throw new Error(
+          "The technician recovery task is outside the requester-side allowlist.",
+        );
+      }
+      if (connection.session.device?.readyState !== WebSocket.OPEN) {
+        send(connection.session.operator, {
+          type: "task_result",
+          id: message.id,
+          ok: false,
+          error: "The person's browser is not connected.",
+        });
+        return;
+      }
+      if (
+        connection.session.pendingTaskRequests.has(message.id) ||
+        connection.session.pendingTaskRequests.size >= 4
+      ) {
+        throw new Error("Too many recovery tasks are active or the id was reused.");
+      }
+      connection.session.pendingTaskRequests.add(message.id);
+      touch(connection.session);
+      send(connection.session.device, {
+        type: "task_request",
+        id: message.id,
+        task: message.task,
+        args: {},
+      });
+      return;
+    }
     if (
       message.type !== "serial_request" ||
       !validMessageId(message.id) ||
@@ -439,6 +514,15 @@ export function createRemoteSupportServer({
           });
         }
         session.pendingSerialRequests.clear();
+        for (const id of session.pendingTaskRequests) {
+          send(session.operator, {
+            type: "task_result",
+            id,
+            ok: false,
+            error: "The person's browser disconnected during the recovery task.",
+          });
+        }
+        session.pendingTaskRequests.clear();
         send(session.operator, {
           type: "peer",
           role: "device",
