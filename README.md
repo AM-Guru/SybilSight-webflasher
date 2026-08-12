@@ -38,9 +38,10 @@ Production deployment:
   Smart Glasses firmware bundle.
 - Accepts official five- or six-component `EVENOTA` bundles, wrapped
   `firmware_box.bin` components, and validated raw case images.
-- Recognizes and offers all 14 archived official G2 SHA-256 values. CFW
-  2.2.8.11 and the older advertisement-patched CFW 2.2.8.9 and 2.2.8.10 images
-  are excluded from both direct-Bluetooth and Case-USB installation.
+- Recognizes and offers all 14 archived official G2 SHA-256 values plus the
+  reviewed g2flash-based CFW 2.2.6.11. Retired CFW 2.2.8.11 and the older
+  advertisement-patched CFW 2.2.8.9 and 2.2.8.10 remain excluded from both
+  direct-Bluetooth and Case-USB installation.
 - Validates the Apollo main application's independent preamble, CRC-32, target
   region, installed-image boundary, and vector.
 - Stages case firmware in the inactive bank and verifies a byte-for-byte
@@ -176,33 +177,29 @@ control:
 - The case selects the left or right path through its YHM2510 front end and
   time-separates TX-only and RX-only operation.
 
-The archived CFW 2.2.8.11 is an exact, machine-described transformation of official
-2.2.8.4 using the pinned `jimrandomh/g2flash` main-branch patch set. It does not use
-OpenCFW and deliberately omits the separate BLE-advertisement experiment:
+The offered CFW 2.2.6.11 is an exact, machine-described transformation of
+official 2.2.6.10 using the pinned `jimrandomh/g2flash` main-branch patch set:
 
 - stock SHA-256:
-  `df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7`
+  `f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa`
 - CFW SHA-256:
-  `be3922f3695e0b58a6b62f40f760b6c8754488c4e9a58c96b2c13e92ef33bd3a`
+  `105032302d02ccf943b785070cf15877a918c120b7ca1332bb6261f70eb6d683`
 - patch-manifest SHA-256:
-  `1d5166704b666c35633c08ef37a7f60e6f2f936e78fc6c7f80beb8ff91dff831`
-- 36 expected-byte-gated operations: the 18 reviewed g2flash hook redirects,
-  nine live identity-pointer redirects, one binary-version response update, the
-  `2.2.8.11` package identity, one upstream CFW/blob identity append, and six
-  required inner/outer size and checksum updates
+  `2745edbe1e97cc4f3ee49dd27786ab41cab82c3861a26e9531ca934e32e73281`
+- 28 expected-byte-gated operations: the complete 25-operation upstream
+  g2flash patch set, three same-width package/runtime identity updates, with
+  the affected Apollo checksum operations regenerated for the final image
 
-The bundle and both running temples identify as `2.2.8.11` while retaining the
-official `2.2.8.4` Stock base. It advertises
+The bundle and both running temples identify as `2.2.6.11` while retaining the
+official `2.2.6.10` Stock base. It advertises
 `EVENCFW/8 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10`,
-matching the pinned g2flash main branch. The stock advertised-name call remains
-byte-for-byte unchanged, no `nameserial` capability exists, and the retired
-advertised-name blob is absent. The guarded Faceclaw trampoline still resumes
-the untouched stock Even AI path when no wake lease is active.
+matching g2flash commit `877c8d9`. The guarded Faceclaw trampoline resumes the
+stock Even AI path when no wake lease is active.
 
 Run `python3 scripts/build_g2flash_cfw.py` to reproduce the bundle and its
-stock-replay recipe. The image remains as historical evidence and is not offered
-or present in a mutation allowlist. CFW 2.2.8.9 and 2.2.8.10 likewise remain
-archived only as diagnostic evidence; both contain BLE-advertisement changes.
+stock-replay recipe from `~/Repo/g2flash`. This exact build is hash-pinned but
+not yet hardware-validated. CFW 2.2.8.9, 2.2.8.10, and 2.2.8.11 remain archived
+only as diagnostic evidence and are absent from mutation allowlists.
 
 ### Application-alive pogo OTA
 
@@ -1159,11 +1156,12 @@ component and transfers the one changed, complete CRC-gated Apollo main. The
 receiver has no safe sparse-write offset, so Update never transmits arbitrary
 changed byte ranges inside that component.
 
-CFW 2.2.8.11 is no longer a selectable target or mutation pin. Automatic
-Update therefore uses the complete-main path for the offered 2.2.8.4 Stock
-release. Installed Apollo MRAM readback remains unavailable, and saved recovery
-audits remain browser-origin-local rather than portable from a localhost
-hardware test to the hosted site.
+CFW 2.2.6.11 is the selectable reviewed custom target. Because this exact
+g2flash-derived image has not yet been exercised on hardware, it remains
+clearly marked as unvalidated and all writes stay gated on its complete bundle
+and Apollo-main hashes. Installed Apollo MRAM readback remains unavailable,
+and saved recovery audits remain browser-origin-local rather than portable
+from a localhost hardware test to the hosted site.
 
 If fresh Application-mode replies or saved route audits prove the selected
 target on both temples, Apply performs only the required bilateral reset and
@@ -1344,7 +1342,7 @@ python3 scripts/g2_case_pogo_flasher.py flash-reviewed-cfw \
   --execute-main-ota \
   --accept-single-slot-risk \
   --confirm-image-sha256 \
-  d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86 \
+  105032302d02ccf943b785070cf15877a918c120b7ca1332bb6261f70eb6d683 \
   --log /path/to/g2-cfw-flash-audit.json
 ```
 
@@ -1443,6 +1441,19 @@ source-files/
     SHA256SUMS
   2.2.6.10/
     e28738432d7b612d625331b00383149b.bin
+    firmware_codec.bin
+    firmware_ble_em9305.bin
+    firmware_touch.bin
+    firmware_box.bin
+    firmware_box.raw.bin
+    ota_s200_bootloader.bin
+    ota_s200_firmware_ota.bin
+    metadata.json
+    SHA256SUMS
+  2.2.6.11/
+    g2-2.2.6.11.bin
+    cfw_patches-2.2.6.11.json
+    manifest.json
     firmware_codec.bin
     firmware_ble_em9305.bin
     firmware_touch.bin

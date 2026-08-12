@@ -126,6 +126,11 @@ import {
   requestR1ApplicationDevice,
   requestR1DfuDevice,
 } from "./lib/r1Dfu.js";
+import {
+  R1_UNLOCK_APPLICATION_VERSION,
+  R1_UNLOCK_OWNER_KEY_SHA256,
+  unlockR1Bootloader,
+} from "./lib/r1Unlock.js";
 
 const EMPTY_PROGRESS = {
   fraction: 0,
@@ -229,6 +234,7 @@ const OPERATION_LABELS = Object.freeze({
   "automatic-recovery": "Diagnose and recover without flashing",
   "ring-dfu-enter": "Restart R1 in update mode",
   "ring-dfu": "Update R1 Ring",
+  "ring-unlock": "Unlock R1 Bootloader",
   stage: "Stage Case bank",
   activate: "Activate Case bank",
 });
@@ -242,6 +248,7 @@ const PERSISTENT_MUTATION_OPERATIONS = new Set([
   "activate",
   "ring-dfu-enter",
   "ring-dfu",
+  "ring-unlock",
 ]);
 const FIRMWARE_CATALOG_MUTATION_OPERATIONS = new Set([
   "automatic-apply",
@@ -1426,6 +1433,11 @@ function App() {
   const [ringStatus, setRingStatus] = useState(
     "Select your connected R1, restart it into update mode, then select the R1 DFU device.",
   );
+  const [ringUnlockConfirmation, setRingUnlockConfirmation] = useState("");
+  const [ringUnlockStatus, setRingUnlockStatus] = useState(
+    "Available only for the exact reviewed R1 2.2.7.0005 application.",
+  );
+  const [ringUnlockResult, setRingUnlockResult] = useState(null);
   const [firmware, setFirmware] = useState(null);
   const [staged, setStaged] = useState(null);
   const [progress, setProgress] = useState(EMPTY_PROGRESS);
@@ -4655,6 +4667,46 @@ function App() {
         `R1 ${release.version} transferred successfully. Reconnect the ring in SybilSight after it restarts.`,
       );
     });
+  const unlockRingBootloader = () =>
+    run("ring-unlock", async () => {
+      const release = assertPinnedR1Release(selectedRingRelease);
+      if (release.version !== R1_UNLOCK_APPLICATION_VERSION) {
+        throw new Error(
+          `Unlock is pinned to R1 ${R1_UNLOCK_APPLICATION_VERSION}. Select and install that exact application first.`,
+        );
+      }
+      if (ringUnlockConfirmation.trim().toUpperCase() !== "UNLOCK R1 BOOTLOADER") {
+        throw new Error("Type UNLOCK R1 BOOTLOADER to authorize this owner-device operation.");
+      }
+      const response = await fetchCatalogRelease(release, "R1 2.2.7.0005 recovery archive");
+      const vendorFirmware = await prepareR1DfuPackage(
+        new Uint8Array(await response.arrayBuffer()),
+        release,
+      );
+      const result = await unlockR1Bootloader({
+        applicationDevice: ringApplicationDevice,
+        vendorFirmware,
+        requestDfuDevice: async (checkpoint) => {
+          setRingUnlockStatus(`Select the R1 DFU advertisement for ${checkpoint}.`);
+          const device = await requestR1DfuDevice();
+          setRingDfuDevice(device);
+          return device;
+        },
+        onProgress(fraction, detail) {
+          setRingUnlockStatus(detail);
+          const completed = Math.round(fraction * 100);
+          setSessionProgress(fraction, `${detail} · ${completed}%`);
+        },
+      });
+      setRingUnlockResult(result);
+      setRingUnlockStatus(
+        `Unlocked and verified · ${result.imageSha256.slice(0, 16)}…`,
+      );
+      addLog(
+        `R1 bootloader unlock verified · initial=${result.initialState} · final=${result.finalState} · SHA-256 ${result.imageSha256}.`,
+        "success",
+      );
+    });
   const directBleSupported = g2BleSupported();
   const ringFlashReady = Boolean(
     selectedRingRelease && ringDfuDevice && ringReady && !operation,
@@ -5284,6 +5336,45 @@ function App() {
                 <span className={cx("tiny-dot", ringDfuDevice && "tiny-dot-success")} />
                 <span>{ringStatus}</span>
               </div>
+              <details className="ring-unlock-panel">
+                <summary>Advanced: Unlock R1 Bootloader</summary>
+                <p>
+                  Owner-device research workflow for application {R1_UNLOCK_APPLICATION_VERSION}
+                  only. It replaces the bootloader trust key, then installs and byte-exactly
+                  verifies the signing-optional bootloader. An interrupted transition may make
+                  the ring unbootable.
+                </p>
+                <code>Owner key · {R1_UNLOCK_OWNER_KEY_SHA256.slice(0, 16)}…</code>
+                <label className="select-label" htmlFor="ring-unlock-confirmation">
+                  Type UNLOCK R1 BOOTLOADER
+                </label>
+                <input
+                  id="ring-unlock-confirmation"
+                  value={ringUnlockConfirmation}
+                  onChange={(event) => setRingUnlockConfirmation(event.target.value)}
+                  disabled={Boolean(operation)}
+                  autoComplete="off"
+                  spellCheck="false"
+                />
+                <Button
+                  tone="danger"
+                  onClick={unlockRingBootloader}
+                  busy={operation === "ring-unlock"}
+                  disabled={
+                    !ringApplicationDevice
+                    || selectedRingRelease?.version !== R1_UNLOCK_APPLICATION_VERSION
+                    || ringUnlockConfirmation.trim().toUpperCase()
+                      !== "UNLOCK R1 BOOTLOADER"
+                    || Boolean(operation)
+                  }
+                >
+                  Unlock R1 Bootloader
+                </Button>
+                <div className="automatic-status" role="status" aria-live="polite">
+                  <span className={cx("tiny-dot", ringUnlockResult && "tiny-dot-success")} />
+                  <span>{ringUnlockStatus}</span>
+                </div>
+              </details>
             </div>
           </article>
           <div className={cx("usb-recovery-toggle", usbRecoveryVisible && "is-open")}>

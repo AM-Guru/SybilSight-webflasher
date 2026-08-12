@@ -3330,6 +3330,29 @@ code {
   min-height: 44px;
 }
 
+.ring-unlock-panel {
+  margin-top: 0.75rem;
+  padding: 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--danger, #d14b4b) 42%, transparent);
+  border-radius: 0.8rem;
+  background: color-mix(in srgb, var(--danger, #d14b4b) 7%, transparent);
+}
+
+.ring-unlock-panel summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.ring-unlock-panel p {
+  margin: 0.75rem 0;
+}
+
+.ring-unlock-panel input {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0.35rem 0 0.75rem;
+}
+
 @media (max-width: 760px) {
   .ring-update-panel {
     grid-template-columns: 1fr;

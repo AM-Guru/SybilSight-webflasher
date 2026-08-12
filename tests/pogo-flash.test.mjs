@@ -88,13 +88,11 @@ import { getVerifiedPogoBridgePayload } from "../src/lib/pogoBridge.js";
 
 const REVIEWED_STOCK_IMAGE_SHA256 =
   "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa";
-// Reviewed CFW 2.2.6.11 earned its hardware validation on 2026-07-28: a full
-// Case-USB temple transfer (Stock 2.2.6.10 -> CFW 2.2.6.11) with all 3,543
-// records and FINISH accepted, activation on the first activation reset, and a
-// verified post-reset version reply on both temples.
+// The older CFW that carried this version number earned hardware validation,
+// but the current g2flash-derived 2.2.6.11 has distinct bytes and remains
+// unvalidated until it is exercised on physical glasses.
 const HARDWARE_VALIDATED_IMAGE_SHA256 = new Set([
   REVIEWED_STOCK_IMAGE_SHA256,
-  REVIEWED_CFW_IMAGE_SHA256,
 ]);
 
 function makeTempleFrame(payload) {

@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 2,
+  "device": "Even Realities G2",
+  "version": "2.2.6.11",
+  "internalVersion": "2.2.6.11",
+  "reportedVersion": "2.2.6.11",
+  "channel": "custom",
+  "trust": "reviewed-custom",
+  "hardwareValidated": false,
+  "baseVersion": "2.2.6.10",
+  "notes": "Built from official G2 2.2.6.10 with the pinned g2flash main-branch patch set and advanced to a consistent 2.2.6.11 package/runtime identity.",
+  "capabilities": [
+    "Uses the full display for custom screens and images.",
+    "Makes image updates smoother and more efficient.",
+    "Supports different visuals on the left and right lenses.",
+    "Adds richer sounds and custom alert patterns.",
+    "Recognizes ring long presses and releases.",
+    "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
+    "Keeps wear-status and compass updates available to connected apps.",
+    "Reviewed for consistency; testing this exact build on physical glasses is still pending."
+  ],
+  "caseVersion": "1.2.57",
+  "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.6.11/g2-2.2.6.11.bin",
+  "archivedFrom": "WebFlasher local evidence",
+  "sourceFile": "g2-2.2.6.11.bin",
+  "sourceMd5": "7a4943a94f5b486b7f5ac984399c106d",
+  "sourceSha256": "105032302d02ccf943b785070cf15877a918c120b7ca1332bb6261f70eb6d683",
+  "sourceSize": 4321354,
+  "patchUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.6.11/cfw_patches-2.2.6.11.json",
+  "patchFile": "cfw_patches-2.2.6.11.json",
+  "patchSha256": "2745edbe1e97cc4f3ee49dd27786ab41cab82c3861a26e9531ca934e32e73281",
+  "manifestFile": "manifest.json",
+  "manifestSha256": "c6b3976c587041e814ebdd0db7ae140c98c8c9ef0a93ae6823e8e2f23893e646",
+  "archivedAt": "2026-08-12T16:42:10.554Z",
+  "mainFirmware": {
+    "runBase": "0x00438000",
+    "installedImageSize": 3543491,
+    "installedImageEnd": "0x007991c3",
+    "crc32": "a4508780"
+  },
+  "components": [
+    {
+      "name": "firmware/codec.bin",
+      "typeId": 4,
+      "size": 326092,
+      "crc32c": "bdcfeeac",
+      "sha256": "b06dfef7faa2f1e52d2aacd07958d4b96ffc36dca5077ac9149e48f19fc9c4d0"
+    },
+    {
+      "name": "firmware/ble_em9305.bin",
+      "typeId": 5,
+      "size": 211948,
+      "crc32c": "c074baf7",
+      "sha256": "91a38f7fc05555f86181ecb22b363e3239bfcaaa2ff6171e98524ae64821eca9"
+    },
+    {
+      "name": "firmware/touch.bin",
+      "typeId": 3,
+      "size": 34464,
+      "crc32c": "ba63bc61",
+      "sha256": "0d13d8bb1337bf22989dc16143e3d5eca29a31cc1ed753ff624668750ea9470d"
+    },
+    {
+      "name": "firmware/box.bin",
+      "typeId": 6,
+      "size": 55784,
+      "crc32c": "7d443be0",
+      "sha256": "36ca0c13558f252af286ae2b36b5e576d087d21d37b15d778e7da9f502a70374"
+    },
+    {
+      "name": "ota/s200_bootloader.bin",
+      "typeId": 1,
+      "size": 148599,
+      "crc32c": "27d2eb10",
+      "sha256": "f89a4c4657537cec6bfc572bdb8318866309b90a5d180c4307680d39824167b5"
+    },
+    {
+      "name": "ota/s200_firmware_ota.bin",
+      "typeId": 0,
+      "size": 3543523,
+      "crc32c": "0202e48e",
+      "sha256": "2d82addd4c9916781b50f7be377645b797f10856a460bc5190f3172e7161614e"
+    }
+  ],
+  "files": [
+    {
+      "name": "g2-2.2.6.11.bin",
+      "size": 4321354,
+      "sha256": "105032302d02ccf943b785070cf15877a918c120b7ca1332bb6261f70eb6d683"
+    },
+    {
+      "name": "cfw_patches-2.2.6.11.json",
+      "size": 45913,
+      "sha256": "2745edbe1e97cc4f3ee49dd27786ab41cab82c3861a26e9531ca934e32e73281"
+    },
+    {
+      "name": "firmware_codec.bin",
+      "size": 326092,
+      "sha256": "b06dfef7faa2f1e52d2aacd07958d4b96ffc36dca5077ac9149e48f19fc9c4d0"
+    },
+    {
+      "name": "firmware_ble_em9305.bin",
+      "size": 211948,
+      "sha256": "91a38f7fc05555f86181ecb22b363e3239bfcaaa2ff6171e98524ae64821eca9"
+    },
+    {
+      "name": "firmware_touch.bin",
+      "size": 34464,
+      "sha256": "0d13d8bb1337bf22989dc16143e3d5eca29a31cc1ed753ff624668750ea9470d"
+    },
+    {
+      "name": "firmware_box.bin",
+      "size": 55784,
+      "sha256": "36ca0c13558f252af286ae2b36b5e576d087d21d37b15d778e7da9f502a70374"
+    },
+    {
+      "name": "firmware_box.raw.bin",
+      "size": 55752,
+      "sha256": "773b6d4cfdaf0a5a74a557e3babe8222a0ae813436b76a7437c1096d2c60d677"
+    },
+    {
+      "name": "ota_s200_bootloader.bin",
+      "size": 148599,
+      "sha256": "f89a4c4657537cec6bfc572bdb8318866309b90a5d180c4307680d39824167b5"
+    },
+    {
+      "name": "ota_s200_firmware_ota.bin",
+      "size": 3543523,
+      "sha256": "2d82addd4c9916781b50f7be377645b797f10856a460bc5190f3172e7161614e"
+    },
+    {
+      "name": "manifest.json",
+      "size": 3780,
+      "sha256": "c6b3976c587041e814ebdd0db7ae140c98c8c9ef0a93ae6823e8e2f23893e646"
+    }
+  ]
+}

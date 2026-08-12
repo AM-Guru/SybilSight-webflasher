@@ -74,8 +74,12 @@ jobs:
             }
             const catalog = JSON.parse(catalogBytes);
             const customReleases = catalog.releases.filter((entry) => entry.channel === "custom");
-            if (customReleases.length !== 0) {
-              throw new Error("Catalog still contains a retired custom firmware release");
+            const reviewedCustomSha256 = "105032302d02ccf943b785070cf15877a918c120b7ca1332bb6261f70eb6d683";
+            if (customReleases.length !== 1 ||
+                customReleases[0].id !== "g2-custom-2.2.6.11" ||
+                customReleases[0].trust !== "reviewed-custom" ||
+                customReleases[0].sha256 !== reviewedCustomSha256) {
+              throw new Error("Catalog does not contain exactly the reviewed G2 2.2.6.11 CFW release");
             }
             const newestOfficial = catalog.releases
               .filter((entry) => entry.channel === "official" && entry.trust === "official-pinned")
@@ -88,6 +92,12 @@ jobs:
             const targetSha256 = crypto.createHash("sha256").update(targetBytes).digest("hex");
             if (targetBytes.length !== newestOfficial.size || targetSha256 !== newestOfficial.sha256) {
               throw new Error("Newest official release does not match its catalog pin");
+            }
+            const reviewedCustom = customReleases[0];
+            const customBytes = fs.readFileSync("dist" + reviewedCustom.url);
+            const customSha256 = crypto.createHash("sha256").update(customBytes).digest("hex");
+            if (customBytes.length !== reviewedCustom.size || customSha256 !== reviewedCustom.sha256) {
+              throw new Error("Reviewed custom release does not match its catalog pin");
             }
             const newestRing = [...(catalog.ringReleases ?? [])]
               .sort((left, right) => right.version.localeCompare(left.version, undefined, { numeric: true }))[0];
@@ -788,14 +798,16 @@ jobs:
             }
             const catalog = JSON.parse(catalogBytes);
             const customReleases = catalog.releases.filter((entry) => entry.channel === "custom");
-            if (customReleases.length !== 0) {
-              throw new Error("Production catalog still contains a retired custom firmware release");
+            const reviewedCustomSha256 = "105032302d02ccf943b785070cf15877a918c120b7ca1332bb6261f70eb6d683";
+            if (customReleases.length !== 1 ||
+                customReleases[0].id !== "g2-custom-2.2.6.11" ||
+                customReleases[0].trust !== "reviewed-custom" ||
+                customReleases[0].sha256 !== reviewedCustomSha256) {
+              throw new Error("Production catalog does not contain exactly the reviewed G2 2.2.6.11 CFW release");
             }
-            const target = catalog.releases
-              .filter((entry) => entry.channel === "official" && entry.trust === "official-pinned")
-              .sort((left, right) => right.internalVersion.localeCompare(left.internalVersion, undefined, { numeric: true }))[0];
+            const target = customReleases[0];
             if (!target?.url || !/^[0-9a-f]{64}$/.test(target.sha256 ?? "")) {
-              throw new Error("Production catalog has no newest official target");
+              throw new Error("Production catalog has no reviewed custom target");
             }
             process.stdout.write(target.url + " " + target.sha256);
           ' "${observed_release_file}" "${observed_catalog_file}" "${GITHUB_SHA}")"
@@ -805,7 +817,7 @@ jobs:
             "https://webflasher.sybilsight.com${target_url}?verify=${GITHUB_SHA}&run=${GITHUB_RUN_ID}"
           observed_target_sha256="$(sha256sum "${observed_target_file}" | cut -d ' ' -f 1)"
           if [ "${observed_target_sha256}" != "${target_sha256}" ]; then
-            echo "Production official target ${observed_target_sha256} does not match ${target_sha256}" >&2
+            echo "Production reviewed custom target ${observed_target_sha256} does not match ${target_sha256}" >&2
             exit 1
           fi
           echo "Verified production WebFlasher ${GITHUB_SHA}, catalog, and ${target_url}"

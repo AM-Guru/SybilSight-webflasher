@@ -73,7 +73,7 @@ python3 scripts/g2_case_pogo_flasher.py flash-reviewed-cfw \
   --execute-main-ota \
   --accept-single-slot-risk \
   --confirm-image-sha256 \
-  d2fb5dcef485b1bb14818b8dc56811b9d278d6fc2b81e56c496c53b72aaa1e86 \
+  105032302d02ccf943b785070cf15877a918c120b7ca1332bb6261f70eb6d683 \
   --log /path/to/g2-cfw-flash-audit.json
 ```
 

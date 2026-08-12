@@ -28,6 +28,24 @@ const REVIEWED_CFW_DISPLAY_CHANGES = Object.freeze([
 ]);
 const REVIEWED_CFW_PENDING_VALIDATION =
   "Reviewed for consistency; testing on physical glasses is still pending.";
+export const REVIEWED_G2FLASH_CFW_2_2_6_11 = Object.freeze({
+  version: "2.2.6.11",
+  reportedVersion: "2.2.6.11",
+  baseVersion: "2.2.6.10",
+  baseSha256: "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa",
+  sha256: "105032302d02ccf943b785070cf15877a918c120b7ca1332bb6261f70eb6d683",
+  mainPayloadBytes: 3543523,
+  mainPayloadSha256:
+    "2d82addd4c9916781b50f7be377645b797f10856a460bc5190f3172e7161614e",
+  capabilityMarker:
+    "EVENCFW/8 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10",
+  capabilities: [
+    ...REVIEWED_CFW_DISPLAY_CHANGES,
+    "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
+    "Keeps wear-status and compass updates available to connected apps.",
+    REVIEWED_CFW_PENDING_VALIDATION,
+  ],
+});
 export const REVIEWED_CFW = Object.freeze({
   version: "2.2.6.12",
   baseVersion: "2.2.6.10",
@@ -1009,6 +1027,7 @@ export function parseMainOTAPreamble(payload) {
 export function classifyG2Firmware(fileSha256) {
   const digest = fileSha256.toLowerCase();
   const reviewed = [
+    REVIEWED_G2FLASH_CFW_2_2_6_11,
     REVIEWED_CFW_2_2_8_10,
     REVIEWED_CFW_2_2_8_9,
     REVIEWED_CFW_2_2_8_8,

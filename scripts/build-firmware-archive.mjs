@@ -12,6 +12,21 @@ import { parseEvenOTA } from "../src/lib/firmware.js";
 const CDN_BASE = "https://cdn.evenreal.co/firmware";
 const REVIEWED_CFW_BASE_SHA256 =
   "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa";
+const REVIEWED_CFW_2_2_6_11_SHA256 =
+  "105032302d02ccf943b785070cf15877a918c120b7ca1332bb6261f70eb6d683";
+const REVIEWED_G2FLASH_PATCH_SHA256 =
+  "ab38d6299ba28afe2cd4ea5b4442867e894b7909e6c73db8f1ee0796c06a914a";
+const REVIEWED_G2FLASH_OUTPUT_SHA256 =
+  "20cba9377ea207c8c0a6fd936f32db9ecaf23da023cdf43a770b22b355107d1f";
+const REVIEWED_CFW_DISPLAY_CHANGES = [
+  "Uses the full display for custom screens and images.",
+  "Makes image updates smoother and more efficient.",
+  "Supports different visuals on the left and right lenses.",
+  "Adds richer sounds and custom alert patterns.",
+  "Recognizes ring long presses and releases.",
+];
+const REVIEWED_CFW_PENDING_VALIDATION =
+  "Reviewed for consistency; testing this exact build on physical glasses is still pending.";
 function r1Release({
   version,
   minAppVersion,
@@ -296,6 +311,53 @@ const RELEASES = [
     size: 4342507,
     notes: "Added Korean system language support.",
   },
+  {
+    id: "g2-custom-2.2.6.11",
+    displayName: "SybilSight CFW (2.2.6.11)",
+    version: "2.2.6.11",
+    internalVersion: "2.2.6.11",
+    reportedVersion: "2.2.6.11",
+    baseVersion: "2.2.6.10",
+    baseSha256: REVIEWED_CFW_BASE_SHA256,
+    channel: "custom",
+    trust: "reviewed-custom",
+    hash: "7a4943a94f5b486b7f5ac984399c106d",
+    sha256: REVIEWED_CFW_2_2_6_11_SHA256,
+    size: 4321354,
+    fileName: "g2-2.2.6.11.bin",
+    sourceUrl:
+      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.6.11/g2-2.2.6.11.bin",
+    fallbacks: [[
+      "webflasher",
+      "public/firmware-updates/source-files/2.2.6.11/g2-2.2.6.11.bin",
+    ]],
+    preferLocalEvidence: true,
+    patchUrl:
+      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.6.11/cfw_patches-2.2.6.11.json",
+    patchFallbackRoot: "webflasher",
+    patchFallback:
+      "public/firmware-updates/source-files/2.2.6.11/cfw_patches-2.2.6.11.json",
+    patchFileName: "cfw_patches-2.2.6.11.json",
+    patchCount: 28,
+    manifestFileName: "manifest.json",
+    capabilityMarker:
+      "EVENCFW/8 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10",
+    g2flashCommit: "877c8d9490db0d3717ca012dd0f54556af3701bd",
+    g2flashPatchSha256: REVIEWED_G2FLASH_PATCH_SHA256,
+    g2flashOutputSha256: REVIEWED_G2FLASH_OUTPUT_SHA256,
+    directFramebufferCommits: [
+      "235a8b304447e330df6a0bce0351e3b6dc3d6f08",
+      "28aad42757837db14c08225884a7cc5201e08595",
+    ],
+    notes:
+      "Built from official G2 2.2.6.10 with the pinned g2flash main-branch patch set and advanced to a consistent 2.2.6.11 package/runtime identity.",
+    capabilities: [
+      ...REVIEWED_CFW_DISPLAY_CHANGES,
+      "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
+      "Keeps wear-status and compass updates available to connected apps.",
+      REVIEWED_CFW_PENDING_VALIDATION,
+    ],
+  },
 ];
 
 function argument(name, fallback) {
@@ -490,6 +552,14 @@ async function saveRelease(root, release, fallbackRoots) {
       (release.g2flashCommit &&
         patchSet.source_provenance?.g2flash_upstream_commit !==
           release.g2flashCommit) ||
+      (release.g2flashPatchSha256 &&
+        (patchSet.g2flash_patch_sha256 !== release.g2flashPatchSha256 ||
+          patchSet.source_provenance?.g2flash_patch_sha256 !==
+            release.g2flashPatchSha256)) ||
+      (release.g2flashOutputSha256 &&
+        (patchSet.g2flash_output_sha256 !== release.g2flashOutputSha256 ||
+          patchSet.source_provenance?.g2flash_output_sha256 !==
+            release.g2flashOutputSha256)) ||
       (release.g2flashRebasePatchSha256 &&
         (patchSet.g2flash_rebase_patch_sha256 !==
           release.g2flashRebasePatchSha256 ||
@@ -893,6 +963,10 @@ async function main() {
   );
   const output = path.resolve(argument("--output", defaultOutput));
   const r1Only = process.argv.includes("--r1-only");
+  const requestedG2Release = argument("--release", null);
+  if (r1Only && requestedG2Release) {
+    throw new Error("--r1-only and --release cannot be combined");
+  }
   const fallbackRoots = {
     webflasher: path.resolve(
       path.dirname(fileURLToPath(import.meta.url)),
@@ -912,24 +986,51 @@ async function main() {
     ),
   };
   await mkdir(output, { recursive: true });
-  const catalog = [];
-  if (!r1Only) {
-    for (const release of RELEASES) {
-      catalog.push(await saveRelease(output, release, fallbackRoots));
-    }
-  }
-  const ringCatalog = [];
-  for (const release of R1_RELEASES) {
-    ringCatalog.push(await saveRingRelease(output, release, fallbackRoots));
-  }
   let existingIndex = {};
-  if (r1Only) {
+  if (r1Only || requestedG2Release) {
     try {
       existingIndex = JSON.parse(await readFile(path.join(output, "index.json"), "utf8"));
     } catch (error) {
       if (error?.code !== "ENOENT") throw error;
     }
   }
+  const selectedG2Releases = requestedG2Release
+    ? RELEASES.filter(
+        (release) =>
+          release.id === requestedG2Release || release.version === requestedG2Release,
+      )
+    : RELEASES;
+  if (requestedG2Release && selectedG2Releases.length !== 1) {
+    throw new Error(`Unknown or ambiguous G2 release: ${requestedG2Release}`);
+  }
+  const catalog = [];
+  if (!r1Only) {
+    for (const release of selectedG2Releases) {
+      catalog.push(await saveRelease(output, release, fallbackRoots));
+    }
+  }
+  const ringCatalog = [];
+  if (requestedG2Release) {
+    ringCatalog.push(...(existingIndex.ringReleases ?? []));
+  } else {
+    for (const release of R1_RELEASES) {
+      ringCatalog.push(await saveRingRelease(output, release, fallbackRoots));
+    }
+  }
+  const mergedCatalog = requestedG2Release
+    ? [
+        ...(existingIndex.releases ?? []).filter(
+          (existing) =>
+            !catalog.some(
+              (updated) =>
+                updated.id === existing.id ||
+                (updated.version === existing.version &&
+                  updated.channel === existing.channel),
+            ),
+        ),
+        ...catalog,
+      ]
+    : catalog;
   const index = {
     ...existingIndex,
     schemaVersion: 2,
@@ -937,7 +1038,7 @@ async function main() {
     source: "Even Realities G2/R1 CDN plus SybilSight release evidence",
     releases: r1Only
       ? existingIndex.releases ?? []
-      : catalog.sort((left, right) => {
+      : mergedCatalog.sort((left, right) => {
           const versionOrder = right.version.localeCompare(left.version, undefined, {
             numeric: true,
           });

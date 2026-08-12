@@ -822,6 +822,20 @@ test("the retired SybilSight CFW is rejected by direct BLE", async () => {
   assert.equal(firmware.templeFlashTarget, null);
 });
 
+test("the reviewed g2flash 2.2.6.11 CFW is accepted by direct BLE", async () => {
+  const bytes = await readFile(
+    new URL(
+      "../public/firmware-updates/source-files/2.2.6.11/g2-2.2.6.11.bin",
+      import.meta.url,
+    ),
+  );
+  const firmware = await parseFirmwareInput(bytes, "g2-2.2.6.11.bin");
+  assert.equal(assertPinnedG2BleBundle(firmware), firmware);
+  assert.equal(firmware.g2Version, "2.2.6.11");
+  assert.equal(firmware.templeFlashEligible, true);
+  assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
+});
+
 test("the direct BLE writer explicitly rejects the advertisement-modified CFW", async () => {
   const bytes = await readFile(
     new URL(
