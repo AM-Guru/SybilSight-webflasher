@@ -169,7 +169,7 @@ test("production Caddy verification rejects duplicate WebFlasher blocks", async 
   }
 });
 
-test("deployment verifies the active production Caddy block before publishing", async () => {
+test("deployment reconciles and verifies production Caddy before publishing", async () => {
   const workflow = await readFile(
     new URL("../.github/workflows/deploy.yml", import.meta.url),
     "utf8",
@@ -182,13 +182,18 @@ test("deployment verifies the active production Caddy block before publishing", 
   );
   assert.match(
     workflow,
-    /scp .*Caddyfile.*active-Caddyfile[\s\S]*verify-webflasher-caddy\.sh[\s\S]*active-Caddyfile[\s\S]*webflasher\.caddy[\s\S]*- name: Deploy website/,
+    /cp scripts\/reconcile-webflasher-caddy\.sh .*reconcile-webflasher-caddy\.sh/,
   );
   assert.match(
     workflow,
-    /sh "\$\{release_dir\}\/verify-webflasher-caddy\.sh"/,
+    /scp .*remote_caddyfile.*active_caddyfile[\s\S]*reconcile-webflasher-caddy\.sh[\s\S]*candidate_caddyfile[\s\S]*ha apps restart c80c7555_caddy-2[\s\S]*ROLLBACK_CADDY_SCRIPT[\s\S]*verify-webflasher-caddy\.sh[\s\S]*- name: Deploy website/,
+  );
+  assert.match(
+    workflow,
+    /sh "\$\{release_dir\}\/(?:reconcile|verify)-webflasher-caddy\.sh"/,
     "artifact downloads do not preserve executable mode",
   );
+  assert.match(workflow, /Production Caddy did not become healthy/);
 });
 
 test("deployment updates a version-changing local app and rebuilds same-version sources", async () => {
@@ -205,7 +210,7 @@ test("deployment updates a version-changing local app and rebuilds same-version 
     workflow,
     /cp scripts\/activate-homeassistant-app\.sh .*activate-homeassistant-app\.sh/,
   );
-  assert.match(workflow, /activate-homeassistant-app\.sh[\s\\]+verify-webflasher-caddy\.sh/);
+  assert.match(workflow, /activate-homeassistant-app\.sh[\s\\]+reconcile-webflasher-caddy\.sh[\s\\]+verify-webflasher-caddy\.sh/);
   assert.match(
     workflow,
     /sh -s --[\s\\]+"\$\{REMOTE_SUPPORT_APP\}" "\$\{remote_target\}" < "\$\{activate_script\}"/,

@@ -138,8 +138,10 @@ jobs:
             rootfs
           cp deploy/webflasher.caddy "${artifact_dir}/webflasher.caddy"
           cp scripts/verify-webflasher-caddy.sh "${artifact_dir}/verify-webflasher-caddy.sh"
+          cp scripts/reconcile-webflasher-caddy.sh "${artifact_dir}/reconcile-webflasher-caddy.sh"
           cp scripts/activate-homeassistant-app.sh "${artifact_dir}/activate-homeassistant-app.sh"
           chmod 755 "${artifact_dir}/verify-webflasher-caddy.sh"
+          chmod 755 "${artifact_dir}/reconcile-webflasher-caddy.sh"
           chmod 755 "${artifact_dir}/activate-homeassistant-app.sh"
           (
             cd "${artifact_dir}"
@@ -148,6 +150,7 @@ jobs:
               webflasher-remote-support-addon.tar.gz \
               webflasher.caddy \
               activate-homeassistant-app.sh \
+              reconcile-webflasher-caddy.sh \
               verify-webflasher-caddy.sh \
               > webflasher-release.sha256
           )
@@ -161,6 +164,7 @@ jobs:
             ${{ runner.temp }}/webflasher-artifact/webflasher-remote-support-addon.tar.gz
             ${{ runner.temp }}/webflasher-artifact/webflasher.caddy
             ${{ runner.temp }}/webflasher-artifact/activate-homeassistant-app.sh
+            ${{ runner.temp }}/webflasher-artifact/reconcile-webflasher-caddy.sh
             ${{ runner.temp }}/webflasher-artifact/verify-webflasher-caddy.sh
             ${{ runner.temp }}/webflasher-artifact/webflasher-release.sha256
           if-no-files-found: error
@@ -308,23 +312,109 @@ jobs:
           trap - EXIT
           echo "Deployed Remote Support protocol 3 to ${SSH_TARGET}:${remote_target}"
 
-      - name: Verify production Caddy routing
+      - name: Reconcile production Caddy routing
         env:
           SSH_TARGET: homeassistant
         shell: bash
         run: |
           set -euo pipefail
           release_dir="${RUNNER_TEMP}/webflasher-release"
+          active_caddyfile="${RUNNER_TEMP}/active-Caddyfile"
+          candidate_caddyfile="${RUNNER_TEMP}/candidate-Caddyfile"
+          remote_caddyfile="/addon_configs/c80c7555_caddy-2/Caddyfile"
+          remote_incoming="/addon_configs/c80c7555_caddy-2/.Caddyfile.webflasher-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          remote_backup="/addon_configs/c80c7555_caddy-2/.Caddyfile.webflasher-backup-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           ssh_options=(
             -o BatchMode=yes
             -o ConnectTimeout=15
             -o ServerAliveInterval=15
             -o ServerAliveCountMax=3
           )
-          scp "${ssh_options[@]}" "${SSH_TARGET}:/addon_configs/c80c7555_caddy-2/Caddyfile" "${RUNNER_TEMP}/active-Caddyfile"
+          scp "${ssh_options[@]}" "${SSH_TARGET}:${remote_caddyfile}" "${active_caddyfile}"
+          sh "${release_dir}/reconcile-webflasher-caddy.sh" \
+            "${active_caddyfile}" \
+            "${release_dir}/webflasher.caddy" \
+            "${candidate_caddyfile}"
+
+          caddy_changed=false
+          if ! cmp -s "${active_caddyfile}" "${candidate_caddyfile}"; then
+            caddy_changed=true
+            scp "${ssh_options[@]}" "${candidate_caddyfile}" "${SSH_TARGET}:${remote_incoming}"
+            ssh "${ssh_options[@]}" "${SSH_TARGET}" sh -s -- \
+              "${remote_incoming}" "${remote_caddyfile}" "${remote_backup}" <<'INSTALL_CADDY_SCRIPT'
+          set -eu
+          incoming="$1"
+          active="$2"
+          backup="$3"
+          case "${incoming}" in
+            /addon_configs/c80c7555_caddy-2/.Caddyfile.webflasher-*) ;;
+            *) exit 1 ;;
+          esac
+          case "${backup}" in
+            /addon_configs/c80c7555_caddy-2/.Caddyfile.webflasher-backup-*) ;;
+            *) exit 1 ;;
+          esac
+          [ "${active}" = /addon_configs/c80c7555_caddy-2/Caddyfile ]
+          [ -f "${active}" ] && [ ! -L "${active}" ]
+          [ -f "${incoming}" ] && [ ! -L "${incoming}" ]
+          [ ! -e "${backup}" ] && [ ! -L "${backup}" ]
+          owner_group="$(stat -c '%u:%g' "${active}")"
+          mode="$(stat -c '%a' "${active}")"
+          chown "${owner_group}" "${incoming}"
+          chmod "${mode}" "${incoming}"
+          cp -p "${active}" "${backup}"
+          mv "${incoming}" "${active}"
+          if ! ha apps restart c80c7555_caddy-2 --no-progress; then
+            failed="${active}.failed-${incoming##*.Caddyfile.webflasher-}"
+            mv "${active}" "${failed}"
+            mv "${backup}" "${active}"
+            ha apps restart c80c7555_caddy-2 --no-progress || true
+            exit 1
+          fi
+          INSTALL_CADDY_SCRIPT
+          fi
+
+          caddy_healthy=false
+          for attempt in {1..12}; do
+            if curl --fail --silent --show-error --max-time 10 \
+              "https://webflasher.sybilsight.com/release.json?caddy=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${attempt}" \
+              >/dev/null && \
+              curl --fail --silent --show-error --max-time 10 \
+                "https://webflasher.sybilsight.com/remote-support/healthz?caddy=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${attempt}" \
+                >/dev/null; then
+              caddy_healthy=true
+              break
+            fi
+            sleep 5
+          done
+          if [ "${caddy_healthy}" != true ]; then
+            if [ "${caddy_changed}" = true ]; then
+              ssh "${ssh_options[@]}" "${SSH_TARGET}" sh -s -- \
+                "${remote_caddyfile}" "${remote_backup}" <<'ROLLBACK_CADDY_SCRIPT'
+          set -eu
+          active="$1"
+          backup="$2"
+          [ "${active}" = /addon_configs/c80c7555_caddy-2/Caddyfile ]
+          case "${backup}" in
+            /addon_configs/c80c7555_caddy-2/.Caddyfile.webflasher-backup-*) ;;
+            *) exit 1 ;;
+          esac
+          [ -f "${backup}" ] && [ ! -L "${backup}" ]
+          failed="${active}.failed-${backup##*.Caddyfile.webflasher-backup-}"
+          mv "${active}" "${failed}"
+          mv "${backup}" "${active}"
+          ha apps restart c80c7555_caddy-2 --no-progress || true
+          ROLLBACK_CADDY_SCRIPT
+            fi
+            echo "Production Caddy did not become healthy after routing reconciliation." >&2
+            exit 1
+          fi
+
+          scp "${ssh_options[@]}" "${SSH_TARGET}:${remote_caddyfile}" "${RUNNER_TEMP}/verified-Caddyfile"
           sh "${release_dir}/verify-webflasher-caddy.sh" \
-            "${RUNNER_TEMP}/active-Caddyfile" \
+            "${RUNNER_TEMP}/verified-Caddyfile" \
             "${release_dir}/webflasher.caddy"
+          echo "Production Caddy routing is reconciled and healthy."
 
       - name: Deploy website
         env:
