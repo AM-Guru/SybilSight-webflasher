@@ -41,7 +41,7 @@
     "build_time": "21:39:36",
     "expected_device_version": "2.2.6.10",
     "image_bytes": 4301227,
-    "image_path": "/Users/kalani/Repo/evenRealities-webflasher/public/firmware-updates/source-files/2.2.6.10/e28738432d7b612d625331b00383149b.bin",
+    "image_path": "/Users/kalani/Repo/SybilSight-webflasher/public/firmware-updates/source-files/2.2.6.10/e28738432d7b612d625331b00383149b.bin",
     "image_sha256": "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa",
     "main_installed_bytes": 3523364,
     "main_installed_end": "0x00794324",
