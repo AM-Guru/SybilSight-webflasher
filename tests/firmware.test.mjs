@@ -866,7 +866,7 @@ test("ships the exact official G2 2.2.7.14 bundle and six components", async () 
 
 test("ships reproducible g2flash CFW 2.2.6.11 with consistent live identity", async () => {
   const releaseDirectory = new URL(
-    "../public/firmware-updates/source-files/2.2.6.11/",
+    "../public/firmware-updates/source-files/2.2.6.11-105032302d02/",
     import.meta.url,
   );
   const bundle = await readFile(new URL("g2-2.2.6.11.bin", releaseDirectory));

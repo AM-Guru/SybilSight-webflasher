@@ -1,61 +1,27 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 test("Caddy serves release-bound firmware from the atomic WebFlasher root", async () => {
-  const [caddy, catalog] = await Promise.all([
-    readFile(new URL("../deploy/webflasher.caddy", import.meta.url), "utf8"),
-    readFile(
-      new URL(
-        "../public/firmware-updates/source-files/index.json",
-        import.meta.url,
-      ),
-      "utf8",
-    ).then(JSON.parse),
-  ]);
+  const caddy = await readFile(
+    new URL("../deploy/webflasher.caddy", import.meta.url),
+    "utf8",
+  );
 
   assert.match(
     caddy,
-    /handle \/firmware-updates\/source-files\/index\.json\s*\{\s*root \* \/share\/webflasher\s+file_server\s*\}/,
+    /@releaseFirmware\s*\{\s*path \/firmware-updates\/source-files\/\*\s+file\s*\{\s*root \/share\/webflasher\s*\}\s*\}/,
   );
-  const releaseBound = [];
-  for (const release of catalog.releases) {
-    try {
-      const target = await stat(
-        new URL(`../public${release.url}`, import.meta.url),
-      );
-      if (target.isFile()) releaseBound.push(release);
-    } catch (error) {
-      if (error?.code !== "ENOENT") throw error;
-    }
-  }
-  assert.ok(releaseBound.length > 0);
-  for (const release of releaseBound) {
-    const archiveKey = release.url.match(
-      /^\/firmware-updates\/source-files\/([^/]+)\/[^/]+$/,
-    )?.[1];
-    assert.ok(archiveKey, `${release.version} must use a versioned firmware URL`);
-    const route = escapeRegExp(
-      `/firmware-updates/source-files/${archiveKey}/*`,
-    );
-    assert.match(
-      caddy,
-      new RegExp(
-        `handle ${route}\\s*\\{\\s*root \\* /share/webflasher\\s+file_server\\s*\\}`,
-      ),
-      `${release.version} (${archiveKey}) must not fall through to the mutable historical archive`,
-    );
-  }
   assert.match(
     caddy,
-    /handle \/firmware-updates\/source-files\/r1\/\*\s*\{\s*root \* \/share\/webflasher\s+file_server\s*\}/,
+    /handle @releaseFirmware\s*\{\s*root \* \/share\/webflasher\s+file_server\s*\}/,
+  );
+  assert.doesNotMatch(
+    caddy,
+    /handle \/firmware-updates\/source-files\/(?:2\.|r1\/)/,
   );
 });
 
@@ -101,8 +67,8 @@ test("production Caddy verification rejects a stale WebFlasher site block", asyn
     "utf8",
   );
   const stale = expected.replace(
-    /\thandle \/firmware-updates\/source-files\/2\.2\.8\.9\/\* \{\n\t\troot \* \/share\/webflasher\n\t\tfile_server\n\t\}\n/,
-    "",
+    "\t\t\troot /share/webflasher\n",
+    "\t\t\troot /share/stale-webflasher\n",
   );
   assert.notEqual(stale, expected);
   const directory = await mkdtemp(join(tmpdir(), "webflasher-caddy-test-"));

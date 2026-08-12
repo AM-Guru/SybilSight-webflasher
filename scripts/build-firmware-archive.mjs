@@ -325,18 +325,7 @@ const RELEASES = [
     sha256: REVIEWED_CFW_2_2_6_11_SHA256,
     size: 4321354,
     fileName: "g2-2.2.6.11.bin",
-    sourceUrl:
-      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.6.11/g2-2.2.6.11.bin",
-    fallbacks: [[
-      "webflasher",
-      "public/firmware-updates/source-files/2.2.6.11/g2-2.2.6.11.bin",
-    ]],
     preferLocalEvidence: true,
-    patchUrl:
-      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.6.11/cfw_patches-2.2.6.11.json",
-    patchFallbackRoot: "webflasher",
-    patchFallback:
-      "public/firmware-updates/source-files/2.2.6.11/cfw_patches-2.2.6.11.json",
     patchFileName: "cfw_patches-2.2.6.11.json",
     patchCount: 28,
     manifestFileName: "manifest.json",
@@ -367,6 +356,24 @@ function argument(name, fallback) {
 
 function digest(algorithm, data) {
   return createHash(algorithm).update(data).digest("hex");
+}
+
+function archiveKeyFor(release) {
+  if (release.channel === "custom") {
+    if (!/^[a-f0-9]{64}$/.test(release.sha256 ?? "")) {
+      throw new Error(
+        `Reviewed CFW ${release.version} needs a pinned SHA-256 before it can be archived`,
+      );
+    }
+    const contentAddressedKey = `${release.version}-${release.sha256.slice(0, 12)}`;
+    if (release.archiveKey && release.archiveKey !== contentAddressedKey) {
+      throw new Error(
+        `Reviewed CFW ${release.version} archive key must match its pinned SHA-256`,
+      );
+    }
+    return contentAddressedKey;
+  }
+  return release.archiveKey ?? release.version;
 }
 
 function applyReviewedPatchSet(stock, patchSet) {
@@ -456,19 +463,38 @@ async function acquireRelease(release, sourceUrl, fallbackRoots) {
 }
 
 async function saveRelease(root, release, fallbackRoots) {
-  const archiveKey = release.archiveKey ?? release.version;
+  // Reviewed firmware can legitimately be rebuilt without changing the version
+  // reported by the glasses. Content-addressing it keeps every published URL
+  // immutable and prevents a later deployment from colliding with older bytes.
+  const archiveKey = archiveKeyFor(release);
   if (!/^2\.[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*$/.test(archiveKey)) {
     throw new Error(`G2 ${release.version} has an invalid archive key`);
   }
   const directory = path.join(root, archiveKey);
   await mkdir(directory, { recursive: true });
   const sourceFile = release.fileName ?? `${release.hash}.bin`;
-  const sourceUrl = release.sourceUrl ?? `${CDN_BASE}/${sourceFile}`;
+  const customSourceRoot =
+    `https://webflasher.sybilsight.com/firmware-updates/source-files/${archiveKey}`;
+  const sourceUrl = release.sourceUrl ?? (
+    release.channel === "custom"
+      ? `${customSourceRoot}/${sourceFile}`
+      : `${CDN_BASE}/${sourceFile}`
+  );
+  const acquisitionRelease =
+    release.channel === "custom" && !(release.fallbacks?.length)
+      ? {
+          ...release,
+          fallbacks: [[
+            "webflasher",
+            `public/firmware-updates/source-files/${archiveKey}/${sourceFile}`,
+          ]],
+        }
+      : release;
   process.stdout.write(
     `Downloading ${release.channel === "custom" ? "reviewed CFW" : "official G2"} ${release.version}… `,
   );
   const { bytes, archivedFrom } = await acquireRelease(
-    release,
+    acquisitionRelease,
     sourceUrl,
     fallbackRoots,
   );
@@ -510,24 +536,29 @@ async function saveRelease(root, release, fallbackRoots) {
   let patchFile = null;
   let patchSha256 = null;
   let patchSet = null;
-  if (release.patchUrl) {
+  const patchSourceUrl = release.patchUrl ?? (
+    release.channel === "custom" && release.patchFileName
+      ? `${customSourceRoot}/${release.patchFileName}`
+      : null
+  );
+  const patchFallback = release.patchFallback ?? (
+    release.channel === "custom" && release.patchFileName
+      ? `public/firmware-updates/source-files/${archiveKey}/${release.patchFileName}`
+      : null
+  );
+  const patchFallbackRoot = release.patchFallbackRoot ?? "webflasher";
+  if (patchSourceUrl) {
     let patchBytes;
-    if (release.preferLocalEvidence && release.patchFallback) {
+    if (release.preferLocalEvidence && patchFallback) {
       patchBytes = await readFile(
-        path.join(
-          fallbackRoots[release.patchFallbackRoot ?? "website"],
-          release.patchFallback,
-        ),
+        path.join(fallbackRoots[patchFallbackRoot], patchFallback),
       );
     } else try {
-      patchBytes = await download(release.patchUrl);
+      patchBytes = await download(patchSourceUrl);
     } catch (downloadError) {
-      if (!release.patchFallback) throw downloadError;
+      if (!patchFallback) throw downloadError;
       patchBytes = await readFile(
-        path.join(
-          fallbackRoots[release.patchFallbackRoot ?? "website"],
-          release.patchFallback,
-        ),
+        path.join(fallbackRoots[patchFallbackRoot], patchFallback),
       );
     }
     patchSet = JSON.parse(patchBytes.toString("utf8"));
@@ -705,7 +736,7 @@ async function saveRelease(root, release, fallbackRoots) {
     sourceMd5: md5,
     sourceSha256: sha256,
     sourceSize: bytes.length,
-    patchUrl: release.patchUrl ?? null,
+    patchUrl: patchSourceUrl,
     patchFile,
     patchSha256,
     manifestFile,
@@ -770,7 +801,7 @@ async function saveRelease(root, release, fallbackRoots) {
     size: bytes.length,
     md5,
     sha256,
-    patchUrl: release.patchUrl
+    patchUrl: patchSourceUrl
       ? `/firmware-updates/source-files/${archiveKey}/${patchFile}`
       : null,
     patchSha256,

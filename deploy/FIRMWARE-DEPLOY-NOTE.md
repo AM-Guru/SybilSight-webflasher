@@ -16,8 +16,8 @@ library** than the bundle itself trusts. The CFW entry in the picker resolved to
 while the repository (already on `origin/main`) has:
 
     g2-custom-2.2.6.11   version "2.2.6.11"
-    /firmware-updates/source-files/2.2.6.11/g2-2.2.6.11.bin
-    4,320,415 bytes   sha256 d2fb5dcef485b1bb…
+    /firmware-updates/source-files/2.2.6.11-105032302d02/g2-2.2.6.11.bin
+    4,321,354 bytes   sha256 105032302d02ccf9…
 
 Different sizes, different hashes — genuinely different firmware.
 
@@ -53,7 +53,7 @@ commit reproduced `assets/index-B1naFm0T.js` byte for byte), yet the catalog was
 behind it.
 
 **The GitHub side needs nothing.** `origin/main` is in sync and already contains
-`public/firmware-updates/source-files/2.2.6.11/g2-2.2.6.11.bin`. This is purely a
+`public/firmware-updates/source-files/2.2.6.11-105032302d02/g2-2.2.6.11.bin`. This is purely a
 publish-path problem.
 
 ## Resolution
@@ -90,11 +90,10 @@ version remains accurate, but the corrected bytes receive a distinct
 `archiveKey` and URL. The old directory remains byte-for-byte available for
 catalogs that already pinned it.
 
-The production Caddy block must therefore contain explicit `/share/webflasher`
-handlers for every G2 version directory bundled with the release as well as the
-release-bound source-files index. Without one of those handlers, the broader
-historical-archive handler shadows the correctly deployed bundle and returns a
-cacheable 404 whenever that separate archive is refreshed without the release.
+The production Caddy block uses a file-existence matcher against
+`/share/webflasher` before falling back to `/share/sybilsight`. New G2 archive
+keys and R1 versions are therefore routed automatically whenever the atomic site
+release contains them; no per-version Caddy handler is needed.
 
 The deployment artifact now carries the canonical WebFlasher Caddy block and a
 hash-pinned verifier. Before changing either firmware root or the website, the

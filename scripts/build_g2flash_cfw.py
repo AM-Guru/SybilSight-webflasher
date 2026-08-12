@@ -21,6 +21,10 @@ import zlib
 ROOT = Path(__file__).resolve().parents[1]
 BASE_VERSION = "2.2.6.10"
 OUTPUT_VERSION = "2.2.6.11"
+EXPECTED_RELEASE_SHA256 = (
+    "105032302d02ccf943b785070cf15877a918c120b7ca1332bb6261f70eb6d683"
+)
+ARCHIVE_KEY = f"{OUTPUT_VERSION}-{EXPECTED_RELEASE_SHA256[:12]}"
 BASE = (
     ROOT
     / "public"
@@ -30,7 +34,7 @@ BASE = (
     / "e28738432d7b612d625331b00383149b.bin"
 )
 OUTPUT_DIR = (
-    ROOT / "public" / "firmware-updates" / "source-files" / OUTPUT_VERSION
+    ROOT / "public" / "firmware-updates" / "source-files" / ARCHIVE_KEY
 )
 OUTPUT_BUNDLE = f"g2-{OUTPUT_VERSION}.bin"
 OUTPUT_RECIPE = f"cfw_patches-{OUTPUT_VERSION}.json"
@@ -236,6 +240,8 @@ def build(g2flash: Path) -> tuple[bytes, dict]:
     replayed = apply_operations(base, operations)
     if replayed != output:
         raise BuildError("stock replay recipe does not reproduce the output")
+    if sha256(output) != EXPECTED_RELEASE_SHA256:
+        raise BuildError("release output does not match its content-addressed archive key")
     if output.count(b"2.2.6.11") != len(IDENTITY_PATCHES):
         raise BuildError("2.2.6.11 identity count is not exactly three")
 

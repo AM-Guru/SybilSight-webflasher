@@ -81,6 +81,13 @@ jobs:
                 customReleases[0].sha256 !== reviewedCustomSha256) {
               throw new Error("Catalog does not contain exactly the reviewed G2 2.2.6.11 CFW release");
             }
+            for (const custom of customReleases) {
+              const expectedArchiveKey = custom.version + "-" + custom.sha256.slice(0, 12);
+              const expectedPrefix = "/firmware-updates/source-files/" + expectedArchiveKey + "/";
+              if (custom.archiveKey !== expectedArchiveKey || !custom.url.startsWith(expectedPrefix)) {
+                throw new Error("Reviewed custom firmware must use its SHA-256-addressed archive path");
+              }
+            }
             const newestOfficial = catalog.releases
               .filter((entry) => entry.channel === "official" && entry.trust === "official-pinned")
               .sort((left, right) => right.internalVersion.localeCompare(left.internalVersion, undefined, { numeric: true }))[0];
@@ -808,6 +815,11 @@ jobs:
             const target = customReleases[0];
             if (!target?.url || !/^[0-9a-f]{64}$/.test(target.sha256 ?? "")) {
               throw new Error("Production catalog has no reviewed custom target");
+            }
+            const expectedArchiveKey = target.version + "-" + target.sha256.slice(0, 12);
+            const expectedPrefix = "/firmware-updates/source-files/" + expectedArchiveKey + "/";
+            if (target.archiveKey !== expectedArchiveKey || !target.url.startsWith(expectedPrefix)) {
+              throw new Error("Production custom target is not content-addressed");
             }
             process.stdout.write(target.url + " " + target.sha256);
           ' "${observed_release_file}" "${observed_catalog_file}" "${GITHUB_SHA}")"

@@ -825,7 +825,7 @@ test("the retired SybilSight CFW is rejected by direct BLE", async () => {
 test("the reviewed g2flash 2.2.6.11 CFW is accepted by direct BLE", async () => {
   const bytes = await readFile(
     new URL(
-      "../public/firmware-updates/source-files/2.2.6.11/g2-2.2.6.11.bin",
+      "../public/firmware-updates/source-files/2.2.6.11-105032302d02/g2-2.2.6.11.bin",
       import.meta.url,
     ),
   );

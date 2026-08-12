@@ -107,6 +107,17 @@ test("offers the reviewed 2.2.6.11 CFW without the retired 2.2.8 CFW", async () 
     ["2.2.6.11"],
     "only the current reviewed custom release may appear in the listing",
   );
+  for (const release of catalog.filter((entry) => entry.channel === "custom")) {
+    const expectedArchiveKey = `${release.version}-${release.sha256.slice(0, 12)}`;
+    assert.equal(release.archiveKey, expectedArchiveKey);
+    assert.equal(
+      release.url.startsWith(
+        `/firmware-updates/source-files/${expectedArchiveKey}/`,
+      ),
+      true,
+      "reviewed custom firmware URLs must remain immutable across same-version rebuilds",
+    );
+  }
   assert.equal(
     catalog.some((release) => release.sha256 === RETIRED_CFW_2_2_8_11_SHA256),
     false,

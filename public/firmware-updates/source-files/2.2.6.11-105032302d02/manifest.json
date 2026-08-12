@@ -4,6 +4,7 @@
   "device": "Even Realities G2",
   "release": {
     "version": "2.2.6.11",
+    "archiveKey": "2.2.6.11-105032302d02",
     "internalVersion": "2.2.6.11",
     "reportedVersion": "2.2.6.11",
     "channel": "custom",

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-12T16:42:10.558Z",
+  "generatedAt": "2026-08-12T17:00:32.219Z",
   "source": "Even Realities G2/R1 CDN plus SybilSight release evidence",
   "releases": [
     {
@@ -158,6 +158,7 @@
       "trust": "reviewed-custom",
       "hardwareValidated": false,
       "version": "2.2.6.11",
+      "archiveKey": "2.2.6.11-105032302d02",
       "internalVersion": "2.2.6.11",
       "reportedVersion": "2.2.6.11",
       "baseVersion": "2.2.6.10",
@@ -175,16 +176,16 @@
       "recoveryTarget": "glasses",
       "caseRecoveryEligible": false,
       "caseVersion": "1.2.57",
-      "url": "/firmware-updates/source-files/2.2.6.11/g2-2.2.6.11.bin",
-      "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.6.11/g2-2.2.6.11.bin",
+      "url": "/firmware-updates/source-files/2.2.6.11-105032302d02/g2-2.2.6.11.bin",
+      "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.6.11-105032302d02/g2-2.2.6.11.bin",
       "fileName": "g2-2.2.6.11.bin",
       "size": 4321354,
       "md5": "7a4943a94f5b486b7f5ac984399c106d",
       "sha256": "105032302d02ccf943b785070cf15877a918c120b7ca1332bb6261f70eb6d683",
-      "patchUrl": "/firmware-updates/source-files/2.2.6.11/cfw_patches-2.2.6.11.json",
+      "patchUrl": "/firmware-updates/source-files/2.2.6.11-105032302d02/cfw_patches-2.2.6.11.json",
       "patchSha256": "2745edbe1e97cc4f3ee49dd27786ab41cab82c3861a26e9531ca934e32e73281",
-      "manifestUrl": "/firmware-updates/source-files/2.2.6.11/manifest.json",
-      "manifestSha256": "c6b3976c587041e814ebdd0db7ae140c98c8c9ef0a93ae6823e8e2f23893e646",
+      "manifestUrl": "/firmware-updates/source-files/2.2.6.11-105032302d02/manifest.json",
+      "manifestSha256": "d75f7adf594fbc768a0f3a6a6f31f9836aeff42b5eb0a196a696dd4016a8f820",
       "archivedFrom": "WebFlasher local evidence",
       "mainFirmware": {
         "runBase": "0x00438000",
