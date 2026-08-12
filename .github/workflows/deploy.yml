@@ -380,7 +380,8 @@ jobs:
               "https://webflasher.sybilsight.com/release.json?caddy=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${attempt}" \
               >/dev/null && \
               curl --fail --silent --show-error --max-time 10 \
-                "https://webflasher.sybilsight.com/remote-support/healthz?caddy=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${attempt}" \
+                --header 'Cache-Control: no-cache' \
+                "https://webflasher.sybilsight.com/remote-support/healthz" \
                 >/dev/null; then
               caddy_healthy=true
               break

@@ -194,6 +194,11 @@ test("deployment reconciles and verifies production Caddy before publishing", as
     "artifact downloads do not preserve executable mode",
   );
   assert.match(workflow, /Production Caddy did not become healthy/);
+  assert.match(
+    workflow,
+    /--header 'Cache-Control: no-cache'[\s\\]+"https:\/\/webflasher\.sybilsight\.com\/remote-support\/healthz"/,
+  );
+  assert.doesNotMatch(workflow, /remote-support\/healthz\?caddy=/);
 });
 
 test("deployment updates a version-changing local app and rebuilds same-version sources", async () => {
