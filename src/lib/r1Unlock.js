@@ -14,13 +14,35 @@ export const R1_UNLOCK_OPTIONAL_IMAGE_SHA256 =
   "18851ceede792f316df328d935075464a0facfbfec4e64fb32f13812bba85dba";
 export const R1_UNLOCK_STOCK_KEY_SHA256 =
   "e3cf089455dd88548fdc8336feb30212ce384deef9c54843313b9226e38c6b13";
+export const R1_UNLOCK_OWNER_PUBLIC_KEY_HEX =
+  "de65d6353a4b09bb64cd6a09c0e69b3bae1a5aa46b5b04f2d8a7f9fc19a78dc0" +
+  "4a0304ccf7730c7a45791ddbd5c143c3529fb70f5eb20e6c3d2fbe2a4682485b";
+export const R1_UNLOCK_REVIEW = Object.freeze({
+  bootloaderBase: 0xf8000,
+  imageBytes: 0x6000,
+  publicKeyAddress: 0xfd868,
+  publicKeyOffset: 0x5868,
+  publicKeyBytes: 64,
+  signatureGateAddress: 0xfbd98,
+  signatureGateOffset: 0x3d98,
+  enforcedGateHex: "04d1", // Thumb: bne 0xfbda4
+  optionalGateHex: "00bf", // Thumb: nop
+});
+export const R1_UNLOCK_ACE_RECORD_SHA256 = Object.freeze({
+  "enter-dfu": "8edb2ed70f8298c0a8fb91340f30e19b9734e172811fb2b6e224360aa27aa375",
+  "fpb-retention-arm": "39526d8f6d80c0b1e0ad1632ea1ceb29263d146e519e76d7876cff3c37f13615",
+  "fpb-retention-check": "1235406488fb504c6a864c2179d886c4e6fc163bddb3a38e367b4fbebc1c12ed",
+  "fpb-key-stage": "9dbc5cefe4a3239313a25fb51bfe437e63ac212d060c35cedf2319fbcb77dba2",
+  "fpb-key-arm": "f565156350ea5d804fc15a3aa1a1bab4f7b65fcc82e32bc0667a7c803e8dc77b",
+  "fpb-key-cleanup": "691c1c26868687edbccd44315061b62c4c4c163951bbd407ad902f5061899cbf",
+});
 
 const SERVICE_UUID = "bae80001-4f05-4503-8e65-3af1f7329d1f";
 const CHANNEL1_WRITE_UUID = "bae80010-4f05-4503-8e65-3af1f7329d1f";
 const EUS_NOTIFY_UUID = "bae80013-4f05-4503-8e65-3af1f7329d1f";
-const BOOTLOADER_BASE = 0xf8000;
-const KEY_ADDRESS = 0xfd868;
-const GATE_ADDRESS = 0xfbd98;
+const BOOTLOADER_BASE = R1_UNLOCK_REVIEW.bootloaderBase;
+const KEY_ADDRESS = R1_UNLOCK_REVIEW.publicKeyAddress;
+const GATE_ADDRESS = R1_UNLOCK_REVIEW.signatureGateAddress;
 const STOP_FACTORY_LISTENER = new Uint8Array([0, 0, 0x40, 0]);
 const RECORD_BYTES = 244;
 const SHELLCODE_OFFSET = 0xa0;
@@ -169,7 +191,7 @@ async function fetchPinnedArtifact(metadata) {
   return bytes;
 }
 
-function prepareBootloaderPackage(archive, expectedImageSha256) {
+function prepareBootloaderPackage(archive, expectedImageSha256, expectedInitSha256) {
   const files = unzipSync(archive);
   const image = files["bootloader.bin"];
   const initPacket = files["bootloader.dat"];
@@ -177,7 +199,96 @@ function prepareBootloaderPackage(archive, expectedImageSha256) {
       "bootloader.bin,bootloader.dat,manifest.json") {
     throw new Error("The R1 owner bootloader archive has unexpected members.");
   }
-  return { application: image, initPacket, expectedImageSha256 };
+  let manifest;
+  try {
+    manifest = JSON.parse(new TextDecoder().decode(files["manifest.json"]));
+  } catch {
+    throw new Error("The R1 owner bootloader manifest is not valid JSON.");
+  }
+  const entry = manifest?.manifest?.bootloader;
+  if (entry?.bin_file !== "bootloader.bin" || entry?.dat_file !== "bootloader.dat") {
+    throw new Error("The R1 owner bootloader manifest does not bind the reviewed members.");
+  }
+  return { application: image, initPacket, expectedImageSha256, expectedInitSha256 };
+}
+
+export function validateR1UnlockArtifactStructure(ownerKey, owner, optional) {
+  const reviewedKey = hexBytes(R1_UNLOCK_OWNER_PUBLIC_KEY_HEX);
+  if (!equalBytes(ownerKey, reviewedKey)) {
+    throw new Error("The R1 owner public key bytes do not match the source-visible trust pin.");
+  }
+  if (owner.application.length !== R1_UNLOCK_REVIEW.imageBytes
+      || optional.application.length !== R1_UNLOCK_REVIEW.imageBytes) {
+    throw new Error("An R1 owner bootloader image has an unexpected length.");
+  }
+  const keyStart = R1_UNLOCK_REVIEW.publicKeyOffset;
+  const keyEnd = keyStart + R1_UNLOCK_REVIEW.publicKeyBytes;
+  if (!equalBytes(owner.application.subarray(keyStart, keyEnd), reviewedKey)
+      || !equalBytes(optional.application.subarray(keyStart, keyEnd), reviewedKey)) {
+    throw new Error("An R1 owner bootloader does not contain the reviewed public key.");
+  }
+  const gateStart = R1_UNLOCK_REVIEW.signatureGateOffset;
+  const ownerGate = owner.application.subarray(gateStart, gateStart + 2);
+  const optionalGate = optional.application.subarray(gateStart, gateStart + 2);
+  if (!equalBytes(ownerGate, hexBytes(R1_UNLOCK_REVIEW.enforcedGateHex))
+      || !equalBytes(optionalGate, hexBytes(R1_UNLOCK_REVIEW.optionalGateHex))) {
+    throw new Error("The R1 signature enforcement patch bytes are not the reviewed bne-to-nop change.");
+  }
+  const changed = [];
+  owner.application.forEach((value, index) => {
+    if (value !== optional.application[index]) changed.push(index);
+  });
+  if (changed.length !== 2 || changed[0] !== gateStart || changed[1] !== gateStart + 1) {
+    throw new Error("The signing-optional bootloader contains changes outside the two-byte gate patch.");
+  }
+}
+
+export async function verifyR1OwnerInitPacket(initPacket, ownerKey) {
+  const expectedFraming = [
+    [0, 0x12], [1, 0x8e], [2, 0x01], [3, 0x0a], [4, 0x48],
+    [5, 0x08], [6, 0x01], [7, 0x12], [8, 0x44],
+    [77, 0x10], [78, 0x00], [79, 0x1a], [80, 0x40],
+  ];
+  if (initPacket.length !== 145
+      || expectedFraming.some(([offset, value]) => initPacket[offset] !== value)) {
+    throw new Error("An R1 owner init packet does not have the reviewed signed-command shape.");
+  }
+  const publicKey = new Uint8Array(65);
+  publicKey[0] = 0x04;
+  publicKey.set(ownerKey.slice(0, 32).reverse(), 1);
+  publicKey.set(ownerKey.slice(32, 64).reverse(), 33);
+  const signature = new Uint8Array(64);
+  signature.set(initPacket.slice(81, 113).reverse(), 0);
+  signature.set(initPacket.slice(113, 145).reverse(), 32);
+  let imported;
+  try {
+    imported = await crypto.subtle.importKey(
+      "raw",
+      publicKey,
+      { name: "ECDSA", namedCurve: "P-256" },
+      false,
+      ["verify"],
+    );
+  } catch {
+    throw new Error("The R1 owner public key is not a valid P-256 verification key.");
+  }
+  if (!await crypto.subtle.verify(
+    { name: "ECDSA", hash: "SHA-256" },
+    imported,
+    signature,
+    initPacket.subarray(9, 77),
+  )) {
+    throw new Error("An R1 bootloader init packet is not signed by the reviewed owner key.");
+  }
+}
+
+async function validateR1UnlockACERecords(ownerKey) {
+  for (const [mode, expected] of Object.entries(R1_UNLOCK_ACE_RECORD_SHA256)) {
+    const record = buildR1UnlockRecord(mode, { ownerKey });
+    if (await sha256Hex(record) !== expected) {
+      throw new Error(`The compiled ${mode} ACE record differs from the reviewed payload.`);
+    }
+  }
 }
 
 export async function loadR1UnlockArtifacts() {
@@ -186,12 +297,26 @@ export async function loadR1UnlockArtifacts() {
     fetchPinnedArtifact(ARTIFACTS.ownerPackage),
     fetchPinnedArtifact(ARTIFACTS.optionalPackage),
   ]);
-  const owner = prepareBootloaderPackage(ownerArchive, R1_UNLOCK_OWNER_IMAGE_SHA256);
-  const optional = prepareBootloaderPackage(optionalArchive, R1_UNLOCK_OPTIONAL_IMAGE_SHA256);
+  const owner = prepareBootloaderPackage(
+    ownerArchive,
+    R1_UNLOCK_OWNER_IMAGE_SHA256,
+    "45acecbd204e009201689a403efe723efd619feac9805537c78374063af58f5c",
+  );
+  const optional = prepareBootloaderPackage(
+    optionalArchive,
+    R1_UNLOCK_OPTIONAL_IMAGE_SHA256,
+    "93416c51f8a4f04ee7c361abde524f119e757428dd036aebe0e1715c0f38bde1",
+  );
   if (await sha256Hex(owner.application) !== owner.expectedImageSha256
-      || await sha256Hex(optional.application) !== optional.expectedImageSha256) {
+      || await sha256Hex(optional.application) !== optional.expectedImageSha256
+      || await sha256Hex(owner.initPacket) !== owner.expectedInitSha256
+      || await sha256Hex(optional.initPacket) !== optional.expectedInitSha256) {
     throw new Error("An R1 owner bootloader image failed its pinned SHA-256 check.");
   }
+  validateR1UnlockArtifactStructure(ownerKey, owner, optional);
+  await verifyR1OwnerInitPacket(owner.initPacket, ownerKey);
+  await verifyR1OwnerInitPacket(optional.initPacket, ownerKey);
+  await validateR1UnlockACERecords(ownerKey);
   return {
     ownerKey,
     owner,
@@ -333,6 +458,22 @@ async function runACEPhase(device, mode, artifacts) {
   );
 }
 
+export function assertMatchingR1DfuIdentity(applicationDevice, dfuDevice) {
+  const suffix = applicationDevice?.name?.match(/_([0-9a-f]+)$/i)?.[1];
+  if (!suffix || !dfuDevice?.name) {
+    throw new Error("The application and DFU identities do not expose a comparable R1 suffix.");
+  }
+  const expected = ((Number.parseInt(suffix, 16) + 1) & ((16 ** suffix.length) - 1))
+    .toString(16).toUpperCase().padStart(suffix.length, "0");
+  if (!dfuDevice.name.toUpperCase().includes("DFU")
+      || !dfuDevice.name.toUpperCase().endsWith(expected)) {
+    throw new Error(
+      `The authorized DFU device ${dfuDevice.name} does not match ${applicationDevice.name}; no flash was started.`,
+    );
+  }
+  return dfuDevice;
+}
+
 export async function unlockR1Bootloader({
   applicationDevice,
   requestDfuDevice,
@@ -343,6 +484,10 @@ export async function unlockR1Bootloader({
     throw new Error("Select the exact R1 application device before unlocking.");
   }
   const artifacts = await loadR1UnlockArtifacts();
+  const dfuFor = async (checkpoint) => assertMatchingR1DfuIdentity(
+    applicationDevice,
+    await requestDfuDevice(checkpoint),
+  );
   onProgress(0.03, "Reading the live R1 bootloader trust state");
   const state = await classifyR1BootloaderState(applicationDevice, artifacts);
   if (state === "stock-enforced") {
@@ -352,13 +497,13 @@ export async function unlockR1Bootloader({
     onProgress(0.08, "Checking warm-reset FPB retention");
     await runACEPhase(applicationDevice, "fpb-retention-arm", artifacts);
     await runACEPhase(applicationDevice, "fpb-retention-check", artifacts);
-    let dfu = await requestDfuDevice("retention check");
+    let dfu = await dfuFor("retention check");
     await flashR1SecureDfu(dfu, vendorFirmware, { onProgress: () => {} });
 
     onProgress(0.22, "Staging the owner key in retained SRAM");
     await runACEPhase(applicationDevice, "fpb-key-stage", artifacts);
     await runACEPhase(applicationDevice, "fpb-key-arm", artifacts);
-    dfu = await requestDfuDevice("owner-key transition");
+    dfu = await dfuFor("owner-key transition");
     await flashR1SecureDfu(dfu, artifacts.owner, { onProgress: () => {} });
     await runACEPhase(applicationDevice, "fpb-key-cleanup", artifacts);
     onProgress(0.52, "Verifying the complete owner-keyed bootloader");
@@ -371,7 +516,7 @@ export async function unlockR1Bootloader({
   if (state !== "owner-optional") {
     onProgress(0.66, "Entering Secure DFU under the persistent owner key");
     await enterR1DfuMode(applicationDevice);
-    const dfu = await requestDfuDevice("signing-optional transition");
+    const dfu = await dfuFor("signing-optional transition");
     await flashR1SecureDfu(dfu, artifacts.optional, { onProgress: () => {} });
   }
   onProgress(0.82, "Verifying signing-optional decisive bytes and whole image");

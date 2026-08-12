@@ -129,6 +129,7 @@ import {
 import {
   R1_UNLOCK_APPLICATION_VERSION,
   R1_UNLOCK_OWNER_KEY_SHA256,
+  R1_UNLOCK_REVIEW,
   unlockR1Bootloader,
 } from "./lib/r1Unlock.js";
 
@@ -4611,7 +4612,6 @@ function App() {
     try {
       const device = await requestR1ApplicationDevice();
       setRingApplicationDevice(device);
-      setRingDfuDevice(null);
       setRingReady(false);
       setRingStatus(`${device.name ?? "R1"} selected and ready to enter update mode.`);
       addLog(`Selected R1 application device ${device.name ?? device.id}.`, "success");
@@ -4661,10 +4661,9 @@ function App() {
           setSessionProgress(0.02 + fraction * 0.98, detail);
         },
       });
-      setRingDfuDevice(null);
       setRingReady(false);
       setRingStatus(
-        `R1 ${release.version} transferred successfully. Reconnect the ring in SybilSight after it restarts.`,
+        `R1 ${release.version} transferred successfully. Its authorized DFU identity is retained for guarded recovery; reselect the application after it restarts.`,
       );
     });
   const unlockRingBootloader = () =>
@@ -4687,10 +4686,13 @@ function App() {
         applicationDevice: ringApplicationDevice,
         vendorFirmware,
         requestDfuDevice: async (checkpoint) => {
-          setRingUnlockStatus(`Select the R1 DFU advertisement for ${checkpoint}.`);
-          const device = await requestR1DfuDevice();
-          setRingDfuDevice(device);
-          return device;
+          if (!ringDfuDevice) {
+            throw new Error(
+              `The R1 DFU identity was not pre-authorized for ${checkpoint}. Run the normal R1 update steps once, then reselect the application without reloading this tab.`,
+            );
+          }
+          setRingUnlockStatus(`Reconnecting the pre-authorized R1 DFU identity for ${checkpoint}.`);
+          return ringDfuDevice;
         },
         onProgress(fraction, detail) {
           setRingUnlockStatus(detail);
@@ -5345,6 +5347,11 @@ function App() {
                   the ring unbootable.
                 </p>
                 <code>Owner key · {R1_UNLOCK_OWNER_KEY_SHA256.slice(0, 16)}…</code>
+                <code>
+                  ACE patch · 0x{R1_UNLOCK_REVIEW.signatureGateAddress.toString(16).toUpperCase()}
+                  {" · "}{R1_UNLOCK_REVIEW.enforcedGateHex.toUpperCase()}
+                  {" → "}{R1_UNLOCK_REVIEW.optionalGateHex.toUpperCase()}
+                </code>
                 <label className="select-label" htmlFor="ring-unlock-confirmation">
                   Type UNLOCK R1 BOOTLOADER
                 </label>
@@ -5363,6 +5370,7 @@ function App() {
                   disabled={
                     !ringApplicationDevice
                     || selectedRingRelease?.version !== R1_UNLOCK_APPLICATION_VERSION
+                    || !ringDfuDevice
                     || ringUnlockConfirmation.trim().toUpperCase()
                       !== "UNLOCK R1 BOOTLOADER"
                     || Boolean(operation)
@@ -5370,6 +5378,12 @@ function App() {
                 >
                   Unlock R1 Bootloader
                 </Button>
+                <p>
+                  Browser permission must already include both identities. Run steps 1–3 above
+                  once, complete the reviewed 2.2.7.0005 restore, then select the application
+                  again without reloading this tab. The unlock will reuse that authorized DFU
+                  identity at every transition; no chooser is opened after mutation begins.
+                </p>
                 <div className="automatic-status" role="status" aria-live="polite">
                   <span className={cx("tiny-dot", ringUnlockResult && "tiny-dot-success")} />
                   <span>{ringUnlockStatus}</span>

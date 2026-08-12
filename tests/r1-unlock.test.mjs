@@ -5,11 +5,17 @@ import test from "node:test";
 import { unzipSync } from "fflate";
 import {
   R1_UNLOCK_APPLICATION_VERSION,
+  R1_UNLOCK_ACE_RECORD_SHA256,
   R1_UNLOCK_OPTIONAL_IMAGE_SHA256,
   R1_UNLOCK_OWNER_IMAGE_SHA256,
   R1_UNLOCK_OWNER_KEY_SHA256,
+  R1_UNLOCK_OWNER_PUBLIC_KEY_HEX,
+  R1_UNLOCK_REVIEW,
   R1_UNLOCK_STOCK_KEY_SHA256,
+  assertMatchingR1DfuIdentity,
   buildR1UnlockRecord,
+  validateR1UnlockArtifactStructure,
+  verifyR1OwnerInitPacket,
 } from "../src/lib/r1Unlock.js";
 
 const artifact = (name) => new URL(
@@ -39,6 +45,25 @@ test("R1 unlock artifacts retain their reviewed byte identities", async () => {
     R1_UNLOCK_OPTIONAL_IMAGE_SHA256);
   assert.equal(R1_UNLOCK_STOCK_KEY_SHA256,
     "e3cf089455dd88548fdc8336feb30212ce384deef9c54843313b9226e38c6b13");
+
+  const ownerMembers = unzipSync(ownerArchive);
+  const optionalMembers = unzipSync(optionalArchive);
+  const owner = { application: ownerMembers["bootloader.bin"] };
+  const optional = { application: optionalMembers["bootloader.bin"] };
+  validateR1UnlockArtifactStructure(new Uint8Array(key), owner, optional);
+  await verifyR1OwnerInitPacket(ownerMembers["bootloader.dat"], new Uint8Array(key));
+  await verifyR1OwnerInitPacket(optionalMembers["bootloader.dat"], new Uint8Array(key));
+  assert.equal(Buffer.from(key).toString("hex"), R1_UNLOCK_OWNER_PUBLIC_KEY_HEX);
+  const changed = [];
+  owner.application.forEach((value, index) => {
+    if (value !== optional.application[index]) changed.push(index);
+  });
+  assert.deepEqual(changed, [R1_UNLOCK_REVIEW.signatureGateOffset,
+    R1_UNLOCK_REVIEW.signatureGateOffset + 1]);
+  assert.equal(Buffer.from(owner.application.subarray(
+    R1_UNLOCK_REVIEW.publicKeyOffset,
+    R1_UNLOCK_REVIEW.publicKeyOffset + R1_UNLOCK_REVIEW.publicKeyBytes,
+  )).toString("hex"), R1_UNLOCK_OWNER_PUBLIC_KEY_HEX);
 });
 
 test("browser ACE records are byte-identical to the reviewed Python builder", async () => {
@@ -58,10 +83,27 @@ test("browser ACE records are byte-identical to the reviewed Python builder", as
     assert.equal(record.length, 244, mode);
     assert.equal(sha256(record), digest, mode);
   }
+  for (const [mode, digest] of Object.entries(R1_UNLOCK_ACE_RECORD_SHA256)) {
+    assert.equal(sha256(buildR1UnlockRecord(mode, { ownerKey: key })), digest, mode);
+  }
 });
 
 test("R1 bootloader reads reject targets outside the reviewed flash window", () => {
   assert.throws(() => buildR1UnlockRecord("read-prefix", { address: 0xf7fff }), /outside/);
   assert.throws(() => buildR1UnlockRecord("read-page", { address: 0xf8001 }), /outside/);
   assert.throws(() => buildR1UnlockRecord("read-page", { address: 0xfe000 }), /outside/);
+});
+
+test("R1 unlock binds the pre-authorized DFU identity to the application suffix", () => {
+  const application = { name: "EVEN R1_B56EE2" };
+  const dfu = { name: "R1 DFU_B56EE3" };
+  assert.equal(assertMatchingR1DfuIdentity(application, dfu), dfu);
+  assert.throws(
+    () => assertMatchingR1DfuIdentity(application, { name: "R1 DFU_B56EE4" }),
+    /does not match/,
+  );
+  assert.throws(
+    () => assertMatchingR1DfuIdentity(application, { name: "EVEN R1_B56EE3" }),
+    /does not match/,
+  );
 });
