@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -30,6 +30,17 @@ webflasher.sybilsight.com {
 
 async function reconcile(active = oldBlock, expected = expectedBlock) {
   const directory = await mkdtemp(join(tmpdir(), "webflasher-caddy-reconcile-"));
+  const scriptDirectory = join(directory, "scripts");
+  await mkdir(scriptDirectory);
+  const copiedReconciler = join(scriptDirectory, "reconcile-webflasher-caddy.sh");
+  const copiedVerifier = join(scriptDirectory, "verify-webflasher-caddy.sh");
+  await copyFile(reconcileScript, copiedReconciler);
+  await copyFile(
+    new URL("../scripts/verify-webflasher-caddy.sh", import.meta.url),
+    copiedVerifier,
+  );
+  await chmod(copiedReconciler, 0o644);
+  await chmod(copiedVerifier, 0o644);
   const activePath = join(directory, "Caddyfile");
   const expectedPath = join(directory, "webflasher.caddy");
   const outputPath = join(directory, "candidate-Caddyfile");
@@ -37,7 +48,7 @@ async function reconcile(active = oldBlock, expected = expectedBlock) {
   await writeFile(expectedPath, expected);
   const result = spawnSync(
     "sh",
-    [reconcileScript.pathname, activePath, expectedPath, outputPath],
+    [copiedReconciler, activePath, expectedPath, outputPath],
     { encoding: "utf8" },
   );
   return {
@@ -64,6 +75,12 @@ after.example.com {
   const result = await reconcile(`${prefix}${oldBlock}${suffix}`);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.output, `${prefix}${expectedBlock}${suffix}`);
+});
+
+test("works when downloaded artifact scripts have no executable bit", async () => {
+  const result = await reconcile();
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.output, expectedBlock);
 });
 
 test("an already reconciled Caddyfile is byte-for-byte idempotent", async () => {

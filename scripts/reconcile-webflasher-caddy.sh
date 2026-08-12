@@ -30,7 +30,7 @@ fi
 
 # Prove that the canonical fragment is itself one complete site block before it
 # is allowed to replace anything in the production configuration.
-"$(dirname "$0")/verify-webflasher-caddy.sh" \
+sh "$(dirname "$0")/verify-webflasher-caddy.sh" \
   "${expected_webflasher_block}" "${expected_webflasher_block}"
 
 if ! awk -v replacement_file="${expected_webflasher_block}" '
@@ -63,5 +63,5 @@ if ! awk -v replacement_file="${expected_webflasher_block}" '
   exit 67
 fi
 
-"$(dirname "$0")/verify-webflasher-caddy.sh" \
+sh "$(dirname "$0")/verify-webflasher-caddy.sh" \
   "${output_caddyfile}" "${expected_webflasher_block}"
