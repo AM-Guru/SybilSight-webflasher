@@ -72,17 +72,17 @@ option B:
 - `release.json` binds the app commit to the exact catalog SHA-256;
 - the browser refuses any temple mutation when that hash or pinned-image
   coverage differs; and
-- deployment verification downloads and hashes the live newest reviewed custom
-  target.
+- deployment verification rejects custom catalog entries, then downloads and
+  hashes the live newest official target.
 
 This split is intentional. The shared `/share/sybilsight` archive can be
 refreshed or restored independently and contains official historical binaries
 that are too large to keep in this repository. Its mutable `index.json` must
 not be able to change the menu or invalidate a WebFlasher already published by
-an atomic `/share/webflasher` release swap. Caddy serves the tracked latest CFW
-and tracked official firmware directories from that atomic web root; other
-official versioned paths fall back to the historical archive. Superseded CFW
-releases are not offered by WebFlasher.
+an atomic `/share/webflasher` release swap. Caddy serves tracked firmware
+evidence and official firmware directories from that atomic web root; other
+official versioned paths fall back to the historical archive. CFW releases are
+not offered by WebFlasher.
 
 A published archive path is immutable even when a firmware build later needs a
 metadata or runtime-identity correction. In that case the human-facing firmware

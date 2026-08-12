@@ -123,7 +123,6 @@ import {
   enterR1DfuMode,
   flashR1SecureDfu,
   prepareR1DfuPackage,
-  R1_OWNER_RECOVERY_RELEASE,
   requestR1ApplicationDevice,
   requestR1DfuDevice,
 } from "./lib/r1Dfu.js";
@@ -2172,15 +2171,9 @@ function App() {
           : [];
         setCatalog(releases);
         setSelectedReleaseId(findDefaultFirmwareRelease(releases)?.id ?? "");
-        const catalogRingReleases = Array.isArray(value.ringReleases)
+        const ringReleases = Array.isArray(value.ringReleases)
           ? value.ringReleases
           : [];
-        const ringReleases = [
-          R1_OWNER_RECOVERY_RELEASE,
-          ...catalogRingReleases.filter(
-            (release) => release.id !== R1_OWNER_RECOVERY_RELEASE.id,
-          ),
-        ];
         setRingCatalog(ringReleases);
         setSelectedRingReleaseId(ringReleases[0]?.id ?? "");
         setCatalogState("ready");
@@ -5875,7 +5868,7 @@ function App() {
           <SectionHeading
             eyebrow="04 · Choose image"
             title="The SybilSight verified library, or your own file"
-            copy="Every entry in the library is a hash-pinned image that is re-validated locally before any write is enabled: Charging Case recovery images, plus the reviewed SybilSight transformation of stock 2.2.6.10 for the Smart Glasses. You can also supply your own file."
+            copy="Every entry in the library is an official, hash-pinned image that is re-validated locally before any write is enabled. You can also supply your own file for structural inspection."
             action={
               catalogState === "ready" ? (
                 <StatusPill tone="quiet">

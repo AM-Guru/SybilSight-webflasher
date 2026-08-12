@@ -12,7 +12,6 @@ import {
   flashG2BleSessionsConcurrently,
   g2BleDeviceSide,
   g2BleRoutesAwaitingCaseVerification,
-  g2BleTargetReportedVersion,
   g2BleTargetVersionProof,
   isG2BleConnectionLoss,
   makeBleControlFrames,
@@ -803,7 +802,7 @@ test("the direct BLE writer accepts only the complete pinned topology", () => {
   );
 });
 
-test("the current SybilSight CFW is a complete direct-BLE package", async () => {
+test("the retired SybilSight CFW is rejected by direct BLE", async () => {
   const bytes = await readFile(
     new URL(
       "../public/firmware-updates/source-files/2.2.8.11-runtime-fix/g2-2.2.8.11.bin",
@@ -814,32 +813,13 @@ test("the current SybilSight CFW is a complete direct-BLE package", async () => 
     bytes,
     "g2-2.2.8.11.bin",
   );
-  assert.equal(assertPinnedG2BleBundle(firmware), firmware);
+  assert.throws(
+    () => assertPinnedG2BleBundle(firmware),
+    /exact hash-pinned G2 temple bundle/,
+  );
   assert.equal(firmware.g2Version, "2.2.8.11");
-  assert.equal(g2BleTargetReportedVersion(firmware), "2.2.8.11");
-  assert.equal(
-    g2BleTargetVersionProof(
-      {
-        version: {
-          decoded: { firmwareVersion: "2.2.8.11" },
-          transportProof: { restoredMask: 0x3ff },
-          observedAt: "2026-08-11T04:12:49.248Z",
-        },
-      },
-      g2BleTargetReportedVersion(firmware),
-      { now: Date.parse("2026-08-11T04:13:00.000Z") },
-    ),
-    true,
-    "a fresh 2.2.8.11 runtime proof must retain package 2.2.8.11 instead of rewriting it",
-  );
-  assert.equal(
-    firmware.componentImages.reduce(
-      (sum, component) =>
-        sum + Math.ceil(component.payload.length / G2_BLE_BLOCK_BYTES),
-      0,
-    ),
-    1068,
-  );
+  assert.equal(firmware.templeFlashEligible, false);
+  assert.equal(firmware.templeFlashTarget, null);
 });
 
 test("the direct BLE writer explicitly rejects the advertisement-modified CFW", async () => {

@@ -4,7 +4,6 @@ import test from "node:test";
 import {
   R1_PINNED_RELEASE,
   R1_PINNED_RELEASES,
-  R1_OWNER_RECOVERY_RELEASE,
   R1_DFU_PACKET_RECEIPT_INTERVAL,
   R1SecureDfuSession,
   assertPinnedR1Release,
@@ -27,24 +26,11 @@ const archivePath = new URL(
   import.meta.url,
 );
 
-const ownerRecoveryArchivePath = new URL(
-  "../public/firmware-updates/local-r1-owner-recovery/r1-2.2.7.0005-owner-recovery.zip",
-  import.meta.url,
-);
-
 test("reviewed R1 archive and both Nordic DFU components verify exactly", async () => {
   const archive = await readFile(archivePath);
   const prepared = await prepareR1DfuPackage(archive, R1_PINNED_RELEASE);
   assert.equal(R1_PINNED_RELEASE.version, "2.2.8.0002");
   assert.equal(prepared.application.length, 650284);
-  assert.equal(prepared.initPacket.length, 141);
-});
-
-test("owner-key recovery archive is independently pinned and verifies exactly", async () => {
-  const archive = await readFile(ownerRecoveryArchivePath);
-  const prepared = await prepareR1DfuPackage(archive, R1_OWNER_RECOVERY_RELEASE);
-  assert.equal(R1_OWNER_RECOVERY_RELEASE.trust, "owner-key-pinned");
-  assert.equal(prepared.application.length, 649376);
   assert.equal(prepared.initPacket.length, 141);
 });
 
@@ -90,6 +76,10 @@ test("R1 release trust cannot be widened by the catalog", () => {
   assert.throws(
     () => assertPinnedR1Release({ ...R1_PINNED_RELEASE, version: "9.9.9" }),
     /did not match/,
+  );
+  assert.throws(
+    () => assertPinnedR1Release({ id: "r1-owner-recovery-2.2.7.0005" }),
+    /not trusted/,
   );
 });
 

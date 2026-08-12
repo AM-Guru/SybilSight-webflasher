@@ -10,21 +10,8 @@ import { unzipSync } from "fflate";
 import { parseEvenOTA } from "../src/lib/firmware.js";
 
 const CDN_BASE = "https://cdn.evenreal.co/firmware";
-const REVIEWED_CFW_2_2_8_11_SHA256 =
-  "be3922f3695e0b58a6b62f40f760b6c8754488c4e9a58c96b2c13e92ef33bd3a";
-const REVIEWED_CFW_2_2_8_4_BASE_SHA256 =
-  "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7";
 const REVIEWED_CFW_BASE_SHA256 =
   "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa";
-const REVIEWED_CFW_DISPLAY_CHANGES = [
-  "Uses the full display for custom screens and images.",
-  "Makes image updates smoother and more efficient.",
-  "Supports different visuals on the left and right lenses.",
-  "Adds richer sounds and custom alert patterns.",
-  "Recognizes ring long presses and releases.",
-];
-const REVIEWED_CFW_PENDING_VALIDATION =
-  "Reviewed for consistency; testing on physical glasses is still pending.";
 function r1Release({
   version,
   minAppVersion,
@@ -308,65 +295,6 @@ const RELEASES = [
     sha256: "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7",
     size: 4342507,
     notes: "Added Korean system language support.",
-  },
-  {
-    id: "g2-custom-2.2.8.11",
-    displayName: "SybilSight CFW (2.2.8.11)",
-    version: "2.2.8.11",
-    archiveKey: "2.2.8.11-runtime-fix",
-    internalVersion: "2.2.8.11",
-    reportedVersion: "2.2.8.11",
-    baseVersion: "2.2.8.4",
-    baseSha256: REVIEWED_CFW_2_2_8_4_BASE_SHA256,
-    channel: "custom",
-    trust: "reviewed-custom",
-    hash: "9fd3b32423ddfea6aad55d9926393eaa",
-    sha256: REVIEWED_CFW_2_2_8_11_SHA256,
-    size: 4362652,
-    fileName: "g2-2.2.8.11.bin",
-    sourceUrl:
-      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.11-runtime-fix/g2-2.2.8.11.bin",
-    fallbacks: [[
-      "webflasher",
-      "public/firmware-updates/source-files/2.2.8.11-runtime-fix/g2-2.2.8.11.bin",
-    ]],
-    preferLocalEvidence: true,
-    patchUrl:
-      "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.8.11-runtime-fix/cfw_patches-2.2.8.11.json",
-    patchFallbackRoot: "webflasher",
-    patchFallback:
-      "public/firmware-updates/source-files/2.2.8.11-runtime-fix/cfw_patches-2.2.8.11.json",
-    patchFileName: "cfw_patches-2.2.8.11.json",
-    patchCount: 36,
-    manifestFileName: "manifest.json",
-    capabilityMarker:
-      "EVENCFW/8 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10",
-    g2flashCommit: "877c8d9490db0d3717ca012dd0f54556af3701bd",
-    g2flashRebasePatchSha256:
-      "fdf8fcb5de6a658105a1d45e1376c3932bc59d0dd278314c242572449f7bcdfb",
-    excludedFeature: {
-      id: "ble-advertised-name",
-      status: "omitted",
-      reason:
-        "Not present on the pinned g2flash main branch and withdrawn after hardware failure evidence.",
-      preservedStockHookOffset: 1000085,
-      preservedStockBytes: "fff74cff",
-      removedBlobSha256:
-        "68036760a3e3485e9ce6e995b8fd1bfcfbdb3c0381b47b9d9cc4688bc825f694",
-    },
-    directFramebufferCommits: [
-      "235a8b304447e330df6a0bce0351e3b6dc3d6f08",
-      "28aad42757837db14c08225884a7cc5201e08595",
-    ],
-    notes: null,
-    capabilities: [
-      ...REVIEWED_CFW_DISPLAY_CHANGES,
-      "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
-      "Keeps wear-status and compass updates available to connected apps.",
-      "Preserves the stock Bluetooth setup and advertising behavior.",
-      "Includes Korean system-language support from the official update.",
-      REVIEWED_CFW_PENDING_VALIDATION,
-    ],
   },
 ];
 

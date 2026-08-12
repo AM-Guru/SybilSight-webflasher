@@ -8,28 +8,18 @@ export const R1_BUTTONLESS_DFU_UUID =
   "8ec90003-f315-4f60-9fb8-838830daea50";
 
 function pinnedR1Release({
-  id,
-  displayName,
-  channel,
-  trust,
   version,
   size,
   md5,
   sha256,
-  fileName,
-  url,
   binSize,
   binSha256,
   datSha256,
 }) {
   return Object.freeze({
-    id: id ?? `r1-official-${version}`,
-    ...(displayName ? { displayName } : {}),
-    ...(channel ? { channel } : {}),
-    ...(trust ? { trust } : {}),
+    id: `r1-official-${version}`,
     version,
-    fileName: fileName ?? `r1-${version}-${md5}.zip`,
-    ...(url ? { url } : {}),
+    fileName: `r1-${version}-${md5}.zip`,
     size,
     md5,
     sha256,
@@ -44,22 +34,6 @@ function pinnedR1Release({
     }),
   });
 }
-
-export const R1_OWNER_RECOVERY_RELEASE = pinnedR1Release({
-  id: "r1-owner-recovery-2.2.7.0005",
-  displayName: "Owner-key recovery · exact R1 2.2.7.0005",
-  channel: "local-owner-recovery",
-  trust: "owner-key-pinned",
-  version: "2.2.7.0005-owner-recovery",
-  fileName: "r1-2.2.7.0005-owner-recovery.zip",
-  url: "/firmware-updates/local-r1-owner-recovery/r1-2.2.7.0005-owner-recovery.zip",
-  size: 424011,
-  md5: "77a6dfa890f585c43994c6e3626453ba",
-  sha256: "cf36921be0e31be413b668f45fe53a09ab9014c1b147ed06e94debef707ba8bf",
-  binSize: 649376,
-  binSha256: "2d38253e00b887ced3f1e2c049db21254b0974091bc954a82c13e21c48b064c2",
-  datSha256: "7c2810fa8e3472e11e6698542fbd951c9073d5023cefa27661f82c410f35ed8a",
-});
 
 export const R1_PINNED_RELEASES = Object.freeze([
   pinnedR1Release({
@@ -230,10 +204,7 @@ function assertExact(value, expected, label) {
 }
 
 export function assertPinnedR1Release(release) {
-  const pinned =
-    release?.id === R1_OWNER_RECOVERY_RELEASE.id
-      ? R1_OWNER_RECOVERY_RELEASE
-      : R1_PINNED_RELEASES.find((candidate) => candidate.id === release?.id);
+  const pinned = R1_PINNED_RELEASES.find((candidate) => candidate.id === release?.id);
   if (!pinned) {
     throw new Error("The selected R1 release is not trusted by this WebFlasher build.");
   }

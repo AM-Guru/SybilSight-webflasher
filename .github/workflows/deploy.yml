@@ -73,17 +73,21 @@ jobs:
               throw new Error("Release-bound and archive firmware catalogs differ");
             }
             const catalog = JSON.parse(catalogBytes);
-            const newestCustom = catalog.releases
-              .filter((entry) => entry.channel === "custom" && entry.trust === "reviewed-custom")
-              .sort((left, right) => right.internalVersion.localeCompare(left.internalVersion, undefined, { numeric: true }))[0];
-            if (!newestCustom?.url || !/^[0-9a-f]{64}$/.test(newestCustom.sha256 ?? "")) {
-              throw new Error("Catalog has no hash-pinned reviewed custom release");
+            const customReleases = catalog.releases.filter((entry) => entry.channel === "custom");
+            if (customReleases.length !== 0) {
+              throw new Error("Catalog still contains a retired custom firmware release");
             }
-            const targetPath = "dist" + newestCustom.url;
+            const newestOfficial = catalog.releases
+              .filter((entry) => entry.channel === "official" && entry.trust === "official-pinned")
+              .sort((left, right) => right.internalVersion.localeCompare(left.internalVersion, undefined, { numeric: true }))[0];
+            if (!newestOfficial?.url || !/^[0-9a-f]{64}$/.test(newestOfficial.sha256 ?? "")) {
+              throw new Error("Catalog has no hash-pinned official release");
+            }
+            const targetPath = "dist" + newestOfficial.url;
             const targetBytes = fs.readFileSync(targetPath);
             const targetSha256 = crypto.createHash("sha256").update(targetBytes).digest("hex");
-            if (targetBytes.length !== newestCustom.size || targetSha256 !== newestCustom.sha256) {
-              throw new Error("Newest reviewed custom release does not match its catalog pin");
+            if (targetBytes.length !== newestOfficial.size || targetSha256 !== newestOfficial.sha256) {
+              throw new Error("Newest official release does not match its catalog pin");
             }
             const newestRing = [...(catalog.ringReleases ?? [])]
               .sort((left, right) => right.version.localeCompare(left.version, undefined, { numeric: true }))[0];
@@ -692,11 +696,15 @@ jobs:
               throw new Error("Production firmware catalog does not match release.json");
             }
             const catalog = JSON.parse(catalogBytes);
+            const customReleases = catalog.releases.filter((entry) => entry.channel === "custom");
+            if (customReleases.length !== 0) {
+              throw new Error("Production catalog still contains a retired custom firmware release");
+            }
             const target = catalog.releases
-              .filter((entry) => entry.channel === "custom" && entry.trust === "reviewed-custom")
+              .filter((entry) => entry.channel === "official" && entry.trust === "official-pinned")
               .sort((left, right) => right.internalVersion.localeCompare(left.internalVersion, undefined, { numeric: true }))[0];
             if (!target?.url || !/^[0-9a-f]{64}$/.test(target.sha256 ?? "")) {
-              throw new Error("Production catalog has no newest reviewed custom target");
+              throw new Error("Production catalog has no newest official target");
             }
             process.stdout.write(target.url + " " + target.sha256);
           ' "${observed_release_file}" "${observed_catalog_file}" "${GITHUB_SHA}")"
@@ -706,7 +714,7 @@ jobs:
             "https://webflasher.sybilsight.com${target_url}?verify=${GITHUB_SHA}&run=${GITHUB_RUN_ID}"
           observed_target_sha256="$(sha256sum "${observed_target_file}" | cut -d ' ' -f 1)"
           if [ "${observed_target_sha256}" != "${target_sha256}" ]; then
-            echo "Production reviewed custom target ${observed_target_sha256} does not match ${target_sha256}" >&2
+            echo "Production official target ${observed_target_sha256} does not match ${target_sha256}" >&2
             exit 1
           fi
           echo "Verified production WebFlasher ${GITHUB_SHA}, catalog, and ${target_url}"

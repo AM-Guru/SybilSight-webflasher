@@ -9,13 +9,19 @@ import {
 import { operationProgress } from "../src/lib/operationProgress.js";
 import { TEMPLE_FLASH_TARGETS } from "../src/lib/templeFlashTargets.js";
 
-const cfwTarget = TEMPLE_FLASH_TARGETS.find(
-  (target) => target.version === "2.2.8.11" && target.label.includes("CFW"),
-);
 const stockTarget = TEMPLE_FLASH_TARGETS.find(
   (target) =>
     target.version === "2.2.8.4" && target.label.startsWith("Stock"),
 );
+const cfwTarget = Object.freeze({
+  imageSha256: "synthetic-cfw-image",
+  mainSha256: "synthetic-cfw-main",
+  mainBytes: stockTarget.mainBytes + 1,
+  version: "2.2.8.11",
+  reportedVersion: "2.2.8.11",
+  label: "Synthetic CFW target",
+  hardwareValidated: false,
+});
 
 function component(name, typeId, payload, sha256) {
   return {
@@ -73,7 +79,7 @@ test("summarizes exact byte-difference ranges without inventing sparse writes", 
   );
 });
 
-test("builds an executable Stock-to-CFW component-difference plan", () => {
+test("rejects a Stock-to-CFW plan when the CFW is no longer pinned", () => {
   const source = firmware(
     stockTarget,
     "official",
@@ -86,13 +92,10 @@ test("builds an executable Stock-to-CFW component-difference plan", () => {
     new Uint8Array(cfwTarget.mainBytes).fill(0x22),
     cfwTarget.mainSha256,
   );
-  const plan = buildBundleDifferencePlan(source, target);
-  assert.equal(plan.executable, true);
-  assert.equal(plan.changedComponentCount, 1);
-  assert.equal(plan.unchangedComponentCount, 5);
-  assert.equal(plan.wireTransfer.sparseByteRangesSupported, false);
-  assert.equal(plan.wireTransfer.bytes, cfwTarget.mainBytes);
-  assert.equal(plan.verification.finalDualTempleResetRequired, true);
+  assert.throws(
+    () => buildBundleDifferencePlan(source, target),
+    /two exact, hash-pinned G2 firmware bundles/,
+  );
 });
 
 test("finds the exact opposite Stock/CFW catalog release", () => {

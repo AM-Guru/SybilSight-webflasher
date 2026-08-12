@@ -17,7 +17,7 @@ const SUPERSEDED_ADVERTISED_CFW_2_2_8_7_SHA256 =
   "e9d9e8b30d5f240fb8e2fc157f552515cee4c785af6886840d420ec27e86f4e0";
 const SUPERSEDED_ADVERTISED_CFW_2_2_8_8_SHA256 =
   "9a7ebf7b7989730ca30195af46219c188fff3c3023533b763d0ca5abf8243944";
-const REVIEWED_CFW_2_2_8_11_SHA256 =
+const RETIRED_CFW_2_2_8_11_SHA256 =
   "be3922f3695e0b58a6b62f40f760b6c8754488c4e9a58c96b2c13e92ef33bd3a";
 const SUPERSEDED_ADVERTISED_CFW_2_2_8_9_SHA256 =
   "742a0241f7ba34c6fb45c9a3ec616ba0be2b92f9c3e656b9824f6bc21a5513ca";
@@ -28,8 +28,8 @@ const OFFICIAL_G2_2_2_7_14_SHA256 =
 const OFFICIAL_G2_2_2_8_4_SHA256 =
   "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7";
 
-// The catalog production actually served on 2026-07-28: newest CFW is the
-// legacy 2.2.6.10 build; both current reviewed CFW releases are absent.
+// The catalog production actually served on 2026-07-28 and is older than the
+// current official releases pinned by this build.
 const STALE_PRODUCTION_CATALOG = [
   { id: "g2-custom-2.2.6.10", version: "2.2.6.10-cfw", sha256: LEGACY_CFW_SHA256 },
   {
@@ -62,11 +62,10 @@ test("flags a pinned image the served library is too old to offer", () => {
   assert.deepEqual(
     missing.map((target) => target.imageSha256),
     [
-      REVIEWED_CFW_2_2_8_11_SHA256,
       OFFICIAL_G2_2_2_8_4_SHA256,
       OFFICIAL_G2_2_2_7_14_SHA256,
     ],
-    "the latest CFW and newer official releases are newer than anything the stale catalog serves",
+    "newer official releases are newer than anything the stale catalog serves",
   );
 });
 
@@ -82,7 +81,6 @@ test("blocks firmware mutation when the served library is behind the build", () 
       assert.deepEqual(
         error.missingPinnedImages.map((target) => target.imageSha256),
         [
-          REVIEWED_CFW_2_2_8_11_SHA256,
           OFFICIAL_G2_2_2_8_4_SHA256,
           OFFICIAL_G2_2_2_7_14_SHA256,
         ],
@@ -93,30 +91,27 @@ test("blocks firmware mutation when the served library is behind the build", () 
   );
 });
 
-test("offers only the latest CFW while retaining official firmware", async () => {
+test("offers official firmware without the retired 2.2.8 CFW", async () => {
   const catalog = JSON.parse(
     await readFile(
       new URL("../public/firmware-updates/source-files/index.json", import.meta.url),
       "utf8",
     ),
   ).releases;
-  const reviewed228 = catalog.find(
-    (release) => release.sha256 === REVIEWED_CFW_2_2_8_11_SHA256,
-  );
-  assert.ok(
-    reviewed228,
-    "the shipped catalog should serve CFW 2.2.8.11",
-  );
-  assert.equal(reviewed228.archiveKey, "2.2.8.11-runtime-fix");
-  assert.equal(
-    reviewed228.url,
-    "/firmware-updates/source-files/2.2.8.11-runtime-fix/g2-2.2.8.11.bin",
-  );
-  assert.equal(reviewed228.hardwareValidated, false);
   assert.deepEqual(
     catalog.filter((release) => release.channel === "custom").map((release) => release.version),
-    ["2.2.8.11"],
-    "no superseded CFW release may remain in the WebFlasher listing",
+    [],
+    "no custom release may remain in the WebFlasher listing",
+  );
+  assert.equal(
+    catalog.some((release) => release.sha256 === RETIRED_CFW_2_2_8_11_SHA256),
+    false,
+  );
+  assert.equal(
+    TEMPLE_FLASH_TARGETS.some(
+      (target) => target.imageSha256 === RETIRED_CFW_2_2_8_11_SHA256,
+    ),
+    false,
   );
   assert.ok(catalog.some((release) => release.sha256 === OFFICIAL_G2_2_2_8_4_SHA256));
   assert.ok(catalog.some((release) => release.sha256 === OFFICIAL_G2_2_2_7_14_SHA256));
@@ -160,7 +155,7 @@ test("excludes advertisement-patched CFW releases from both mutation paths", asy
   }
 });
 
-test("keeps custom firmware release copy plain-language and repository-free", async () => {
+test("ships no custom firmware release entries", async () => {
   const catalog = JSON.parse(
     await readFile(
       new URL("../public/firmware-updates/source-files/index.json", import.meta.url),
@@ -168,15 +163,7 @@ test("keeps custom firmware release copy plain-language and repository-free", as
     ),
   ).releases;
   const customReleases = catalog.filter((release) => release.channel === "custom");
-  const forbiddenUserFacingTerms =
-    /g2flash|jimrandomh|framebuffer|zlib|\brle\b|\blz4\b|\b8bpp\b|capability field|wake lease/i;
-
-  assert.ok(customReleases.length > 0);
-  for (const release of customReleases) {
-    assert.equal(release.notes, null);
-    assert.ok(release.capabilities.length > 0);
-    assert.doesNotMatch(release.capabilities.join("\n"), forbiddenUserFacingTerms);
-  }
+  assert.deepEqual(customReleases, []);
 });
 
 test("says nothing when it cannot tell", () => {

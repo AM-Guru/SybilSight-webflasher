@@ -38,10 +38,9 @@ Production deployment:
   Smart Glasses firmware bundle.
 - Accepts official five- or six-component `EVENOTA` bundles, wrapped
   `firmware_box.bin` components, and validated raw case images.
-- Recognizes all 14 archived official G2 SHA-256 values and offers SybilSight
-  CFW 2.2.8.11, rebuilt without any BLE-advertisement modification. The older
-  advertisement-patched CFW 2.2.8.9 and 2.2.8.10 images are excluded from both
-  direct-Bluetooth and Case-USB installation.
+- Recognizes and offers all 14 archived official G2 SHA-256 values. CFW
+  2.2.8.11 and the older advertisement-patched CFW 2.2.8.9 and 2.2.8.10 images
+  are excluded from both direct-Bluetooth and Case-USB installation.
 - Validates the Apollo main application's independent preamble, CRC-32, target
   region, installed-image boundary, and vector.
 - Stages case firmware in the inactive bank and verifies a byte-for-byte
@@ -177,7 +176,7 @@ control:
 - The case selects the left or right path through its YHM2510 front end and
   time-separates TX-only and RX-only operation.
 
-The current reviewed CFW is an exact, machine-described transformation of official
+The archived CFW 2.2.8.11 is an exact, machine-described transformation of official
 2.2.8.4 using the pinned `jimrandomh/g2flash` main-branch patch set. It does not use
 OpenCFW and deliberately omits the separate BLE-advertisement experiment:
 
@@ -201,10 +200,9 @@ advertised-name blob is absent. The guarded Faceclaw trampoline still resumes
 the untouched stock Even AI path when no wake lease is active.
 
 Run `python3 scripts/build_g2flash_cfw.py` to reproduce the bundle and its
-stock-replay recipe. The image is statically reviewed but does not claim a
-completed hardware flash. CFW 2.2.8.9 and 2.2.8.10 remain archived only as
-diagnostic evidence; both contain BLE-advertisement changes and neither hash is
-present in a mutation allowlist.
+stock-replay recipe. The image remains as historical evidence and is not offered
+or present in a mutation allowlist. CFW 2.2.8.9 and 2.2.8.10 likewise remain
+archived only as diagnostic evidence; both contain BLE-advertisement changes.
 
 ### Application-alive pogo OTA
 
@@ -1161,28 +1159,11 @@ component and transfers the one changed, complete CRC-gated Apollo main. The
 receiver has no safe sparse-write offset, so Update never transmits arbitrary
 changed byte ranges inside that component.
 
-The current reviewed pair is Stock 2.2.8.4 and CFW 2.2.8.11; installed
-Apollo MRAM readback is unavailable. Saved recovery audits remain useful
-source proof, but they are browser-origin-local and are not portable from a
-localhost hardware test to the hosted site. For the exact reviewed Stock
-2.2.8.4 ↔ CFW 2.2.8.11 pair, Automatic Update uses the difference plan only
-when the fresh bilateral preflight reports the exact source version and
-hardware. The plan omits five byte-identical components and transfers the
-**complete** pinned target Apollo main, not sparse byte ranges. Every route
-must return the same
-checksum-valid source-version/hardware-5 reply immediately before its START
-command. Without that proof, Update selects the complete-main path. If a saved
-proof becomes stale between planning and the just-in-time preflight, Automatic
-Update retries with the complete target only after proving that zero firmware
-bytes were accepted, exact route restoration completed, Case 1.2.57 returned,
-and the bilateral reset/liveness gate passed. If a differential main reaches
-`FINISH` but the expected target version does not boot, Automatic Update may
-also retry the complete target after proving exact accepted size, FINISH,
-route restoration, Case 1.2.57 return, bilateral application reachability, and
-one additional clean recovery reset. A dead or unreachable temple stops the
-fallback because this route requires the running application. The successful
-audit records the live compatibility proof, recovery reset, and any safe
-fallback.
+CFW 2.2.8.11 is no longer a selectable target or mutation pin. Automatic
+Update therefore uses the complete-main path for the offered 2.2.8.4 Stock
+release. Installed Apollo MRAM readback remains unavailable, and saved recovery
+audits remain browser-origin-local rather than portable from a localhost
+hardware test to the hosted site.
 
 If fresh Application-mode replies or saved route audits prove the selected
 target on both temples, Apply performs only the required bilateral reset and
@@ -1400,9 +1381,10 @@ and both routes receive read-only liveness verification.
 
 ## Firmware archive
 
-The archive builder knows about all 14 official G2 releases evidenced by the
-SybilSight research plus CFW `2.2.8.11`, built from Stock `2.2.8.4` without the
-BLE-advertisement patch. It also verifies and archives every R1 Secure DFU package
+The archive builder offers all 14 official G2 releases evidenced by the
+SybilSight research. Historical CFW evidence remains in its immutable versioned
+directories but is not emitted in the WebFlasher catalog or writer pin table.
+The builder also verifies and archives every R1 Secure DFU package
 exposed by the authenticated compatibility API, with exact CDN size, MD5,
 SHA-256, application, and signed init-packet pins:
 
@@ -1410,7 +1392,7 @@ SHA-256, application, and signed init-packet pins:
 2.0.1.14  2.0.3.20  2.0.5.12  2.0.6.14
 2.0.7.16  2.0.8.20  2.0.9.20  2.1.1.8
 2.1.1.12  2.2.0.24  2.2.4.34  2.2.6.10
-2.2.7.14  2.2.8.4  2.2.8.11
+2.2.7.14  2.2.8.4
 ```
 
 ```text
@@ -1563,11 +1545,11 @@ The previous release is retained at `/root/share/.webflasher-previous`. Every
 build emits `release.json` with its full Git commit identity and the SHA-256 of
 the catalog shipped with that build. The same atomic web-root swap publishes
 that exact catalog as `/firmware-catalog.json`; only the much larger versioned
-firmware archive remains separate. Caddy serves the tracked reviewed CFW
+firmware archive remains separate. Caddy serves tracked firmware evidence
 directories from the atomic web root and falls back to the archive for
 historical official versions. The deploy job also stages any new versioned
 directories there and verifies the release-bound catalog plus its newest
-reviewed custom binary. This preserves the historical archive without allowing
+official binary. This preserves the historical archive without allowing
 an external mirror refresh to change the running app's menu or reviewed target.
 
 Before Automatic Apply or any Advanced Case/Glasses firmware write, the
