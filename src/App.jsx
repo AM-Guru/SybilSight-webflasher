@@ -13,8 +13,6 @@ import {
   isG2CaseSerialPort,
   portUsesUsbDevice,
   requestG2CasePort,
-  webSerialSupported,
-  webUsbSupported,
 } from "./lib/serial.js";
 import {
   RemoteSupportConnection,
@@ -54,6 +52,7 @@ import {
   writeDeviceLabel,
 } from "./lib/deviceHistory.js";
 import { decodeApollo510RecoveryConfig } from "./lib/recoveryConfig.js";
+import { webFlasherBrowserCapabilities } from "./lib/browserCompatibility.js";
 import { TEMPLE_FLASH_TARGETS } from "./lib/templeFlashTargets.js";
 import {
   assertFirmwareCatalogCoversPinnedImages,
@@ -110,7 +109,6 @@ import {
   flashG2BleSessionsConcurrently,
   g2BleDeviceSide,
   g2BleRoutesAwaitingCaseVerification,
-  g2BleSupported,
   G2_KNOWN_NAME_TOKENS,
   g2BleTargetReportedVersion,
   g2BleTargetVersionProof,
@@ -143,6 +141,8 @@ const EMPTY_PROGRESS = {
   current: 1,
   percent: 0,
 };
+
+const DEFAULT_EASY_UPDATE_METHOD = "bluetooth";
 
 // Name tokens observed on real hardware, merged with the built-in list. A G2
 // advertising a token nobody has recorded cannot be reached by a side-specific
@@ -309,6 +309,110 @@ function Icon({ name }) {
     <span className={cx("icon", `icon-${name}`)} aria-hidden="true">
       {glyphs[name] ?? "•"}
     </span>
+  );
+}
+
+function SybilSightLogo() {
+  return (
+    <span className="brand-wordmark" aria-hidden="true">
+      <strong>SYBIL</strong>
+      <strong>SIGHT</strong>
+    </span>
+  );
+}
+
+const BROWSER_HARDWARE_APIS = Object.freeze([
+  Object.freeze({ key: "webBluetooth", label: "Web Bluetooth" }),
+  Object.freeze({ key: "webUsb", label: "WebUSB" }),
+  Object.freeze({ key: "webSerial", label: "Web Serial" }),
+]);
+
+function BrowserApiStatusList({ capabilities }) {
+  return (
+    <ul className="browser-api-status-list">
+      {BROWSER_HARDWARE_APIS.map(({ key, label }) => {
+        const available = Boolean(capabilities[key]);
+        return (
+          <li
+            className={cx(available ? "is-available" : "is-unavailable")}
+            key={key}
+            aria-label={`${label}: ${available ? "available" : "unavailable"}`}
+          >
+            <span className="browser-api-status-icon" aria-hidden="true">
+              {available ? "✓" : "×"}
+            </span>
+            <span>{label}</span>
+            <strong>{available ? "Available" : "Unavailable"}</strong>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function BrowserCompatibilityGate({ capabilities }) {
+  const hasHardwareApi = BROWSER_HARDWARE_APIS.some(({ key }) =>
+    Boolean(capabilities[key]),
+  );
+  return (
+    <main className="browser-compatibility-backdrop">
+      <section
+        className="browser-compatibility-modal"
+        role="alert"
+        aria-labelledby="browser-compatibility-title"
+      >
+        <div className="compatibility-brand">
+          <SybilSightLogo />
+          <span>G2 WebFlasher</span>
+        </div>
+        <span className="browser-compatibility-icon" aria-hidden="true">×</span>
+        <div className="eyebrow">Browser compatibility check</div>
+        <h1 id="browser-compatibility-title">
+          This browser cannot access the flasher.
+        </h1>
+        <p>
+          SybilSight needs secure firmware validation and at least one browser
+          hardware API. Current desktop Chrome or another Chromium-based browser
+          offers the broadest support; mobile browser support varies by platform.
+        </p>
+        <BrowserApiStatusList capabilities={capabilities} />
+        {!capabilities.secureFirmwareValidation ? (
+          <p className="browser-security-warning">
+            <span aria-hidden="true">×</span>
+            Secure firmware validation is unavailable. Open the HTTPS deployment
+            rather than an insecure copy of this page.
+          </p>
+        ) : !hasHardwareApi ? (
+          <p className="browser-security-warning">
+            <span aria-hidden="true">×</span>
+            No supported hardware API is exposed by this browser.
+          </p>
+        ) : null}
+        <button
+          className="browser-compatibility-action"
+          type="button"
+          onClick={() => window.location.reload()}
+        >
+          Recheck browser
+          <span aria-hidden="true">↻</span>
+        </button>
+      </section>
+    </main>
+  );
+}
+
+function MobileBrowserApiStatus({ capabilities }) {
+  return (
+    <aside className="mobile-browser-api-status" aria-label="Browser API support">
+      <div className="mobile-browser-api-heading">
+        <div>
+          <span>Browser API check</span>
+          <small>Features detected in this browser</small>
+        </div>
+        <strong>{capabilities.supported ? "Compatible" : "Unsupported"}</strong>
+      </div>
+      <BrowserApiStatusList capabilities={capabilities} />
+    </aside>
   );
 }
 
@@ -829,6 +933,15 @@ function BluetoothRecoveryCard({
 }) {
   const advanced = variant === "advanced";
   const primary = variant === "primary";
+  const cardFlashReady = primary
+    ? Boolean(
+        directBleSupported &&
+          selectedRelease &&
+          bleDevices.left &&
+          bleDevices.right &&
+          !operation,
+      )
+    : bleFlashReady;
   return (
     <article
       className={cx(
@@ -844,29 +957,35 @@ function BluetoothRecoveryCard({
             ? "Primary Smart Glasses update"
             : "02 · Pair + update over Bluetooth"}
         </div>
-        <h3>Update both temples directly over Bluetooth</h3>
+        <h3>
+          {primary
+            ? "Pair and update both temples"
+            : "Update both temples directly over Bluetooth"}
+        </h3>
         <p>
-          Chrome transfers every component in the selected hash-pinned package
-          to both temples simultaneously, using independent per-block
-          acknowledgements and component verification for each side. No Case
-          USB connection is required.
+          {primary
+            ? "Select the clearly labeled left and right temples. SybilSight updates them together and verifies each side independently—no Case cable required."
+            : "Chrome transfers every component in the selected hash-pinned package to both temples simultaneously, using independent per-block acknowledgements and component verification for each side. No Case USB connection is required."}
         </p>
-        <ol>
-          <li>Remove both temples from the Case and keep them powered nearby.</li>
-          <li>
-            Disconnect the paired phone, then select the explicitly labeled
-            Left and Right devices below.
-          </li>
-          <li>
-            The chooser may list both sides, but SybilSight accepts only an
-            unambiguous side marker that matches the button you selected.
-          </li>
-          <li>
-            Keep this WebFlasher tab in front during the update. If it becomes
-            hidden, SybilSight pauses before the next OTA command and resumes
-            from that verified boundary when you return.
-          </li>
-        </ol>
+        <details className="ble-instructions" open={advanced}>
+          <summary>Before you begin</summary>
+          <ol>
+            <li>Remove both temples from the Case and keep them powered nearby.</li>
+            <li>
+              Disconnect the paired phone, then select the explicitly labeled
+              Left and Right devices below.
+            </li>
+            <li>
+              The chooser may list both sides, but SybilSight accepts only an
+              unambiguous side marker that matches the button you selected.
+            </li>
+            <li>
+              Keep this WebFlasher tab in front during the update. If it becomes
+              hidden, SybilSight pauses before the next OTA command and resumes
+              from that verified boundary when you return.
+            </li>
+          </ol>
+        </details>
       </div>
       <div className="ble-recovery-actions">
         <div className="ble-device-buttons">
@@ -883,29 +1002,31 @@ function BluetoothRecoveryCard({
             </Button>
           ))}
         </div>
-        <label className="ble-ready-confirm">
-          <input
-            type="checkbox"
-            checked={bleReady}
-            onChange={(event) => onReadyChange(event.target.checked)}
-            disabled={
-              !directBleSupported ||
-              !bleDevices.left ||
-              !bleDevices.right ||
-              Boolean(operation)
-            }
-          />
-          <span>
-            Both advertised names explicitly match their assigned physical
-            sides; the phone is disconnected and the temples will stay powered
-            and nearby; this WebFlasher tab will stay in front.
-          </span>
-        </label>
+        {!primary ? (
+          <label className="ble-ready-confirm">
+            <input
+              type="checkbox"
+              checked={bleReady}
+              onChange={(event) => onReadyChange(event.target.checked)}
+              disabled={
+                !directBleSupported ||
+                !bleDevices.left ||
+                !bleDevices.right ||
+                Boolean(operation)
+              }
+            />
+            <span>
+              Both advertised names explicitly match their assigned physical
+              sides; the phone is disconnected and the temples will stay powered
+              and nearby; this WebFlasher tab will stay in front.
+            </span>
+          </label>
+        ) : null}
         <Button
           className="ble-recovery-start"
-          onClick={onFlash}
+          onClick={() => onFlash({ bypassReadyConfirmation: primary })}
           busy={operation === "ble-temple-flash"}
-          disabled={!bleFlashReady}
+          disabled={!cardFlashReady}
         >
           Update{" "}
           {selectedRelease
@@ -1413,6 +1534,7 @@ function readStoredConsoleTranscript() {
 }
 
 function App() {
+  const browserCapabilities = webFlasherBrowserCapabilities();
   const linkedSupportCode =
     typeof window === "undefined"
       ? ""
@@ -1458,6 +1580,13 @@ function App() {
   const [supportState, setSupportState] = useState({ status: "idle" });
   const [supportEvents, setSupportEvents] = useState([]);
   const [interfaceMode, setInterfaceMode] = useState(DEFAULT_INTERFACE_MODE);
+  const [easyUpdateMethod, setEasyUpdateMethod] = useState(
+    browserCapabilities.webBluetooth
+      ? DEFAULT_EASY_UPDATE_METHOD
+      : browserCapabilities.webUsb || browserCapabilities.webSerial
+        ? "usb"
+        : DEFAULT_EASY_UPDATE_METHOD,
+  );
   const [automaticInstallMode, setAutomaticInstallMode] = useState(
     DEFAULT_AUTOMATIC_INSTALL_MODE,
   );
@@ -2316,7 +2445,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!webSerialSupported()) return undefined;
+    if (!browserCapabilities.webSerial) return undefined;
     const eventPort = (event) => event.port ?? event.target;
     const handleDisconnect = (event) => {
       const port = eventPort(event);
@@ -2343,10 +2472,10 @@ function App() {
       navigator.serial.removeEventListener("disconnect", handleDisconnect);
       navigator.serial.removeEventListener("connect", handleConnect);
     };
-  }, [addLog, stopRemoteSupport]);
+  }, [addLog, browserCapabilities.webSerial, stopRemoteSupport]);
 
   useEffect(() => {
-    if (!webUsbSupported()) return undefined;
+    if (!browserCapabilities.webUsb) return undefined;
     const handleDisconnect = (event) => {
       const device = event.device ?? event.target;
       if (!portRef.current || !portUsesUsbDevice(portRef.current, device)) return;
@@ -2370,7 +2499,7 @@ function App() {
       navigator.usb.removeEventListener("disconnect", handleDisconnect);
       navigator.usb.removeEventListener("connect", handleConnect);
     };
-  }, [addLog, stopRemoteSupport]);
+  }, [addLog, browserCapabilities.webUsb, stopRemoteSupport]);
 
   useEffect(() => {
     // A debounced write can lose the final entries when the tab closes;
@@ -2672,7 +2801,7 @@ function App() {
     await run("analyze", async () => {
       const preferredTransport =
         transport === "auto"
-          ? webUsbSupported()
+          ? browserCapabilities.webUsb
             ? "recommended WebUSB"
             : "Web Serial"
           : transport === "webusb"
@@ -3142,9 +3271,14 @@ function App() {
     }
   };
 
-  const flashBleTempleFirmware = async () => {
+  const flashBleTempleFirmware = async ({ bypassReadyConfirmation = false } = {}) => {
     const release = catalog.find((item) => item.id === selectedReleaseId);
-    if (!release || !bleDevices.left || !bleDevices.right || !bleReady) return;
+    if (
+      !release ||
+      !bleDevices.left ||
+      !bleDevices.right ||
+      (!bypassReadyConfirmation && !bleReady)
+    ) return;
     setBleRouteProgress({
       left: { ...EMPTY_BLE_ROUTE_PROGRESS.left },
       right: { ...EMPTY_BLE_ROUTE_PROGRESS.right },
@@ -4709,7 +4843,7 @@ function App() {
         "success",
       );
     });
-  const directBleSupported = g2BleSupported();
+  const directBleSupported = browserCapabilities.webBluetooth;
   const ringFlashReady = Boolean(
     selectedRingRelease && ringDfuDevice && ringReady && !operation,
   );
@@ -4728,17 +4862,18 @@ function App() {
     bleResults?.outcome === "failed_or_partial";
   const bluetoothUpdateAwaitingCase =
     bleResults?.outcome === "awaiting_case_verification";
-  const usbRecoveryVisible =
+  const advancedUsbRecoveryVisible =
     !directBleSupported ||
     bluetoothUpdateFailed ||
     bluetoothUpdateAwaitingCase ||
     usbRecoveryRequested;
+  const easyUsesBluetooth = easyUpdateMethod === "bluetooth";
   const caseUpdateNeeded = Boolean(
     report?.console?.caseVersion &&
       latestCaseFirmwareRelease?.caseVersion &&
       report.console.caseVersion !== latestCaseFirmwareRelease.caseVersion,
   );
-  const directWebUsbSupported = webUsbSupported();
+  const directWebUsbSupported = browserCapabilities.webUsb;
   // Direct WebUSB is a local transport in its own right, not only a
   // remote-support detail: it bypasses the host serial driver, which on macOS
   // truncates CH340 reads badly enough to need per-block retries. Hardware
@@ -4748,7 +4883,7 @@ function App() {
   const directWebUsbVisible =
     directWebUsbSupported ||
     remoteSupportAllowsDirectWebUsb(supportState, directWebUsbSupported);
-  const directWebSerialSupported = webSerialSupported();
+  const directWebSerialSupported = browserCapabilities.webSerial;
   const serialSupported =
     directWebSerialSupported || directWebUsbVisible;
   const selectedTransport = portRef.current
@@ -4758,6 +4893,10 @@ function App() {
       : directWebSerialSupported
         ? "Web Serial"
         : "Unavailable";
+  const footerTransportLabel =
+    interfaceMode === "easy" && easyUsesBluetooth
+      ? "Bluetooth"
+      : selectedTransport;
   const deviceAnalytics = useMemo(
     () =>
       report
@@ -4807,6 +4946,10 @@ function App() {
     );
   }, [deviceAnalytics]);
 
+  if (!browserCapabilities.supported) {
+    return <BrowserCompatibilityGate capabilities={browserCapabilities} />;
+  }
+
   return (
     <div className={cx("app-shell", `is-${interfaceMode}`)}>
       <aside className="sidebar">
@@ -4815,10 +4958,7 @@ function App() {
           href={interfaceMode === "easy" ? "#easy" : "#connect"}
           aria-label="SybilSight G2 Recovery Console"
         >
-          <span className="brand-wordmark" aria-hidden="true">
-            <strong>SYBIL</strong>
-            <strong>SIGHT</strong>
-          </span>
+          <SybilSightLogo />
           <small>G2 WebFlasher</small>
         </a>
         <div className="sidebar-intro">
@@ -4878,20 +5018,34 @@ function App() {
 
       <main className="main">
         <header className="topbar">
+          <a
+            className="topbar-brand"
+            href="#easy"
+            aria-label="SybilSight G2 WebFlasher home"
+          >
+            <SybilSightLogo />
+            <span className="topbar-product">G2 WebFlasher</span>
+          </a>
           <div className="topbar-status">
             <span
               className={cx(
                 "connection-dot",
                 (interfaceMode === "easy"
-                  ? bleDevices.left && bleDevices.right
+                  ? easyUsesBluetooth
+                    ? bleDevices.left && bleDevices.right
+                    : report
                   : report) && "is-connected",
               )}
             />
             <span>
               {interfaceMode === "easy"
-                ? bleDevices.left && bleDevices.right
-                  ? "Left + Right paired"
-                  : "Bluetooth temples not paired"
+                ? easyUsesBluetooth
+                  ? bleDevices.left && bleDevices.right
+                    ? "Left + Right paired"
+                    : "Bluetooth temples not paired"
+                  : report
+                    ? "G2 Case connected"
+                    : "No G2 Case connected"
                 : report
                   ? "Case analyzed"
                   : "No Case connected"}
@@ -4930,7 +5084,7 @@ function App() {
               onClick={() => setSupportOpen(true)}
             >
               <Icon name="tools" />
-              Remote Support
+              <span className="console-trigger-label">Remote Support</span>
               <span
                 className={cx(
                   "remote-support-trigger-dot",
@@ -4940,7 +5094,7 @@ function App() {
             </button>
             <button className="console-trigger" onClick={() => setConsoleOpen(true)}>
               <Icon name="terminal" />
-              Console Log
+              <span className="console-trigger-label">Console Log</span>
               <span>{transcriptRef.current.length}</span>
             </button>
           </div>
@@ -4954,33 +5108,135 @@ function App() {
           id="easy"
           data-pane="easy"
         >
-          <div className="easy-mode-toolbar">
-            <div className="eyebrow">Bluetooth Smart Glasses update</div>
-            <StatusPill
-              tone={
-                !directBleSupported
-                  ? "warm"
-                  : bluetoothUpdateAwaitingCase
-                    ? "warm"
-                    : bluetoothUpdateComplete ||
-                        (bleDevices.left && bleDevices.right)
-                      ? "success"
-                      : "quiet"
-              }
+          <div className="easy-transport-selector">
+            <div className="easy-transport-label">
+              <span>Update connection</span>
+              <small>Choose how SybilSight reaches your G2.</small>
+            </div>
+            <div
+              className="easy-transport-options"
+              role="group"
+              aria-label="Easy Mode update connection"
             >
-              {!directBleSupported
-                ? "Bluetooth unavailable · use USB recovery"
-                : bluetoothUpdateAwaitingCase
-                  ? "Case verification required"
-                : bluetoothUpdateComplete
-                  ? "Bluetooth update complete"
-                  : bleDevices.left && bleDevices.right
-                    ? "Left + Right paired"
-                    : "Pair both temples"}
-            </StatusPill>
+              <button
+                type="button"
+                className={cx(easyUsesBluetooth && "is-active")}
+                aria-pressed={easyUsesBluetooth}
+                onClick={() => setEasyUpdateMethod("bluetooth")}
+                disabled={!browserCapabilities.webBluetooth || Boolean(operation)}
+              >
+                Bluetooth
+              </button>
+              <button
+                type="button"
+                className={cx(!easyUsesBluetooth && "is-active")}
+                aria-pressed={!easyUsesBluetooth}
+                onClick={() => setEasyUpdateMethod("usb")}
+                disabled={
+                  (!browserCapabilities.webUsb &&
+                    !browserCapabilities.webSerial) ||
+                  Boolean(operation)
+                }
+              >
+                USB Case
+              </button>
+            </div>
+            <span className="easy-transport-detail">
+              {easyUsesBluetooth
+                ? "Wireless · left + right temples"
+                : "Case cable · both temples seated"}
+            </span>
           </div>
 
-          <div className="easy-mode-grid is-bluetooth-primary">
+          <MobileBrowserApiStatus capabilities={browserCapabilities} />
+
+          <div className="easy-hero">
+            <div className="easy-hero-copy">
+              <div className="eyebrow">SybilSight G2 WebFlasher</div>
+              <h1>
+                Precision firmware.
+                <br />
+                Zero compromise.
+              </h1>
+              <p>
+                Verified Stock and reviewed CFW updates for Even G2, plus signed
+                R1 recovery—handled locally in your browser.
+              </p>
+              <div className="easy-hero-status">
+                <StatusPill
+                  tone={
+                    easyUsesBluetooth
+                      ? !directBleSupported || bluetoothUpdateAwaitingCase
+                        ? "warm"
+                        : bluetoothUpdateComplete ||
+                              (bleDevices.left && bleDevices.right)
+                          ? "success"
+                          : "quiet"
+                      : !serialSupported
+                        ? "warm"
+                        : report
+                          ? "success"
+                          : "quiet"
+                  }
+                >
+                  {easyUsesBluetooth
+                    ? !directBleSupported
+                      ? "Bluetooth unavailable · choose USB Case"
+                      : bluetoothUpdateAwaitingCase
+                        ? "Case verification required"
+                        : bluetoothUpdateComplete
+                          ? "Bluetooth update complete"
+                          : bleDevices.left && bleDevices.right
+                            ? "Left + Right paired"
+                            : "Ready to pair"
+                    : !serialSupported
+                      ? "USB access unavailable"
+                      : report
+                        ? "G2 Case connected"
+                        : "Ready for USB Case"}
+                </StatusPill>
+                <span className="local-only-note">
+                  <span className="tiny-dot tiny-dot-success" />
+                  Device data stays local unless remote support is started
+                </span>
+              </div>
+            </div>
+            <div className="easy-hero-visual" aria-hidden="true">
+              <img
+                src="/even-g2-case-grey.png"
+                alt=""
+                width="1501"
+                height="1501"
+                draggable="false"
+              />
+              <span>EVEN G2 · SYBILSIGHT</span>
+            </div>
+          </div>
+
+          <div className="easy-workflow-intro">
+            <div>
+              <div className="eyebrow">
+                {easyUsesBluetooth ? "Wireless update" : "USB recovery"}
+              </div>
+              <h2>
+                {easyUsesBluetooth
+                  ? "Update wirelessly. Both temples."
+                  : "One cable. Guided recovery."}
+              </h2>
+            </div>
+            <p>
+              {easyUsesBluetooth
+                ? "Choose verified Stock or reviewed CFW, pair left and right, then keep this tab visible while SybilSight verifies every component."
+                : "Choose verified Stock or reviewed CFW, connect the G2 Case with both temples seated, then let SybilSight recover and verify both sides."}
+            </p>
+          </div>
+
+          <div
+            className={cx(
+              "easy-mode-grid",
+              easyUsesBluetooth ? "is-bluetooth-primary" : "is-usb-primary",
+            )}
+          >
             <article className="easy-action-card easy-firmware-card">
               <div className="easy-step-heading">
                 <span>01</span>
@@ -5021,25 +5277,27 @@ function App() {
               ) : null}
             </article>
 
-            <BluetoothRecoveryCard
-              variant="primary"
-              directBleSupported={directBleSupported}
-              operation={operation}
-              bleDevices={bleDevices}
-              onSelectTemple={selectBleTemple}
-              bleReady={bleReady}
-              onReadyChange={setBleReady}
-              bleFlashReady={bleFlashReady}
-              onFlash={flashBleTempleFirmware}
-              selectedRelease={selectedRelease}
-              bleResults={bleResults}
-              bleStatus={bleStatus}
-            />
+            {easyUsesBluetooth ? (
+              <BluetoothRecoveryCard
+                variant="primary"
+                directBleSupported={directBleSupported}
+                operation={operation}
+                bleDevices={bleDevices}
+                onSelectTemple={selectBleTemple}
+                bleReady={bleReady}
+                onReadyChange={setBleReady}
+                bleFlashReady={bleFlashReady}
+                onFlash={flashBleTempleFirmware}
+                selectedRelease={selectedRelease}
+                bleResults={bleResults}
+                bleStatus={bleStatus}
+              />
+            ) : null}
 
-            {usbRecoveryVisible ? (
+            {!easyUsesBluetooth ? (
               <article className="easy-action-card easy-usb-card easy-case-card">
                 <div className="easy-step-heading">
-                  <span>USB · 01</span>
+                  <span>02</span>
                   <div>
                     <strong>Select your G2 Case for recovery</strong>
                     <small>
@@ -5081,10 +5339,10 @@ function App() {
               </article>
             ) : null}
 
-            {usbRecoveryVisible ? (
+            {!easyUsesBluetooth ? (
               <article className="easy-action-card easy-apply-card easy-usb-card">
               <div className="easy-step-heading">
-                <span>USB · 02</span>
+                <span>03</span>
                 <div>
                   <strong>Recover automatically over USB</strong>
                   <small>
@@ -5251,6 +5509,7 @@ function App() {
               </article>
             ) : null}
           </div>
+          {easyUsesBluetooth ? (
           <article className="ring-update-panel" id="ring-update">
             <div className="ring-update-copy">
               <div className="eyebrow">R1 Ring firmware update</div>
@@ -5391,37 +5650,7 @@ function App() {
               </details>
             </div>
           </article>
-          <div className={cx("usb-recovery-toggle", usbRecoveryVisible && "is-open")}>
-            <div>
-              <strong>
-                {usbRecoveryVisible
-                  ? "USB backup / recovery"
-                  : "Can’t reach one or both temples over Bluetooth?"}
-              </strong>
-              <span>
-                {usbRecoveryVisible
-                  ? "These Case-based tools are the fallback for a failed or unavailable Bluetooth update, or for devices that are generally non-working or inaccessible over Bluetooth."
-                  : "Reveal the Case-based USB workflow only as a backup or recovery mechanism."}
-              </span>
-            </div>
-            {!usbRecoveryVisible ? (
-              <Button
-                tone="secondary"
-                onClick={() => setUsbRecoveryRequested(true)}
-                disabled={Boolean(operation)}
-              >
-                Open USB recovery
-              </Button>
-            ) : directBleSupported && !bluetoothUpdateFailed ? (
-              <Button
-                tone="ghost"
-                onClick={() => setUsbRecoveryRequested(false)}
-                disabled={Boolean(operation)}
-              >
-                Hide USB recovery
-              </Button>
-            ) : null}
-          </div>
+          ) : null}
         </section>
 
         <section
@@ -6041,7 +6270,7 @@ function App() {
                   ) : null}
                 </div>
               ) : null}
-              {usbRecoveryVisible ? (
+              {advancedUsbRecoveryVisible ? (
               <div className="advanced-automatic-apply">
                 <div className="advanced-usb-recovery-heading">
                   <div>
@@ -7059,7 +7288,7 @@ function App() {
           <div className="footer-meta">
             <span>
               Sybil Sight™ · G2 WebFlasher {WEBFLASHER_BUILD_LABEL} ·{" "}
-              {selectedTransport}
+              {footerTransportLabel}
             </span>
             <span>
               Device data stays local unless the person explicitly starts remote support.

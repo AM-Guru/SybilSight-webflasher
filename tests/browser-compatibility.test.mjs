@@ -41,6 +41,26 @@ test("rejects a browser without WebFlasher hardware access", () => {
   );
 });
 
+test("reports each browser hardware API independently for the compatibility UI", () => {
+  assert.deepEqual(
+    webFlasherBrowserCapabilities({
+      navigatorObject: {
+        bluetooth: { requestDevice() {} },
+        usb: {},
+        serial: { requestPort() {} },
+      },
+      cryptoObject: secureCrypto,
+    }),
+    {
+      webBluetooth: true,
+      webUsb: false,
+      webSerial: true,
+      secureFirmwareValidation: true,
+      supported: true,
+    },
+  );
+});
+
 test("rejects an insecure browser context without firmware hashing", () => {
   assert.equal(
     webFlasherBrowserSupported({
