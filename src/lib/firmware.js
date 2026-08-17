@@ -1028,6 +1028,7 @@ export function classifyG2Firmware(fileSha256) {
   const digest = fileSha256.toLowerCase();
   const reviewed = [
     REVIEWED_G2FLASH_CFW_2_2_6_11,
+    REVIEWED_CFW_2_2_8_11,
     REVIEWED_CFW_2_2_8_10,
     REVIEWED_CFW_2_2_8_9,
     REVIEWED_CFW_2_2_8_8,

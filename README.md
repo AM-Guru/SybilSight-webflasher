@@ -39,7 +39,7 @@ Production deployment:
 - Accepts official five- or six-component `EVENOTA` bundles, wrapped
   `firmware_box.bin` components, and validated raw case images.
 - Recognizes and offers all 14 archived official G2 SHA-256 values plus the
-  reviewed g2flash-based CFW 2.2.6.11. Retired CFW 2.2.8.11 and the older
+  reviewed CFW 2.2.6.11, 2.2.7.16, and BLE-safe 2.2.8.11 builds. The older
   advertisement-patched CFW 2.2.8.9 and 2.2.8.10 remain excluded from both
   direct-Bluetooth and Case-USB installation.
 - Validates the Apollo main application's independent preamble, CRC-32, target
@@ -198,8 +198,10 @@ stock Even AI path when no wake lease is active.
 
 Run `python3 scripts/build_g2flash_cfw.py` to reproduce the bundle and its
 stock-replay recipe from `~/Repo/g2flash`. This exact build is hash-pinned but
-not yet hardware-validated. CFW 2.2.8.9, 2.2.8.10, and 2.2.8.11 remain archived
-only as diagnostic evidence and are absent from mutation allowlists.
+not yet hardware-validated. The catalog also offers reviewed CFW 2.2.7.16 and
+BLE-safe CFW 2.2.8.11; both are pinned to their complete bundles and Apollo
+mains. CFW 2.2.8.9 and 2.2.8.10 remain diagnostic evidence only because they
+contain the withdrawn Bluetooth-advertising modification.
 
 ### Application-alive pogo OTA
 
@@ -297,7 +299,7 @@ and final bilateral reset/liveness. It took 1,571 seconds. Consequently:
 
 - Update uses the complete changed-component plan and transmits zero unchanged
   components when installed provenance is trusted;
-- Stock 2.2.6.10 ↔ compatible reviewed CFW sends only the complete target Apollo main;
+- Each compatible reviewed Stock ↔ CFW pair sends only the complete target Apollo main;
 - Restore remains the complete reviewed-image operation;
 - Case USB retains the 6-KiB deferred-write boundary; and
 - `balanced-lab` remains explicit-risk research, not a faster default.
@@ -996,7 +998,7 @@ bilateral reset with full reopened-telemetry and application-liveness
 verification, the combined Case + Smart Glasses backup (`backup_system`, with
 `backup_case` still available when temples are not seated), bounded expert
 serial exchanges, Case staging and activation, complete-main Smart Glasses
-flashing, the reviewed Stock 2.2.6.10 ↔ CFW 2.2.6.11 differential transfer
+flashing, the reviewed Stock ↔ CFW differential transfers
 (`mode: "differences"`), and the full Automatic Apply workflow
 (`automatic_apply`, including the Case-first update and automatic
 differential-to-complete fallback). Firmware can be selected either by a local
@@ -1156,10 +1158,10 @@ component and transfers the one changed, complete CRC-gated Apollo main. The
 receiver has no safe sparse-write offset, so Update never transmits arbitrary
 changed byte ranges inside that component.
 
-CFW 2.2.6.11 is the selectable reviewed custom target. Because this exact
-g2flash-derived image has not yet been exercised on hardware, it remains
-clearly marked as unvalidated and all writes stay gated on its complete bundle
-and Apollo-main hashes. Installed Apollo MRAM readback remains unavailable,
+CFW 2.2.6.11, 2.2.7.16, and 2.2.8.11 are the selectable reviewed custom
+targets. These exact g2flash-derived images have not yet been exercised on
+hardware, so they remain clearly marked as unvalidated and all writes stay
+gated on their complete bundle and Apollo-main hashes. Installed Apollo MRAM readback remains unavailable,
 and saved recovery audits remain browser-origin-local rather than portable
 from a localhost hardware test to the hosted site.
 
@@ -1222,7 +1224,7 @@ remain explicit choices.
 4. Choose **Complete pinned Apollo main** or **Flash differences · Stock ↔
    CFW**. Difference mode automatically loads and hashes the opposite image,
    shows the five skipped components and one changed component, and validates
-   the live source as Stock `2.2.6.10` or reviewed CFW `2.2.6.11` immediately
+   the live source as the exact selected Stock base or reviewed CFW immediately
    before START.
 5. Confirm the glasses are seated, accept the single-slot risk, and type
    `FLASH GLASSES FIRMWARE`.
@@ -1267,7 +1269,7 @@ SBL/MRAM-recovery or SWD route.
    resumes automatically at that verified boundary when the tab is visible.
    Wait for all six END verifications on both sides. Re-seat both temples in
    the Case and use the normal reset/recheck path for final checksum-valid
-   `2.2.6.11`/hardware-5 liveness proof.
+   selected-target/hardware-5 liveness proof.
 
 This primary path still depends on the running G2 application and its BLE OTA
 service. It is not an application-dead, bootloader, or SWD recovery route.
@@ -1380,9 +1382,10 @@ and both routes receive read-only liveness verification.
 ## Firmware archive
 
 The archive builder offers all 14 official G2 releases evidenced by the
-SybilSight research. Historical CFW evidence remains in its immutable versioned
-directories but is not emitted in the WebFlasher catalog or writer pin table.
-The builder also verifies and archives every R1 Secure DFU package
+SybilSight research plus reviewed CFW 2.2.6.11, 2.2.7.16, and 2.2.8.11.
+Historical withdrawn CFW evidence remains in immutable versioned directories
+but is not emitted in the WebFlasher catalog or writer pin table. The builder
+also verifies and archives every R1 Secure DFU package
 exposed by the authenticated compatibility API, with exact CDN size, MD5,
 SHA-256, application, and signed init-packet pins:
 
@@ -1390,7 +1393,7 @@ SHA-256, application, and signed init-packet pins:
 2.0.1.14  2.0.3.20  2.0.5.12  2.0.6.14
 2.0.7.16  2.0.8.20  2.0.9.20  2.1.1.8
 2.1.1.12  2.2.0.24  2.2.4.34  2.2.6.10
-2.2.7.14  2.2.8.4
+2.2.7.14  2.2.7.16  2.2.8.4  2.2.8.11
 ```
 
 ```text
@@ -1450,7 +1453,7 @@ source-files/
     ota_s200_firmware_ota.bin
     metadata.json
     SHA256SUMS
-  2.2.6.11/
+  2.2.6.11-105032302d02/
     g2-2.2.6.11.bin
     cfw_patches-2.2.6.11.json
     manifest.json
@@ -1463,7 +1466,12 @@ source-files/
     ota_s200_firmware_ota.bin
     metadata.json
     SHA256SUMS
-  2.2.8.11/
+  2.2.7.16-6c0fdfed0eab/
+    g2-2.2.7.16.bin
+    cfw_patches-2.2.7.16.json
+    manifest.json
+    ...
+  2.2.8.11-be3922f3695e/
     g2-2.2.8.11.bin
     cfw_patches-2.2.8.11.json
     manifest.json
@@ -1559,8 +1567,8 @@ that exact catalog as `/firmware-catalog.json`; only the much larger versioned
 firmware archive remains separate. Caddy serves tracked firmware evidence
 directories from the atomic web root and falls back to the archive for
 historical official versions. The deploy job also stages any new versioned
-directories there and verifies the release-bound catalog plus its newest
-official binary. This preserves the historical archive without allowing
+directories there and verifies the release-bound catalog, its newest official
+binary, and every offered reviewed CFW binary. This preserves the historical archive without allowing
 an external mirror refresh to change the running app's menu or reviewed target.
 
 Before Automatic Apply or any Advanced Case/Glasses firmware write, the

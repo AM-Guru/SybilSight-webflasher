@@ -9,6 +9,8 @@ export const AUTOMATIC_INSTALL_MODES = Object.freeze(["update", "restore"]);
 const ROUTES = Object.freeze(["right", "left"]);
 const REVIEWED_STOCK_CFW_PAIRS = Object.freeze([
   Object.freeze(["2.2.6.10", "2.2.6.11", "2.2.6.12"]),
+  Object.freeze(["2.2.7.14", "2.2.7.16"]),
+  Object.freeze(["2.2.8.4", "2.2.8.11"]),
 ]);
 const MAIN_COMPONENT = "ota/s200_firmware_ota.bin";
 

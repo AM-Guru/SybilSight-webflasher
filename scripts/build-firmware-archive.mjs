@@ -14,6 +14,14 @@ const REVIEWED_CFW_BASE_SHA256 =
   "f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa";
 const REVIEWED_CFW_2_2_6_11_SHA256 =
   "105032302d02ccf943b785070cf15877a918c120b7ca1332bb6261f70eb6d683";
+const REVIEWED_CFW_2_2_7_16_SHA256 =
+  "6c0fdfed0eabfc40ba718ec1eec6b0728e9794a8abdb6079ebdcee2c56f58127";
+const REVIEWED_CFW_2_2_7_14_BASE_SHA256 =
+  "0fced0aebcc6c88db6f76dba34f91b805d842a5fc297bfd7fa6d6a34ec83cecb";
+const REVIEWED_CFW_2_2_8_11_SHA256 =
+  "be3922f3695e0b58a6b62f40f760b6c8754488c4e9a58c96b2c13e92ef33bd3a";
+const REVIEWED_CFW_2_2_8_4_BASE_SHA256 =
+  "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7";
 const REVIEWED_G2FLASH_PATCH_SHA256 =
   "ab38d6299ba28afe2cd4ea5b4442867e894b7909e6c73db8f1ee0796c06a914a";
 const REVIEWED_G2FLASH_OUTPUT_SHA256 =
@@ -310,6 +318,103 @@ const RELEASES = [
     sha256: "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7",
     size: 4342507,
     notes: "Added Korean system language support.",
+  },
+  {
+    id: "g2-custom-2.2.8.11",
+    displayName: "SybilSight CFW (2.2.8.11)",
+    version: "2.2.8.11",
+    internalVersion: "2.2.8.11",
+    reportedVersion: "2.2.8.11",
+    baseVersion: "2.2.8.4",
+    baseSha256: REVIEWED_CFW_2_2_8_4_BASE_SHA256,
+    channel: "custom",
+    trust: "reviewed-custom",
+    hash: "9fd3b32423ddfea6aad55d9926393eaa",
+    sha256: REVIEWED_CFW_2_2_8_11_SHA256,
+    size: 4362652,
+    fileName: "g2-2.2.8.11.bin",
+    preferLocalEvidence: true,
+    fallbacks: [[
+      "webflasher",
+      "public/firmware-updates/source-files/2.2.8.11-be3922f3695e/g2-2.2.8.11.bin",
+    ]],
+    patchFallbackRoot: "webflasher",
+    patchFallback:
+      "public/firmware-updates/source-files/2.2.8.11-be3922f3695e/cfw_patches-2.2.8.11.json",
+    patchFileName: "cfw_patches-2.2.8.11.json",
+    patchCount: 36,
+    manifestFileName: "manifest.json",
+    capabilityMarker:
+      "EVENCFW/8 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10",
+    g2flashCommit: "877c8d9490db0d3717ca012dd0f54556af3701bd",
+    g2flashRebasePatchSha256:
+      "fdf8fcb5de6a658105a1d45e1376c3932bc59d0dd278314c242572449f7bcdfb",
+    excludedFeature: {
+      id: "ble-advertised-name",
+      status: "omitted",
+      reason:
+        "Not present on the pinned g2flash main branch and withdrawn after hardware failure evidence.",
+      preservedStockHookOffset: 1000085,
+      preservedStockBytes: "fff74cff",
+      removedBlobSha256:
+        "68036760a3e3485e9ce6e995b8fd1bfcfbdb3c0381b47b9d9cc4688bc825f694",
+    },
+    directFramebufferCommits: [
+      "235a8b304447e330df6a0bce0351e3b6dc3d6f08",
+      "28aad42757837db14c08225884a7cc5201e08595",
+    ],
+    notes:
+      "Built from official G2 2.2.8.4 with the pinned g2flash patch set, stock Bluetooth advertising, and a consistent 2.2.8.11 package/runtime identity.",
+    capabilities: [
+      ...REVIEWED_CFW_DISPLAY_CHANGES,
+      "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
+      "Keeps wear-status and compass updates available to connected apps.",
+      "Preserves the stock Bluetooth setup and advertising behavior.",
+      "Includes Korean system-language support from the official update.",
+      REVIEWED_CFW_PENDING_VALIDATION,
+    ],
+  },
+  {
+    id: "g2-custom-2.2.7.16",
+    displayName: "SybilSight CFW (2.2.7.16)",
+    version: "2.2.7.16",
+    internalVersion: "2.2.7.16",
+    reportedVersion: "2.2.7.16",
+    baseVersion: "2.2.7.14",
+    baseSha256: REVIEWED_CFW_2_2_7_14_BASE_SHA256,
+    channel: "custom",
+    trust: "reviewed-custom",
+    hash: "0b4965e39055256b0d5353e42413521d",
+    sha256: REVIEWED_CFW_2_2_7_16_SHA256,
+    size: 4351457,
+    fileName: "g2-2.2.7.16.bin",
+    preferLocalEvidence: true,
+    fallbacks: [[
+      "webflasher",
+      "public/firmware-updates/source-files/2.2.7.16-6c0fdfed0eab/g2-2.2.7.16.bin",
+    ]],
+    patchFallbackRoot: "webflasher",
+    patchFallback:
+      "public/firmware-updates/source-files/2.2.7.16-6c0fdfed0eab/cfw_patches-2.2.7.16.json",
+    patchFileName: "cfw_patches-2.2.7.16.json",
+    patchCount: 25,
+    manifestFileName: "manifest.json",
+    capabilityMarker:
+      "EVENCFW/6 img576 img640 imgz rle wakelease directfb fbguard",
+    g2flashCommit: "28aad42757837db14c08225884a7cc5201e08595",
+    g2flashRebasePatchSha256:
+      "2049b1f1331176cc7485d73757e9c6a8ee8d072ba3e3047790f2bc0eb465dc5f",
+    directFramebufferCommits: [
+      "235a8b304447e330df6a0bce0351e3b6dc3d6f08",
+      "28aad42757837db14c08225884a7cc5201e08595",
+    ],
+    notes:
+      "Built from official G2 2.2.7.14 with the pinned g2flash patch set and a consistent 2.2.7.16 package/runtime identity.",
+    capabilities: [
+      ...REVIEWED_CFW_DISPLAY_CHANGES,
+      "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
+      REVIEWED_CFW_PENDING_VALIDATION,
+    ],
   },
   {
     id: "g2-custom-2.2.6.11",

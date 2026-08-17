@@ -72,8 +72,8 @@ option B:
 - `release.json` binds the app commit to the exact catalog SHA-256;
 - the browser refuses any temple mutation when that hash or pinned-image
   coverage differs; and
-- deployment verification permits only the exact reviewed 2.2.6.11 CFW entry,
-  then downloads and hashes the live custom target.
+- deployment verification permits only the exact reviewed CFW release set,
+  then downloads and hashes every live custom target.
 
 This split is intentional. The shared `/share/sybilsight` archive can be
 refreshed or restored independently and contains official historical binaries
@@ -81,8 +81,8 @@ that are too large to keep in this repository. Its mutable `index.json` must
 not be able to change the menu or invalidate a WebFlasher already published by
 an atomic `/share/webflasher` release swap. Caddy serves tracked firmware
 evidence and official firmware directories from that atomic web root; other
-official versioned paths fall back to the historical archive. The only offered
-CFW is the exact release-bound, hash-pinned 2.2.6.11 build.
+official versioned paths fall back to the historical archive. The offered CFW
+set is release-bound and hash-pinned: 2.2.6.11, 2.2.7.16, and BLE-safe 2.2.8.11.
 
 A published archive path is immutable even when a firmware build later needs a
 metadata or runtime-identity correction. In that case the human-facing firmware

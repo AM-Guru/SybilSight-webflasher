@@ -237,12 +237,12 @@ test("recognizes withdrawn G2 2.2.8.10 evidence without claiming it is cold-star
   assert.equal(trust.capabilities.some((value) => /cold-start-safe/i.test(value)), false);
 });
 
-test("does not trust the retired G2 2.2.8.11 CFW", () => {
+test("recognizes the BLE-safe G2 2.2.8.11 CFW", () => {
   const trust = classifyG2Firmware(REVIEWED_CFW_2_2_8_11.sha256);
-  assert.equal(trust.trust, "unrecognized");
-  assert.equal(trust.version, null);
-  assert.equal(trust.baseVersion, null);
-  assert.deepEqual(trust.capabilities, []);
+  assert.equal(trust.trust, "reviewed-custom");
+  assert.equal(trust.version, "2.2.8.11");
+  assert.equal(trust.baseVersion, "2.2.8.4");
+  assert.equal(trust.capabilities.some((value) => /stock Bluetooth/i.test(value)), true);
   assert.equal(findG2FirmwareRevocation(REVIEWED_CFW_2_2_8_11.sha256), null);
 });
 
@@ -807,7 +807,7 @@ test("decodes Apollo510 INFOC and INFO0 recovery provisioning offline", () => {
   assert.equal(report.backupReadbackProvided, false);
 });
 
-test("ships the complete official catalog plus the reviewed g2flash CFW", async () => {
+test("ships the complete official catalog plus the reviewed CFW releases", async () => {
   const catalog = JSON.parse(
     await readFile(
       new URL("../public/firmware-updates/source-files/index.json", import.meta.url),
@@ -826,9 +826,15 @@ test("ships the complete official catalog plus the reviewed g2flash CFW", async 
   assert.equal(latestOfficial.sha256, OFFICIAL_G2_SHA256["2.2.8.4"]);
   assert.equal(latestOfficial.caseVersion, "1.2.57");
   const custom = catalog.releases.filter((release) => release.channel === "custom");
-  assert.equal(custom.length, 1);
-  assert.equal(custom[0].sha256, REVIEWED_G2FLASH_CFW_2_2_6_11.sha256);
-  assert.equal(custom[0].hardwareValidated, false);
+  assert.deepEqual(
+    custom.map((release) => release.sha256),
+    [
+      REVIEWED_CFW_2_2_8_11.sha256,
+      REVIEWED_CFW_2_2_7_16.sha256,
+      REVIEWED_G2FLASH_CFW_2_2_6_11.sha256,
+    ],
+  );
+  assert.equal(custom.every((release) => release.hardwareValidated === false), true);
 });
 
 test("ships the exact official G2 2.2.8.4 bundle and six components", async () => {
@@ -862,6 +868,46 @@ test("ships the exact official G2 2.2.7.14 bundle and six components", async () 
   assert.equal(firmware.componentImages.length, 6);
   assert.equal(firmware.caseVersion, "1.2.57");
   assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
+});
+
+test("ships stock-based CFW 2.2.7.16 with upstream 640x480 and guarded Even AI", async () => {
+  const releaseDirectory = new URL(
+    "../public/firmware-updates/source-files/2.2.7.16-6c0fdfed0eab/",
+    import.meta.url,
+  );
+  const bundle = await readFile(new URL("g2-2.2.7.16.bin", releaseDirectory));
+  const firmware = await parseFirmwareInput(bundle, "g2-2.2.7.16.bin");
+  assert.equal(firmware.fileSha256, REVIEWED_CFW_2_2_7_16.sha256);
+  assert.equal(firmware.g2Version, "2.2.7.16");
+  assert.equal(firmware.provenance.trust, "reviewed-custom");
+  assert.equal(firmware.provenance.baseVersion, "2.2.7.14");
+  assert.equal(firmware.mainComponent.payload.length, REVIEWED_CFW_2_2_7_16.mainPayloadBytes);
+  assert.equal(
+    firmware.mainComponent.payloadSha256,
+    REVIEWED_CFW_2_2_7_16.mainPayloadSha256,
+  );
+  assert.equal(firmware.templeFlashEligible, true);
+  assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
+  assert.equal(
+    bundle.includes(Buffer.from(REVIEWED_CFW_2_2_7_16.capabilityMarker, "ascii")),
+    true,
+  );
+
+  const patchSet = JSON.parse(
+    await readFile(new URL("cfw_patches-2.2.7.16.json", releaseDirectory), "utf8"),
+  );
+  assert.equal(patchSet.release_version, "2.2.7.16");
+  assert.equal(patchSet.vendor_base_version, "2.2.7.14");
+  assert.equal(patchSet.base_sha256, REVIEWED_CFW_2_2_7_16.baseSha256);
+  assert.equal(patchSet.output_sha256, REVIEWED_CFW_2_2_7_16.sha256);
+  assert.equal(patchSet.patches.length, 25);
+
+  const manifest = JSON.parse(
+    await readFile(new URL("manifest.json", releaseDirectory), "utf8"),
+  );
+  assert.equal(manifest.release.archiveKey, "2.2.7.16-6c0fdfed0eab");
+  assert.equal(manifest.package.sha256, REVIEWED_CFW_2_2_7_16.sha256);
+  assert.equal(manifest.patchRecipe.operationCount, 25);
 });
 
 test("ships reproducible g2flash CFW 2.2.6.11 with consistent live identity", async () => {
@@ -1017,9 +1063,9 @@ test("ships stock-based CFW 2.2.8.9 with bilateral version identity and the dire
   }
 });
 
-test("retains CFW 2.2.8.11 as non-installable historical evidence", async () => {
+test("ships BLE-safe CFW 2.2.8.11 as an installable reviewed target", async () => {
   const releaseDirectory = new URL(
-    "../public/firmware-updates/source-files/2.2.8.11-runtime-fix/",
+    "../public/firmware-updates/source-files/2.2.8.11-be3922f3695e/",
     import.meta.url,
   );
   const bundle = await readFile(new URL("g2-2.2.8.11.bin", releaseDirectory));
@@ -1032,12 +1078,12 @@ test("retains CFW 2.2.8.11 as non-installable historical evidence", async () => 
   const firmware = await parseFirmwareInput(bundle, "g2-2.2.8.11.bin");
   assert.equal(firmware.fileSha256, REVIEWED_CFW_2_2_8_11.sha256);
   assert.equal(firmware.g2Version, "2.2.8.11");
-  assert.equal(firmware.provenance.trust, "unrecognized");
-  assert.equal(firmware.provenance.baseVersion, null);
+  assert.equal(firmware.provenance.trust, "reviewed-custom");
+  assert.equal(firmware.provenance.baseVersion, "2.2.8.4");
   assert.equal(firmware.mainComponent.payload.length, REVIEWED_CFW_2_2_8_11.mainPayloadBytes);
   assert.equal(firmware.mainComponent.payloadSha256, REVIEWED_CFW_2_2_8_11.mainPayloadSha256);
-  assert.equal(firmware.templeFlashEligible, false);
-  assert.equal(firmware.templeFlashTarget, null);
+  assert.equal(firmware.templeFlashEligible, true);
+  assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
   assert.equal(bundle.toString("latin1").split("2.2.8.11").length - 1, 2);
   assert.equal(bundle.includes(Buffer.from("2.2.8.9", "ascii")), false);
   assert.equal(bundle.includes(Buffer.from(REVIEWED_CFW_2_2_8_11.capabilityMarker)), true);
@@ -1089,7 +1135,7 @@ test("retains CFW 2.2.8.11 as non-installable historical evidence", async () => 
     await readFile(new URL("manifest.json", releaseDirectory), "utf8"),
   );
   assert.equal(manifest.release.version, "2.2.8.11");
-  assert.equal(manifest.release.archiveKey, "2.2.8.11-runtime-fix");
+  assert.equal(manifest.release.archiveKey, "2.2.8.11-be3922f3695e");
   assert.equal(manifest.release.reportedVersion, "2.2.8.11");
   assert.equal(manifest.package.sha256, REVIEWED_CFW_2_2_8_11.sha256);
   assert.equal(manifest.patchRecipe.operationCount, 36);

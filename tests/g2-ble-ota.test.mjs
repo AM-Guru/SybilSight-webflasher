@@ -802,10 +802,10 @@ test("the direct BLE writer accepts only the complete pinned topology", () => {
   );
 });
 
-test("the retired SybilSight CFW is rejected by direct BLE", async () => {
+test("the BLE-safe SybilSight CFW 2.2.8.11 is accepted by direct BLE", async () => {
   const bytes = await readFile(
     new URL(
-      "../public/firmware-updates/source-files/2.2.8.11-runtime-fix/g2-2.2.8.11.bin",
+      "../public/firmware-updates/source-files/2.2.8.11-be3922f3695e/g2-2.2.8.11.bin",
       import.meta.url,
     ),
   );
@@ -813,13 +813,10 @@ test("the retired SybilSight CFW is rejected by direct BLE", async () => {
     bytes,
     "g2-2.2.8.11.bin",
   );
-  assert.throws(
-    () => assertPinnedG2BleBundle(firmware),
-    /exact hash-pinned G2 temple bundle/,
-  );
+  assert.equal(assertPinnedG2BleBundle(firmware), firmware);
   assert.equal(firmware.g2Version, "2.2.8.11");
-  assert.equal(firmware.templeFlashEligible, false);
-  assert.equal(firmware.templeFlashTarget, null);
+  assert.equal(firmware.templeFlashEligible, true);
+  assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
 });
 
 test("the reviewed g2flash 2.2.6.11 CFW is accepted by direct BLE", async () => {

@@ -368,7 +368,7 @@ async function prepareDifferenceSource(firmware) {
   const counterpart = findStockCfwCounterpartRelease(releases, firmware);
   if (!counterpart) {
     throw new Error(
-      "Differential flashing is available only for a reviewed Stock 2.2.6.10 ↔ compatible CFW pair.",
+      "Differential flashing is available only for an exact reviewed Stock ↔ compatible CFW pair.",
     );
   }
   const source = await firmwareFromCatalogRelease(counterpart);
@@ -777,7 +777,7 @@ server.registerTool(
         .enum(["complete", "differences"])
         .default("complete")
         .describe(
-          "'complete' rewrites the pinned Apollo main; 'differences' transfers only the changed component of a reviewed Stock 2.2.6.10 ↔ compatible CFW pair",
+          "'complete' rewrites the pinned Apollo main; 'differences' transfers only the changed component of an exact reviewed Stock ↔ compatible CFW pair",
         ),
     },
     annotations: {
