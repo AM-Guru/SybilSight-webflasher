@@ -96,7 +96,7 @@ test("Nordic CRC32 and Secure DFU response parsing match the wire contract", () 
 
 class RecordingDfuSession extends R1SecureDfuSession {
   constructor(selection) {
-    super({});
+    super({}, { firstObjectSettleMs: 0, objectRetrySettleMs: 0 });
     this.selection = selection;
     this.events = [];
   }

@@ -1360,6 +1360,13 @@ export class SerialTransport {
   async open(options) {
     await this.port.open(options);
     if (!this.port.readable || !this.port.writable) {
+      // The port itself opened, so it must be released here — the caller
+      // cannot tell this partial state apart from open() failing outright.
+      try {
+        await this.port.close();
+      } catch {
+        // The half-opened port may already be unusable.
+      }
       throw new Error("The serial port did not expose readable and writable streams.");
     }
     this.reader = this.port.readable.getReader();
@@ -1379,7 +1386,14 @@ export class SerialTransport {
         }
       }
     } catch (error) {
-      if (error?.name !== "NetworkError" && error?.name !== "AbortError") {
+      // Deliberate teardown is detected by state, not by error name: close()
+      // nulls this.reader before cancelling, so a rejection that arrives with
+      // no reader is teardown noise. Everything else is a real transport
+      // failure and is recorded — including the NetworkError DOMException a
+      // stalled-but-still-enumerated CH340 produces, which the old
+      // name-based filter silently discarded, degrading every later read
+      // into a timeout with the cause lost.
+      if (this.reader) {
         this.readError = error;
       }
       this.notify();
@@ -1776,8 +1790,18 @@ class Stm32Bootloader {
     }
     const encodedSize = bytes.length - 1;
     const body = [encodedSize, ...bytes];
-    await this.transport.write(new Uint8Array([...body, xor(body)]));
-    await this.expectAck("Write Memory data", timeoutMs);
+    try {
+      await this.transport.write(new Uint8Array([...body, xor(body)]));
+      await this.expectAck("Write Memory data", timeoutMs);
+    } catch (error) {
+      // The transport's sticky readError is one shared object: an earlier
+      // setup-stage failure may have tagged this same instance. A data-phase
+      // failure must never carry the replay-safe tag, so strip a stale one.
+      if (error && typeof error === "object" && error.romWriteStage) {
+        delete error.romWriteStage;
+      }
+      throw error;
+    }
   }
 
   async writeRange(address, input, onProgress) {
@@ -1798,15 +1822,16 @@ class Stm32Bootloader {
       // phase (romWriteStage "setup", nothing programmed).
       const sramTarget =
         blockAddress >= 0x20000000 && blockAddress < 0x20040000;
-      for (let attempt = 1; ; attempt += 1) {
+      const writeAttempts = 3;
+      for (let attempt = 1; attempt <= writeAttempts; attempt += 1) {
         try {
           await this.writeMemory(blockAddress, block);
           break;
         } catch (error) {
           const replaySafe = sramTarget || error?.romWriteStage === "setup";
-          if (!replaySafe || attempt >= 3) throw error;
+          if (!replaySafe || attempt === writeAttempts) throw error;
           this.log?.(
-            `ROM write retry ${attempt + 1}/3 at 0x${blockAddress.toString(16)} after ${error?.message ?? String(error)}`,
+            `ROM write retry ${attempt + 1}/${writeAttempts} at 0x${blockAddress.toString(16)} after ${error?.message ?? String(error)}`,
             "warn",
           );
           try {
@@ -1826,6 +1851,14 @@ class Stm32Bootloader {
 
 async function openNormalConsole(port) {
   const transport = new SerialTransport(port);
+  // A partial open must not strand the port: setSignals is a real CH340
+  // control transfer that can fail after open() has already taken the
+  // reader/writer locks, and leaving them held made every later open in the
+  // page fail with "already open" until the tab was reloaded. But cleanup is
+  // gated on OUR open having succeeded — when open() itself threw (for
+  // example because another live transport already holds this shared port),
+  // closing here would tear the port down under its legitimate user.
+  let opened = false;
   try {
     await transport.open({
       baudRate: 1_000_000,
@@ -1835,21 +1868,18 @@ async function openNormalConsole(port) {
       flowControl: "none",
       bufferSize: 65536,
     });
+    opened = true;
     await transport.setSignals(true, true);
     await delay(60);
     await transport.setSignals(true, false);
     return transport;
   } catch (error) {
-    // A partial open must not strand the port. setSignals is a real CH340
-    // control transfer that can fail after open() has already taken the
-    // reader/writer locks; leaving them held made every later open in the
-    // page fail with "already open" until the tab was reloaded and the Case
-    // replugged. Mirrors G2CaseWebUsbPort.open, which closes the device
-    // before rethrowing.
-    try {
-      await transport.close();
-    } catch {
-      // The failed open may already have torn the port down.
+    if (opened) {
+      try {
+        await transport.close();
+      } catch {
+        // The failed open may already have torn the port down.
+      }
     }
     throw error;
   }
@@ -2303,11 +2333,29 @@ class CasePogoFlashTransport {
     if (!Number.isFinite(milliseconds) || milliseconds < 0) {
       throw new PogoFlashSafetyError("Temple storage settle time is invalid.");
     }
+    // Deadline accounting: each keepalive's round trip counts toward the
+    // settle instead of stretching it, so a long settle ends when it should.
+    const deadline = Date.now() + milliseconds;
     let remaining = milliseconds;
     while (remaining > 5000) {
       await delay(5000);
-      remaining -= 5000;
-      await this.stressHostReceive(1);
+      // The keepalive protects the host link while the temple digests; it is
+      // host-only and never reaches the temple. One transient failure must
+      // not abort the DATA transfer this settle is protecting — retry once
+      // on a drained line, and only a second consecutive failure surfaces.
+      try {
+        await this.stressHostReceive(1);
+      } catch (error) {
+        if (!(error instanceof RetryablePogoFlashError)) throw error;
+        this.session.log(
+          `One host-only keepalive failed transiently during the storage settle (${error.message}); retrying once on a drained line.`,
+          "warn",
+        );
+        this.drainInput();
+        await delay(250);
+        await this.stressHostReceive(1);
+      }
+      remaining = deadline - Date.now();
     }
     if (remaining > 0) await delay(remaining);
   }
@@ -2558,39 +2606,40 @@ export class G2CaseSession {
     this.openNormal = openNormal;
     this.wait = wait;
     this.routeYhmProfiles = new Map();
-    // Narrate long settles the way the postflight window narrates its wait:
-    // the settle ladder holds the Case deliberately untouched for up to 300 s
-    // per rung, and one log line followed by minutes of silence reads as a
-    // hang at exactly the moment the operator must not pull the cable. The
-    // heartbeat runs on wall-clock time beside the single this.wait call, so
-    // injected test waits observe the identical call sequence.
-    this.waitNarrated = async (milliseconds, narrate) => {
-      if (
-        !Number.isFinite(milliseconds) ||
-        milliseconds <= POGO_POSTFLIGHT_HEARTBEAT_MS ||
-        typeof narrate !== "function"
-      ) {
-        return this.wait(milliseconds);
-      }
-      const startedAt = Date.now();
-      const heartbeat = setInterval(() => {
-        const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
-        const remainingSeconds = Math.max(
-          0,
-          Math.round(milliseconds / 1000 - elapsedSeconds),
-        );
-        narrate(elapsedSeconds, remainingSeconds);
-      }, POGO_POSTFLIGHT_HEARTBEAT_MS);
-      try {
-        return await this.wait(milliseconds);
-      } finally {
-        clearInterval(heartbeat);
-      }
-    };
     // Set once the Case has been analyzed so per-device records (pacing
     // memory, audit fingerprints) attach to the right physical unit.
     this.deviceKey = PACING_UNKNOWN_DEVICE_KEY;
     this.caseStorageSerial = null;
+  }
+
+  // Narrate long settles the way the postflight window narrates its wait:
+  // the settle ladder holds the Case deliberately untouched for up to 300 s
+  // per rung, and one log line followed by minutes of silence reads as a
+  // hang at exactly the moment the operator must not pull the cable. The
+  // heartbeat runs on wall-clock time beside the single this.wait call, so
+  // injected test waits observe the identical call sequence.
+  async waitNarrated(milliseconds, narrate) {
+    if (
+      !Number.isFinite(milliseconds) ||
+      milliseconds <= POGO_POSTFLIGHT_HEARTBEAT_MS ||
+      typeof narrate !== "function"
+    ) {
+      return this.wait(milliseconds);
+    }
+    const startedAt = Date.now();
+    const heartbeat = setInterval(() => {
+      const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
+      const remainingSeconds = Math.max(
+        0,
+        Math.round(milliseconds / 1000 - elapsedSeconds),
+      );
+      narrate(elapsedSeconds, remainingSeconds);
+    }, POGO_POSTFLIGHT_HEARTBEAT_MS);
+    try {
+      return await this.wait(milliseconds);
+    } finally {
+      clearInterval(heartbeat);
+    }
   }
 
   // Called once telemetry identifies the exact case. Seeds this session's

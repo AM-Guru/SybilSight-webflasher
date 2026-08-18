@@ -3489,7 +3489,6 @@ function App() {
               completedRoutes[side] = {
                 ...outcome.value,
                 deviceId: device.id,
-                ...(outcome.soloRetry ? { soloRetry: true } : {}),
               };
               if (
                 postUpdate?.freshReconnectAttempted &&
@@ -3516,7 +3515,6 @@ function App() {
               ? {
                   ...failure.partialResult,
                   deviceId: device.id,
-                  ...(outcome.soloRetry ? { soloRetry: true } : {}),
                 }
               : {
                   side,
@@ -3530,17 +3528,44 @@ function App() {
                   blockAcks: 0,
                   verifiedPayloadBytes: 0,
                   outcome: "failed_before_transfer",
-                  ...(outcome.soloRetry ? { soloRetry: true } : {}),
                   failure: {
                     message: failure?.message || String(failure),
                     code: failure?.code ?? null,
                   },
                 };
           };
-          const effectiveOutcomes = routeOutcomes.map((outcome) => outcome);
+          // Attached once here rather than inside each branch above, so a
+          // future record shape cannot silently lose the retry provenance.
+          const recordRouteOutcomeWithProvenance = (outcome) => {
+            recordRouteOutcome(outcome);
+            if (outcome.soloRetry) {
+              completedRoutes[outcome.side].soloRetry = true;
+            }
+          };
+          const effectiveOutcomes = [...routeOutcomes];
           for (const outcome of effectiveOutcomes) {
             recordRouteOutcome(outcome);
           }
+          // The library's bounded loops wrap the terminal error, so an
+          // identity refusal raised inside connect() surfaces as
+          // INITIAL_CONNECT_FAILED / RECONNECT_FAILED / COMPONENT_FAILED with
+          // the refusal only on the cause chain. Checking the top-level code
+          // alone silently retried a temple whose endpoint identity changed.
+          const identityRefusalCode = (reason) => {
+            const seen = new Set();
+            let current = reason;
+            while (current && typeof current === "object" && !seen.has(current)) {
+              seen.add(current);
+              if (
+                current.code === "DEVICE_ID_CHANGED" ||
+                current.code === "DEVICE_SIDE_CHANGED"
+              ) {
+                return current.code;
+              }
+              current = current.cause;
+            }
+            return null;
+          };
 
           // One bounded solo retry per failed side, sequentially, after every
           // simultaneous session has settled. The dual-session run shares one
@@ -3552,13 +3577,10 @@ function App() {
           for (const [index, outcome] of effectiveOutcomes.entries()) {
             if (outcome.status !== "rejected") continue;
             const { side, device } = outcome;
-            const failureCode = outcome.reason?.code ?? null;
-            if (
-              failureCode === "DEVICE_ID_CHANGED" ||
-              failureCode === "DEVICE_SIDE_CHANGED"
-            ) {
+            const identityRefusal = identityRefusalCode(outcome.reason);
+            if (identityRefusal) {
               addLog(
-                `${side}: the failure is an endpoint-identity refusal, which is deliberately never retried automatically.`,
+                `${side}: the failure carries an endpoint-identity refusal (${identityRefusal}), which is deliberately never retried automatically. Verify the physical temples before any further attempt.`,
                 "warn",
               );
               continue;
@@ -3613,8 +3635,32 @@ function App() {
                 `${side}: the bounded solo Bluetooth retry also failed · ${sideFailureDetail(side, retryError)}`,
                 "error",
               );
+              // A retry that died earlier than the first attempt must not
+              // erase the first attempt's transfer evidence: the audit and
+              // the later Case-side arbitration need to know how much of the
+              // image this temple actually accepted.
+              const priorEvidence = completedRoutes[side];
+              const retryEvidence = retryError?.partialResult ?? null;
+              if (
+                (priorEvidence?.verifiedPayloadBytes ?? 0) >
+                (retryEvidence?.verifiedPayloadBytes ?? 0)
+              ) {
+                completedRoutes[side] = {
+                  ...priorEvidence,
+                  soloRetry: true,
+                  soloRetryFailure: {
+                    message: retryError?.message || String(retryError),
+                    code: retryError?.code ?? null,
+                  },
+                };
+                addLog(
+                  `${side}: retaining the first attempt's transfer evidence (${priorEvidence.verifiedPayloadBytes.toLocaleString("en-US")} verified bytes) over the retry's earlier failure in the preserved audit.`,
+                  "warn",
+                );
+                continue;
+              }
             }
-            recordRouteOutcome(effectiveOutcomes[index]);
+            recordRouteOutcomeWithProvenance(effectiveOutcomes[index]);
           }
           setBleResults({
             imageSha256: prepared.fileSha256,

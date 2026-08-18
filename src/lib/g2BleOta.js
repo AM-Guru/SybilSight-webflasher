@@ -1470,6 +1470,15 @@ export class G2BleOtaSession {
         };
       } catch (error) {
         lastError = error;
+        // Like the sibling reconnect loops: a failed attempt may have gotten
+        // far enough to attach the notification handler, and Chrome hands
+        // back the same cached characteristic object, so without this
+        // removal each failed attempt stacks one more handler onto the
+        // eventual live link.
+        this.dataNotify?.removeEventListener?.(
+          "characteristicvaluechanged",
+          this.dataNotifyHandler,
+        );
         try {
           this.device?.gatt?.disconnect();
         } catch {
@@ -1519,6 +1528,12 @@ export class G2BleOtaSession {
         if (attempt > 1) {
           await this.connectForTransfer();
           this.startHeartbeat();
+          // The rebuilt link restarts the package from scratch, so mirror
+          // flashBundle's fresh-session state: transport sequence from zero,
+          // and the rebuild counted as a connection recovery in the evidence
+          // record like every reconnectAfterLoss recovery is.
+          this.sequence = 0;
+          this.connectionRecoveries += 1;
         }
         return await this.sendControl(0x00);
       } catch (error) {
