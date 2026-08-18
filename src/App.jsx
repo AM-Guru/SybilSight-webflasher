@@ -3425,6 +3425,14 @@ function App() {
                 setRouteProgress(side, fraction, detail, status),
             }),
           }));
+          // Session errors already begin with their own "left:"/"right:"
+          // prefix; strip it before re-prefixing so a failure never reads as
+          // "left: left: …" in the log or the summary.
+          const sideFailureDetail = (side, reason) =>
+            String(reason?.message || reason).replace(
+              new RegExp(`^${side}:\\s*`),
+              "",
+            );
           const routeOutcomes = await flashG2BleSessionsConcurrently(
             sessionEntries,
             prepared,
@@ -3452,22 +3460,36 @@ function App() {
                   );
                   return;
                 }
+                // Surface the failure the moment this side settles. Without
+                // this, a side that died seconds in stayed a silent 0% while
+                // the other side transferred for minutes, and the operator
+                // learned why only from the end-of-session summary.
+                const detail = sideFailureDetail(side, reason);
+                addLog(
+                  `${side}: Bluetooth OTA session failed · ${detail}${
+                    routesToFlash.length === 2
+                      ? " The other side continues independently to its own verdict."
+                      : ""
+                  }`,
+                  "error",
+                );
                 setRouteProgress(
                   side,
                   routeProgress[side],
-                  `${side}: ${reason?.message || String(reason)}`,
+                  `${side}: ${detail}`,
                   "failed",
                 );
               },
             },
           );
-          for (const outcome of routeOutcomes) {
+          const recordRouteOutcome = (outcome) => {
             const { side, device } = outcome;
             if (outcome.status === "fulfilled") {
               const postUpdate = outcome.value?.components?.at(-1)?.postUpdate;
               completedRoutes[side] = {
                 ...outcome.value,
                 deviceId: device.id,
+                ...(outcome.soloRetry ? { soloRetry: true } : {}),
               };
               if (
                 postUpdate?.freshReconnectAttempted &&
@@ -3487,13 +3509,14 @@ function App() {
                   "verified",
                 );
               }
-              continue;
+              return;
             }
             const failure = outcome.reason;
             completedRoutes[side] = failure?.partialResult
               ? {
                   ...failure.partialResult,
                   deviceId: device.id,
+                  ...(outcome.soloRetry ? { soloRetry: true } : {}),
                 }
               : {
                   side,
@@ -3507,11 +3530,91 @@ function App() {
                   blockAcks: 0,
                   verifiedPayloadBytes: 0,
                   outcome: "failed_before_transfer",
+                  ...(outcome.soloRetry ? { soloRetry: true } : {}),
                   failure: {
                     message: failure?.message || String(failure),
                     code: failure?.code ?? null,
                   },
                 };
+          };
+          const effectiveOutcomes = routeOutcomes.map((outcome) => outcome);
+          for (const outcome of effectiveOutcomes) {
+            recordRouteOutcome(outcome);
+          }
+
+          // One bounded solo retry per failed side, sequentially, after every
+          // simultaneous session has settled. The dual-session run shares one
+          // Bluetooth adapter, and its most common failure — a dropped first
+          // acknowledgement while both temples bring up subscriptions — is
+          // exactly the kind that succeeds once the radio is otherwise idle.
+          // Identity refusals are never retried: a device that changed ID or
+          // side mid-recovery must reach the operator, not a retry loop.
+          for (const [index, outcome] of effectiveOutcomes.entries()) {
+            if (outcome.status !== "rejected") continue;
+            const { side, device } = outcome;
+            const failureCode = outcome.reason?.code ?? null;
+            if (
+              failureCode === "DEVICE_ID_CHANGED" ||
+              failureCode === "DEVICE_SIDE_CHANGED"
+            ) {
+              addLog(
+                `${side}: the failure is an endpoint-identity refusal, which is deliberately never retried automatically.`,
+                "warn",
+              );
+              continue;
+            }
+            addLog(
+              `${side}: starting one bounded solo Bluetooth retry${
+                routeOutcomes.length === 2
+                  ? " now that the simultaneous sessions have settled and the radio is otherwise idle"
+                  : ""
+              }. The same selected endpoint is reused; the chooser will not reopen.`,
+              "info",
+            );
+            setRouteProgress(
+              side,
+              routeProgress[side],
+              `${side}: bounded solo retry connecting`,
+              "connecting",
+            );
+            const retrySession = new G2BleOtaSession(device, {
+              side,
+              log: addLog,
+              progress: (fraction, detail, status) =>
+                setRouteProgress(side, fraction, detail, status),
+            });
+            try {
+              let value;
+              try {
+                value = await retrySession.flashBundle(prepared);
+              } finally {
+                await retrySession.disconnect();
+              }
+              effectiveOutcomes[index] = {
+                side,
+                device,
+                status: "fulfilled",
+                value,
+                soloRetry: true,
+              };
+              addLog(
+                `${side}: the bounded solo Bluetooth retry verified the complete package after the simultaneous attempt failed.`,
+                "success",
+              );
+            } catch (retryError) {
+              effectiveOutcomes[index] = {
+                side,
+                device,
+                status: "rejected",
+                reason: retryError,
+                soloRetry: true,
+              };
+              addLog(
+                `${side}: the bounded solo Bluetooth retry also failed · ${sideFailureDetail(side, retryError)}`,
+                "error",
+              );
+            }
+            recordRouteOutcome(effectiveOutcomes[index]);
           }
           setBleResults({
             imageSha256: prepared.fileSha256,
@@ -3521,14 +3624,14 @@ function App() {
             outcome: "in_progress",
           });
 
-          const failedOutcomes = routeOutcomes.filter(
+          const failedOutcomes = effectiveOutcomes.filter(
             ({ status }) => status === "rejected",
           );
           if (failedOutcomes.length) {
             const failureSummary = failedOutcomes
               .map(
-                ({ side, reason }) =>
-                  `${side}: ${reason?.message || String(reason)}`,
+                ({ side, reason, soloRetry }) =>
+                  `${side}${soloRetry ? " (including one bounded solo retry)" : ""}: ${sideFailureDetail(side, reason)}`,
               )
               .join("; ");
             const sessionSummary =

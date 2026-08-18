@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   R1_PINNED_RELEASE,
   R1_PINNED_RELEASES,
+  R1_DFU_OBJECT_ATTEMPTS,
   R1_DFU_PACKET_RECEIPT_INTERVAL,
   R1SecureDfuSession,
   assertPinnedR1Release,
@@ -159,6 +160,72 @@ test("R1 DFU commits a matching boundary before creating the next data object", 
     ["verify", 8, crc32(application)],
     ["command", [0x04]],
   ]);
+});
+
+test("R1 DFU rewrites a data object whose checksum disagrees instead of aborting", async () => {
+  const application = Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]);
+  const session = new RecordingDfuSession({
+    maximumSize: 4,
+    offset: 0,
+    crc: 0,
+  });
+  let verifies = 0;
+  session.verifyOffset = async (offset, crc) => {
+    session.events.push(["verify", offset, crc]);
+    verifies += 1;
+    if (verifies === 1) {
+      const error = new Error(
+        "R1 DFU verification failed at checksum mismatch at byte 4.",
+      );
+      error.code = "R1_DFU_CRC_MISMATCH";
+      throw error;
+    }
+  };
+
+  await session.transferApplication(application);
+
+  assert.deepEqual(session.events, [
+    ["select", 2],
+    ["create", 2, 4],
+    ["write", [1, 2, 3, 4]],
+    ["verify", 4, crc32(application.subarray(0, 4))],
+    // CREATE resets the object's write pointer, so the retry replays exactly
+    // the first object's bytes and nothing earlier.
+    ["create", 2, 4],
+    ["write", [1, 2, 3, 4]],
+    ["verify", 4, crc32(application.subarray(0, 4))],
+    ["command", [0x04]],
+    ["create", 2, 4],
+    ["write", [5, 6, 7, 8]],
+    ["verify", 8, crc32(application)],
+    ["command", [0x04]],
+  ]);
+});
+
+test("a persistent R1 object checksum failure stays bounded and surfaces", async () => {
+  const application = Uint8Array.from([1, 2, 3, 4]);
+  const session = new RecordingDfuSession({
+    maximumSize: 4,
+    offset: 0,
+    crc: 0,
+  });
+  let creates = 0;
+  const originalCreate = session.createObject.bind(session);
+  session.createObject = async (type, size) => {
+    creates += 1;
+    await originalCreate(type, size);
+  };
+  session.verifyOffset = async () => {
+    const error = new Error("R1 DFU verification failed at byte 4.");
+    error.code = "R1_DFU_CRC_MISMATCH";
+    throw error;
+  };
+
+  await assert.rejects(
+    session.transferApplication(application),
+    /verification failed/,
+  );
+  assert.equal(creates, R1_DFU_OBJECT_ATTEMPTS);
 });
 
 test("R1 DFU keeps PRNs disabled for init and enables the Nordic 12-packet window for data", async () => {

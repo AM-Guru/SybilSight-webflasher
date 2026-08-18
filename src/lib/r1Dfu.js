@@ -151,6 +151,12 @@ const OBJECT_DATA = 0x02;
 const PACKET_BYTES = 20;
 export const R1_DFU_PACKET_RECEIPT_INTERVAL = 12;
 const PACKET_RECEIPT_TIMEOUT_MS = 10000;
+// Nordic's reference transports retransmit a data object whose checksum
+// disagrees, rather than abandoning the update: CREATE resets that object's
+// write pointer, so a rewrite is bounded and byte-exact. Without this, one
+// corrupted radio window aborted the whole R1 flash with a manual
+// "re-enter DFU mode" instruction for something the protocol can repair.
+export const R1_DFU_OBJECT_ATTEMPTS = 3;
 
 function asBytes(value) {
   return value instanceof Uint8Array ? value : new Uint8Array(value);
@@ -497,9 +503,13 @@ export class R1SecureDfuSession {
       const detail = actualOffset === expectedOffset
         ? `checksum mismatch at byte ${actualOffset}`
         : `byte ${actualOffset} (expected ${expectedOffset})`;
-      throw new Error(
+      const error = new Error(
         `R1 DFU ${label} failed at ${detail}. Re-enter DFU mode and retry.`,
       );
+      // Lets the data-object loop distinguish a repairable transfer checksum
+      // disagreement from protocol or link errors it must not retry blindly.
+      error.code = "R1_DFU_CRC_MISMATCH";
+      throw error;
     }
   }
 
@@ -633,18 +643,36 @@ export class R1SecureDfuSession {
 
     while (offset < application.length) {
       const end = Math.min(offset + selected.maximumSize, application.length);
-      await this.createObject(OBJECT_DATA, end - offset);
-      if (offset === 0) {
-        // Nordic's updater gives SDK 15/16 bootloaders time to prepare the first
-        // data object; without this pause initial packets can be discarded.
-        await new Promise((resolve) => setTimeout(resolve, 400));
+      for (let attempt = 1; ; attempt += 1) {
+        await this.createObject(OBJECT_DATA, end - offset);
+        if (offset === 0) {
+          // Nordic's updater gives SDK 15/16 bootloaders time to prepare the first
+          // data object; without this pause initial packets can be discarded.
+          await new Promise((resolve) => setTimeout(resolve, 400));
+        }
+        try {
+          await this.writePackets(application.subarray(offset, end), {
+            baseOffset: offset,
+            checksumSource: application,
+          });
+          await this.verifyOffset(end, crc32(application.subarray(0, end)));
+          break;
+        } catch (error) {
+          if (
+            error?.code !== "R1_DFU_CRC_MISMATCH"
+            || attempt >= R1_DFU_OBJECT_ATTEMPTS
+          ) {
+            throw error;
+          }
+          // CREATE on the next pass resets this object's write pointer, so the
+          // rewrite replays exactly these bytes and nothing earlier.
+          this.onProgress(
+            offset / application.length,
+            `Object checksum disagreed; rewriting bytes ${offset.toLocaleString()}–${end.toLocaleString()} · attempt ${attempt + 1}/${R1_DFU_OBJECT_ATTEMPTS}`,
+          );
+        }
       }
-      await this.writePackets(application.subarray(offset, end), {
-        baseOffset: offset,
-        checksumSource: application,
-      });
       offset = end;
-      await this.verifyOffset(offset, crc32(application.subarray(0, offset)));
       await this.command(new Uint8Array([OP_EXECUTE]), OP_EXECUTE);
       this.onProgress(
         offset / application.length,

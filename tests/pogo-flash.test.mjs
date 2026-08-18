@@ -41,6 +41,7 @@ import {
 import { sha256Hex, writeU32LE } from "../src/lib/firmware.js";
 import {
   G2CaseSession,
+  SerialTransport,
   WEB_SERIAL_ROM_READ_SIZE,
   canResetAfterZeroWriteSetupStop,
   canRestartFailedTempleComponent,
@@ -2839,4 +2840,54 @@ test("the throttle probe reports only a hidden document", () => {
     if (original === undefined) delete globalThis.document;
     else globalThis.document = original;
   }
+});
+
+test("a buffered complete response is served before a pending pump error", async () => {
+  const transport = new SerialTransport({});
+  transport.queue = [Uint8Array.of(0x5a, 0xa5, 0xff, 0x00)];
+  transport.queuedBytes = 4;
+  transport.readError = new Error("CH340 bulk read failed with USB status stall");
+
+  // The device answered in full and THEN the link failed: the answer wins.
+  assert.deepEqual(
+    [...(await transport.readExact(4, 50, "buffered frame"))],
+    [0x5a, 0xa5, 0xff, 0x00],
+  );
+  // The error stays sticky and surfaces on the next read that needs data.
+  await assert.rejects(
+    transport.readExact(1, 50, "next frame"),
+    /USB status stall/,
+  );
+});
+
+test("draining buffered bytes preserves the sticky pump error", async () => {
+  const transport = new SerialTransport({});
+  transport.queue = [Uint8Array.of(1, 2, 3)];
+  transport.queuedBytes = 3;
+  transport.readError = new Error("USB stall");
+
+  transport.clear();
+  assert.equal(transport.queuedBytes, 0);
+  // The postflight loop drains this transport every 2 seconds; erasing the
+  // error here converted a hard transport fault into a misleading timeout.
+  await assert.rejects(transport.readExact(1, 50, "post-drain"), /USB stall/);
+});
+
+test("transient transport faults join the bounded post-reset liveness retry", () => {
+  assert.equal(
+    isRetryablePostResetLivenessFailure(
+      new Error("Failed to open serial port."),
+    ),
+    true,
+  );
+  assert.equal(
+    isRetryablePostResetLivenessFailure(
+      new Error("CH340 bulk read failed with USB status stall"),
+    ),
+    true,
+  );
+  assert.equal(
+    isRetryablePostResetLivenessFailure(new Error("CRC rejected")),
+    false,
+  );
 });

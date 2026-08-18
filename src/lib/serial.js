@@ -197,6 +197,11 @@ export function isPogoRoutePhaseMismatch(error) {
 export function isRetryablePostResetLivenessFailure(error) {
   const message = error instanceof Error ? error.message : String(error ?? "");
   return (
+    // Transient transport faults during the read-only reset/liveness sequence
+    // are as recoverable as a missing telemetry line: the bounded second
+    // DEB0 replays the whole traced sequence from a fresh port.
+    message.includes("Failed to open serial port") ||
+    message.includes("CH340 bulk") ||
     message.includes("no framed temple response") ||
     message.includes("YHM baseline was not an allowlisted seated-idle state") ||
     message.includes("contact did not return after the final B0 reset") ||
@@ -1339,7 +1344,7 @@ function addressPacket(address) {
   return new Uint8Array([...bytes, xor([...bytes])]);
 }
 
-class SerialTransport {
+export class SerialTransport {
   constructor(port, log) {
     this.port = port;
     this.log = log;
@@ -1396,9 +1401,14 @@ class SerialTransport {
   }
 
   clear() {
+    // Drops buffered bytes only. A recorded pump error is preserved: once the
+    // reader loop has exited, clearing the error cannot restore data flow —
+    // it can only replace the real transport failure with a later, misleading
+    // timeout. The postflight loop drains this transport every 2 seconds, and
+    // an erased USB stall there turned into "no checksum-valid postflight
+    // version arrived within 180 seconds" with the actual cause lost.
     this.queue = [];
     this.queuedBytes = 0;
-    this.readError = null;
   }
 
   take(count = this.queuedBytes) {
@@ -1441,13 +1451,16 @@ class SerialTransport {
     while (this.queuedBytes < count && !this.readError && Date.now() < deadline) {
       await this.waitForData(Math.max(1, deadline - Date.now()));
     }
+    // Serve a complete, already-buffered response before surfacing a pump
+    // error: a device that answered in full and THEN dropped the link has
+    // still answered, and discarding those bytes converted a recoverable
+    // "last ACK arrived, then the cable moved" into a hard abort. The error
+    // is still sticky and surfaces on the next read that actually needs data.
+    if (this.queuedBytes >= count) return this.take(count);
     if (this.readError) throw this.readError;
-    if (this.queuedBytes < count) {
-      throw new Error(
-        `Timed out reading ${label}: received ${this.queuedBytes} of ${count} bytes.`,
-      );
-    }
-    return this.take(count);
+    throw new Error(
+      `Timed out reading ${label}: received ${this.queuedBytes} of ${count} bytes.`,
+    );
   }
 
   async collectFor(milliseconds) {
@@ -1751,9 +1764,16 @@ class Stm32Bootloader {
       throw new Error("ROM writes must contain 4–256 bytes in a multiple of four.");
     }
     this.requireCommand(WRITE_MEMORY, "Write Memory");
-    await this.sendCommand(WRITE_MEMORY, "Write Memory command");
-    await this.transport.write(addressPacket(address));
-    await this.expectAck("Write Memory address");
+    try {
+      await this.sendCommand(WRITE_MEMORY, "Write Memory command");
+      await this.transport.write(addressPacket(address));
+      await this.expectAck("Write Memory address");
+    } catch (error) {
+      // No data byte has been sent yet, so nothing can have been programmed;
+      // callers may replay this write unconditionally.
+      if (error && typeof error === "object") error.romWriteStage = "setup";
+      throw error;
+    }
     const encodedSize = bytes.length - 1;
     const body = [encodedSize, ...bytes];
     await this.transport.write(new Uint8Array([...body, xor(body)]));
@@ -1768,7 +1788,37 @@ class Stm32Bootloader {
       const block = new Uint8Array(paddedLength);
       block.fill(0xff);
       block.set(source);
-      await this.writeMemory(address + offset, block);
+      const blockAddress = address + offset;
+      // A staged Case image is ~2,000 consecutive single-ACK exchanges over
+      // the same CH340 link whose reads needed a 5-attempt bounded retry.
+      // Writes get the same treatment, but gated by what is provably safe to
+      // replay: volatile SRAM is byte-for-byte idempotent at any stage, while
+      // flash on this part refuses re-programming a non-erased word, so a
+      // flash block is replayed only when the failure preceded the data
+      // phase (romWriteStage "setup", nothing programmed).
+      const sramTarget =
+        blockAddress >= 0x20000000 && blockAddress < 0x20040000;
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          await this.writeMemory(blockAddress, block);
+          break;
+        } catch (error) {
+          const replaySafe = sramTarget || error?.romWriteStage === "setup";
+          if (!replaySafe || attempt >= 3) throw error;
+          this.log?.(
+            `ROM write retry ${attempt + 1}/3 at 0x${blockAddress.toString(16)} after ${error?.message ?? String(error)}`,
+            "warn",
+          );
+          try {
+            await this.close();
+            await delay(120);
+            await this.connect();
+          } catch {
+            // A failed re-entry is itself transient; the next write attempt
+            // surfaces it and is counted against the same bound.
+          }
+        }
+      }
       onProgress?.((offset + source.length) / bytes.length);
     }
   }
@@ -1776,18 +1826,33 @@ class Stm32Bootloader {
 
 async function openNormalConsole(port) {
   const transport = new SerialTransport(port);
-  await transport.open({
-    baudRate: 1_000_000,
-    dataBits: 8,
-    stopBits: 1,
-    parity: "none",
-    flowControl: "none",
-    bufferSize: 65536,
-  });
-  await transport.setSignals(true, true);
-  await delay(60);
-  await transport.setSignals(true, false);
-  return transport;
+  try {
+    await transport.open({
+      baudRate: 1_000_000,
+      dataBits: 8,
+      stopBits: 1,
+      parity: "none",
+      flowControl: "none",
+      bufferSize: 65536,
+    });
+    await transport.setSignals(true, true);
+    await delay(60);
+    await transport.setSignals(true, false);
+    return transport;
+  } catch (error) {
+    // A partial open must not strand the port. setSignals is a real CH340
+    // control transfer that can fail after open() has already taken the
+    // reader/writer locks; leaving them held made every later open in the
+    // page fail with "already open" until the tab was reloaded and the Case
+    // replugged. Mirrors G2CaseWebUsbPort.open, which closes the device
+    // before rethrowing.
+    try {
+      await transport.close();
+    } catch {
+      // The failed open may already have torn the port down.
+    }
+    throw error;
+  }
 }
 
 async function queryNormal(transport, command, duration = 850) {
@@ -2271,11 +2336,35 @@ class CasePogoFlashTransport {
   async verifyAndClearRetainedResult() {
     const zeroProof = new Uint8Array(POGO_FLASH_PROOF.length);
     const zeroResult = new Uint8Array(POGO_FLASH_RESULT_LENGTH);
-    this.loader = new Stm32Bootloader(this.port, this.session.log);
     let validationError = null;
     try {
-      await this.loader.connect();
-      requireReviewedCaseRom(this.loader);
+      // Bounded like openProbeLoader's ROM re-entry. This runs in the
+      // mandatory teardown of every route: a single CH340/boot-select glitch
+      // here used to mark a fully verified transfer failed_or_uncertain, so
+      // the proof-read must tolerate the same transient re-entry flakiness
+      // enterRomLoader already retries for.
+      this.loader = await retryReadOnlyBlock(
+        async () => {
+          const candidate = new Stm32Bootloader(this.port, this.session.log);
+          try {
+            await candidate.connect();
+            requireReviewedCaseRom(candidate);
+            return candidate;
+          } catch (error) {
+            await candidate.close();
+            throw error;
+          }
+        },
+        async () => delay(400),
+        {
+          attempts: 3,
+          onRetry: (error, attempt) =>
+            this.session.log(
+              `${this.route}: retained-proof loader synchronization retry ${attempt}/2 after ${error.message}`,
+              "warn",
+            ),
+        },
+      );
       const proof = await this.loader.readRange(
         POGO_FLASH_PROOF_ADDRESS,
         POGO_FLASH_PROOF.length,
@@ -2469,6 +2558,35 @@ export class G2CaseSession {
     this.openNormal = openNormal;
     this.wait = wait;
     this.routeYhmProfiles = new Map();
+    // Narrate long settles the way the postflight window narrates its wait:
+    // the settle ladder holds the Case deliberately untouched for up to 300 s
+    // per rung, and one log line followed by minutes of silence reads as a
+    // hang at exactly the moment the operator must not pull the cable. The
+    // heartbeat runs on wall-clock time beside the single this.wait call, so
+    // injected test waits observe the identical call sequence.
+    this.waitNarrated = async (milliseconds, narrate) => {
+      if (
+        !Number.isFinite(milliseconds) ||
+        milliseconds <= POGO_POSTFLIGHT_HEARTBEAT_MS ||
+        typeof narrate !== "function"
+      ) {
+        return this.wait(milliseconds);
+      }
+      const startedAt = Date.now();
+      const heartbeat = setInterval(() => {
+        const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
+        const remainingSeconds = Math.max(
+          0,
+          Math.round(milliseconds / 1000 - elapsedSeconds),
+        );
+        narrate(elapsedSeconds, remainingSeconds);
+      }, POGO_POSTFLIGHT_HEARTBEAT_MS);
+      try {
+        return await this.wait(milliseconds);
+      } finally {
+        clearInterval(heartbeat);
+      }
+    };
     // Set once the Case has been analyzed so per-device records (pacing
     // memory, audit fingerprints) attach to the right physical unit.
     this.deviceKey = PACING_UNKNOWN_DEVICE_KEY;
@@ -2932,8 +3050,25 @@ export class G2CaseSession {
             : `${route} ${operation}: YHM baseline ${evidence.baselineHex} is outside the active seated-idle profile; retained SRAM proves zero YHM writes and zero temple bytes. Leaving the normal Case app undisturbed for ${settleSeconds} seconds before bounded stock-app settle ${settleIndex}/${POGO_READ_ONLY_PHASE_SETTLE_MS.length}.`,
           "warn",
         );
-        await this.wait(settleMilliseconds);
-        const readiness = await this.readTempleFlashPreflight([route]);
+        await this.waitNarrated(settleMilliseconds, (elapsed, remaining) =>
+          this.log(
+            `${route} ${operation}: still settling · ${elapsed} s elapsed, ${remaining} s remaining in this bounded stock-app settle. The Case is deliberately untouched; do not disconnect.`,
+          ),
+        );
+        // Bounded so one transient console failure cannot discard the settle
+        // this rung just spent minutes earning.
+        const readiness = await retryReadOnlyBlock(
+          () => this.readTempleFlashPreflight([route]),
+          async () => this.wait(1200),
+          {
+            attempts: 2,
+            onRetry: (error) =>
+              this.log(
+                `${route} ${operation}: the post-settle contact re-check failed transiently (${error.message}); one bounded retry follows so the completed ${settleSeconds}-second settle is not discarded.`,
+                "warn",
+              ),
+          },
+        );
         this.log(
           `${route} ${operation}: Case ${readiness.caseVersion} and seated contact re-confirmed after the ${settleSeconds}-second stock-app settle.`,
         );
@@ -3516,8 +3651,13 @@ export class G2CaseSession {
       attempt <= POGO_INTERMEDIATE_RESET_ATTEMPTS;
       attempt += 1
     ) {
-      const resetReport = await this.restartAndRecheck();
       try {
+        // Inside the try like resetAndVerifyTemplesBounded's reset: a "Case
+        // did not confirm the traced B0" or missing-telemetry throw from the
+        // reset itself is exactly what the bounded second attempt exists for,
+        // and letting it escape the loop aborted a component restart that had
+        // already proven its cleanup.
+        const resetReport = await this.restartAndRecheck();
         const { versions, finalCase } =
           await this.verifyPostResetTempleLiveness(
             resetReport,
@@ -4227,7 +4367,15 @@ export class G2CaseSession {
               (index / routes.length) * 0.9,
               `${route}: waiting ${Math.round(settleMs / 1000)} s for the charging route to settle`,
             );
-            await this.wait(settleMs);
+            await this.waitNarrated(settleMs, (elapsed, remaining) => {
+              this.log(
+                `${route}: still waiting for the charging route to settle · ${elapsed} s elapsed, ${remaining} s remaining. Do not disconnect.`,
+              );
+              this.progress(
+                (index / routes.length) * 0.9,
+                `${route}: settling · ${elapsed} s elapsed of ${Math.round(settleMs / 1000)} s`,
+              );
+            });
             index -= 1;
             continue;
           }
@@ -4535,7 +4683,22 @@ export class G2CaseSession {
     }
 
     await delay(1200);
-    const report = await this.restartAndRecheck();
+    // The bank selection is already committed above. This is verification
+    // only, so a transient console failure here must not report the
+    // activation itself as failed — that misread turns a succeeded bank
+    // switch into a spurious recovery cycle.
+    const report = await retryReadOnlyBlock(
+      () => this.restartAndRecheck(),
+      async () => this.wait(1500),
+      {
+        attempts: 2,
+        onRetry: (error) =>
+          this.log(
+            `The post-activation restart check failed transiently (${error.message}); one bounded retry follows. The bank selection is already committed.`,
+            "warn",
+          ),
+      },
+    );
     reportProgress(1, "Activated and restarted");
     return report;
   }
