@@ -1545,7 +1545,7 @@ export async function drainUntilQuietLine(
   return false;
 }
 
-class Stm32Bootloader {
+export class Stm32Bootloader {
   constructor(port, log) {
     this.port = port;
     this.log = log;
@@ -1747,9 +1747,63 @@ class Stm32Bootloader {
 
   async go(address) {
     this.requireCommand(GO, "Go");
-    await this.sendCommand(GO, "Go command");
+    try {
+      await this.sendCommand(GO, "Go command");
+    } catch (error) {
+      // No address has been accepted, so the ROM provably has not jumped;
+      // callers may re-enter the loader and reissue Go unconditionally.
+      if (error && typeof error === "object") error.romGoStage = "command";
+      throw error;
+    }
     await this.transport.write(addressPacket(address));
-    await this.expectAck("Go address");
+    try {
+      await this.expectAck("Go address");
+    } catch (error) {
+      // The transport's sticky readError is one shared object: an earlier
+      // command-stage failure may have tagged this same instance, so the
+      // address stage must overwrite the tag rather than trust a stale one.
+      if (error && typeof error === "object") error.romGoStage = "address";
+      throw error;
+    }
+  }
+
+  // Launch bridge code that is already byte-verified in SRAM. The remote
+  // Case link drops single ACK bytes (the same loss the 5-attempt read retry
+  // absorbs), so Go gets a bounded recovery split by what each stage proves:
+  // a command-stage failure means the ROM cannot have jumped, so a
+  // boot-select re-entry — which retains SRAM — restores a known state and
+  // Go is reissued; an address-stage failure cannot distinguish a lost ACK
+  // from a lost address packet, and the jump may already have happened, so
+  // Go is never reissued — the caller must treat the bridge banner as the
+  // outcome proof instead.
+  async goWithLostAckRecovery(address, { attempts = 3 } = {}) {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        await this.go(address);
+        return { goAckLost: false };
+      } catch (error) {
+        if (error?.romGoStage === "address") {
+          this.log?.(
+            `The Go address ACK was not received (${error.message}); the jump may still have happened, so the bridge banner decides the outcome instead of a Go replay.`,
+            "warn",
+          );
+          return { goAckLost: true };
+        }
+        if (attempt === attempts) throw error;
+        this.log?.(
+          `ROM Go retry ${attempt + 1}/${attempts} after ${error?.message ?? String(error)}`,
+          "warn",
+        );
+        try {
+          await this.close();
+          await delay(120);
+          await this.connect();
+        } catch {
+          // A failed re-entry is itself transient; the next Go attempt
+          // surfaces it and is counted against the same bound.
+        }
+      }
+    }
   }
 
   async releaseBootSelection() {
@@ -2007,8 +2061,8 @@ class CasePogoFlashTransport {
       await this.loader.connect();
       requireReviewedCaseRom(this.loader);
 
-      await this.loader.writeMemory(POGO_FLASH_PROOF_ADDRESS, zeroProof);
-      await this.loader.writeMemory(POGO_FLASH_RESULT_ADDRESS, zeroResult);
+      await this.loader.writeRange(POGO_FLASH_PROOF_ADDRESS, zeroProof);
+      await this.loader.writeRange(POGO_FLASH_RESULT_ADDRESS, zeroResult);
       const initialProof = await this.loader.readRange(
         POGO_FLASH_PROOF_ADDRESS,
         zeroProof.length,
@@ -2028,7 +2082,7 @@ class CasePogoFlashTransport {
       for (let offset = 0; offset < payload.length; offset += 256) {
         const chunk = payload.subarray(offset, Math.min(offset + 256, payload.length));
         const address = POGO_FLASH_BRIDGE_ADDRESS + offset;
-        await this.loader.writeMemory(address, chunk);
+        await this.loader.writeRange(address, chunk);
         const readback = await this.loader.readRange(address, chunk.length);
         if (!equalBytes(readback, chunk)) {
           throw new PogoFlashSafetyError(
@@ -2040,7 +2094,9 @@ class CasePogoFlashTransport {
           `${this.route}: verifying volatile flash bridge`,
         );
       }
-      await this.loader.go(POGO_FLASH_BRIDGE_ADDRESS);
+      const { goAckLost } = await this.loader.goWithLostAckRecovery(
+        POGO_FLASH_BRIDGE_ADDRESS,
+      );
       await this.loader.releaseBootSelection();
       this.bridgeLaunched = true;
       this.bridge = this.loader.takeTransport();
@@ -2048,11 +2104,17 @@ class CasePogoFlashTransport {
 
       const banner = await this.bridge.readExact(
         POGO_FLASH_BRIDGE_BANNER.length,
-        3000,
+        goAckLost ? 6000 : 3000,
         "flash bridge banner",
       );
       if (!equalBytes(banner, POGO_FLASH_BRIDGE_BANNER)) {
         throw new PogoFlashSafetyError("The volatile flash bridge banner is invalid.");
+      }
+      if (goAckLost) {
+        this.session.log(
+          `${this.route}: the verified flash bridge banner arrived after the lost Go ACK, proving the launch; continuing normally.`,
+          "warn",
+        );
       }
 
       const setup = makePogoFlashSetup(this.route);
@@ -2514,8 +2576,8 @@ class CasePogoFlashTransport {
         );
       }
 
-      await this.loader.writeMemory(POGO_FLASH_PROOF_ADDRESS, zeroProof);
-      await this.loader.writeMemory(POGO_FLASH_RESULT_ADDRESS, zeroResult);
+      await this.loader.writeRange(POGO_FLASH_PROOF_ADDRESS, zeroProof);
+      await this.loader.writeRange(POGO_FLASH_RESULT_ADDRESS, zeroResult);
       const proofCheck = await this.loader.readRange(
         POGO_FLASH_PROOF_ADDRESS,
         zeroProof.length,
@@ -3154,6 +3216,7 @@ export class G2CaseSession {
     let bridge = null;
     let bridgeLoaded = false;
     let residueCleared = false;
+    let templeQueried = false;
 
     const openProbeLoader = async (purpose) =>
       retryReadOnlyBlock(
@@ -3202,8 +3265,8 @@ export class G2CaseSession {
     const clearRetainedBridgeData = async () => {
       const cleanupLoader = await openProbeLoader("Pogo cleanup");
       try {
-        await cleanupLoader.writeMemory(POGO_BRIDGE_PROOF_ADDRESS, zeroProof);
-        await cleanupLoader.writeMemory(POGO_BRIDGE_RESULT_ADDRESS, zeroResult);
+        await cleanupLoader.writeRange(POGO_BRIDGE_PROOF_ADDRESS, zeroProof);
+        await cleanupLoader.writeRange(POGO_BRIDGE_RESULT_ADDRESS, zeroResult);
         const proofCheck = await cleanupLoader.readRange(
           POGO_BRIDGE_PROOF_ADDRESS,
           zeroProof.length,
@@ -3239,12 +3302,12 @@ export class G2CaseSession {
         loader.requireCommand(command, label);
       }
 
-      await loader.writeMemory(POGO_BRIDGE_PROOF_ADDRESS, zeroProof);
-      await loader.writeMemory(POGO_BRIDGE_RESULT_ADDRESS, zeroResult);
+      await loader.writeRange(POGO_BRIDGE_PROOF_ADDRESS, zeroProof);
+      await loader.writeRange(POGO_BRIDGE_RESULT_ADDRESS, zeroResult);
       for (let offset = 0; offset < payload.length; offset += 256) {
         const chunk = payload.subarray(offset, Math.min(offset + 256, payload.length));
         const address = POGO_BRIDGE_ADDRESS + offset;
-        await loader.writeMemory(address, chunk);
+        await loader.writeRange(address, chunk);
         const readback = await loader.readRange(address, chunk.length);
         if (!equalBytes(readback, chunk)) {
           throw new Error(
@@ -3259,7 +3322,9 @@ export class G2CaseSession {
       bridgeLoaded = true;
       this.log(`Verified all ${payload.length} pinned SRAM bridge bytes.`);
 
-      await loader.go(POGO_BRIDGE_ADDRESS);
+      const { goAckLost } = await loader.goWithLostAckRecovery(
+        POGO_BRIDGE_ADDRESS,
+      );
       // Both pinned bridges deliberately retain the ROM loader's 115200 8E1
       // host framing. Keep one Web Serial session so CH340 close/open control
       // transitions cannot reset the Case between GO and the bridge banner.
@@ -3269,13 +3334,20 @@ export class G2CaseSession {
 
       const banner = await bridge.readExact(
         POGO_BRIDGE_BANNER.length,
-        3000,
+        goAckLost ? 6000 : 3000,
         "pogo bridge banner",
       );
       if (!equalBytes(banner, POGO_BRIDGE_BANNER)) {
         throw new Error("The volatile pogo bridge banner is invalid.");
       }
+      if (goAckLost) {
+        this.log(
+          `${route} ${operation}: the verified bridge banner arrived after the lost Go ACK, proving the launch; continuing normally.`,
+          "warn",
+        );
+      }
       const request = makePogoBridgeRequest(operation, route);
+      templeQueried = true;
       await bridge.write(request);
       const header = await bridge.readExact(12, 5000, "pogo bridge response header");
       const capturedLength = header[9];
@@ -3330,8 +3402,8 @@ export class G2CaseSession {
       );
       reportProgress(0.84, "Router restoration proof verified");
 
-      await loader.writeMemory(POGO_BRIDGE_PROOF_ADDRESS, zeroProof);
-      await loader.writeMemory(POGO_BRIDGE_RESULT_ADDRESS, zeroResult);
+      await loader.writeRange(POGO_BRIDGE_PROOF_ADDRESS, zeroProof);
+      await loader.writeRange(POGO_BRIDGE_RESULT_ADDRESS, zeroResult);
       const proofCheck = await loader.readRange(
         POGO_BRIDGE_PROOF_ADDRESS,
         zeroProof.length,
@@ -3371,6 +3443,15 @@ export class G2CaseSession {
         transportProof,
         yhmProfile,
       };
+    } catch (error) {
+      // Failures on the Case-side ROM/serial transport before the bridge
+      // request ever went out carry no evidence about the temple; tag them
+      // so evidence and recovery planning do not misattribute a Case link
+      // fault as an unresponsive temple.
+      if (!templeQueried && error && typeof error === "object") {
+        error.caseTransportFailure = true;
+      }
+      throw error;
     } finally {
       await closeOpenTransports();
       if (bridgeLoaded && !residueCleared) {

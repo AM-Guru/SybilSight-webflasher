@@ -2751,6 +2751,7 @@ function App() {
                 at: new Date().toISOString(),
                 operation: request,
                 message: error.message,
+                caseTransport: Boolean(error.caseTransportFailure),
               },
             },
           };
@@ -4006,6 +4007,7 @@ function App() {
             lastProbeFailure: {
               at: new Date().toLocaleTimeString(),
               message: error.message,
+              caseTransport: Boolean(error.caseTransportFailure),
             },
           },
         }));
