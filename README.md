@@ -1539,6 +1539,8 @@ The repository includes
 [`deploy/webflasher.caddy`](deploy/webflasher.caddy), which serves:
 
 - the application from `/share/webflasher`; and
+- the iOS release ledger at `/app-versions.json` from
+  `/share/sybilsight/app-releases`; and
 - `/firmware-updates/*` from `/share/sybilsight`; and
 - `/remote-support/*` through the isolated
   `local-sybilsight-remote-support` Home Assistant app.
@@ -1557,6 +1559,13 @@ Pushes to `main` run the test and build steps on the organization's
 then checksummed, staged over the runner's `homeassistant` SSH target, and
 atomically published to `/root/share/webflasher/` on that host. Home
 Assistant's Caddy container sees the same directory as `/share/webflasher`.
+The deploy seeds `app-versions.json` on first installation, then leaves its
+persistent copy untouched. SybilSight's TestFlight pipeline atomically appends
+release records containing the bundle identifier, marketing version, build
+number, UTC release timestamp, TestFlight/App Store channel, and Apple update
+URL. This keeps app releases independently publishable without allowing a later
+website tree swap to erase their history. The deploy validates the public ledger
+before reporting production healthy.
 The same release artifact atomically updates and rebuilds the local Remote
 Support app, then proves its advertised protocol and requester-side task list
 through the public health endpoint before the deployment can pass.

@@ -54,6 +54,7 @@ jobs:
           test -s dist/index.html
           test -s dist/release.json
           test -s dist/firmware-catalog.json
+          test -s dist/app-versions.json
           test -d dist/assets
           node -e '
             const crypto = require("node:crypto");
@@ -67,6 +68,10 @@ jobs:
             const catalogSha256 = crypto.createHash("sha256").update(catalogBytes).digest("hex");
             if (release.firmwareCatalogSha256 !== catalogSha256) {
               throw new Error("Release firmware catalog digest does not match " + catalogPath);
+            }
+            const appVersions = JSON.parse(fs.readFileSync("dist/app-versions.json", "utf8"));
+            if (appVersions.schemaVersion !== 1 || !Array.isArray(appVersions.releases)) {
+              throw new Error("App version seed manifest is invalid");
             }
             const archiveCatalogPath = "dist/firmware-updates/source-files/index.json";
             if (!catalogBytes.equals(fs.readFileSync(archiveCatalogPath))) {
@@ -445,6 +450,7 @@ jobs:
           DEPLOY_ROOT: /root/share
           WEB_ROOT: /root/share/webflasher/
           FIRMWARE_ROOT: /root/share/sybilsight/firmware-updates/source-files
+          APP_RELEASE_ROOT: /root/share/sybilsight/app-releases
           SITE_NAME: webflasher
         shell: bash
         run: |
@@ -486,19 +492,24 @@ jobs:
 
           ssh -G "${SSH_TARGET}" >/dev/null
           ssh "${ssh_options[@]}" "${SSH_TARGET}" sh -s -- \
-            "${DEPLOY_ROOT}" "${WEB_ROOT}" "${FIRMWARE_ROOT}" <<'PREFLIGHT_SCRIPT'
+            "${DEPLOY_ROOT}" "${WEB_ROOT}" "${FIRMWARE_ROOT}" "${APP_RELEASE_ROOT}" <<'PREFLIGHT_SCRIPT'
           set -eu
           deploy_root="$1"
           web_root="$2"
           firmware_root="$3"
+          app_release_root="$4"
           [ "${deploy_root}" = /root/share ]
           [ "${web_root}" = /root/share/webflasher/ ]
           [ "${web_root%/}" = "${deploy_root}/webflasher" ]
           [ "${firmware_root}" = /root/share/sybilsight/firmware-updates/source-files ]
+          [ "${app_release_root}" = /root/share/sybilsight/app-releases ]
           [ -d "${deploy_root}" ]
           [ -w "${deploy_root}" ]
           [ -d "${firmware_root}" ]
           [ -w "${firmware_root}" ]
+          mkdir -p "${app_release_root}"
+          [ -d "${app_release_root}" ]
+          [ -w "${app_release_root}" ]
           for required_command in tar stat chown chmod find mkdir mv cp cmp sed; do
             command -v "${required_command}" >/dev/null
           done
@@ -523,13 +534,14 @@ jobs:
 
           ssh "${ssh_options[@]}" "${SSH_TARGET}" sh -s -- \
             "${remote_stage}" "${remote_target}" "${remote_backup}" \
-            "${FIRMWARE_ROOT}" "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" <<'PUBLISH_SCRIPT'
+            "${FIRMWARE_ROOT}" "${APP_RELEASE_ROOT}" "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" <<'PUBLISH_SCRIPT'
           set -eu
           stage="$1"
           target="$2"
           backup="$3"
           firmware_root="$4"
-          publish_id="$5"
+          app_release_root="$5"
+          publish_id="$6"
 
           case "${stage}" in
             /root/share/.webflasher-deploy-*) ;;
@@ -538,10 +550,23 @@ jobs:
           [ "${target}" = /root/share/webflasher ]
           [ "${backup}" = /root/share/.webflasher-previous ]
           [ "${firmware_root}" = /root/share/sybilsight/firmware-updates/source-files ]
+          [ "${app_release_root}" = /root/share/sybilsight/app-releases ]
           [ -s "${stage}/index.html" ]
+          [ -s "${stage}/app-versions.json" ]
           firmware_source="${stage}/firmware-updates/source-files"
           [ -s "${firmware_source}/index.json" ]
           [ ! -L "${target}" ]
+
+          # Seed the persistent app-release ledger on its first deployment.
+          # Subsequent TestFlight/App Store publications own this file, and the
+          # website's atomic tree replacement deliberately leaves it untouched.
+          app_manifest="${app_release_root}/app-versions.json"
+          if [ ! -e "${app_manifest}" ]; then
+            cp -p "${stage}/app-versions.json" "${app_manifest}"
+            chmod 644 "${app_manifest}"
+          fi
+          [ -f "${app_manifest}" ]
+          [ ! -L "${app_manifest}" ]
 
           owner_group="0:0"
           if [ -d "${target}" ]; then
@@ -774,6 +799,7 @@ jobs:
           fi
           release_url="https://webflasher.sybilsight.com/release.json?verify=${GITHUB_SHA}&run=${GITHUB_RUN_ID}"
           observed_release_file="${RUNNER_TEMP}/observed-release.json"
+          observed_app_versions_file="${RUNNER_TEMP}/observed-app-versions.json"
           observed_catalog_file="${RUNNER_TEMP}/observed-firmware-catalog.json"
           observed_archive_catalog_file="${RUNNER_TEMP}/observed-archive-catalog.json"
           observed_target_file="${RUNNER_TEMP}/observed-reviewed-custom.bin"
@@ -781,6 +807,27 @@ jobs:
             --header 'Cache-Control: no-cache' \
             --output "${observed_release_file}" \
             "${release_url}"
+          app_versions_url="https://webflasher.sybilsight.com/app-versions.json?verify=${GITHUB_SHA}&run=${GITHUB_RUN_ID}"
+          curl --fail --silent --show-error \
+            --header 'Cache-Control: no-cache' \
+            --output "${observed_app_versions_file}" \
+            "${app_versions_url}"
+          node -e '
+            const fs = require("node:fs");
+            const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (manifest.schemaVersion !== 1 || !Array.isArray(manifest.releases)) {
+              throw new Error("Production app-version manifest is invalid");
+            }
+            for (const release of manifest.releases) {
+              const required = ["bundleIdentifier", "version", "build", "channel", "releasedAt", "updateURL"];
+              if (!required.every((key) => typeof release[key] === "string" && release[key].length > 0)) {
+                throw new Error("Production app-version manifest contains an incomplete release");
+              }
+              if (!["appStore", "testFlight"].includes(release.channel)) {
+                throw new Error("Production app-version manifest contains an invalid channel");
+              }
+            }
+          ' "${observed_app_versions_file}"
           catalog_url="https://webflasher.sybilsight.com/firmware-catalog.json?verify=${GITHUB_SHA}&run=${GITHUB_RUN_ID}"
           curl --fail --silent --show-error \
             --header 'Cache-Control: no-cache' \
