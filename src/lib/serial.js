@@ -108,8 +108,18 @@ const POGO_MAXIMUM_DEFERRED_EARLY_SETTLE_MS = 8000;
 const POGO_MAXIMUM_DEFERRED_LATE_SETTLE_MS = 12000;
 const POGO_DATA_LATE_SETTLE_NUMERATOR = 3;
 const POGO_DATA_LATE_SETTLE_DENOMINATOR = 4;
-const POGO_COMPONENT_RESTART_LIMIT = 2;
-const POGO_HOST_TIMEOUT_COMPONENT_RESTART_LIMIT = 3;
+// Whole-component restart budget after a DATA failure with exact cleanup
+// proof. Pacing escalates across the budget: the first attempt runs at the
+// remembered level, every intermediate restart at tier 2, and the final
+// restart at maximum pacing (templeDataPacingMultiplierForRestart). Raising
+// this widens the tier-2 band rather than changing where maximum pacing
+// lands, so a marginal link gets more conservative attempts before the run
+// gives up. Exported so the escalation spec is asserted against the budget
+// instead of a hardcoded attempt number.
+export const POGO_COMPONENT_RESTART_LIMIT = 4;
+// A verified host-timeout restoration is a cleaner failure than a plain DATA
+// rejection, so it gets a wider budget than POGO_COMPONENT_RESTART_LIMIT.
+export const POGO_HOST_TIMEOUT_COMPONENT_RESTART_LIMIT = 6;
 const POGO_PERSISTENT_REJECTION_WINDOW_RECORDS = 64;
 const POGO_BILATERAL_ROUTE_ADAPTATION_LIMIT = 4;
 const POGO_SETUP_RESET_LIMIT = 2;
@@ -183,6 +193,64 @@ export function noteWebSerialShortReadRetry(port, log) {
 
 export function isExplicitTempleDataRejection(error) {
   return error instanceof TempleRejectedError;
+}
+
+// In-place DATA record recovery. Every audited case-bridge failure shares one
+// signature: hostChunkOffset 1009 (the full record left the host), zero host
+// and temple UART error counters, and acceptedSize frozen at exactly
+// expectedSequence × 1000 — the record vanished between the Case's pogo TX
+// and the temple's OTA parser without so much as a framing error, during a
+// charge-management window in which the route is silent (the same silence the
+// post-reset ladder documents at status 6). The record was therefore never
+// accepted, and resending the identical bytes with the identical sequence
+// byte is protocol-correct: the temple's own sequence guard accepts the
+// record it is waiting for, rejects a duplicate of one it already committed
+// with status 1, and rejects anything desynchronized. Recovery is bounded per
+// record and per component attempt, and a transient never touches pacing
+// memory (it is not evidence the temple was overrun).
+export const POGO_DATA_INPLACE_RESEND_LIMIT = 3;
+export const POGO_DATA_INPLACE_RECOVERY_BUDGET = 12;
+export const POGO_DATA_INPLACE_SETTLE_MS = Object.freeze([
+  2_000, 8_000, 20_000,
+]);
+
+export function classifyInPlaceDataRecovery(
+  error,
+  { resendsForRecord, recoveriesThisAttempt },
+) {
+  if (
+    !Number.isInteger(resendsForRecord) ||
+    resendsForRecord < 0 ||
+    !Number.isInteger(recoveriesThisAttempt) ||
+    recoveriesThisAttempt < 0
+  ) {
+    throw new Error("In-place recovery counters must be nonnegative integers.");
+  }
+  if (isExplicitTempleDataRejection(error)) {
+    // A status-1 rejection of a RESEND is the lost-ACK disambiguation: the
+    // temple committed the record, advanced its expected sequence, and its
+    // guard refused the duplicate. Advance to the next record. If this read
+    // is wrong — a genuine desynchronization — the next record is rejected
+    // with a zero resend count and aborts through the normal path. A
+    // first-transmission rejection is real temple evidence and always aborts.
+    if (resendsForRecord > 0 && error.status === 1) {
+      return { action: "advance" };
+    }
+    return { action: "abort" };
+  }
+  if (
+    resendsForRecord >= POGO_DATA_INPLACE_RESEND_LIMIT ||
+    recoveriesThisAttempt >= POGO_DATA_INPLACE_RECOVERY_BUDGET
+  ) {
+    return { action: "abort" };
+  }
+  return {
+    action: "resend",
+    settleMs:
+      POGO_DATA_INPLACE_SETTLE_MS[
+        Math.min(resendsForRecord, POGO_DATA_INPLACE_SETTLE_MS.length - 1)
+      ],
+  };
 }
 
 export function isPogoRoutePhaseMismatch(error) {
@@ -4021,49 +4089,98 @@ export class G2CaseSession {
         const data = payload.subarray(offset, Math.min(offset + 1000, payload.length));
         const final = index + 1 === totalRecords;
         const request = makeOtaDataRequest(data, final, index & 0xff);
-        const transactStartedAt = Date.now();
-        try {
-          const response = await transport.transact(request, 15000);
-          requireOtaAcknowledgement(response, 0x54);
-        } catch (error) {
-          result.dataPacingPolicy = {
-            ...result.dataPacingPolicy,
-            ...pacing.summary(),
-          };
-          // Only an explicit temple rejection says anything about pacing. A
-          // transport failure — a dropped remote-support relay, an unplugged
-          // cable — carries no evidence that the temple was overrun, so it
-          // must not escalate the remembered level. Observed 2026-07-28: a
-          // relay session expiring mid-DATA left the memory one level slower,
-          // and the next run paid that penalty on every record.
-          if (!isExplicitTempleDataRejection(error)) throw error;
-          const pacingMemory = pacing.commitMemory("failed");
-          result.dataPacingPolicy = {
-            ...result.dataPacingPolicy,
-            ...pacing.summary(),
-            nextStartLevel: pacingMemory.level,
-            nextCleanStreak: pacingMemory.cleanStreak,
-          };
-          result.dataRejection = {
-            command: error.command,
-            status: error.status,
-            record: index + 1,
-            recordIndex: index,
-            acceptedBytes,
-            totalBytes: payload.length,
-          };
-          this.log(
-            `${route}: explicit rejection left DATA record ${index + 1} unadvanced; ending this component attempt without replaying the record. Any permitted fresh component attempt will retain at least pacing level ${pacingMemory.level}.`,
-            "warn",
-          );
-          throw error;
+        let transactStartedAt = Date.now();
+        let resendsForRecord = 0;
+        let recordAcknowledged = false;
+        for (;;) {
+          transactStartedAt = Date.now();
+          try {
+            // readBridgeResponse inflates this to max(20000, t + 30000), so a
+            // marginal link gets ~70 s per record to recover a stalled
+            // response before an in-place resend is even considered. This is
+            // a technician-side wait only: it is not an exchange-batch step
+            // bound, so it does not depend on the customer's deployed build
+            // honouring a larger EXCHANGE_BATCH_MAX_STEP_TIMEOUT_MS.
+            const response = await transport.transact(request, 40000);
+            requireOtaAcknowledgement(response, 0x54);
+            recordAcknowledged = true;
+            break;
+          } catch (error) {
+            result.dataPacingPolicy = {
+              ...result.dataPacingPolicy,
+              ...pacing.summary(),
+            };
+            const decision = classifyInPlaceDataRecovery(error, {
+              resendsForRecord,
+              recoveriesThisAttempt: result.dataInPlaceRecovery?.resends ?? 0,
+            });
+            if (decision.action === "resend") {
+              resendsForRecord += 1;
+              result.dataInPlaceRecovery = {
+                resends: (result.dataInPlaceRecovery?.resends ?? 0) + 1,
+                lostAckAdvances:
+                  result.dataInPlaceRecovery?.lostAckAdvances ?? 0,
+                settledMs:
+                  (result.dataInPlaceRecovery?.settledMs ?? 0) +
+                  decision.settleMs,
+              };
+              this.log(
+                `${route}: DATA record ${index + 1}/${totalRecords} drew no temple reply (${error?.message ?? error}); settling ${decision.settleMs} ms for the route to leave its silent window, then resending the identical record in place (resend ${resendsForRecord}/${POGO_DATA_INPLACE_RESEND_LIMIT}). The temple's sequence guard accepts only the record it is waiting for.`,
+                "warn",
+              );
+              await transport.settleTempleStorage(decision.settleMs);
+              continue;
+            }
+            if (decision.action === "advance") {
+              result.dataInPlaceRecovery = {
+                resends: result.dataInPlaceRecovery?.resends ?? 0,
+                lostAckAdvances:
+                  (result.dataInPlaceRecovery?.lostAckAdvances ?? 0) + 1,
+                settledMs: result.dataInPlaceRecovery?.settledMs ?? 0,
+              };
+              this.log(
+                `${route}: the temple rejected the resent DATA record ${index + 1} with status 1 — it already committed this record and its acknowledgement was lost. Advancing to the next record; a genuine desynchronization would reject that one immediately.`,
+                "warn",
+              );
+              break;
+            }
+            // Only an explicit temple rejection says anything about pacing. A
+            // transport failure — a dropped remote-support relay, an unplugged
+            // cable — carries no evidence that the temple was overrun, so it
+            // must not escalate the remembered level. Observed 2026-07-28: a
+            // relay session expiring mid-DATA left the memory one level slower,
+            // and the next run paid that penalty on every record.
+            if (!isExplicitTempleDataRejection(error)) throw error;
+            const pacingMemory = pacing.commitMemory("failed");
+            result.dataPacingPolicy = {
+              ...result.dataPacingPolicy,
+              ...pacing.summary(),
+              nextStartLevel: pacingMemory.level,
+              nextCleanStreak: pacingMemory.cleanStreak,
+            };
+            result.dataRejection = {
+              command: error.command,
+              status: error.status,
+              record: index + 1,
+              recordIndex: index,
+              acceptedBytes,
+              totalBytes: payload.length,
+            };
+            this.log(
+              `${route}: explicit rejection left DATA record ${index + 1} unadvanced; ending this component attempt without replaying the record. Any permitted fresh component attempt will retain at least pacing level ${pacingMemory.level}.`,
+              "warn",
+            );
+            throw error;
+          }
         }
-        const congestionSettleMs = pacing.noteAckLatency(
-          index,
-          Date.now() - transactStartedAt,
-        );
-        if (congestionSettleMs > 0) {
-          await transport.settleTempleStorage(congestionSettleMs);
+        if (recordAcknowledged) {
+          const congestionSettleMs = pacing.noteAckLatency(
+            index,
+            Date.now() - transactStartedAt,
+          );
+          if (congestionSettleMs > 0) {
+            await transport.settleTempleStorage(congestionSettleMs);
+          }
         }
         acceptedBytes += data.length;
         result.acceptedFirmwareBytes = acceptedBytes;
@@ -4591,16 +4708,27 @@ export class G2CaseSession {
               expectedSourceVersion ??
               targetReportedVersion;
             const expectedVersionByRoute = Object.fromEntries(
-              livenessRoutes.map((livenessRoute) => [
-                livenessRoute,
-                audit.routeResults.some(
-                  (completed) =>
-                    completed?.route === livenessRoute &&
-                    completed?.outcome === "success",
-                )
-                  ? targetReportedVersion
-                  : restartingRouteVersion,
-              ]),
+              livenessRoutes.map((livenessRoute) => {
+                // A seated temple outside this run's route selection was
+                // never written to. On a split pair it legitimately holds a
+                // different image than the route being repaired, so predicting
+                // either the source or the target version for it is wrong.
+                // Verify only that its application came back — hardware
+                // revision plus a checksum-valid version reply.
+                if (!routes.includes(livenessRoute)) {
+                  return [livenessRoute, null];
+                }
+                return [
+                  livenessRoute,
+                  audit.routeResults.some(
+                    (completed) =>
+                      completed?.route === livenessRoute &&
+                      completed?.outcome === "success",
+                  )
+                    ? targetReportedVersion
+                    : restartingRouteVersion,
+                ];
+              }),
             );
             audit.routeComponentRestartResets.push(
               await this.resetTempleOtaReceiverForComponentRestart(
@@ -4621,7 +4749,16 @@ export class G2CaseSession {
       }
       audit.finalResetAndLiveness = await this.finalizeTempleRestore(
         livenessRoutes,
-        targetReportedVersion,
+        // Only the routes this run actually wrote should be asserted at the
+        // target. An untouched seated temple is verified for liveness alone;
+        // asserting the target on it fails every correct one-route repair of
+        // a split pair.
+        Object.fromEntries(
+          livenessRoutes.map((livenessRoute) => [
+            livenessRoute,
+            routes.includes(livenessRoute) ? targetReportedVersion : null,
+          ]),
+        ),
       );
       if (audit.sourceValidation) {
         audit.sourceValidation.routePreflight = Object.fromEntries(

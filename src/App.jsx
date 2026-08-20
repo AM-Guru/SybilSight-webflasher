@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   POGO_TRANSFER_RESEARCH,
   formatBytes,
@@ -24,7 +24,7 @@ import {
 } from "./lib/remoteSerial.js";
 import {
   buildG2SystemBackupArtifact,
-  findMatchingGlassesRecoveryRelease,
+  resolveGlassesRecoveryReleases,
   validateGlassesRecoveryBundle,
 } from "./lib/backup.js";
 import { buildG2DeviceAnalytics } from "./lib/analytics.js";
@@ -3016,43 +3016,64 @@ function App() {
       }
 
       const session = getSession();
-      const result = await session.backup({
-        progressBase: 0,
-        progressSpan: 0.62,
-      });
+      // Cheap preconditions first: each temple probe costs seconds, while the
+      // 512 KiB case flash read costs many minutes on a slow link. Probing
+      // and resolving the recovery bundles before the long read turns an
+      // unsatisfiable combination into a fast failure instead of a long one
+      // whose result is then discarded.
       const templeProbes = {};
       for (const [index, route] of ["left", "right"].entries()) {
         templeProbes[route] = await session.probeRunningTemple(
           "version",
           route,
           {
-            progressBase: 0.62 + index * 0.14,
+            progressBase: index * 0.14,
             progressSpan: 0.14,
           },
         );
       }
-      const recoveryRelease = findMatchingGlassesRecoveryRelease(
+      const recoveryResolution = resolveGlassesRecoveryReleases(
         catalog,
         templeProbes,
       );
-      setSessionProgress(0.91, "Loading matching Smart Glasses recovery firmware");
-      const response = await fetchCatalogRelease(
-        recoveryRelease,
-        "Smart Glasses recovery archive",
-      );
-      const recoveryBundleBytes = new Uint8Array(await response.arrayBuffer());
-      await validateGlassesRecoveryBundle(
-        recoveryBundleBytes,
-        recoveryRelease,
-      );
+      if (!recoveryResolution.pairMatched) {
+        addLog(
+          `The seated temples report different firmware versions (left ${recoveryResolution.left.version}, right ${recoveryResolution.right.version}) — an interrupted cross-version update leaves exactly this state. Backing up both live snapshots with per-route recovery bundles; Automatic Apply can then converge the pair.`,
+          "warn",
+        );
+      }
+      for (const side of ["left", "right"]) {
+        const omission = recoveryResolution[side].omissionReason;
+        if (omission) {
+          addLog(
+            `${side}: ${omission} The live snapshot is still captured; the bundle is recorded as an explicit omission.`,
+            "warn",
+          );
+        }
+      }
+      setSessionProgress(0.3, "Loading matching Smart Glasses recovery firmware");
+      const recoveryBundles = [];
+      for (const release of recoveryResolution.releases) {
+        const response = await fetchCatalogRelease(
+          release,
+          "Smart Glasses recovery archive",
+        );
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        await validateGlassesRecoveryBundle(bytes, release);
+        recoveryBundles.push({ release, bytes });
+      }
+      const result = await session.backup({
+        progressBase: 0.36,
+        progressSpan: 0.6,
+      });
       setSessionProgress(0.97, "Packaging combined recovery backup");
 
       const artifact = buildG2SystemBackupArtifact({
         caseBackup: result,
         report,
         templeProbes,
-        recoveryRelease,
-        recoveryBundleBytes,
+        recoveryResolution,
+        recoveryBundles,
       });
       const nameVersion =
         artifact.chargingCase.firmwareVersion ?? "unknown";
@@ -3066,7 +3087,7 @@ function App() {
         ...result,
         artifact,
         templeProbes,
-        recoveryRelease,
+        recoveryResolution,
       });
       setPogoResults((current) => ({
         ...current,
@@ -3087,7 +3108,7 @@ function App() {
       }));
       setSessionProgress(1, "Case + Smart Glasses backup verified");
       addLog(
-        `Combined backup downloaded · full Case + both G2 ${recoveryRelease.version} temple snapshots + validated official recovery bundle.`,
+        `Combined backup downloaded · full Case + temple snapshots (left ${recoveryResolution.left.version}, right ${recoveryResolution.right.version}) + ${artifact.smartGlasses.recoveryBundles.length} validated recovery bundle${artifact.smartGlasses.recoveryBundles.length === 1 ? "" : "s"}.`,
         "success",
       );
     });
@@ -6332,8 +6353,17 @@ function App() {
                 <div className="backup-digest">
                   <span>CASE FLASH SHA-256</span>
                   <code>{backup.flashSha256}</code>
-                  <span>SMART GLASSES BUNDLE SHA-256</span>
-                  <code>{backup.recoveryRelease.sha256}</code>
+                  {(backup.artifact?.smartGlasses?.recoveryBundles ?? []).map(
+                    (bundle) => (
+                      <Fragment key={bundle.sha256}>
+                        <span>
+                          {bundle.coveredSides.join(" + ").toUpperCase()} {bundle.version}{" "}
+                          BUNDLE SHA-256
+                        </span>
+                        <code>{bundle.sha256}</code>
+                      </Fragment>
+                    ),
+                  )}
                 </div>
               ) : null}
             </div>

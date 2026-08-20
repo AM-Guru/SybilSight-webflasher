@@ -364,6 +364,23 @@ export function buildG2DeviceAnalytics({
       contactAssessment,
       left,
       right,
+      // A pair reporting two different versions is the fingerprint of an
+      // interrupted cross-version update — one route completed, the other
+      // kept its source image. It is a recoverable state, not damage: both
+      // applications answer, and converging the off-target route (Automatic
+      // Apply, or a one-route complete-main install) heals the pair.
+      pairAssessment:
+        left.firmwareVersion && right.firmwareVersion
+          ? {
+              matched: left.firmwareVersion === right.firmwareVersion,
+              leftVersion: left.firmwareVersion,
+              rightVersion: right.firmwareVersion,
+              note:
+                left.firmwareVersion === right.firmwareVersion
+                  ? "Both temples report the same firmware."
+                  : "The temples report different firmware versions — the usual remnant of an interrupted cross-version update. Both applications are responsive; converge the off-target route to heal the pair.",
+            }
+          : null,
       recoveryAssessment: {
         mode: "running-application Apollo-main reinstall through case USB",
         requiredCaseVersion: REVIEWED_CASE_VERSION,

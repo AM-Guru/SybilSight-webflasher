@@ -24,8 +24,9 @@ import {
 } from "../src/lib/automaticRecovery.js";
 import {
   buildG2SystemBackupArtifact,
-  findMatchingGlassesRecoveryRelease,
+  resolveGlassesRecoveryReleases,
   validateGlassesRecoveryBundle,
+  validateSavedCaseBackup,
 } from "../src/lib/backup.js";
 import {
   buildBundleDifferencePlan,
@@ -539,12 +540,19 @@ server.registerTool(
   "backup_case",
   {
     description:
-      "Read and save a verified 512 KiB Case flash and option-byte backup on the technician computer. Use backup_system for the combined Case + Smart Glasses backup when both temples are seated.",
+      "Read and save a verified 512 KiB Case flash and option-byte backup on the technician computer. Use backup_system for the combined Case + Smart Glasses backup when both temples are seated. Pass reuseSavedBackupPath to satisfy the flash gate from an existing hash-verified backup of this exact case instead of re-reading its flash — useful when a retry follows a recent backup over a slow link.",
     inputSchema: {
       outputPath: z
         .string()
         .min(1)
         .describe("Explicit local path for the private JSON backup"),
+      reuseSavedBackupPath: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "Existing backup_case JSON to revalidate and reuse instead of re-reading the 512 KiB case flash. The embedded bytes must match their recorded digests and the backup must name the currently analyzed case's serial.",
+        ),
     },
     annotations: {
       readOnlyHint: false,
@@ -553,15 +561,46 @@ server.registerTool(
       openWorldHint: false,
     },
   },
-  tool(async ({ outputPath }, extra) => {
+  tool(async ({ outputPath, reuseSavedBackupPath }, extra) => {
     updateSessionProgress(extra);
+    if (reuseSavedBackupPath) {
+      // Reuse is gated on the fresh analysis: the saved backup must name the
+      // exact case this session selected, and its digests are recomputed from
+      // the embedded bytes rather than trusted. This spares the multi-minute
+      // flash re-read that every new technician process otherwise pays before
+      // a retry, without weakening what the flash gate proves.
+      if (!caseReport?.console?.serialNumber) {
+        throw new Error(
+          "Run analyze_case before reusing a saved backup so the case serial can be matched.",
+        );
+      }
+      const savedPath = resolve(reuseSavedBackupPath);
+      const artifact = JSON.parse(await readFile(savedPath, "utf8"));
+      const verified = await validateSavedCaseBackup(artifact, {
+        expectedSerial: caseReport.console.serialNumber,
+      });
+      backupRecord = {
+        scope: "case-only-reused",
+        outputPath: savedPath,
+        flashSha256: verified.flashSha256,
+        optionSha256: verified.optionSha256,
+        serialNumber: verified.serialNumber,
+      };
+      record(
+        `Reusing verified case backup ${savedPath} · digests recomputed from embedded bytes · serial ${verified.serialNumber} matches the analyzed case.`,
+        "success",
+      );
+      return textResult(backupRecord);
+    }
     const backup = await caseSession.backup();
     const resolvedPath = resolve(outputPath);
     await writeFile(
       resolvedPath,
       `${JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         capturedAt: new Date().toISOString(),
+        caseVersion: caseReport?.console?.caseVersion ?? null,
+        serialNumber: caseReport?.console?.serialNumber ?? null,
         flashSha256: backup.flashSha256,
         optionSha256: backup.optionSha256,
         flashBase64: Buffer.from(backup.flash).toString("base64"),
@@ -574,6 +613,7 @@ server.registerTool(
       outputPath: resolvedPath,
       flashSha256: backup.flashSha256,
       optionSha256: backup.optionSha256,
+      serialNumber: caseReport?.console?.serialNumber ?? null,
     };
     return textResult(backupRecord);
   }),
@@ -583,7 +623,7 @@ server.registerTool(
   "backup_system",
   {
     description:
-      "Create the combined Case + Smart Glasses backup: full Case flash and option bytes, live left/right temple identity snapshots, and the matching validated official recovery bundle. Requires a fresh analysis with both temples seated.",
+      "Create the combined Case + Smart Glasses backup: full Case flash and option bytes, live left/right temple identity snapshots, and each route's matching validated archived recovery bundle (official preferred, reviewed channels accepted; split-version pairs record per-route bundles, and an unarchived version is recorded as an explicit omission). Requires a fresh analysis with both temples seated.",
     inputSchema: {
       outputPath: z
         .string()
@@ -608,36 +648,61 @@ server.registerTool(
       );
     }
     const releases = await loadCatalog();
-    const caseBackup = await caseSession.backup({
-      progressBase: 0,
-      progressSpan: 0.62,
-    });
+    // Resolve every cheap precondition before the expensive read. Each temple
+    // probe costs seconds; the 512 KiB case flash read costs many minutes on a
+    // slow or marginal link. Probing first turns an unsatisfiable combination
+    // — temples on different versions, or a version with no archived official
+    // bundle — into a fast failure instead of a long one whose result is then
+    // discarded. caseSession.backup() restores the normal application in its
+    // own finally block, so it remains safe as the last step.
     const templeProbes = {};
     for (const [index, route] of ["left", "right"].entries()) {
       templeProbes[route] = await caseSession.probeRunningTemple(
         "version",
         route,
         {
-          progressBase: 0.62 + index * 0.14,
+          progressBase: index * 0.14,
           progressSpan: 0.14,
         },
       );
     }
-    const recoveryRelease = findMatchingGlassesRecoveryRelease(
+    // Per-route resolution: a split pair or a reviewed-CFW pair is backed up,
+    // not refused — each route gets its exact-version archived bundle
+    // (official preferred, any verified channel accepted), and a version with
+    // no archived bundle is recorded as an explicit omission.
+    const recoveryResolution = resolveGlassesRecoveryReleases(
       releases,
       templeProbes,
     );
-    const recoveryBundleBytes = await fetchCatalogReleaseBytes(
-      recoveryRelease,
-      "Smart Glasses recovery archive",
-    );
-    await validateGlassesRecoveryBundle(recoveryBundleBytes, recoveryRelease);
+    if (!recoveryResolution.pairMatched) {
+      record(
+        `The seated temples report different firmware versions (left ${recoveryResolution.left.version}, right ${recoveryResolution.right.version}); backing up both live snapshots with per-route recovery bundles.`,
+        "warn",
+      );
+    }
+    for (const side of ["left", "right"]) {
+      const omission = recoveryResolution[side].omissionReason;
+      if (omission) record(`${side}: ${omission}`, "warn");
+    }
+    const recoveryBundles = [];
+    for (const release of recoveryResolution.releases) {
+      const bytes = await fetchCatalogReleaseBytes(
+        release,
+        "Smart Glasses recovery archive",
+      );
+      await validateGlassesRecoveryBundle(bytes, release);
+      recoveryBundles.push({ release, bytes });
+    }
+    const caseBackup = await caseSession.backup({
+      progressBase: 0.28,
+      progressSpan: 0.62,
+    });
     const artifact = buildG2SystemBackupArtifact({
       caseBackup,
       report: caseReport,
       templeProbes,
-      recoveryRelease,
-      recoveryBundleBytes,
+      recoveryResolution,
+      recoveryBundles,
     });
     const resolvedPath = resolve(outputPath);
     await writeFile(
@@ -654,11 +719,19 @@ server.registerTool(
         left: artifact.smartGlasses.left.firmwareVersion,
         right: artifact.smartGlasses.right.firmwareVersion,
       },
-      recoveryBundleVersion: recoveryRelease.version,
-      recoveryBundleSha256: recoveryRelease.sha256,
+      pairMatched: recoveryResolution.pairMatched,
+      recoveryBundles: artifact.smartGlasses.recoveryBundles.map(
+        ({ coveredSides, version, channel, sha256 }) => ({
+          coveredSides,
+          version,
+          channel,
+          sha256,
+        }),
+      ),
+      recoveryBundleOmissions: artifact.smartGlasses.recoveryBundleOmissions,
     };
     record(
-      `Combined backup saved · full Case + both G2 ${recoveryRelease.version} temple snapshots + validated official recovery bundle.`,
+      `Combined backup saved · full Case + temple snapshots (left ${recoveryResolution.left.version}, right ${recoveryResolution.right.version}) + ${artifact.smartGlasses.recoveryBundles.length} validated recovery bundle${artifact.smartGlasses.recoveryBundles.length === 1 ? "" : "s"}.`,
       "success",
     );
     return textResult(backupRecord);

@@ -34,8 +34,12 @@ Production deployment:
   physical bank, fallback physical bank, and the firmware visible in each bank.
 - Downloads one combined recovery set containing a complete 512 KiB case
   flash backup, the 128-byte case option block, checksum-validated identity
-  snapshots from both seated temples, and the matching digest-pinned official
-  Smart Glasses firmware bundle.
+  snapshots from both seated temples, and each route's matching digest-pinned
+  archived Smart Glasses firmware bundle (official channel preferred, reviewed
+  channels accepted). A split-version pair — the usual remnant of an
+  interrupted cross-version update — is backed up with per-route bundles
+  rather than refused, and a version absent from the archive is recorded as an
+  explicit omission while the live snapshots are still captured.
 - Accepts official five- or six-component `EVENOTA` bundles, wrapped
   `firmware_box.bin` components, and validated raw case images.
 - Recognizes and offers all 14 archived official G2 SHA-256 values plus the
@@ -279,10 +283,13 @@ upstream `g2flash.py` observation that this grammar carries no destination
 block index, this keeps DATA recovery fail-closed. The host also requires one fresh
 checksum-valid read-only version reply immediately before the first OTA
 command, waits 1 second at each 6-KiB handoff, increases that to 2 seconds
-after 75%, and doubles both values for a restarted component. One fourth
-full-component attempt is reserved for an exact retained status-16 host
-timeout after complete route restoration, Case 1.2.57 return, and bilateral
-reset/liveness; that final attempt uses triple pacing. The final DATA
+after 75%, and doubles both values for a restarted component. The
+whole-component restart budget is four after a verified DATA failure with
+exact cleanup proof, and six for the exact retained status-16 host timeout
+with complete route restoration, Case 1.2.57 return, and bilateral
+reset/liveness; intermediate restarts use doubled pacing and the
+budget-exhausting restart uses triple pacing (the pacing escalation is
+asserted against the exported budgets rather than fixed attempt numbers). The final DATA
 record gets a 15-second settle, 30 seconds on a normal restart, or 45 seconds
 on the status-16 final recovery, with
 host-only keepalives. Success requires both the checksum-valid zero-status
@@ -334,6 +341,36 @@ third attempt rejected record 34 and provided no stronger recovery evidence.
 The host now records command, status, record, accepted bytes and target size
 for explicit rejections and stops after the second clustered boundary while
 still performing verified cleanup and final bilateral liveness.
+
+A silent DATA record — no reply at all — is a different failure from an
+explicit rejection, and a 2026-08-19/20 remote session isolated its
+signature across six audited transfers. Every silent failure retained
+`hostChunkOffset` 1009 (the complete record left the host), zero temple-UART
+and zero host RX/TX/TC error counters, and `acceptedSize` frozen at exactly
+`expectedSequence` × 1000: the record was never accepted, never garbled, and
+never acknowledged. The stall points were scattered (268,000 to 1,344,000
+bytes), ruling out an address-linked wall, and the host-side counters rule
+out the USB link. The working theory is the charge-management silence this
+README already documents for the post-reset window, landing mid-transfer:
+the pogo contacts carry charging and the UART together, both temples sat at
+98–100% where charge-current steps are frequent, and the only route that ever
+completed a full 3.5 MB transfer was one whose temple reported charge done.
+The DATA handler therefore recovers a silent record in place: it settles
+2 s / 8 s / 20 s and retransmits the identical record with the identical
+sequence byte — at most three resends per record and twelve per component
+attempt. The temple's own sequence guard is the safety: it accepts only the
+record it is waiting for, and a status-1 rejection of a resend proves the
+lost-acknowledgement case (the record was already committed), which advances
+to the next record; a genuine desynchronization self-corrects because the
+next record is then rejected on its first transmission and stops the attempt
+through the unchanged explicit-rejection path. An explicitly rejected record
+is still never replayed, and a silent record still never escalates the
+remembered pacing level. The per-record reply wait is 40 seconds before a
+resend is considered. The same session also corrected bilateral post-reset
+verification for one-route repairs: a seated temple outside the run's route
+selection is verified for liveness — hardware revision 5 and a checksum-valid
+version reply — rather than asserted at a version the run never installed,
+which previously failed every single-route repair of a split-version pair.
 
 The first 100-query gate was retired after a fresh hardware comparison showed
 the live left route fail at query 52 and the already verified-stock right
@@ -772,11 +809,15 @@ fresh seated-route telemetry, the complete CFW bundle SHA-256, the Apollo-main
 payload SHA-256, hardware revision 5, and explicit user confirmations.
 
 The host uses 32-byte stop-and-wait USB chunks and replays no START, HEADER,
-DATA, or FINISH transaction. An explicit DATA rejection or ambiguous reply
-ends that component attempt. After exact cleanup, bilateral reset, contact and
-liveness proof, Easy Mode may begin a fresh full component, with three normal
-attempts and doubled pacing on restarts. An exact retained status-16 host
-timeout can unlock one final triple-paced attempt after the same reset and
+or FINISH transaction; the one bounded exception is a silent DATA record —
+no reply, no acceptance, no UART error — which is retransmitted in place with
+the identical bytes and sequence byte under the temple's own sequence guard
+(see the silent-record recovery above). An explicit DATA rejection or
+ambiguous reply still ends that component attempt. After exact cleanup,
+bilateral reset, contact and liveness proof, Easy Mode may begin a fresh full
+component within the four-restart budget, with doubled pacing on intermediate
+restarts. An exact retained status-16 host timeout widens the budget to six,
+with the budget-exhausting attempt triple-paced after the same reset and
 liveness proof. V6 rejects a mutating setup before
 temple transmission when the Case idle-route phase does not match the selected
 side. A bilateral run may reorder left/right in either direction only from an
@@ -995,8 +1036,13 @@ On macOS the server reads the technician credential from the
 The MCP tools expose the complete Remote WebFlasher capability set:
 join/disconnect, Case analysis, left/right temple interrogation, the traced
 bilateral reset with full reopened-telemetry and application-liveness
-verification, the combined Case + Smart Glasses backup (`backup_system`, with
-`backup_case` still available when temples are not seated), bounded expert
+verification, the combined Case + Smart Glasses backup (`backup_system`,
+split-version-pair capable with per-route recovery bundles, with `backup_case`
+still available when temples are not seated — and `backup_case` accepts
+`reuseSavedBackupPath` to satisfy the flash gate from an existing backup whose
+digests recompute cleanly from its embedded bytes and whose recorded serial
+matches the freshly analyzed case, sparing the multi-minute flash re-read on a
+retry), bounded expert
 serial exchanges, Case staging and activation, complete-main Smart Glasses
 flashing, the reviewed Stock ↔ CFW differential transfers
 (`mode: "differences"`), and the full Automatic Apply workflow
@@ -1191,7 +1237,8 @@ Automatic Apply handles the reviewed failure boundaries as follows:
 | Read-only YHM baseline is outside the active seated-idle profile | Retry only from exact retained zero-write/zero-transmission proof; switch once to a separately pinned exact profile when recognized, otherwise let the stock app settle for 15 then 45 seconds and re-confirm Case/contact before each probe |
 | Allowlisted zero-write YHM setup stop | Perform the bounded settle and setup reset/recheck ladder; if every attempt stops before route selection with immutable zero-byte proof, preserve completed routes, stop wired retries, and direct the operator to fresh Bluetooth full-package recovery |
 | Incomplete cached `G2RX` header or payload | Passively scan for a complete same-sequence checksum-valid cached frame; never replay the temple request |
-| Exact retained status-16 DATA host timeout after normal retries | Prove byte-for-byte route cleanup, Case 1.2.57, bilateral reset/contact/liveness, then allow one final triple-paced full-component restart |
+| Exact retained status-16 DATA host timeout after normal retries | Prove byte-for-byte route cleanup, Case 1.2.57, bilateral reset/contact/liveness, then widen the restart budget to six with the final restart triple-paced |
+| Silent DATA record (no reply, no acceptance, zero UART/host errors) | Settle 2 s / 8 s / 20 s and resend the identical record in place under the temple's sequence guard, at most 3 per record and 12 per attempt; never escalates pacing memory |
 | Two restored explicit DATA rejections recur within 64 records on the same route and target | Classify a persistent receiver/storage boundary, skip the third full-component attempt, restore the Case, and finish with bilateral liveness |
 | First final-reset contact, telemetry, banner, YHM, or no-frame check is transient | Wait, issue one bounded second `DEB0`, and repeat the full liveness gate |
 | Any transfer mutation, cleanup ambiguity, wrong hardware/version after transfer, or second reset failure | Stop closed and retain the failure audit |
