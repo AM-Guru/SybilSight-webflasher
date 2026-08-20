@@ -42,8 +42,8 @@ Production deployment:
   explicit omission while the live snapshots are still captured.
 - Accepts official five- or six-component `EVENOTA` bundles, wrapped
   `firmware_box.bin` components, and validated raw case images.
-- Recognizes and offers all 14 archived official G2 SHA-256 values plus the
-  reviewed CFW 2.2.6.11, 2.2.7.16, and BLE-safe 2.2.8.11 builds. The older
+- Recognizes and offers all 15 archived official G2 SHA-256 values plus the
+  reviewed CFW 2.2.6.11, 2.2.7.16, BLE-safe 2.2.8.11, and 2.2.9.23 builds. The older
   advertisement-patched CFW 2.2.8.9 and 2.2.8.10 remain excluded from both
   direct-Bluetooth and Case-USB installation.
 - Validates the Apollo main application's independent preamble, CRC-32, target
@@ -206,6 +206,16 @@ not yet hardware-validated. The catalog also offers reviewed CFW 2.2.7.16 and
 BLE-safe CFW 2.2.8.11; both are pinned to their complete bundles and Apollo
 mains. CFW 2.2.8.9 and 2.2.8.10 remain diagnostic evidence only because they
 contain the withdrawn Bluetooth-advertising modification.
+
+CFW 2.2.9.23 rebases that same pinned g2flash main commit onto official G2
+2.2.9.22. Run `npm run build:cfw-2.2.9` to reproduce its bundle and 39-operation
+stock-replay recipe. The recipe expected-byte-gates every hook and records the
+reviewed adaptations for 2.2.9's tap-then-long-press and image-completion paths.
+Its complete bundle SHA-256 is
+`e5f629c6fd06ac84121022e0ecd8ef65cfebbf0c8956a0f202278451b53a0ed5`;
+physical-glasses validation is still pending. The experimental advertised-name
+patch is deliberately omitted because it is not on the pinned g2flash main
+branch and has prior hardware-failure evidence.
 
 ### Application-alive pogo OTA
 
@@ -1204,7 +1214,7 @@ component and transfers the one changed, complete CRC-gated Apollo main. The
 receiver has no safe sparse-write offset, so Update never transmits arbitrary
 changed byte ranges inside that component.
 
-CFW 2.2.6.11, 2.2.7.16, and 2.2.8.11 are the selectable reviewed custom
+CFW 2.2.6.11, 2.2.7.16, 2.2.8.11, and 2.2.9.23 are the selectable reviewed custom
 targets. These exact g2flash-derived images have not yet been exercised on
 hardware, so they remain clearly marked as unvalidated and all writes stay
 gated on their complete bundle and Apollo-main hashes. Installed Apollo MRAM readback remains unavailable,
@@ -1428,8 +1438,8 @@ and both routes receive read-only liveness verification.
 
 ## Firmware archive
 
-The archive builder offers all 14 official G2 releases evidenced by the
-SybilSight research plus reviewed CFW 2.2.6.11, 2.2.7.16, and 2.2.8.11.
+The archive builder offers all 15 official G2 releases evidenced by the
+SybilSight research plus reviewed CFW 2.2.6.11, 2.2.7.16, 2.2.8.11, and 2.2.9.23.
 Historical withdrawn CFW evidence remains in immutable versioned directories
 but is not emitted in the WebFlasher catalog or writer pin table. The builder
 also verifies and archives every R1 Secure DFU package
@@ -1440,13 +1450,13 @@ SHA-256, application, and signed init-packet pins:
 2.0.1.14  2.0.3.20  2.0.5.12  2.0.6.14
 2.0.7.16  2.0.8.20  2.0.9.20  2.1.1.8
 2.1.1.12  2.2.0.24  2.2.4.34  2.2.6.10
-2.2.7.14  2.2.7.16  2.2.8.4  2.2.8.11
+2.2.7.14  2.2.7.16  2.2.8.4  2.2.8.11  2.2.9.22  2.2.9.23
 ```
 
 ```text
 R1: 2.0.3.0013  2.0.5.0004  2.0.6.0005  2.0.7.0004
     2.0.8.0012  2.2.0.0014  2.2.4.0003  2.2.5.0005
-    2.2.6.0009  2.2.7.0005  2.2.8.0002
+    2.2.6.0009  2.2.7.0005  2.2.8.0002  2.2.9.0003
 ```
 
 It retrieves each original bundle from the Even Realities CDN. If a known CDN
@@ -1478,6 +1488,9 @@ source-files/
       manifest.json
       metadata.json
       SHA256SUMS
+  2.2.9.22/
+    fc250b05e98a9ff998b4b68f5f99f994.bin
+    ...
   2.2.8.4/
     d495a1dffb919795e95135e144345f04.bin
     firmware_codec.bin
@@ -1530,6 +1543,11 @@ source-files/
     ota_s200_bootloader.bin
     ota_s200_firmware_ota.bin
     metadata.json
+  2.2.9.23-e5f629c6fd06/
+    g2-2.2.9.23.bin
+    cfw_patches-2.2.9.23.json
+    manifest.json
+    ...
     SHA256SUMS
 ```
 

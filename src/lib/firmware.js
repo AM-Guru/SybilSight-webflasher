@@ -167,6 +167,25 @@ export const REVIEWED_CFW_2_2_8_11 = Object.freeze({
     REVIEWED_CFW_PENDING_VALIDATION,
   ],
 });
+export const REVIEWED_CFW_2_2_9_23 = Object.freeze({
+  version: "2.2.9.23",
+  reportedVersion: "2.2.9.23",
+  baseVersion: "2.2.9.22",
+  baseSha256: "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561",
+  sha256: "e5f629c6fd06ac84121022e0ecd8ef65cfebbf0c8956a0f202278451b53a0ed5",
+  mainPayloadBytes: 3717475,
+  mainPayloadSha256:
+    "1bb7ac96c43380d766bd40ff504ec58f51ce774e18f7ac8b9d0c116df7dd8033",
+  capabilityMarker:
+    "EVENCFW/8 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10",
+  capabilities: [
+    ...REVIEWED_CFW_DISPLAY_CHANGES,
+    "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
+    "Keeps wear-status and compass updates available to connected apps.",
+    "Preserves the stock Bluetooth setup and advertising behavior.",
+    REVIEWED_CFW_PENDING_VALIDATION,
+  ],
+});
 export const G2_FIRMWARE_REVOCATIONS = Object.freeze([
   Object.freeze({
     version: "2.2.8.7",
@@ -709,6 +728,7 @@ export const OFFICIAL_G2_SHA256 = Object.freeze({
   "2.2.6.10": REVIEWED_CFW.baseSha256,
   "2.2.7.14": "0fced0aebcc6c88db6f76dba34f91b805d842a5fc297bfd7fa6d6a34ec83cecb",
   "2.2.8.4": "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7",
+  "2.2.9.22": "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561",
 });
 export const FLASH_BASE = 0x08000000;
 export const FLASH_SIZE = 0x80000;
@@ -1027,6 +1047,7 @@ export function parseMainOTAPreamble(payload) {
 export function classifyG2Firmware(fileSha256) {
   const digest = fileSha256.toLowerCase();
   const reviewed = [
+    REVIEWED_CFW_2_2_9_23,
     REVIEWED_G2FLASH_CFW_2_2_6_11,
     REVIEWED_CFW_2_2_8_11,
     REVIEWED_CFW_2_2_8_10,

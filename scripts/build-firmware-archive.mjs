@@ -20,6 +20,8 @@ const REVIEWED_CFW_2_2_7_14_BASE_SHA256 =
   "0fced0aebcc6c88db6f76dba34f91b805d842a5fc297bfd7fa6d6a34ec83cecb";
 const REVIEWED_CFW_2_2_8_11_SHA256 =
   "be3922f3695e0b58a6b62f40f760b6c8754488c4e9a58c96b2c13e92ef33bd3a";
+const REVIEWED_CFW_2_2_9_23_SHA256 =
+  "e5f629c6fd06ac84121022e0ecd8ef65cfebbf0c8956a0f202278451b53a0ed5";
 const REVIEWED_CFW_2_2_8_4_BASE_SHA256 =
   "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7";
 const REVIEWED_G2FLASH_PATCH_SHA256 =
@@ -86,6 +88,17 @@ function r1Release({
 }
 
 const R1_RELEASES = [
+  r1Release({
+    version: "2.2.9.0003",
+    minAppVersion: "2.2.9",
+    notes: "Bug fixes.",
+    size: 655347,
+    md5: "eac75275743ed88ed52704cf5079d4d5",
+    sha256: "38089992808e39ad933d584d2962dc3dc9d9f51ae0dd3b30d17c8a8cf8d14de8",
+    binSize: 654716,
+    binSha256: "f4b5a915c160201ac15ee78aabdcfb7ba86a7f12916c9418e70fe70982c594ae",
+    datSha256: "f644591d8140ada88fc1e74dee5bb8c6d2fe7b2151bf8613f52f79dd6f663f42",
+  }),
   r1Release({
     version: "2.2.8.0002",
     minAppVersion: "2.2.8",
@@ -313,11 +326,69 @@ const RELEASES = [
       "Enhanced Bluetooth connection stability and Teleprompt AI noise reduction; fixed Teleprompt Remote Control and earlier-version firmware update failures in specific scenarios.",
   },
   {
+    version: "2.2.9.22",
+    hash: "fc250b05e98a9ff998b4b68f5f99f994",
+    sha256: "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561",
+    size: 4476518,
+    notes:
+      "Changed the Menu gesture to tap then long press; allows more settings while features run, lets features continue with the display off, and supports ending features via Even AI.",
+  },
+  {
     version: "2.2.8.4",
     hash: "d495a1dffb919795e95135e144345f04",
     sha256: "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7",
     size: 4342507,
     notes: "Added Korean system language support.",
+  },
+  {
+    id: "g2-custom-2.2.9.23",
+    displayName: "SybilSight CFW (2.2.9.23)",
+    version: "2.2.9.23",
+    internalVersion: "2.2.9.23",
+    reportedVersion: "2.2.9.23",
+    baseVersion: "2.2.9.22",
+    baseSha256: "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561",
+    channel: "custom",
+    trust: "reviewed-custom",
+    hash: "31f245a3a3f43a21728451e13bad25c7",
+    sha256: REVIEWED_CFW_2_2_9_23_SHA256,
+    size: 4496709,
+    fileName: "g2-2.2.9.23.bin",
+    preferLocalEvidence: true,
+    fallbacks: [[
+      "webflasher",
+      "public/firmware-updates/source-files/2.2.9.23/g2-2.2.9.23.bin",
+    ]],
+    patchFallbackRoot: "webflasher",
+    patchFallback:
+      "public/firmware-updates/source-files/2.2.9.23/cfw_patches-2.2.9.23.json",
+    patchFileName: "cfw_patches-2.2.9.23.json",
+    patchCount: 39,
+    manifestFileName: "manifest.json",
+    capabilityMarker:
+      "EVENCFW/8 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10",
+    g2flashCommit: "877c8d9490db0d3717ca012dd0f54556af3701bd",
+    g2flashRebasePatchSha256:
+      "0977b07dedbc0c7fe48f37284d8562e577de5450f567be89a7e957a8394838cc",
+    excludedFeature: {
+      id: "ble-advertised-name",
+      status: "omitted",
+      reason:
+        "Not present on the pinned g2flash main branch and withdrawn after hardware failure evidence.",
+    },
+    directFramebufferCommits: [
+      "235a8b304447e330df6a0bce0351e3b6dc3d6f08",
+      "28aad42757837db14c08225884a7cc5201e08595",
+    ],
+    notes:
+      "Built from official G2 2.2.9.22 with the pinned g2flash main patch set and reviewed adaptations for the new tap-then-long-press and image-completion paths.",
+    capabilities: [
+      ...REVIEWED_CFW_DISPLAY_CHANGES,
+      "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
+      "Keeps wear-status and compass updates available to connected apps.",
+      "Preserves the stock Bluetooth setup and advertising behavior.",
+      REVIEWED_CFW_PENDING_VALIDATION,
+    ],
   },
   {
     id: "g2-custom-2.2.8.11",
