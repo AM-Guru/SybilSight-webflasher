@@ -241,6 +241,38 @@ test("ships exactly the reviewed custom firmware releases", async () => {
   );
 });
 
+test("deployment validation pins every reviewed custom firmware release", async () => {
+  const catalog = JSON.parse(
+    await readFile(
+      new URL("../public/firmware-updates/source-files/index.json", import.meta.url),
+      "utf8",
+    ),
+  ).releases;
+  const customReleases = catalog.filter((release) => release.channel === "custom");
+  const deployWorkflow = await readFile(
+    new URL("../.github/workflows/deploy.yml", import.meta.url),
+    "utf8",
+  );
+  const pinnedCustomReleases = [
+    ...deployWorkflow.matchAll(/\["(g2-custom-[^"]+)", "([0-9a-f]{64})"\],/g),
+  ].map((match) => ({ id: match[1], sha256: match[2] }));
+
+  assert.equal(
+    pinnedCustomReleases.length,
+    customReleases.length * 2,
+    "build and production validation must pin only the reviewed catalog releases",
+  );
+  for (const { id, sha256 } of customReleases) {
+    assert.equal(
+      pinnedCustomReleases.filter(
+        (release) => release.id === id && release.sha256 === sha256,
+      ).length,
+      2,
+      `${id} must be hash-pinned in build and production validation`,
+    );
+  }
+});
+
 test("says nothing when it cannot tell", () => {
   assert.deepEqual(findUnservedPinnedImages({}), []);
   assert.deepEqual(
