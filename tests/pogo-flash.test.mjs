@@ -62,6 +62,7 @@ import {
   nextTempleDataPacingMemory,
   POGO_READ_ONLY_PHASE_SETTLE_MS,
   POGO_SETUP_STOP_FIRST_SETTLE_INDEX,
+  POGO_PRE_PROBE_QUIESCE_MS,
   readTempleDataPacingMemory,
   writeTempleDataPacingMemory,
   TEMPLE_DATA_PACING_DEFAULT_START_LEVEL,
@@ -722,6 +723,46 @@ test("retries only a fail-closed read-only YHM idle-phase mismatch", async () =>
   assert.equal(logs.length, 4);
   assert.match(logs[0][0], /811104afaf038d2044ff/);
   assert.match(logs[0][0], /zero YHM writes and zero temple bytes/);
+});
+
+test("quiesces the normal Case application before a read-only probe samples the YHM baseline", async () => {
+  const logs = [];
+  const progress = [];
+  const drains = [];
+  let opened = false;
+  let closed = false;
+  const session = new G2CaseSession(null, {
+    log: (message) => logs.push(message),
+    openNormal: async () => {
+      opened = true;
+      return {
+        async collectFor(milliseconds) {
+          drains.push(milliseconds);
+          return new Uint8Array();
+        },
+        async close() {
+          closed = true;
+        },
+      };
+    },
+  });
+
+  await session.quiesceNormalAppBeforeProbe("left", "version", (fraction, detail) =>
+    progress.push([fraction, detail]),
+  );
+
+  // The window runs the live application (opens the normal console, drains its
+  // telemetry for the full settle, then closes it) before any ROM entry, so the
+  // shared YHM2510 front end can return to its seated-idle baseline. This is
+  // the timing that turns the endless read-only status-3 loop into a
+  // first-probe success on a Case whose opposite temple is faulted.
+  assert.equal(opened, true);
+  assert.equal(closed, true);
+  assert.deepEqual(drains, [POGO_PRE_PROBE_QUIESCE_MS]);
+  assert.ok(POGO_PRE_PROBE_QUIESCE_MS >= 6_000);
+  assert.equal(progress.length, 1);
+  assert.match(progress[0][1], /settle before probing/);
+  assert.match(logs[0], /seated-idle baseline/);
 });
 
 test("switches to the exact observed-33 bridge only from retained zero-write proof", async () => {

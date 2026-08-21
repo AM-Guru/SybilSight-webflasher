@@ -143,6 +143,27 @@ export const POGO_READ_ONLY_PHASE_SETTLE_MS = Object.freeze([
 // rung cost a wasted setup round trip on every run. The writer starts one rung
 // in; the ladder itself is unchanged for every other caller.
 export const POGO_SETUP_STOP_FIRST_SETTLE_INDEX = 1;
+// How long the normal Case application runs, undisturbed, immediately before a
+// read-only pogo probe enters the ROM loader.
+//
+// The bridge reads the YHM2510 baseline ~0.5 s after the probe's own ROM-entry
+// reset. Critically, that STM32 reset does NOT reset the external YHM2510 front
+// end — its registers persist — so the bridge reads whatever idle-or-non-idle
+// state the *application* last drove the YHM2510 into before the reset. On a
+// Case whose opposite temple is faulted (persistent `Fail to get GLS_R` /
+// `reset GLS_R` / `water detected` cycles), every reset restarts a charging
+// renegotiation storm that holds the shared YHM2510 out of its seated-idle
+// baseline for several seconds. The previous flow gave the app only ~3.5 s to
+// re-quiesce (openNormalConsole's telemetry read) before the probe reset, which
+// on 2026-08-21 hardware left the YHM2510 non-idle ~50 % of the time and
+// produced an endless read-only status-3 settle loop ("Case application
+// restored", 61 %, step 4 of 6). Measured on that Case: ~3.5 s quiesced 2/4
+// idle, ~7 s quiesced 4/4 idle, and 5–10 s single probes were 5/5. Eight
+// seconds centres the probe inside the quiet window between the ~15 s GLS_R
+// retry bursts with margin. This changes only WHEN the baseline is sampled; it
+// weakens no fail-closed invariant — a still-non-idle baseline stops exactly as
+// before.
+export const POGO_PRE_PROBE_QUIESCE_MS = 8_000;
 // How long a temple gets to restart onto a committed image before the run
 // falls through to the bounded activation-reset path, and how often that wait
 // is narrated. Measured: a temple can run this whole window still reporting
@@ -3256,6 +3277,39 @@ export class G2CaseSession {
     throw new Error("The bounded read-only temple retry loop ended unexpectedly.");
   }
 
+  // Run the normal Case application, undisturbed, for a bounded window right
+  // before a read-only probe enters the ROM loader, so the shared YHM2510
+  // front end is in its seated-idle baseline when the bridge samples it.
+  //
+  // The probe's own ROM-entry reset preserves the external YHM2510 registers,
+  // so the bridge reads whatever state the application last drove them into;
+  // when the opposite temple is faulted, a reset restarts a several-second
+  // GLS charging-renegotiation storm that holds the YHM2510 out of idle. This
+  // window lets that storm subside on the live application before the reset,
+  // and is the difference between a first-probe success and an endless
+  // read-only status-3 settle loop on such a Case. See POGO_PRE_PROBE_QUIESCE_MS.
+  //
+  // This only changes WHEN the baseline is sampled. If the YHM2510 is still
+  // non-idle afterwards the bridge stops fail-closed exactly as before, so the
+  // window is skipped entirely when it is set to zero.
+  async quiesceNormalAppBeforeProbe(route, operation, reportProgress = () => {}) {
+    if (!(POGO_PRE_PROBE_QUIESCE_MS > 0)) return;
+    reportProgress(0.04, "Letting the Case application settle before probing");
+    this.log(
+      `${route} ${operation}: letting the normal Case application settle for ${
+        POGO_PRE_PROBE_QUIESCE_MS / 1000
+      } s so the shared YHM2510 front end reaches its seated-idle baseline before the read-only probe.`,
+    );
+    const normal = await this.openNormal(this.port);
+    try {
+      // Drain the console while we wait so the streamed telemetry cannot back
+      // up the transport buffer during the settle; the bytes are not needed.
+      await normal.collectFor(POGO_PRE_PROBE_QUIESCE_MS);
+    } finally {
+      await normal.close();
+    }
+  }
+
   async probeRunningTempleOnce(
     operation,
     route,
@@ -3353,6 +3407,7 @@ export class G2CaseSession {
     };
 
     try {
+      await this.quiesceNormalAppBeforeProbe(route, operation, reportProgress);
       this.log(
         `Loading the pinned read-only pogo bridge for ${route} ${operation} · YHM profile ${yhmProfile} · ${bridgeSha256.slice(0, 16)}….`,
       );
