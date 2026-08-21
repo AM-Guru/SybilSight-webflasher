@@ -46,6 +46,7 @@ import {
   canResetAfterZeroWriteSetupStop,
   canRestartFailedTempleComponent,
   canRunFinalResetAfterFailure,
+  expectedTempleVersionsForComponentRestart,
   classifyExhaustedYhmSetupBoundary,
   classifyMaximumPacingTempleDataRejection,
   classifyPersistentTempleDataRejection,
@@ -2280,6 +2281,29 @@ test("allows one fresh component restart only after a DATA failure and exact cle
       0,
     ),
     false,
+  );
+});
+
+test("component restart does not impose one split-pair source version on an untouched route", () => {
+  assert.deepEqual(
+    expectedTempleVersionsForComponentRestart({
+      livenessRoutes: ["right", "left"],
+      restartingRoute: "right",
+      restartingRouteVersion: "2.2.9.24",
+      targetVersion: "2.2.9.25",
+    }),
+    { right: "2.2.9.24", left: null },
+  );
+
+  assert.deepEqual(
+    expectedTempleVersionsForComponentRestart({
+      livenessRoutes: ["right", "left"],
+      restartingRoute: "left",
+      restartingRouteVersion: "2.2.8.11",
+      targetVersion: "2.2.9.25",
+      completedRouteResults: [{ route: "right", outcome: "success" }],
+    }),
+    { right: "2.2.9.25", left: "2.2.8.11" },
   );
 });
 

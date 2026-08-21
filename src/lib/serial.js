@@ -1230,6 +1230,32 @@ export function canRestartFailedTempleComponent(
   );
 }
 
+export function expectedTempleVersionsForComponentRestart({
+  livenessRoutes,
+  restartingRoute,
+  restartingRouteVersion,
+  targetVersion,
+  completedRouteResults = [],
+}) {
+  return Object.fromEntries(
+    livenessRoutes.map((route) => {
+      const completed = completedRouteResults.some(
+        (result) => result?.route === route && result?.outcome === "success",
+      );
+      if (completed) return [route, targetVersion];
+      if (route === restartingRoute) {
+        return [route, restartingRouteVersion];
+      }
+      // A bilateral hardware reset also reboots routes that this component
+      // attempt has not touched yet. On a split pair, their exact source
+      // version is not implied by the restarting route's preflight version.
+      // Require a checksum-valid hardware-5 liveness reply without inventing
+      // a version expectation for an untouched route.
+      return [route, null];
+    }),
+  );
+}
+
 function exactRestoredTempleDataFailure(routeResult) {
   return Boolean(
     routeResult?.outcome === "failed_or_uncertain" &&
@@ -4762,29 +4788,14 @@ export class G2CaseSession {
               error.routeResult?.preflightVersion?.firmware ??
               expectedSourceVersion ??
               targetReportedVersion;
-            const expectedVersionByRoute = Object.fromEntries(
-              livenessRoutes.map((livenessRoute) => {
-                // A seated temple outside this run's route selection was
-                // never written to. On a split pair it legitimately holds a
-                // different image than the route being repaired, so predicting
-                // either the source or the target version for it is wrong.
-                // Verify only that its application came back — hardware
-                // revision plus a checksum-valid version reply.
-                if (!routes.includes(livenessRoute)) {
-                  return [livenessRoute, null];
-                }
-                return [
-                  livenessRoute,
-                  audit.routeResults.some(
-                    (completed) =>
-                      completed?.route === livenessRoute &&
-                      completed?.outcome === "success",
-                  )
-                    ? targetReportedVersion
-                    : restartingRouteVersion,
-                ];
-              }),
-            );
+            const expectedVersionByRoute =
+              expectedTempleVersionsForComponentRestart({
+                livenessRoutes,
+                restartingRoute: route,
+                restartingRouteVersion,
+                targetVersion: targetReportedVersion,
+                completedRouteResults: audit.routeResults,
+              });
             audit.routeComponentRestartResets.push(
               await this.resetTempleOtaReceiverForComponentRestart(
                 livenessRoutes,
