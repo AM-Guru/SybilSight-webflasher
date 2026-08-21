@@ -79,25 +79,8 @@ jobs:
             }
             const catalog = JSON.parse(catalogBytes);
             const customReleases = catalog.releases.filter((entry) => entry.channel === "custom");
-            const expectedCustomReleases = new Map([
-              ["g2-custom-2.2.9.25", "62c138ab9f998f4dd1affb0ebd491ae7c563e424ce6f579b5484c9995730e215"],
-              ["g2-custom-2.2.9.24", "75eebde79ffe397d65980f8b03a60fefa8f8cb0c70b621ab355d6c2f90a8e445"],
-              ["g2-custom-2.2.8.11", "be3922f3695e0b58a6b62f40f760b6c8754488c4e9a58c96b2c13e92ef33bd3a"],
-              ["g2-custom-2.2.7.16", "6c0fdfed0eabfc40ba718ec1eec6b0728e9794a8abdb6079ebdcee2c56f58127"],
-              ["g2-custom-2.2.6.11", "105032302d02ccf943b785070cf15877a918c120b7ca1332bb6261f70eb6d683"],
-            ]);
-            if (customReleases.length !== expectedCustomReleases.size ||
-                customReleases.some((entry) =>
-                  entry.trust !== "reviewed-custom" ||
-                  expectedCustomReleases.get(entry.id) !== entry.sha256)) {
-              throw new Error("Catalog does not contain the exact reviewed G2 CFW release set");
-            }
-            for (const custom of customReleases) {
-              const expectedArchiveKey = custom.version + "-" + custom.sha256.slice(0, 12);
-              const expectedPrefix = "/firmware-updates/source-files/" + expectedArchiveKey + "/";
-              if (custom.archiveKey !== expectedArchiveKey || !custom.url.startsWith(expectedPrefix)) {
-                throw new Error("Reviewed custom firmware must use its SHA-256-addressed archive path");
-              }
+            if (customReleases.length !== 0) {
+              throw new Error("Catalog must not contain CFW releases");
             }
             const newestOfficial = catalog.releases
               .filter((entry) => entry.channel === "official" && entry.trust === "official-pinned")
@@ -815,7 +798,6 @@ jobs:
           observed_app_versions_file="${RUNNER_TEMP}/observed-app-versions.json"
           observed_catalog_file="${RUNNER_TEMP}/observed-firmware-catalog.json"
           observed_archive_catalog_file="${RUNNER_TEMP}/observed-archive-catalog.json"
-          observed_target_file="${RUNNER_TEMP}/observed-reviewed-custom.bin"
           curl --fail --silent --show-error \
             --header 'Cache-Control: no-cache' \
             --output "${observed_release_file}" \
@@ -855,7 +837,7 @@ jobs:
             echo "Production source-files catalog does not match the release-bound catalog" >&2
             exit 1
           fi
-          target_metadata="$(node -e '
+          node -e '
             const crypto = require("node:crypto");
             const fs = require("node:fs");
             const [releasePath, catalogPath, expectedBuild] = process.argv.slice(1);
@@ -870,39 +852,8 @@ jobs:
             }
             const catalog = JSON.parse(catalogBytes);
             const customReleases = catalog.releases.filter((entry) => entry.channel === "custom");
-            const expectedCustomReleases = new Map([
-              ["g2-custom-2.2.9.25", "62c138ab9f998f4dd1affb0ebd491ae7c563e424ce6f579b5484c9995730e215"],
-              ["g2-custom-2.2.9.24", "75eebde79ffe397d65980f8b03a60fefa8f8cb0c70b621ab355d6c2f90a8e445"],
-              ["g2-custom-2.2.8.11", "be3922f3695e0b58a6b62f40f760b6c8754488c4e9a58c96b2c13e92ef33bd3a"],
-              ["g2-custom-2.2.7.16", "6c0fdfed0eabfc40ba718ec1eec6b0728e9794a8abdb6079ebdcee2c56f58127"],
-              ["g2-custom-2.2.6.11", "105032302d02ccf943b785070cf15877a918c120b7ca1332bb6261f70eb6d683"],
-            ]);
-            if (customReleases.length !== expectedCustomReleases.size ||
-                customReleases.some((entry) =>
-                  entry.trust !== "reviewed-custom" ||
-                  expectedCustomReleases.get(entry.id) !== entry.sha256)) {
-              throw new Error("Production catalog does not contain the exact reviewed G2 CFW release set");
+            if (customReleases.length !== 0) {
+              throw new Error("Production catalog must not contain CFW releases");
             }
-            for (const target of customReleases) {
-              if (!target?.url || !/^[0-9a-f]{64}$/.test(target.sha256 ?? "")) {
-                throw new Error("Production catalog has an invalid reviewed custom target");
-              }
-              const expectedArchiveKey = target.version + "-" + target.sha256.slice(0, 12);
-              const expectedPrefix = "/firmware-updates/source-files/" + expectedArchiveKey + "/";
-              if (target.archiveKey !== expectedArchiveKey || !target.url.startsWith(expectedPrefix)) {
-                throw new Error("Production custom target is not content-addressed");
-              }
-            }
-            process.stdout.write(customReleases.map((target) => target.url + " " + target.sha256).join("\n"));
-          ' "${observed_release_file}" "${observed_catalog_file}" "${GITHUB_SHA}")"
-          while read -r target_url target_sha256; do
-            curl --fail --silent --show-error \
-              --output "${observed_target_file}" \
-              "https://webflasher.sybilsight.com${target_url}?verify=${GITHUB_SHA}&run=${GITHUB_RUN_ID}"
-            observed_target_sha256="$(sha256sum "${observed_target_file}" | cut -d ' ' -f 1)"
-            if [ "${observed_target_sha256}" != "${target_sha256}" ]; then
-              echo "Production reviewed custom target ${observed_target_sha256} does not match ${target_sha256}" >&2
-              exit 1
-            fi
-          done <<<"${target_metadata}"
-          echo "Verified production WebFlasher ${GITHUB_SHA}, catalog, and reviewed CFW targets"
+          ' "${observed_release_file}" "${observed_catalog_file}" "${GITHUB_SHA}"
+          echo "Verified production WebFlasher ${GITHUB_SHA} and official firmware catalog"

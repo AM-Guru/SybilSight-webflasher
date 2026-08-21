@@ -45,12 +45,7 @@ export function findLatestReviewedCustomRelease(releases) {
 }
 
 export function findDefaultFirmwareRelease(releases) {
-  return (
-    findLatestReviewedCustomRelease(releases) ??
-    findLatestOfficialStockRelease(releases) ??
-    (Array.isArray(releases) ? releases[0] : null) ??
-    null
-  );
+  return findLatestOfficialStockRelease(releases);
 }
 
 export function firmwareReleaseDisplayName(release) {

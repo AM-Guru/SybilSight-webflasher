@@ -72,14 +72,9 @@ test("flags a pinned image the served library is too old to offer", () => {
   assert.deepEqual(
     missing.map((target) => target.imageSha256),
     [
-      REVIEWED_CFW_2_2_9_25_SHA256,
-      REVIEWED_CFW_2_2_9_24_SHA256,
       OFFICIAL_G2_2_2_9_22_SHA256,
-      REVIEWED_CFW_2_2_8_11_SHA256,
       OFFICIAL_G2_2_2_8_4_SHA256,
-      REVIEWED_CFW_2_2_7_16_SHA256,
       OFFICIAL_G2_2_2_7_14_SHA256,
-      REVIEWED_G2FLASH_CFW_2_2_6_11_SHA256,
     ],
     "newer official releases are newer than anything the stale catalog serves",
   );
@@ -97,14 +92,9 @@ test("blocks firmware mutation when the served library is behind the build", () 
       assert.deepEqual(
         error.missingPinnedImages.map((target) => target.imageSha256),
         [
-          REVIEWED_CFW_2_2_9_25_SHA256,
-          REVIEWED_CFW_2_2_9_24_SHA256,
           OFFICIAL_G2_2_2_9_22_SHA256,
-          REVIEWED_CFW_2_2_8_11_SHA256,
           OFFICIAL_G2_2_2_8_4_SHA256,
-          REVIEWED_CFW_2_2_7_16_SHA256,
           OFFICIAL_G2_2_2_7_14_SHA256,
-          REVIEWED_G2FLASH_CFW_2_2_6_11_SHA256,
         ],
       );
       assert.match(error.message, /No device mutation was started/);
@@ -113,61 +103,26 @@ test("blocks firmware mutation when the served library is behind the build", () 
   );
 });
 
-test("offers the reviewed CFW releases without advertisement-patched builds", async () => {
+test("omits every CFW release from the catalog and writer allowlist", async () => {
   const catalog = JSON.parse(
     await readFile(
       new URL("../public/firmware-updates/source-files/index.json", import.meta.url),
       "utf8",
     ),
   ).releases;
-  assert.deepEqual(
-    catalog.filter((release) => release.channel === "custom").map((release) => release.version),
-    ["2.2.9.25", "2.2.9.24", "2.2.8.11", "2.2.7.16", "2.2.6.11"],
-    "the reviewed custom release set must appear in the listing",
-  );
-  for (const release of catalog.filter((entry) => entry.channel === "custom")) {
-    const expectedArchiveKey = `${release.version}-${release.sha256.slice(0, 12)}`;
-    assert.equal(release.archiveKey, expectedArchiveKey);
-    assert.equal(
-      release.url.startsWith(
-        `/firmware-updates/source-files/${expectedArchiveKey}/`,
-      ),
-      true,
-      "reviewed custom firmware URLs must remain immutable across same-version rebuilds",
-    );
-  }
-  for (const sha256 of [
+  const cfwDigests = [
     REVIEWED_CFW_2_2_9_25_SHA256,
     REVIEWED_CFW_2_2_9_24_SHA256,
     REVIEWED_CFW_2_2_8_11_SHA256,
     REVIEWED_CFW_2_2_7_16_SHA256,
     REVIEWED_G2FLASH_CFW_2_2_6_11_SHA256,
-  ]) {
-    assert.ok(catalog.some((release) => release.sha256 === sha256));
-    assert.ok(TEMPLE_FLASH_TARGETS.some((target) => target.imageSha256 === sha256));
+  ];
+  assert.deepEqual(catalog.filter((release) => release.channel === "custom"), []);
+  for (const sha256 of cfwDigests) {
+    assert.equal(catalog.some((release) => release.sha256 === sha256), false);
+    assert.equal(TEMPLE_FLASH_TARGETS.some((target) => target.imageSha256 === sha256), false);
   }
-  assert.ok(
-    catalog.some((release) => release.sha256 === REVIEWED_G2FLASH_CFW_2_2_6_11_SHA256),
-  );
-  assert.ok(
-    TEMPLE_FLASH_TARGETS.some(
-      (target) => target.imageSha256 === REVIEWED_G2FLASH_CFW_2_2_6_11_SHA256,
-    ),
-  );
-  assert.ok(catalog.some((release) => release.sha256 === OFFICIAL_G2_2_2_9_22_SHA256));
-  assert.ok(catalog.some((release) => release.sha256 === OFFICIAL_G2_2_2_8_4_SHA256));
-  assert.ok(catalog.some((release) => release.sha256 === OFFICIAL_G2_2_2_7_14_SHA256));
-  assert.deepEqual(
-    findUnservedPinnedImages({ catalog, targets: TEMPLE_FLASH_TARGETS }),
-    [],
-  );
-  assert.deepEqual(
-    assertFirmwareCatalogCoversPinnedImages({
-      catalog,
-      targets: TEMPLE_FLASH_TARGETS,
-    }),
-    { verified: true, missingPinnedImages: [] },
-  );
+  assert.deepEqual(findUnservedPinnedImages({ catalog, targets: TEMPLE_FLASH_TARGETS }), []);
 });
 
 test("excludes advertisement-patched CFW releases from both mutation paths", async () => {
@@ -197,92 +152,24 @@ test("excludes advertisement-patched CFW releases from both mutation paths", asy
   }
 });
 
-test("ships exactly the reviewed custom firmware releases", async () => {
+test("ships no custom firmware releases", async () => {
   const catalog = JSON.parse(
     await readFile(
       new URL("../public/firmware-updates/source-files/index.json", import.meta.url),
       "utf8",
     ),
   ).releases;
-  const customReleases = catalog.filter((release) => release.channel === "custom");
-  assert.deepEqual(
-    customReleases.map(({ id, version, trust, sha256, hardwareValidated }) => ({
-      id,
-      version,
-      trust,
-      sha256,
-      hardwareValidated,
-    })),
-    [
-      {
-        id: "g2-custom-2.2.9.25",
-        version: "2.2.9.25",
-        trust: "reviewed-custom",
-        sha256: REVIEWED_CFW_2_2_9_25_SHA256,
-        hardwareValidated: false,
-      },
-      {
-        id: "g2-custom-2.2.9.24",
-        version: "2.2.9.24",
-        trust: "reviewed-custom",
-        sha256: REVIEWED_CFW_2_2_9_24_SHA256,
-        hardwareValidated: false,
-      },
-      {
-        id: "g2-custom-2.2.8.11",
-        version: "2.2.8.11",
-        trust: "reviewed-custom",
-        sha256: REVIEWED_CFW_2_2_8_11_SHA256,
-        hardwareValidated: false,
-      },
-      {
-        id: "g2-custom-2.2.7.16",
-        version: "2.2.7.16",
-        trust: "reviewed-custom",
-        sha256: REVIEWED_CFW_2_2_7_16_SHA256,
-        hardwareValidated: false,
-      },
-      {
-        id: "g2-custom-2.2.6.11",
-        version: "2.2.6.11",
-        trust: "reviewed-custom",
-        sha256: REVIEWED_G2FLASH_CFW_2_2_6_11_SHA256,
-        hardwareValidated: false,
-      },
-    ],
-  );
+  assert.deepEqual(catalog.filter((release) => release.channel === "custom"), []);
 });
 
-test("deployment validation pins every reviewed custom firmware release", async () => {
-  const catalog = JSON.parse(
-    await readFile(
-      new URL("../public/firmware-updates/source-files/index.json", import.meta.url),
-      "utf8",
-    ),
-  ).releases;
-  const customReleases = catalog.filter((release) => release.channel === "custom");
+test("deployment validation rejects custom firmware releases", async () => {
   const deployWorkflow = await readFile(
     new URL("../.github/workflows/deploy.yml", import.meta.url),
     "utf8",
   );
-  const pinnedCustomReleases = [
-    ...deployWorkflow.matchAll(/\["(g2-custom-[^"]+)", "([0-9a-f]{64})"\],/g),
-  ].map((match) => ({ id: match[1], sha256: match[2] }));
-
-  assert.equal(
-    pinnedCustomReleases.length,
-    customReleases.length * 2,
-    "build and production validation must pin only the reviewed catalog releases",
-  );
-  for (const { id, sha256 } of customReleases) {
-    assert.equal(
-      pinnedCustomReleases.filter(
-        (release) => release.id === id && release.sha256 === sha256,
-      ).length,
-      2,
-      `${id} must be hash-pinned in build and production validation`,
-    );
-  }
+  assert.doesNotMatch(deployWorkflow, /g2-custom-/);
+  assert.match(deployWorkflow, /Catalog must not contain CFW releases/);
+  assert.match(deployWorkflow, /Production catalog must not contain CFW releases/);
 });
 
 test("says nothing when it cannot tell", () => {

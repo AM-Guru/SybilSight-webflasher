@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
@@ -26,7 +25,6 @@ import {
 import {
   EXPECTED_COMPONENTS,
   EXPECTED_COMPONENT_TYPES,
-  parseFirmwareInput,
 } from "../src/lib/firmware.js";
 
 function hex(bytes) {
@@ -912,51 +910,6 @@ test("the direct BLE writer accepts only the complete pinned topology", () => {
         componentImages: firmware.componentImages.slice(1),
       }),
     /complete 6-component/,
-  );
-});
-
-test("the BLE-safe SybilSight CFW 2.2.8.11 is accepted by direct BLE", async () => {
-  const bytes = await readFile(
-    new URL(
-      "../public/firmware-updates/source-files/2.2.8.11-be3922f3695e/g2-2.2.8.11.bin",
-      import.meta.url,
-    ),
-  );
-  const firmware = await parseFirmwareInput(
-    bytes,
-    "g2-2.2.8.11.bin",
-  );
-  assert.equal(assertPinnedG2BleBundle(firmware), firmware);
-  assert.equal(firmware.g2Version, "2.2.8.11");
-  assert.equal(firmware.templeFlashEligible, true);
-  assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
-});
-
-test("the reviewed g2flash 2.2.6.11 CFW is accepted by direct BLE", async () => {
-  const bytes = await readFile(
-    new URL(
-      "../public/firmware-updates/source-files/2.2.6.11-105032302d02/g2-2.2.6.11.bin",
-      import.meta.url,
-    ),
-  );
-  const firmware = await parseFirmwareInput(bytes, "g2-2.2.6.11.bin");
-  assert.equal(assertPinnedG2BleBundle(firmware), firmware);
-  assert.equal(firmware.g2Version, "2.2.6.11");
-  assert.equal(firmware.templeFlashEligible, true);
-  assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
-});
-
-test("the direct BLE writer explicitly rejects the advertisement-modified CFW", async () => {
-  const bytes = await readFile(
-    new URL(
-      "../public/firmware-updates/source-files/2.2.8.10/g2-2.2.8.10.bin",
-      import.meta.url,
-    ),
-  );
-  const firmware = await parseFirmwareInput(bytes, "g2-2.2.8.10.bin");
-  assert.throws(
-    () => assertPinnedG2BleBundle(firmware),
-    /2\.2\.8\.10 is revoked.*loss of Bluetooth discovery/i,
   );
 });
 

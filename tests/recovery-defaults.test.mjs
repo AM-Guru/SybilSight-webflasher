@@ -39,7 +39,7 @@ test("selects the newest official Stock release independent of catalog order", (
   assert.equal(findLatestOfficialStockRelease(releases)?.id, "stock-new");
 });
 
-test("defaults the firmware selector to the newest reviewed SybilSight CFW", () => {
+test("defaults the firmware selector to the newest official Stock release", () => {
   const releases = [
     {
       id: "stock",
@@ -65,10 +65,10 @@ test("defaults the firmware selector to the newest reviewed SybilSight CFW", () 
     },
   ];
   assert.equal(findLatestReviewedCustomRelease(releases)?.id, "cfw-current");
-  assert.equal(findDefaultFirmwareRelease(releases)?.id, "cfw-current");
+  assert.equal(findDefaultFirmwareRelease(releases)?.id, "stock");
   assert.equal(
     firmwareReleaseDisplayName(findDefaultFirmwareRelease(releases)),
-    "SybilSight CFW (2.2.6.11)",
+    "Stock · G2 2.2.6.10",
   );
 });
 

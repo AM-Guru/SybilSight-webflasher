@@ -5331,8 +5331,8 @@ function App() {
                 Zero compromise.
               </h1>
               <p>
-                Verified Stock and reviewed CFW updates for Even G2, plus signed
-                R1 recovery—handled locally in your browser.
+                Verified official firmware updates for Even G2, plus signed R1
+                recovery—handled locally in your browser.
               </p>
               <div className="easy-hero-status">
                 <StatusPill
@@ -5398,8 +5398,8 @@ function App() {
             </div>
             <p>
               {easyUsesBluetooth
-                ? "Choose verified Stock or reviewed CFW, pair left and right, then keep this tab visible while SybilSight verifies every component."
-                : "Choose verified Stock or reviewed CFW, connect the G2 Case with both temples seated, then let SybilSight recover and verify both sides."}
+                ? "Choose verified official firmware, pair left and right, then keep this tab visible while SybilSight verifies every component."
+                : "Choose verified official firmware, connect the G2 Case with both temples seated, then let SybilSight recover and verify both sides."}
             </p>
           </div>
 
@@ -5428,10 +5428,6 @@ function App() {
               >
                 {catalog.map((release) => (
                   <option value={release.id} key={release.id}>
-                    {/* Label the version this image actually installs. Showing
-                        baseVersion here made reviewed CFW 2.2.6.11 read as
-                        "CFW · G2 2.2.6.10", indistinguishable from the legacy
-                        2.2.6.10 CFW build. */}
                     {firmwareReleaseDisplayName(release)}
                   </option>
                 ))}

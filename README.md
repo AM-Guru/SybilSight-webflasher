@@ -1,8 +1,7 @@
 # Even Realities G2 Webflasher
 
 A browser-based analyzer, combined Case + Smart Glasses recovery-backup
-utility, guarded charging-case recovery console, and application-alive CFW
-reinstall tool for the Even Realities G2.
+utility, and guarded charging-case recovery console for the Even Realities G2.
 
 The webflasher communicates directly with the case through Web Serial or its
 CH340-specific WebUSB transport. Device communication and firmware validation
@@ -35,17 +34,14 @@ Production deployment:
 - Downloads one combined recovery set containing a complete 512 KiB case
   flash backup, the 128-byte case option block, checksum-validated identity
   snapshots from both seated temples, and each route's matching digest-pinned
-  archived Smart Glasses firmware bundle (official channel preferred, reviewed
-  channels accepted). A split-version pair — the usual remnant of an
+  archived official Smart Glasses firmware bundle. A split-version pair — the usual remnant of an
   interrupted cross-version update — is backed up with per-route bundles
   rather than refused, and a version absent from the archive is recorded as an
   explicit omission while the live snapshots are still captured.
 - Accepts official five- or six-component `EVENOTA` bundles, wrapped
   `firmware_box.bin` components, and validated raw case images.
-- Recognizes and offers all 15 archived official G2 SHA-256 values plus the
-  reviewed CFW 2.2.6.11, 2.2.7.16, BLE-safe 2.2.8.11, and 2.2.9.23 builds. The older
-  advertisement-patched CFW 2.2.8.9 and 2.2.8.10 remain excluded from both
-  direct-Bluetooth and Case-USB installation.
+- Recognizes and offers all 15 archived official G2 SHA-256 values. CFW images
+  are not shipped, cataloged, or included in either flash allowlist.
 - Validates the Apollo main application's independent preamble, CRC-32, target
   region, installed-image boundary, and vector.
 - Stages case firmware in the inactive bank and verifies a byte-for-byte
@@ -57,22 +53,18 @@ Production deployment:
   temple status or firmware/hardware version, with retained transport and
   YHM-restoration proof.
 - Computes the recovered `0x52...0x55` pogo OTA record plan for every
-  component in a selected official or reviewed-CFW bundle without emitting
-  any OTA command, and explicitly marks the Apollo bootloader as omitted.
-- Transfers only the exact reviewed CFW or pinned official Apollo-main payload
-  to a selected running temple through the hardware-validated volatile
-  case-USB bridge.
+  component in a selected official bundle without emitting any OTA command,
+  and explicitly marks the Apollo bootloader as omitted.
+- Transfers only a pinned official Apollo-main payload to a selected running
+  temple through the hardware-validated volatile case-USB bridge.
   The browser requires fresh presence telemetry, independent bundle/main/
   bridge trust pins, explicit risk confirmations, exact per-record replies,
   postflight liveness, retained route-restoration proof, volatile-data
   cleanup, and normal case 1.2.57 return.
-- Offers a hash-pinned **Flash differences** mode for the exact Stock
-  2.2.6.10 ↔ reviewed-CFW pair. It compares every bundle component, omits the
-  five byte-identical components, and transfers the one changed Apollo-main
-  component with the same complete CRC/finish/reset verification as a normal
-  reinstall.
+- Keeps **Flash differences** unavailable because no CFW target is shipped or
+  allowlisted; official version changes use complete pinned payloads.
 - Opens in **Easy Mode** at the site root with direct Web Bluetooth as the
-  primary Smart Glasses update: choose Stock or CFW, select the explicitly
+  primary Smart Glasses update: choose official Stock, select the explicitly
   labeled Left and Right temples, confirm the assignments, and update both
   sides with the complete pinned package. The Case USB workflow stays hidden
   unless Bluetooth is unavailable, a Bluetooth update fails, or the operator
@@ -1207,19 +1199,15 @@ selected target skips that temple; if both temples match, Update sends zero
 firmware bytes and performs only reset/liveness verification. Restore remains
 available when an exact pinned-image reinstall is intentional.
 
-Update uses the component-difference
-optimization only when saved audits or fresh bilateral analysis prove the
-exact reviewed Stock/CFW source pair. That plan omits every byte-identical
-component and transfers the one changed, complete CRC-gated Apollo main. The
-receiver has no safe sparse-write offset, so Update never transmits arbitrary
-changed byte ranges inside that component.
+The component-difference optimization remains fail-closed with no CFW target
+in the shipped allowlist. Official version changes transfer the complete
+CRC-gated Apollo main; the receiver has no safe sparse-write offset, so Update
+never transmits arbitrary changed byte ranges inside that component.
 
-CFW 2.2.6.11, 2.2.7.16, 2.2.8.11, and 2.2.9.23 are the selectable reviewed custom
-targets. These exact g2flash-derived images have not yet been exercised on
-hardware, so they remain clearly marked as unvalidated and all writes stay
-gated on their complete bundle and Apollo-main hashes. Installed Apollo MRAM readback remains unavailable,
-and saved recovery audits remain browser-origin-local rather than portable
-from a localhost hardware test to the hosted site.
+CFW images are not selectable or shipped by the WebFlasher. Installed Apollo
+MRAM readback remains unavailable, and saved recovery audits remain
+browser-origin-local rather than portable from a localhost hardware test to
+the hosted site.
 
 If fresh Application-mode replies or saved route audits prove the selected
 target on both temples, Apply performs only the required bilateral reset and
