@@ -1,20 +1,20 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-20T14:51:47.332Z",
+  "generatedAt": "2026-08-21T04:47:10.646Z",
   "source": "Even Realities G2/R1 CDN plus SybilSight release evidence",
   "releases": [
     {
-      "id": "g2-custom-2.2.9.23",
-      "displayName": "SybilSight CFW (2.2.9.23)",
+      "id": "g2-custom-2.2.9.24",
+      "displayName": "SybilSight CFW (2.2.9.24)",
       "channel": "custom",
       "trust": "reviewed-custom",
       "hardwareValidated": false,
-      "version": "2.2.9.23",
-      "archiveKey": "2.2.9.23-e5f629c6fd06",
-      "internalVersion": "2.2.9.23",
-      "reportedVersion": "2.2.9.23",
+      "version": "2.2.9.24",
+      "archiveKey": "2.2.9.24-75eebde79ffe",
+      "internalVersion": "2.2.9.24",
+      "reportedVersion": "2.2.9.24",
       "baseVersion": "2.2.9.22",
-      "notes": "Built from official G2 2.2.9.22 with the pinned g2flash main patch set and reviewed adaptations for the new tap-then-long-press and image-completion paths.",
+      "notes": "Built from official G2 2.2.9.22 with the latest pinned g2flash patch set, including session cleanup, a phone-managed texture cache, cached image/text drawing, and built-in-font text drawing.",
       "capabilities": [
         "Uses the full display for custom screens and images.",
         "Makes image updates smoother and more efficient.",
@@ -23,28 +23,31 @@
         "Recognizes ring long presses and releases.",
         "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
         "Keeps wear-status and compass updates available to connected apps.",
+        "Cleans up CFW-owned sessions and releases cached texture memory explicitly.",
+        "Draws cached images and text directly into the full-panel framebuffer.",
+        "Draws UTF-8 text with the glasses' built-in 20 px font and stock kerning.",
         "Preserves the stock Bluetooth setup and advertising behavior.",
         "Reviewed for consistency; testing this exact build on physical glasses is still pending."
       ],
       "recoveryTarget": "glasses",
       "caseRecoveryEligible": false,
       "caseVersion": "1.2.57",
-      "url": "/firmware-updates/source-files/2.2.9.23-e5f629c6fd06/g2-2.2.9.23.bin",
-      "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.9.23-e5f629c6fd06/g2-2.2.9.23.bin",
-      "fileName": "g2-2.2.9.23.bin",
-      "size": 4496709,
-      "md5": "31f245a3a3f43a21728451e13bad25c7",
-      "sha256": "e5f629c6fd06ac84121022e0ecd8ef65cfebbf0c8956a0f202278451b53a0ed5",
-      "patchUrl": "/firmware-updates/source-files/2.2.9.23-e5f629c6fd06/cfw_patches-2.2.9.23.json",
-      "patchSha256": "fe128aceeeec53223b339db33c430cd5b0b9f67f6f831d28c8e8e5bb6a60a145",
-      "manifestUrl": "/firmware-updates/source-files/2.2.9.23-e5f629c6fd06/manifest.json",
-      "manifestSha256": "abbf6648bb1681ba81b632663d61d3268ea24b4dda5fea7ea878858b6eadc913",
+      "url": "/firmware-updates/source-files/2.2.9.24-75eebde79ffe/g2-2.2.9.24.bin",
+      "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.9.24-75eebde79ffe/g2-2.2.9.24.bin",
+      "fileName": "g2-2.2.9.24.bin",
+      "size": 4511158,
+      "md5": "59243d3565613ee04d411e5630c78d14",
+      "sha256": "75eebde79ffe397d65980f8b03a60fefa8f8cb0c70b621ab355d6c2f90a8e445",
+      "patchUrl": "/firmware-updates/source-files/2.2.9.24-75eebde79ffe/cfw_patches-2.2.9.24.json",
+      "patchSha256": "c62423b9acff102a200834c27b9168c2fa48a0c427a2bc86dd5d6c6ea84b7778",
+      "manifestUrl": "/firmware-updates/source-files/2.2.9.24-75eebde79ffe/manifest.json",
+      "manifestSha256": "79966e57fd45718740fd5cbd13df497bbe01b0309a626395de7b12aace34c721",
       "archivedFrom": "WebFlasher local evidence",
       "mainFirmware": {
         "runBase": "0x00438000",
-        "installedImageSize": 3717443,
-        "installedImageEnd": "0x007c3943",
-        "crc32": "88ef2f20"
+        "installedImageSize": 3731892,
+        "installedImageEnd": "0x007c71b4",
+        "crc32": "96edff80"
       },
       "components": [
         {
@@ -85,9 +88,9 @@
         {
           "name": "ota/s200_firmware_ota.bin",
           "typeId": 0,
-          "size": 3717475,
-          "crc32c": "90991798",
-          "sha256": "1bb7ac96c43380d766bd40ff504ec58f51ce774e18f7ac8b9d0c116df7dd8033"
+          "size": 3731924,
+          "crc32c": "224fff91",
+          "sha256": "2d492e484ebc0e3bb8763da3e8daaed34d21c104316203f7df0f65481e8f326a"
         }
       ]
     },

@@ -33,8 +33,8 @@ const OFFICIAL_G2_2_2_8_4_SHA256 =
   "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7";
 const OFFICIAL_G2_2_2_9_22_SHA256 =
   "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561";
-const REVIEWED_CFW_2_2_9_23_SHA256 =
-  "e5f629c6fd06ac84121022e0ecd8ef65cfebbf0c8956a0f202278451b53a0ed5";
+const REVIEWED_CFW_2_2_9_24_SHA256 =
+  "75eebde79ffe397d65980f8b03a60fefa8f8cb0c70b621ab355d6c2f90a8e445";
 
 // The catalog production actually served on 2026-07-28 and is older than the
 // current official releases pinned by this build.
@@ -70,7 +70,7 @@ test("flags a pinned image the served library is too old to offer", () => {
   assert.deepEqual(
     missing.map((target) => target.imageSha256),
     [
-      REVIEWED_CFW_2_2_9_23_SHA256,
+      REVIEWED_CFW_2_2_9_24_SHA256,
       OFFICIAL_G2_2_2_9_22_SHA256,
       REVIEWED_CFW_2_2_8_11_SHA256,
       OFFICIAL_G2_2_2_8_4_SHA256,
@@ -94,7 +94,7 @@ test("blocks firmware mutation when the served library is behind the build", () 
       assert.deepEqual(
         error.missingPinnedImages.map((target) => target.imageSha256),
         [
-          REVIEWED_CFW_2_2_9_23_SHA256,
+          REVIEWED_CFW_2_2_9_24_SHA256,
           OFFICIAL_G2_2_2_9_22_SHA256,
           REVIEWED_CFW_2_2_8_11_SHA256,
           OFFICIAL_G2_2_2_8_4_SHA256,
@@ -118,7 +118,7 @@ test("offers the reviewed CFW releases without advertisement-patched builds", as
   ).releases;
   assert.deepEqual(
     catalog.filter((release) => release.channel === "custom").map((release) => release.version),
-    ["2.2.9.23", "2.2.8.11", "2.2.7.16", "2.2.6.11"],
+    ["2.2.9.24", "2.2.8.11", "2.2.7.16", "2.2.6.11"],
     "the reviewed custom release set must appear in the listing",
   );
   for (const release of catalog.filter((entry) => entry.channel === "custom")) {
@@ -133,7 +133,7 @@ test("offers the reviewed CFW releases without advertisement-patched builds", as
     );
   }
   for (const sha256 of [
-    REVIEWED_CFW_2_2_9_23_SHA256,
+    REVIEWED_CFW_2_2_9_24_SHA256,
     REVIEWED_CFW_2_2_8_11_SHA256,
     REVIEWED_CFW_2_2_7_16_SHA256,
     REVIEWED_G2FLASH_CFW_2_2_6_11_SHA256,
@@ -210,10 +210,10 @@ test("ships exactly the reviewed custom firmware releases", async () => {
     })),
     [
       {
-        id: "g2-custom-2.2.9.23",
-        version: "2.2.9.23",
+        id: "g2-custom-2.2.9.24",
+        version: "2.2.9.24",
         trust: "reviewed-custom",
-        sha256: REVIEWED_CFW_2_2_9_23_SHA256,
+        sha256: REVIEWED_CFW_2_2_9_24_SHA256,
         hardwareValidated: false,
       },
       {

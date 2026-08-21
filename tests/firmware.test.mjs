@@ -18,6 +18,7 @@ import {
   REVIEWED_CFW_2_2_8_10,
   REVIEWED_CFW_2_2_8_11,
   REVIEWED_CFW_2_2_9_23,
+  REVIEWED_CFW_2_2_9_24,
   additiveBigEndianWordSum,
   classifyG2Firmware,
   crc32,
@@ -254,6 +255,16 @@ test("recognizes the G2 2.2.9.23 CFW rebased from current g2flash main", () => {
   assert.equal(trust.baseVersion, "2.2.9.22");
   assert.equal(trust.capabilities.some((value) => /stock Bluetooth/i.test(value)), true);
   assert.equal(findG2FirmwareRevocation(REVIEWED_CFW_2_2_9_23.sha256), null);
+});
+
+test("recognizes the G2 2.2.9.24 EVENCFW/15 trust pin", () => {
+  const trust = classifyG2Firmware(REVIEWED_CFW_2_2_9_24.sha256);
+  assert.equal(trust.trust, "reviewed-custom");
+  assert.equal(trust.version, "2.2.9.24");
+  assert.equal(trust.baseVersion, "2.2.9.22");
+  assert.equal(trust.capabilities.some((value) => /texture cache/i.test(value)), true);
+  assert.equal(trust.capabilities.some((value) => /built-in.*font/i.test(value)), true);
+  assert.equal(findG2FirmwareRevocation(REVIEWED_CFW_2_2_9_24.sha256), null);
 });
 
 test("revokes every advertisement-modified 2.2.8 CFW hash", () => {
@@ -839,7 +850,7 @@ test("ships the complete official catalog plus the reviewed CFW releases", async
   assert.deepEqual(
     custom.map((release) => release.sha256),
     [
-      REVIEWED_CFW_2_2_9_23.sha256,
+      REVIEWED_CFW_2_2_9_24.sha256,
       REVIEWED_CFW_2_2_8_11.sha256,
       REVIEWED_CFW_2_2_7_16.sha256,
       REVIEWED_G2FLASH_CFW_2_2_6_11.sha256,
@@ -996,37 +1007,33 @@ test("ships reproducible g2flash CFW 2.2.6.11 with consistent live identity", as
   assert.equal(manifest.release.hardwareValidated, false);
 });
 
-test("ships reproducible G2 2.2.9.23 CFW with the current g2flash main feature set", async () => {
+test("ships reproducible G2 2.2.9.24 CFW with the current g2flash main feature set", async () => {
   const releaseDirectory = new URL(
-    "../public/firmware-updates/source-files/2.2.9.23-e5f629c6fd06/",
+    "../public/firmware-updates/source-files/2.2.9.24-75eebde79ffe/",
     import.meta.url,
   );
-  const bundle = await readFile(new URL("g2-2.2.9.23.bin", releaseDirectory));
-  const firmware = await parseFirmwareInput(bundle, "g2-2.2.9.23.bin");
-  assert.equal(firmware.fileSha256, REVIEWED_CFW_2_2_9_23.sha256);
-  assert.equal(firmware.g2Version, "2.2.9.23");
+  const bundle = await readFile(new URL("g2-2.2.9.24.bin", releaseDirectory));
+  const firmware = await parseFirmwareInput(bundle, "g2-2.2.9.24.bin");
+  assert.equal(firmware.fileSha256, REVIEWED_CFW_2_2_9_24.sha256);
+  assert.equal(firmware.g2Version, "2.2.9.24");
   assert.equal(firmware.provenance.trust, "reviewed-custom");
   assert.equal(firmware.provenance.baseVersion, "2.2.9.22");
-  assert.equal(firmware.mainComponent.payload.length, REVIEWED_CFW_2_2_9_23.mainPayloadBytes);
-  assert.equal(firmware.mainComponent.payloadSha256, REVIEWED_CFW_2_2_9_23.mainPayloadSha256);
+  assert.equal(firmware.mainComponent.payload.length, REVIEWED_CFW_2_2_9_24.mainPayloadBytes);
+  assert.equal(firmware.mainComponent.payloadSha256, REVIEWED_CFW_2_2_9_24.mainPayloadSha256);
   assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
-  assert.equal(bundle.includes(Buffer.from(REVIEWED_CFW_2_2_9_23.capabilityMarker)), true);
+  assert.equal(bundle.includes(Buffer.from(REVIEWED_CFW_2_2_9_24.capabilityMarker)), true);
   assert.equal(bundle.toString("latin1").split("2.2.9.22").length - 1, 0);
-  assert.equal(bundle.toString("latin1").split("2.2.9.23").length - 1, 14);
+  assert.equal(bundle.toString("latin1").split("2.2.9.24").length - 1, 14);
 
   const patchSet = JSON.parse(
-    await readFile(new URL("cfw_patches-2.2.9.23.json", releaseDirectory), "utf8"),
+    await readFile(new URL("cfw_patches-2.2.9.24.json", releaseDirectory), "utf8"),
   );
   assert.equal(patchSet.vendor_base_version, "2.2.9.22");
-  assert.equal(patchSet.output_sha256, REVIEWED_CFW_2_2_9_23.sha256);
-  assert.equal(patchSet.patches.length, 39);
+  assert.equal(patchSet.output_sha256, REVIEWED_CFW_2_2_9_24.sha256);
+  assert.equal(patchSet.patches.length, 40);
   assert.equal(
     patchSet.source_provenance.g2flash_upstream_commit,
-    "877c8d9490db0d3717ca012dd0f54556af3701bd",
-  );
-  assert.match(
-    patchSet.source_provenance.address_profile.gesture_adaptation,
-    /tap-then-long-press/,
+    "469d78e332040f6ed77e978df496d3e7d427b4f2",
   );
   assert.match(
     patchSet.source_provenance.address_profile.image_completion_adaptation,
@@ -1034,7 +1041,7 @@ test("ships reproducible G2 2.2.9.23 CFW with the current g2flash main feature s
   );
   const manifest = JSON.parse(await readFile(new URL("manifest.json", releaseDirectory), "utf8"));
   assert.equal(manifest.release.baseVersion, "2.2.9.22");
-  assert.equal(manifest.patchRecipe.operationCount, 39);
+  assert.equal(manifest.patchRecipe.operationCount, 40);
   assert.equal(manifest.release.hardwareValidated, false);
 });
 

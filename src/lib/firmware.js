@@ -186,6 +186,28 @@ export const REVIEWED_CFW_2_2_9_23 = Object.freeze({
     REVIEWED_CFW_PENDING_VALIDATION,
   ],
 });
+export const REVIEWED_CFW_2_2_9_24 = Object.freeze({
+  version: "2.2.9.24",
+  reportedVersion: "2.2.9.24",
+  baseVersion: "2.2.9.22",
+  baseSha256: "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561",
+  sha256: "75eebde79ffe397d65980f8b03a60fefa8f8cb0c70b621ab355d6c2f90a8e445",
+  mainPayloadBytes: 3731924,
+  mainPayloadSha256:
+    "2d492e484ebc0e3bb8763da3e8daaed34d21c104316203f7df0f65481e8f326a",
+  capabilityMarker:
+    "EVENCFW/15 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10 cleanup11 texcache12 teximg13 texstr14 font15",
+  capabilities: [
+    ...REVIEWED_CFW_DISPLAY_CHANGES,
+    "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
+    "Keeps wear-status and compass updates available to connected apps.",
+    "Provides a phone-managed 64 KiB texture cache with explicit CFW session cleanup.",
+    "Draws cached images and text directly into the full-panel framebuffer.",
+    "Draws UTF-8 text with the glasses' built-in 20 px font and stock kerning.",
+    "Preserves the stock Bluetooth setup and advertising behavior.",
+    REVIEWED_CFW_PENDING_VALIDATION,
+  ],
+});
 export const G2_FIRMWARE_REVOCATIONS = Object.freeze([
   Object.freeze({
     version: "2.2.8.7",
@@ -1047,6 +1069,7 @@ export function parseMainOTAPreamble(payload) {
 export function classifyG2Firmware(fileSha256) {
   const digest = fileSha256.toLowerCase();
   const reviewed = [
+    REVIEWED_CFW_2_2_9_24,
     REVIEWED_CFW_2_2_9_23,
     REVIEWED_G2FLASH_CFW_2_2_6_11,
     REVIEWED_CFW_2_2_8_11,

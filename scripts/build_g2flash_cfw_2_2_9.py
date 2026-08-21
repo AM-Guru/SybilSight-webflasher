@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Build SybilSight G2 CFW 2.2.9.23 from official 2.2.9.22.
+"""Build SybilSight G2 CFW 2.2.9.24 from official 2.2.9.22.
 
 The injected feature code is compiled from the pinned g2flash main checkout after
 applying the reviewed 2.2.9 address profile in memory.  Every live-code edit is
-expected-byte gated, all package/runtime identities are advanced to 2.2.9.23,
+expected-byte gated, all package/runtime identities are advanced to 2.2.9.24,
 and the emitted JSON recipe reproduces the output from the stock CDN image.
 """
 
@@ -22,13 +22,13 @@ import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE_VERSION = "2.2.9.22"
-OUTPUT_VERSION = "2.2.9.23"
+OUTPUT_VERSION = "2.2.9.24"
 BASE_SHA256 = "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561"
-G2FLASH_COMMIT = "877c8d9490db0d3717ca012dd0f54556af3701bd"
-G2FLASH_RECIPE_SHA256 = "ab38d6299ba28afe2cd4ea5b4442867e894b7909e6c73db8f1ee0796c06a914a"
+G2FLASH_COMMIT = "469d78e332040f6ed77e978df496d3e7d427b4f2"
+G2FLASH_RECIPE_SHA256 = "fe76eb55a6a52eec06f0818e56e310ab419731169b12305aed755a7318419410"
 CAPABILITY_MARKER = (
-    "EVENCFW/8 img576 img640 imgz rle wakelease directfb fbguard "
-    "wearnotify compass10"
+    "EVENCFW/15 img576 img640 imgz rle wakelease directfb fbguard "
+    "wearnotify compass10 cleanup11 texcache12 teximg13 texstr14 font15"
 )
 BASE = (
     ROOT / "public" / "firmware-updates" / "source-files" / BASE_VERSION
@@ -125,7 +125,16 @@ ADDRESS_PROFILE = {
     "0x0058705d": "0x0059f487", "0x200007b8": "0x200008b4",
     "0x20074504": "0x200767a0", "0x20074a34": "0x20076d80",
     "0x200744d0": "0x20076768", "0x2034dc30": "0x20349450",
-    "0x20003ffc": "0x2000475c",
+    "0x20003ffc": "0x2000475c", "0x0044953f": "0x00442cf3",
+    "0x0046ae9d": "0x004eb031", "0x00484181": "0x0048c1e9",
+    "0x0048429f": "0x0048c307", "0x004d5613": "0x004e644f",
+    "0x004d5665": "0x004e64a1", "0x004d56c1": "0x004e64fd",
+    "0x0078d654": "0x007b75f8", "0x20000338": "0x2000033c",
+    "0x20000354": "0x20000358", "0x20074254": "0x200765a0",
+    "0x200746dc": "0x20076978", "0x20074abc": "0x20076e08",
+    "0x2013be70": "0x201350a8", "0x20208e70": "0x202020a8",
+    "0x20279670": "0x202728a8", "0x202a6270": "0x2029f4a8",
+    "0x202a6274": "0x2029f4ac", "0x202a6670": "0x2029f8a8",
 }
 
 
@@ -147,6 +156,7 @@ HOOKS = (
 )
 
 IN_PLACE = (
+    (0x0048C350, "5ff43432", "5ff43332", "reserve final 1 KiB of primary TLSF arena for CFW state"),
     (0x004EDDD2, "bdf82c10", "40f24120", "image-container width 576"),
     (0x004EDE9A, "bdf82e00", "40f22111", "image-container height 289 sentinel"),
     (0x004EDE9E, "9128", "8842", "image-container height comparison"),
@@ -156,9 +166,17 @@ EVEN_AI_ENTRY = (0x004F5156, "7fb50600")
 
 def prepare_sources(checkout: Path, destination: Path) -> Path:
     patch_dir = checkout / "patches"
-    for name in ("build.py", "patches_main.c", "zlib_glue.c", "settings_ext.c", "gesture_fwd.c"):
+    source_names = (
+        "build.py", "patches_main.c", "utils.c", "utils.h", "malloc.c", "malloc.h",
+        "draw.c", "draw.h", "cfw_context.c", "cfw_context.h", "rle.c", "rle.h",
+        "texture_cache.c", "texture_cache.h", "zlib_glue.c", "settings_ext.c",
+        "gesture_fwd.c", "debug.c", "debug.h",
+    )
+    for name in source_names:
         shutil.copy2(patch_dir / name, destination / name)
-    for name in ("zlib_glue.c", "settings_ext.c", "gesture_fwd.c"):
+    for name in source_names:
+        if not name.endswith((".c", ".h")):
+            continue
         path = destination / name
         text = path.read_text()
         for old, new in ADDRESS_PROFILE.items():
@@ -171,13 +189,6 @@ def prepare_sources(checkout: Path, destination: Path) -> Path:
     text = checked_replace(text, '"movw r12, #0x1fd7\\n"', '"movw r12, #0x515b\\n"', settings.name)
     text = checked_replace(text, '"movt r12, #0x004e\\n"', '"movt r12, #0x004f\\n"', settings.name)
     settings.write_text(text)
-
-    gesture = destination / "gesture_fwd.c"
-    text = gesture.read_text()
-    old = """void evenhub_longpress(void)\n{\n    if (EVT_SRC == SRC_RING)\n        FW_SYSEVT(0, 0, 0, ET_LONG, 0, 0);\n}"""
-    new = """void evenhub_longpress(unsigned app_id, void *arg, unsigned arg_len, void *cb)\n{\n    if (EVT_SRC == SRC_RING)\n        FW_SYSEVT(0, 0, 0, ET_LONG, 0, 0);\n    else\n        FW_DISPLAY_START(app_id, arg, arg_len, cb);\n}"""
-    text = checked_replace(text, old, new, gesture.name)
-    gesture.write_text(text)
 
     zlib_glue = destination / "zlib_glue.c"
     text = zlib_glue.read_text()
@@ -338,7 +349,7 @@ def build(checkout: Path) -> tuple[bytes, dict]:
             for address, old, function, purpose in HOOKS
         ],
         "image_completion_adaptation": "wraps the 2.2.9 four-argument completion routine after taking the FIFO snapshot",
-        "gesture_adaptation": "forwards the new tap-then-long-press event for R1 and preserves stock display-start behavior for non-ring input",
+        "gesture_adaptation": "uses the pinned upstream tap-then-long-press forwarding implementation without a 2.2.9-only source rewrite",
         "even_ai_resume": "0x004f515b (Thumb)",
     }
     rebase_patch_sha256 = sha256(json.dumps(profile, sort_keys=True).encode())
