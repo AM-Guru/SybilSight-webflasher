@@ -204,6 +204,14 @@ test("deployment preserves immutable package bytes while allowing archive enrich
   assert.match(workflow, /"sourceFile":\[\[:space:\]\]\*"/);
   assert.match(
     workflow,
+    /if \[ -f "\$\{firmware_source_dir\}\/metadata\.json" \] &&/,
+  );
+  assert.match(
+    workflow,
+    /Raw source directories intentionally omit that/,
+  );
+  assert.match(
+    workflow,
     /cmp -s "\$\{firmware_source_package\}" "\$\{firmware_target_package\}"/,
   );
   assert.match(

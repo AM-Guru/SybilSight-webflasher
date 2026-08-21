@@ -627,23 +627,34 @@ jobs:
                 echo "Refusing non-directory firmware target: ${firmware_target}" >&2
                 exit 1
               fi
-              firmware_package="$(sed -n \
-                's/^[[:space:]]*"sourceFile":[[:space:]]*"\([^"]*\)",*[[:space:]]*$/\1/p' \
-                "${firmware_source_dir}/metadata.json")"
-              case "${firmware_package}" in
-                ""|*/*|.|..)
-                  echo "Refusing invalid firmware package name: ${firmware_relative}" >&2
+              # Generated archive directories name their primary package in
+              # metadata.json. Raw source directories intentionally omit that
+              # generated document, so let the exhaustive file comparison
+              # below validate those legacy and current source trees.
+              if [ -f "${firmware_source_dir}/metadata.json" ] && \
+                [ ! -L "${firmware_source_dir}/metadata.json" ]; then
+                firmware_package="$(sed -n \
+                  's/^[[:space:]]*"sourceFile":[[:space:]]*"\([^"]*\)",*[[:space:]]*$/\1/p' \
+                  "${firmware_source_dir}/metadata.json")"
+                case "${firmware_package}" in
+                  ""|*/*|.|..)
+                    echo "Refusing invalid firmware package name: ${firmware_relative}" >&2
+                    exit 1
+                    ;;
+                esac
+                firmware_source_package="${firmware_source_dir}/${firmware_package}"
+                firmware_target_package="${firmware_target}/${firmware_package}"
+                if [ ! -f "${firmware_source_package}" ] || \
+                  [ -L "${firmware_source_package}" ] || \
+                  [ ! -f "${firmware_target_package}" ] || \
+                  [ -L "${firmware_target_package}" ] || \
+                  ! cmp -s "${firmware_source_package}" "${firmware_target_package}"; then
+                  echo "Refusing conflicting immutable firmware package: ${firmware_relative}/${firmware_package}" >&2
                   exit 1
-                  ;;
-              esac
-              firmware_source_package="${firmware_source_dir}/${firmware_package}"
-              firmware_target_package="${firmware_target}/${firmware_package}"
-              if [ ! -f "${firmware_source_package}" ] || \
-                [ -L "${firmware_source_package}" ] || \
-                [ ! -f "${firmware_target_package}" ] || \
-                [ -L "${firmware_target_package}" ] || \
-                ! cmp -s "${firmware_source_package}" "${firmware_target_package}"; then
-                echo "Refusing conflicting immutable firmware package: ${firmware_relative}/${firmware_package}" >&2
+                fi
+              elif [ -e "${firmware_source_dir}/metadata.json" ] || \
+                [ -L "${firmware_source_dir}/metadata.json" ]; then
+                echo "Refusing invalid firmware metadata: ${firmware_relative}/metadata.json" >&2
                 exit 1
               fi
 
