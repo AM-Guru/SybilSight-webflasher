@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Build SybilSight G2 CFW 2.2.9.24 from official 2.2.9.22.
+"""Build SybilSight G2 CFW 2.2.9.25 from official 2.2.9.22.
 
 The injected feature code is compiled from the pinned g2flash main checkout after
 applying the reviewed 2.2.9 address profile in memory.  Every live-code edit is
-expected-byte gated, all package/runtime identities are advanced to 2.2.9.24,
+expected-byte gated, all package/runtime identities are advanced to 2.2.9.25,
 and the emitted JSON recipe reproduces the output from the stock CDN image.
 """
 
@@ -22,11 +22,16 @@ import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE_VERSION = "2.2.9.22"
-OUTPUT_VERSION = "2.2.9.24"
+OUTPUT_VERSION = "2.2.9.25"
 BASE_SHA256 = "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561"
 G2FLASH_COMMIT = "469d78e332040f6ed77e978df496d3e7d427b4f2"
 G2FLASH_RECIPE_SHA256 = "fe76eb55a6a52eec06f0818e56e310ab419731169b12305aed755a7318419410"
 CAPABILITY_MARKER = (
+    "EVENCFW/16 img576 img640 imgz rle wakelease directfb fbguard "
+    "wearnotify compass10 cleanup11 texcache12 teximg13 texstr14 font15 "
+    "buzzer5 diag7 multiseg8 rectcopy9 ringhold"
+)
+UPSTREAM_CAPABILITY_MARKER = (
     "EVENCFW/15 img576 img640 imgz rle wakelease directfb fbguard "
     "wearnotify compass10 cleanup11 texcache12 teximg13 texstr14 font15"
 )
@@ -186,6 +191,12 @@ def prepare_sources(checkout: Path, destination: Path) -> Path:
 
     settings = destination / "settings_ext.c"
     text = settings.read_text()
+    text = checked_replace(
+        text,
+        UPSTREAM_CAPABILITY_MARKER,
+        CAPABILITY_MARKER,
+        settings.name,
+    )
     text = checked_replace(text, '"movw r12, #0x1fd7\\n"', '"movw r12, #0x515b\\n"', settings.name)
     text = checked_replace(text, '"movt r12, #0x004e\\n"', '"movt r12, #0x004f\\n"', settings.name)
     settings.write_text(text)
@@ -384,6 +395,11 @@ def build(checkout: Path) -> tuple[bytes, dict]:
             "vendor_base_sha256": BASE_SHA256,
             "address_profile": profile,
             "hardware_validation": "not-yet-hardware-flashed",
+            "downstream_contract": {
+                "version": 16,
+                "change": "Advertises already-present upstream modes 5, 7, 8, and 9 plus ring hold/release forwarding as individually negotiated features.",
+                "upstream_marker": UPSTREAM_CAPABILITY_MARKER,
+            },
         },
         "patches": operations,
     }

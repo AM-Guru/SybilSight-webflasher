@@ -80,6 +80,7 @@ jobs:
             const catalog = JSON.parse(catalogBytes);
             const customReleases = catalog.releases.filter((entry) => entry.channel === "custom");
             const expectedCustomReleases = new Map([
+              ["g2-custom-2.2.9.25", "62c138ab9f998f4dd1affb0ebd491ae7c563e424ce6f579b5484c9995730e215"],
               ["g2-custom-2.2.9.24", "75eebde79ffe397d65980f8b03a60fefa8f8cb0c70b621ab355d6c2f90a8e445"],
               ["g2-custom-2.2.8.11", "be3922f3695e0b58a6b62f40f760b6c8754488c4e9a58c96b2c13e92ef33bd3a"],
               ["g2-custom-2.2.7.16", "6c0fdfed0eabfc40ba718ec1eec6b0728e9794a8abdb6079ebdcee2c56f58127"],
@@ -870,6 +871,7 @@ jobs:
             const catalog = JSON.parse(catalogBytes);
             const customReleases = catalog.releases.filter((entry) => entry.channel === "custom");
             const expectedCustomReleases = new Map([
+              ["g2-custom-2.2.9.25", "62c138ab9f998f4dd1affb0ebd491ae7c563e424ce6f579b5484c9995730e215"],
               ["g2-custom-2.2.9.24", "75eebde79ffe397d65980f8b03a60fefa8f8cb0c70b621ab355d6c2f90a8e445"],
               ["g2-custom-2.2.8.11", "be3922f3695e0b58a6b62f40f760b6c8754488c4e9a58c96b2c13e92ef33bd3a"],
               ["g2-custom-2.2.7.16", "6c0fdfed0eabfc40ba718ec1eec6b0728e9794a8abdb6079ebdcee2c56f58127"],

@@ -208,6 +208,28 @@ export const REVIEWED_CFW_2_2_9_24 = Object.freeze({
     REVIEWED_CFW_PENDING_VALIDATION,
   ],
 });
+export const REVIEWED_CFW_2_2_9_25 = Object.freeze({
+  version: "2.2.9.25",
+  reportedVersion: "2.2.9.25",
+  baseVersion: "2.2.9.22",
+  baseSha256: "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561",
+  sha256: "62c138ab9f998f4dd1affb0ebd491ae7c563e424ce6f579b5484c9995730e215",
+  mainPayloadBytes: 3732003,
+  mainPayloadSha256:
+    "ba739c223b4cfe17105dfe632410182e6eec2adbe3a56342a3f96dfdbb97ae33",
+  capabilityMarker:
+    "EVENCFW/16 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10 cleanup11 texcache12 teximg13 texstr14 font15 buzzer5 diag7 multiseg8 rectcopy9 ringhold",
+  capabilities: [
+    ...REVIEWED_CFW_DISPLAY_CHANGES,
+    "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
+    "Keeps wear-status and compass updates available to connected apps.",
+    "Provides a phone-managed 64 KiB texture cache with atomic upload and rendering.",
+    "Draws cached images and safe UTF-8 text directly into the full-panel framebuffer.",
+    "Adds negotiated buzzer, diagnostic-overlay, atomic multi-operation, and scrolling controls.",
+    "Preserves the stock Bluetooth setup and advertising behavior.",
+    REVIEWED_CFW_PENDING_VALIDATION,
+  ],
+});
 export const G2_FIRMWARE_REVOCATIONS = Object.freeze([
   Object.freeze({
     version: "2.2.8.7",
@@ -1069,6 +1091,7 @@ export function parseMainOTAPreamble(payload) {
 export function classifyG2Firmware(fileSha256) {
   const digest = fileSha256.toLowerCase();
   const reviewed = [
+    REVIEWED_CFW_2_2_9_25,
     REVIEWED_CFW_2_2_9_24,
     REVIEWED_CFW_2_2_9_23,
     REVIEWED_G2FLASH_CFW_2_2_6_11,
@@ -1089,6 +1112,7 @@ export function classifyG2Firmware(fileSha256) {
       label: `Reviewed CFW · stock ${reviewed.baseVersion} base`,
       version: reviewed.version,
       baseVersion: reviewed.baseVersion,
+      capabilityMarker: reviewed.capabilityMarker,
       capabilities: reviewed.capabilities,
     };
   }

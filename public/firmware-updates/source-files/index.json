@@ -1,8 +1,86 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-21T04:47:10.646Z",
+  "generatedAt": "2026-08-21T05:37:44.022Z",
   "source": "Even Realities G2/R1 CDN plus SybilSight release evidence",
   "releases": [
+    {
+      "id": "g2-custom-2.2.9.25",
+      "displayName": "SybilSight CFW (2.2.9.25)",
+      "channel": "custom",
+      "trust": "reviewed-custom",
+      "hardwareValidated": false,
+      "version": "2.2.9.25",
+      "archiveKey": "2.2.9.25-62c138ab9f99",
+      "internalVersion": "2.2.9.25",
+      "reportedVersion": "2.2.9.25",
+      "baseVersion": "2.2.9.22",
+      "notes": "Adds individually negotiated buzzer, diagnostic, atomic multi-operation, scrolling, wear, compass, texture-cache, and stock-font capabilities on the official G2 2.2.9.22 base.",
+      "capabilities": [],
+      "recoveryTarget": "glasses",
+      "caseRecoveryEligible": false,
+      "caseVersion": "1.2.57",
+      "url": "/firmware-updates/source-files/2.2.9.25-62c138ab9f99/g2-2.2.9.25.bin",
+      "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.9.25-62c138ab9f99/g2-2.2.9.25.bin",
+      "fileName": "g2-2.2.9.25.bin",
+      "size": 4511237,
+      "md5": "e27d76f5ee195f45760aa846b87948cb",
+      "sha256": "62c138ab9f998f4dd1affb0ebd491ae7c563e424ce6f579b5484c9995730e215",
+      "patchUrl": "/firmware-updates/source-files/2.2.9.25-62c138ab9f99/cfw_patches-2.2.9.25.json",
+      "patchSha256": "13f2b10e2d7ae52c83c2f9c758bbcf9c08adb470485e63a157b9afa7961e05f1",
+      "manifestUrl": "/firmware-updates/source-files/2.2.9.25-62c138ab9f99/manifest.json",
+      "manifestSha256": "d5a2fd33140d2c6861fb1ad808375b8c2a45c429e329ed2f2a442281e0887c40",
+      "archivedFrom": "WebFlasher local evidence",
+      "mainFirmware": {
+        "runBase": "0x00438000",
+        "installedImageSize": 3731971,
+        "installedImageEnd": "0x007c7203",
+        "crc32": "3099df35"
+      },
+      "components": [
+        {
+          "name": "firmware/codec.bin",
+          "typeId": 4,
+          "size": 326092,
+          "crc32c": "bdcfeeac",
+          "sha256": "b06dfef7faa2f1e52d2aacd07958d4b96ffc36dca5077ac9149e48f19fc9c4d0"
+        },
+        {
+          "name": "firmware/ble_em9305.bin",
+          "typeId": 5,
+          "size": 211948,
+          "crc32c": "c074baf7",
+          "sha256": "91a38f7fc05555f86181ecb22b363e3239bfcaaa2ff6171e98524ae64821eca9"
+        },
+        {
+          "name": "firmware/touch.bin",
+          "typeId": 3,
+          "size": 34720,
+          "crc32c": "903ca49a",
+          "sha256": "c14456cd4d432815d79700b251c9a575f75c76a3710f4148c0df6ddba4cb7ba2"
+        },
+        {
+          "name": "firmware/box.bin",
+          "typeId": 6,
+          "size": 55784,
+          "crc32c": "7d443be0",
+          "sha256": "36ca0c13558f252af286ae2b36b5e576d087d21d37b15d778e7da9f502a70374"
+        },
+        {
+          "name": "ota/s200_bootloader.bin",
+          "typeId": 1,
+          "size": 149746,
+          "crc32c": "1b91e2b5",
+          "sha256": "0d6837c3eb3153303e408ec02bc7f67ecbe77095c4f12e80bf9b45cabd3cf11e"
+        },
+        {
+          "name": "ota/s200_firmware_ota.bin",
+          "typeId": 0,
+          "size": 3732003,
+          "crc32c": "9684ceba",
+          "sha256": "ba739c223b4cfe17105dfe632410182e6eec2adbe3a56342a3f96dfdbb97ae33"
+        }
+      ]
+    },
     {
       "id": "g2-custom-2.2.9.24",
       "displayName": "SybilSight CFW (2.2.9.24)",

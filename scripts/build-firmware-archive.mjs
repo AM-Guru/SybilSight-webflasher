@@ -22,6 +22,8 @@ const REVIEWED_CFW_2_2_8_11_SHA256 =
   "be3922f3695e0b58a6b62f40f760b6c8754488c4e9a58c96b2c13e92ef33bd3a";
 const REVIEWED_CFW_2_2_9_24_SHA256 =
   "75eebde79ffe397d65980f8b03a60fefa8f8cb0c70b621ab355d6c2f90a8e445";
+const REVIEWED_CFW_2_2_9_25_SHA256 =
+  "62c138ab9f998f4dd1affb0ebd491ae7c563e424ce6f579b5484c9995730e215";
 const REVIEWED_CFW_2_2_8_4_BASE_SHA256 =
   "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7";
 const REVIEWED_G2FLASH_PATCH_SHA256 =
@@ -339,6 +341,45 @@ const RELEASES = [
     sha256: "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7",
     size: 4342507,
     notes: "Added Korean system language support.",
+  },
+  {
+    id: "g2-custom-2.2.9.25",
+    displayName: "SybilSight CFW (2.2.9.25)",
+    version: "2.2.9.25",
+    internalVersion: "2.2.9.25",
+    reportedVersion: "2.2.9.25",
+    baseVersion: "2.2.9.22",
+    baseSha256: "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561",
+    channel: "custom",
+    trust: "reviewed-custom",
+    hash: "e27d76f5ee195f45760aa846b87948cb",
+    sha256: REVIEWED_CFW_2_2_9_25_SHA256,
+    size: 4511237,
+    fileName: "g2-2.2.9.25.bin",
+    preferLocalEvidence: true,
+    fallbacks: [[
+      "webflasher",
+      "public/firmware-updates/source-files/2.2.9.25/g2-2.2.9.25.bin",
+    ]],
+    patchFallbackRoot: "webflasher",
+    patchFallback:
+      "public/firmware-updates/source-files/2.2.9.25/cfw_patches-2.2.9.25.json",
+    patchFileName: "cfw_patches-2.2.9.25.json",
+    patchCount: 40,
+    manifestFileName: "manifest.json",
+    capabilityMarker:
+      "EVENCFW/16 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10 cleanup11 texcache12 teximg13 texstr14 font15 buzzer5 diag7 multiseg8 rectcopy9 ringhold",
+    g2flashCommit: "469d78e332040f6ed77e978df496d3e7d427b4f2",
+    g2flashRebasePatchSha256:
+      "28b2868c0c213ea2e55a1f4cc58e4e5b8c809a812943c409ac192854126d67e5",
+    excludedFeature: {
+      id: "ble-advertised-name",
+      status: "omitted",
+      reason:
+        "Not present on the pinned g2flash main branch and withdrawn after hardware failure evidence.",
+    },
+    notes:
+      "Adds individually negotiated buzzer, diagnostic, atomic multi-operation, scrolling, wear, compass, texture-cache, and stock-font capabilities on the official G2 2.2.9.22 base.",
   },
   {
     id: "g2-custom-2.2.9.24",
