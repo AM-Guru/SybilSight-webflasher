@@ -57,6 +57,10 @@ BRIDGE_BYTES = 2952
 BRIDGE_SHA256 = (
     "eba56380f04bf00ad9d87dffbc40c3292ec5b3cee458d3607c8cffd0dcbe335b"
 )
+OBSERVED_CHARGING_BRIDGE_SHA256 = (
+    "b341adc44630ffe87b572523ace82b2581785892fff6d7de4e3cf1b0c87861d2"
+)
+OBSERVED_CHARGING_TABLE_OFFSETS = (2826, 2836, 2846, 2856)
 BRIDGE_BANNER = b"G2_POGO_FLASH_BRIDGE_V7\n"
 REVIEWED_CFW_SHA256 = (
     "105032302d02ccf943b785070cf15877a918c120b7ca1332bb6261f70eb6d683"
@@ -74,6 +78,21 @@ REVIEWED_MAIN_SHA256 = (
 REVIEWED_MAIN_BYTES = 3_543_523
 REVIEWED_BASE_VERSION = "2.2.6.10"
 REVIEWED_CFW_VERSION = "2.2.6.11"
+CFW_2_2_9_CANDIDATE_SHA256 = (
+    "dc4c4de98d183a98f8b2e98b91ab0c920b46a1ec30fcdf3d447637f2022df484"
+)
+CFW_2_2_9_CANDIDATE_MAIN_SHA256 = (
+    "0f41679fdd38877b57e3d12f7aaddc36771fa51ecd7e118bf23dfa0eb1b47d74"
+)
+CFW_2_2_9_CANDIDATE_MAIN_BYTES = 3_731_795
+CFW_2_2_9_CANDIDATE_VERSION = "2.2.9.28"
+CFW_2_2_9_CANDIDATE_SOURCE_VERSIONS = {
+    "2.2.9.22",
+    "2.2.9.25",
+    "2.2.9.26",
+    "2.2.9.27",
+    "2.2.9.28",
+}
 REVIEWED_CASE_VERSION = "1.2.57"
 FINAL_RESET_COMMAND = b"DEB0\n"
 FINAL_RESET_CONFIRMATION = re.compile(
@@ -90,6 +109,13 @@ POST_RESET_REOPEN_DELAY_SECONDS = 0.5
 FLASH_STABILITY_QUERIES = 1
 FLASH_STABILITY_INTERVAL_SECONDS = 0.025
 FLASH_PRE_START_SETTLE_SECONDS = 0.250
+FLASH_PRE_START_HOST_PRIME_BYTES = 1
+# A status-3 setup stop with the exact opposite-route baseline is a charging
+# phase, not a bridge failure.  Keep the normal Case application running long
+# enough for that phase to settle before another fresh SRAM setup.  These are
+# the writer rungs already exercised by the browser implementation; entering
+# the loader again immediately only samples the same external YHM2510 state.
+ROUTE_PHASE_SETTLE_SECONDS = (45.0, 90.0, 180.0)
 PACING_PROFILES = {
     "conservative": {
         "deferred_batch_size": 6_000,
@@ -137,6 +163,14 @@ ALLOWED_YHM_BASELINES = {
         "811104afaf03812022ff",
         "810104afae03812022ff",
         "811004aeaf03812022ff",
+        # Observed after a confirmed DEB0 reset with Case 1.2.57 and both
+        # contacts present. Only register 8 differs from the established
+        # both-seated 0x22 phase; the bridge still requires exact byte-for-byte
+        # restoration before the case application may resume.
+        "811104afaf03812033ff",
+        "810004aeae03812033ff",
+        "810104afae03812033ff",
+        "811004aeaf03812033ff",
     )
 }
 
@@ -354,7 +388,7 @@ BRIDGE_BASE64 = (
 )
 
 
-def build_bridge() -> bytes:
+def build_bridge(*, observed_charging_phase: bool = False) -> bytes:
     """Decode and hash-gate the exact hardware-validated SRAM bridge."""
     try:
         payload = base64.b64decode(BRIDGE_BASE64, validate=True)
@@ -368,6 +402,20 @@ def build_bridge() -> bytes:
         )
     if len(payload) % 4:
         raise SafetyError("bridge length is not ROM-write aligned")
+    if observed_charging_phase:
+        candidate = bytearray(payload)
+        for offset in OBSERVED_CHARGING_TABLE_OFFSETS:
+            if candidate[offset : offset + 2] != b"\x22\xff":
+                raise SafetyError(
+                    "candidate bridge baseline table differs from the reviewed layout"
+                )
+            candidate[offset] = 0x33
+        payload = bytes(candidate)
+        digest = hashlib.sha256(payload).hexdigest()
+        if digest != OBSERVED_CHARGING_BRIDGE_SHA256:
+            raise SafetyError(
+                "candidate bridge charging-phase transform is not reproducible"
+            )
     stack_pointer, reset_handler = struct.unpack_from("<II", payload)
     if stack_pointer != 0x2001F000 or reset_handler != 0x20010009:
         raise SafetyError("bridge vector table differs from the reviewed layout")
@@ -383,13 +431,17 @@ class CaseSramTempleTransport(TempleTransport):
         route: str,
         *,
         require_route_phase: bool = False,
+        observed_charging_phase: bool = False,
     ) -> None:
         if route not in ("left", "right"):
             raise ValueError("route must be left or right")
         self.device = device
         self.route = route
         self.require_route_phase = require_route_phase
-        self.payload = build_bridge()
+        self.observed_charging_phase = observed_charging_phase
+        self.payload = build_bridge(
+            observed_charging_phase=observed_charging_phase
+        )
         self.port: serial.Serial | None = None
         self.sequence = 0
         self.active = False
@@ -898,6 +950,8 @@ def final_reset_and_verify_liveness(
     device: str,
     routes: tuple[str, ...],
     expected_version: str,
+    *,
+    observed_charging_phase: bool = False,
 ) -> dict[str, object]:
     """Make B0 the final temple mutation, then run read-only liveness checks."""
     reset_report = reset_both_temples_and_recheck(device)
@@ -913,7 +967,11 @@ def final_reset_and_verify_liveness(
         for phase_attempt in range(1, 5):
             transport: CaseSramTempleTransport | None = None
             try:
-                transport = CaseSramTempleTransport(device, route)
+                transport = CaseSramTempleTransport(
+                    device,
+                    route,
+                    observed_charging_phase=observed_charging_phase,
+                )
                 version = MainFirmwareFlasher(transport).read_version()
                 break
             except SafetyError as error:
@@ -1057,6 +1115,14 @@ def build_parser() -> argparse.ArgumentParser:
     preflight.add_argument("--route", choices=("left", "right"), required=True)
     preflight.add_argument("--expect-version", default=REVIEWED_BASE_VERSION)
     preflight.add_argument("--glasses-seated-confirmed", action="store_true")
+    preflight.add_argument(
+        "--observed-2-2-9-charging-phase",
+        action="store_true",
+        help=(
+            "use the separately hash-pinned bridge table for the observed "
+            "Case 1.2.57 YHM ...33ff charging phase"
+        ),
+    )
 
     stress = subparsers.add_parser(
         "stress-preflight",
@@ -1085,6 +1151,14 @@ def build_parser() -> argparse.ArgumentParser:
     host_stress.add_argument("--transactions", type=int, default=500)
     host_stress.add_argument("--payload-bytes", type=int, default=1009)
     host_stress.add_argument("--glasses-seated-confirmed", action="store_true")
+    host_stress.add_argument(
+        "--observed-2-2-9-charging-phase",
+        action="store_true",
+        help=(
+            "use the separately hash-pinned bridge table for the observed "
+            "Case 1.2.57 YHM ...33ff charging phase"
+        ),
+    )
 
     reset = subparsers.add_parser(
         "reset-both-temples",
@@ -1096,6 +1170,14 @@ def build_parser() -> argparse.ArgumentParser:
     reset.add_argument("--device", required=True)
     reset.add_argument("--expect-version", default=REVIEWED_BASE_VERSION)
     reset.add_argument("--glasses-seated-confirmed", action="store_true")
+    reset.add_argument(
+        "--observed-2-2-9-charging-phase",
+        action="store_true",
+        help=(
+            "use the separately hash-pinned bridge table for post-reset "
+            "liveness when Case 1.2.57 reports the YHM ...33ff charging phase"
+        ),
+    )
 
     for command, help_text in (
         (
@@ -1105,6 +1187,10 @@ def build_parser() -> argparse.ArgumentParser:
         (
             "flash-reviewed-official",
             "restore the exact pinned official Apollo-main image",
+        ),
+        (
+            "flash-candidate-cfw-2.2.9.28",
+            "flash the latest-upstream-pinned 2.2.9.28 CFW candidate",
         ),
     ):
         flash = subparsers.add_parser(command, help=help_text)
@@ -1121,9 +1207,8 @@ def build_parser() -> argparse.ArgumentParser:
             "--expect-current-version",
             default=None,
             help=(
-                "override the live source-version gate; by default CFW install "
-                "requires Stock 2.2.6.10 and official restore accepts Stock "
-                "2.2.6.10 or reviewed CFW 2.2.6.11"
+                "override the live source-version gate; defaults are selected "
+                "from the exact pinned image profile"
             ),
         )
         flash.add_argument(
@@ -1166,6 +1251,7 @@ def main() -> int:
                 args.device,
                 ("right", "left"),
                 args.expect_version,
+                observed_charging_phase=args.observed_2_2_9_charging_phase,
             )
             print(json.dumps(report, indent=2, sort_keys=True))
             return 0
@@ -1197,7 +1283,11 @@ def main() -> int:
                 f"{args.route} presence confirmed",
                 flush=True,
             )
-            transport = CaseSramTempleTransport(args.device, args.route)
+            transport = CaseSramTempleTransport(
+                args.device,
+                args.route,
+                observed_charging_phase=args.observed_2_2_9_charging_phase,
+            )
             for index in range(1, args.transactions + 1):
                 transport.stress_host_receive(args.payload_bytes)
                 if (
@@ -1253,7 +1343,14 @@ def main() -> int:
                 f"{args.route} presence confirmed",
                 flush=True,
             )
-            transport = CaseSramTempleTransport(args.device, args.route)
+            transport = CaseSramTempleTransport(
+                args.device,
+                args.route,
+                observed_charging_phase=(
+                    args.command == "preflight"
+                    and args.observed_2_2_9_charging_phase
+                ),
+            )
             flasher = MainFirmwareFlasher(transport)
             for index in range(1, query_count + 1):
                 try:
@@ -1310,35 +1407,42 @@ def main() -> int:
     assert args.command in (
         "flash-reviewed-cfw",
         "flash-reviewed-official",
+        "flash-candidate-cfw-2.2.9.28",
     )
-    image_kind = (
-        "CFW"
-        if args.command == "flash-reviewed-cfw"
-        else "official"
+    if args.command == "flash-reviewed-cfw":
+        image_kind = "CFW"
+        pinned_sha256 = REVIEWED_CFW_SHA256
+        pinned_main_sha256 = REVIEWED_MAIN_SHA256
+        pinned_main_bytes = REVIEWED_MAIN_BYTES
+        default_source_versions = {REVIEWED_BASE_VERSION}
+    elif args.command == "flash-candidate-cfw-2.2.9.28":
+        image_kind = "CFW candidate"
+        pinned_sha256 = CFW_2_2_9_CANDIDATE_SHA256
+        pinned_main_sha256 = CFW_2_2_9_CANDIDATE_MAIN_SHA256
+        pinned_main_bytes = CFW_2_2_9_CANDIDATE_MAIN_BYTES
+        default_source_versions = set(CFW_2_2_9_CANDIDATE_SOURCE_VERSIONS)
+    else:
+        image_kind = "official"
+        pinned_sha256 = REVIEWED_OFFICIAL_SHA256
+        pinned_main_sha256 = REVIEWED_OFFICIAL_MAIN_SHA256
+        pinned_main_bytes = REVIEWED_OFFICIAL_MAIN_BYTES
+        default_source_versions = {
+            REVIEWED_BASE_VERSION,
+            REVIEWED_CFW_VERSION,
+        }
+    is_cfw = image_kind != "official"
+    uses_observed_charging_bridge = (
+        args.command == "flash-candidate-cfw-2.2.9.28"
     )
-    reviewed_sha256 = (
-        REVIEWED_CFW_SHA256
-        if args.command == "flash-reviewed-cfw"
-        else REVIEWED_OFFICIAL_SHA256
-    )
-    reviewed_main_sha256 = (
-        REVIEWED_MAIN_SHA256
-        if args.command == "flash-reviewed-cfw"
-        else REVIEWED_OFFICIAL_MAIN_SHA256
-    )
-    reviewed_main_bytes = (
-        REVIEWED_MAIN_BYTES
-        if args.command == "flash-reviewed-cfw"
-        else REVIEWED_OFFICIAL_MAIN_BYTES
+    active_bridge_sha256 = (
+        OBSERVED_CHARGING_BRIDGE_SHA256
+        if uses_observed_charging_bridge
+        else BRIDGE_SHA256
     )
     expected_current_versions = (
         {args.expect_current_version}
         if args.expect_current_version
-        else (
-            {REVIEWED_BASE_VERSION}
-            if image_kind == "CFW"
-            else {REVIEWED_BASE_VERSION, REVIEWED_CFW_VERSION}
-        )
+        else default_source_versions
     )
     if not args.execute_main_ota:
         parser.error("flash requires --execute-main-ota")
@@ -1356,19 +1460,19 @@ def main() -> int:
     except (OSError, FlasherError, ValueError) as error:
         print(f"Package validation failed: {error}", file=sys.stderr)
         return 1
-    if plan.image_sha256 != reviewed_sha256:
+    if plan.image_sha256 != pinned_sha256:
         parser.error(
-            "this case bridge command accepts only the reviewed "
+            "this case bridge command accepts only the pinned "
             + image_kind
             + " image "
-            + reviewed_sha256
+            + pinned_sha256
         )
     if (
-        plan.main_payload_bytes != reviewed_main_bytes
-        or plan.main_payload_sha256 != reviewed_main_sha256
+        plan.main_payload_bytes != pinned_main_bytes
+        or plan.main_payload_sha256 != pinned_main_sha256
     ):
         parser.error(
-            "the Apollo-main component does not match the reviewed "
+            "the Apollo-main component does not match the pinned "
             + image_kind
             + " pin"
         )
@@ -1387,21 +1491,25 @@ def main() -> int:
     audit: dict[str, object] = {
         "schema_version": 3,
         "started_at_utc": datetime.now(timezone.utc).isoformat(),
-        "operation": f"g2_case_usb_reviewed_{image_kind.lower()}_main_only",
+        "operation": (
+            "g2_case_usb_"
+            + image_kind.lower().replace(" ", "_")
+            + "_main_only"
+        ),
         "device": args.device,
         "routes": routes,
         "package": asdict(plan),
         "installed_identity": {
-            "channel": "custom" if image_kind == "CFW" else "official",
+            "channel": "custom" if is_cfw else "official",
             "reported_version": plan.expected_device_version,
             "display_version": (
                 f"{plan.expected_device_version} CFW"
-                if image_kind == "CFW"
+                if is_cfw
                 else plan.expected_device_version
             ),
             "exact_image_sha256": plan.image_sha256,
             "evidence": (
-                "reviewed image pins, accepted transfer counts, postflight, "
+                "exact image pins, accepted transfer counts, postflight, "
                 "final bilateral reset, and liveness"
             ),
         },
@@ -1410,7 +1518,12 @@ def main() -> int:
             "name": args.pacing_profile,
             **pacing,
         },
-        "bridge_sha256": BRIDGE_SHA256,
+        "bridge_sha256": active_bridge_sha256,
+        "bridge_yhm_profile": (
+            "observed-2.2.9-charging-33ff"
+            if uses_observed_charging_bridge
+            else "hardware-qualified-idle-22ff"
+        ),
         "bootloader_component_allowed": False,
         "data_replay_allowed": False,
         "component_attempts_per_invocation": 1,
@@ -1457,6 +1570,9 @@ def main() -> int:
                             args.device,
                             route,
                             require_route_phase=True,
+                            observed_charging_phase=(
+                                uses_observed_charging_bridge
+                            ),
                         )
                         route_result["route_phase_setup_attempts"] = (
                             phase_attempt
@@ -1474,7 +1590,16 @@ def main() -> int:
                             "temple transmission",
                             flush=True,
                         )
-                        time.sleep(0.5 * phase_attempt)
+                        settle_seconds = ROUTE_PHASE_SETTLE_SECONDS[
+                            phase_attempt - 1
+                        ]
+                        print(
+                            f"{route}: leaving the normal Case application "
+                            f"undisturbed for {settle_seconds:.0f} seconds "
+                            "before the next fresh setup",
+                            flush=True,
+                        )
+                        time.sleep(settle_seconds)
                 assert transport is not None
                 flasher = MainFirmwareFlasher(
                     transport,
@@ -1527,8 +1652,23 @@ def main() -> int:
                 )
                 time.sleep(FLASH_PRE_START_SETTLE_SECONDS)
                 transport.drain_input()
+                # The CH340/ROM bridge has twice reproduced a deterministic
+                # post-idle boundary where only the first five bytes of the
+                # next ten-byte host header reached SRAM. Prime that host-only
+                # parser path after the required settle, then issue START while
+                # it is demonstrably receiving complete framed transactions.
+                # G2TS never touches USART3 or either temple.
+                transport.stress_host_receive(
+                    FLASH_PRE_START_HOST_PRIME_BYTES
+                )
+                route_result["pre_start_host_prime"] = {
+                    "protocol": "G2TS",
+                    "payload_bytes": FLASH_PRE_START_HOST_PRIME_BYTES,
+                    "temple_transmission": False,
+                    "outcome": "success",
+                }
                 print(
-                    f"{route}: starting reviewed {image_kind} "
+                    f"{route}: starting pinned {image_kind} "
                     "Apollo-main transfer; "
                     "do not disturb the case",
                     flush=True,
@@ -1539,23 +1679,33 @@ def main() -> int:
                     transfer.records_sent,
                 )
                 route_result["transfer"] = asdict(transfer)
-                postflight = poll_for_version(
-                    flasher,
-                    plan.expected_device_version,
-                    timeout=180.0,
-                    interval=2.0,
-                )
-                route_result["postflight_version"] = asdict(postflight)
-                if postflight.hardware != 5:
-                    raise SafetyError(
-                        f"{route}: postflight hardware changed to "
-                        f"{postflight.hardware}"
+                if args.command == "flash-candidate-cfw-2.2.9.28":
+                    # On 2.2.9 hardware, FINISH commits the new main but the
+                    # running application continues to report the old version
+                    # until DEB0.  Treat the final bilateral activation reset
+                    # and checksum-valid version query as the postflight gate.
+                    route_result["postflight_version"] = {
+                        "deferred_until_activation_reset": True,
+                        "reason": "2.2.9 activates the committed main after DEB0",
+                    }
+                else:
+                    postflight = poll_for_version(
+                        flasher,
+                        plan.expected_device_version,
+                        timeout=180.0,
+                        interval=2.0,
                     )
-                print(
-                    f"{route}: postflight firmware={postflight.firmware}, "
-                    f"hardware={postflight.hardware}",
-                    flush=True,
-                )
+                    route_result["postflight_version"] = asdict(postflight)
+                    if postflight.hardware != 5:
+                        raise SafetyError(
+                            f"{route}: postflight hardware changed to "
+                            f"{postflight.hardware}"
+                        )
+                    print(
+                        f"{route}: postflight firmware={postflight.firmware}, "
+                        f"hardware={postflight.hardware}",
+                        flush=True,
+                    )
             except (
                 OSError,
                 FlasherError,
@@ -1632,6 +1782,7 @@ def main() -> int:
             args.device,
             routes,
             plan.expected_device_version,
+            observed_charging_phase=uses_observed_charging_bridge,
         )
         audit["final_reset_and_liveness"] = final_reset
         _write_audit(args.log, audit)
@@ -1671,6 +1822,9 @@ def main() -> int:
                         args.device,
                         routes,
                         plan.expected_device_version,
+                        observed_charging_phase=(
+                            uses_observed_charging_bridge
+                        ),
                     )
                 )
                 print(

@@ -206,10 +206,25 @@ const R1_RELEASES = [
     datSha256: "816e350b7d36240b7e33252141680baf39da06f7619bb1e51d80df83d73068b5",
   }),
 ];
-// Stock 2.2.6.10 remains hardware-validated recovery evidence. CFW images are
-// intentionally excluded from both the catalog and writer allowlist.
+// Stock 2.2.6.10 remains hardware-validated recovery evidence. A new CFW may
+// be hash-pinned for explicit local-file recovery before it is eligible for
+// the public catalog; localOnly keeps catalog coverage from treating that
+// deliberate publication boundary as drift.
 const HARDWARE_VALIDATED_TEMPLE_IMAGES = new Set([
   HARDWARE_VALIDATED_G2_2_2_6_10_SHA256,
+]);
+const LOCAL_REVIEWED_TEMPLE_TARGETS = Object.freeze([
+  Object.freeze({
+    imageSha256: "dc4c4de98d183a98f8b2e98b91ab0c920b46a1ec30fcdf3d447637f2022df484",
+    mainSha256: "0f41679fdd38877b57e3d12f7aaddc36771fa51ecd7e118bf23dfa0eb1b47d74",
+    mainBytes: 3731795,
+    version: "2.2.9.28",
+    reportedVersion: "2.2.9.28",
+    label: "SybilSight CFW 2.2.9.28 (latest-upstream recovery candidate)",
+    hardwareValidated: false,
+    localOnly: true,
+    bleComponentNames: ["ota/s200_firmware_ota.bin"],
+  }),
 ]);
 const RELEASES = [
   {
@@ -892,7 +907,7 @@ async function saveRingRelease(root, release, fallbackRoots) {
 // file rather than something read from index.json at runtime: the writer's final
 // trust gate must not be widenable by a tampered catalog.
 async function writeTempleFlashTargets(releases) {
-  const targets = [];
+  const targets = LOCAL_REVIEWED_TEMPLE_TARGETS.map((target) => ({ ...target }));
   for (const release of releases) {
     const main = (release.components ?? []).find(
       (component) =>
@@ -925,6 +940,10 @@ async function writeTempleFlashTargets(releases) {
         `    reportedVersion: ${JSON.stringify(target.reportedVersion)},\n` +
         `    label: ${JSON.stringify(target.label)},\n` +
         `    hardwareValidated: ${target.hardwareValidated},\n` +
+        (target.localOnly ? `    localOnly: true,\n` : "") +
+        (target.bleComponentNames
+          ? `    bleComponentNames: Object.freeze(${JSON.stringify(target.bleComponentNames)}),\n`
+          : "") +
         `  })`,
     )
     .join(",\n");

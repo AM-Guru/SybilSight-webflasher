@@ -37,6 +37,8 @@ const REVIEWED_CFW_2_2_9_24_SHA256 =
   "75eebde79ffe397d65980f8b03a60fefa8f8cb0c70b621ab355d6c2f90a8e445";
 const REVIEWED_CFW_2_2_9_25_SHA256 =
   "62c138ab9f998f4dd1affb0ebd491ae7c563e424ce6f579b5484c9995730e215";
+const REVIEWED_CFW_2_2_9_28_SHA256 =
+  "dc4c4de98d183a98f8b2e98b91ab0c920b46a1ec30fcdf3d447637f2022df484";
 
 // The catalog production actually served on 2026-07-28 and is older than the
 // current official releases pinned by this build.
@@ -103,7 +105,7 @@ test("blocks firmware mutation when the served library is behind the build", () 
   );
 });
 
-test("omits every CFW release from the catalog and writer allowlist", async () => {
+test("omits retired CFW releases from the catalog and writer allowlist", async () => {
   const catalog = JSON.parse(
     await readFile(
       new URL("../public/firmware-updates/source-files/index.json", import.meta.url),
@@ -122,6 +124,27 @@ test("omits every CFW release from the catalog and writer allowlist", async () =
     assert.equal(catalog.some((release) => release.sha256 === sha256), false);
     assert.equal(TEMPLE_FLASH_TARGETS.some((target) => target.imageSha256 === sha256), false);
   }
+  assert.deepEqual(findUnservedPinnedImages({ catalog, targets: TEMPLE_FLASH_TARGETS }), []);
+});
+
+test("keeps the 2.2.9.28 recovery candidate local-only and hash-pinned", async () => {
+  const catalog = JSON.parse(
+    await readFile(
+      new URL("../public/firmware-updates/source-files/index.json", import.meta.url),
+      "utf8",
+    ),
+  ).releases;
+  const target = TEMPLE_FLASH_TARGETS.find(
+    (candidate) => candidate.imageSha256 === REVIEWED_CFW_2_2_9_28_SHA256,
+  );
+  assert.equal(
+    catalog.some((release) => release.sha256 === REVIEWED_CFW_2_2_9_28_SHA256),
+    false,
+  );
+  assert.equal(target?.version, "2.2.9.28");
+  assert.equal(target?.localOnly, true);
+  assert.deepEqual(target?.bleComponentNames, ["ota/s200_firmware_ota.bin"]);
+  assert.equal(target?.hardwareValidated, false);
   assert.deepEqual(findUnservedPinnedImages({ catalog, targets: TEMPLE_FLASH_TARGETS }), []);
 });
 

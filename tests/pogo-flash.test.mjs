@@ -1851,7 +1851,18 @@ test("keeps the generated pin table in sync with the firmware archive", async ()
       "utf8",
     ),
   );
-  const expected = index.releases
+  const expected = [
+    {
+      imageSha256: "dc4c4de98d183a98f8b2e98b91ab0c920b46a1ec30fcdf3d447637f2022df484",
+      mainSha256: "0f41679fdd38877b57e3d12f7aaddc36771fa51ecd7e118bf23dfa0eb1b47d74",
+      mainBytes: 3731795,
+      version: "2.2.9.28",
+      reportedVersion: "2.2.9.28",
+      hardwareValidated: false,
+      localOnly: true,
+      bleComponentNames: ["ota/s200_firmware_ota.bin"],
+    },
+    ...index.releases
     .map((release) => ({
       release,
       main: (release.components ?? []).find(
@@ -1867,7 +1878,8 @@ test("keeps the generated pin table in sync with the firmware archive", async ()
       reportedVersion:
         release.reportedVersion ?? release.internalVersion ?? release.version,
       hardwareValidated: HARDWARE_VALIDATED_IMAGE_SHA256.has(release.sha256),
-    }));
+    })),
+  ];
   assert.deepEqual(
     TEMPLE_FLASH_TARGETS.map(({ label, ...rest }) => rest),
     expected,
@@ -2632,6 +2644,29 @@ test("a transport failure mid-DATA does not slow the remembered pacing level", a
     guard < commit,
     "the explicit-rejection guard must run before the pacing memory is committed",
   );
+});
+
+test("primes the host-only bridge parser immediately before OTA START", async () => {
+  const source = await readFile(
+    new URL("../src/lib/serial.js", import.meta.url),
+    "utf8",
+  );
+  const routeMethod = source.slice(
+    source.indexOf("async flashPinnedTempleRoute("),
+    source.indexOf("async flashPinnedTempleRoutes(", source.indexOf("async flashPinnedTempleRoute(")),
+  );
+  const drain = routeMethod.indexOf("transport.drainInput();");
+  const prime = routeMethod.indexOf(
+    "await transport.stressHostReceive(POGO_PRE_START_HOST_PRIME_BYTES);",
+  );
+  const start = routeMethod.indexOf("const start = makeOtaStartRequest();");
+  assert.ok(drain !== -1 && prime !== -1 && start !== -1);
+  assert.ok(
+    drain < prime && prime < start,
+    "the checksum-verified G2TS prime must run after the input drain and before non-idempotent OTA START",
+  );
+  assert.match(routeMethod, /protocol: "G2TS"/);
+  assert.match(routeMethod, /templeTransmission: false/);
 });
 
 test("a silent DATA record is resent in place instead of ending the attempt", () => {

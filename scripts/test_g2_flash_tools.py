@@ -16,14 +16,21 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from g2_case_pogo_flasher import (  # noqa: E402
+    ALLOWED_YHM_BASELINES,
     BRIDGE_BYTES,
     BRIDGE_SHA256,
+    CFW_2_2_9_CANDIDATE_MAIN_BYTES,
+    CFW_2_2_9_CANDIDATE_MAIN_SHA256,
+    CFW_2_2_9_CANDIDATE_SHA256,
     FINAL_RESET_COMMAND,
+    FLASH_PRE_START_HOST_PRIME_BYTES,
+    OBSERVED_CHARGING_BRIDGE_SHA256,
     PACING_PROFILES,
     REVIEWED_CFW_SHA256,
     REVIEWED_OFFICIAL_MAIN_BYTES,
     REVIEWED_OFFICIAL_MAIN_SHA256,
     REVIEWED_OFFICIAL_SHA256,
+    ROUTE_PHASE_SETTLE_SECONDS,
     _write_audit,
     build_parser,
     build_bridge,
@@ -33,6 +40,10 @@ from g2_case_pogo_flasher import (  # noqa: E402
     reset_both_temples_and_recheck,
     resolve_pacing_profile,
     verify_route_stability,
+)
+from build_g2flash_cfw_2_2_9 import (  # noqa: E402
+    CAPABILITY_MARKER,
+    protobuf_varint,
 )
 import g2_case_pogo_flasher as case_flasher  # noqa: E402
 import g2_case_rom as case_rom  # noqa: E402
@@ -250,6 +261,21 @@ class G2FlashToolTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(payload).hexdigest(), BRIDGE_SHA256)
         self.assertEqual(struct.unpack_from("<II", payload), (0x2001F000, 0x20010009))
 
+        charging_payload = build_bridge(observed_charging_phase=True)
+        self.assertEqual(len(charging_payload), BRIDGE_BYTES)
+        self.assertEqual(
+            hashlib.sha256(charging_payload).hexdigest(),
+            OBSERVED_CHARGING_BRIDGE_SHA256,
+        )
+        self.assertEqual(
+            sum(
+                charging_payload[offset] == 0x33
+                and charging_payload[offset + 1] == 0xFF
+                for offset in (2826, 2836, 2846, 2856)
+            ),
+            4,
+        )
+
     def test_audit_checkpoints_are_private_and_atomic(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "flash-audit.json"
@@ -277,6 +303,31 @@ class G2FlashToolTests(unittest.TestCase):
         self.assertEqual(args.command, "flash-reviewed-official")
         self.assertEqual(args.routes, "right")
         self.assertEqual(args.pacing_profile, "conservative")
+
+    def test_2_2_9_candidate_command_and_observed_idle_phase_are_pinned(self) -> None:
+        self.assertEqual(CFW_2_2_9_CANDIDATE_MAIN_BYTES, 3_731_795)
+        self.assertEqual(len(CFW_2_2_9_CANDIDATE_MAIN_SHA256), 64)
+        self.assertEqual(len(CAPABILITY_MARKER.encode("ascii")), 162)
+        self.assertEqual(protobuf_varint(127), b"\x7f")
+        self.assertEqual(protobuf_varint(128), b"\x80\x01")
+        self.assertEqual(protobuf_varint(162), b"\xa2\x01")
+        self.assertIn(
+            bytes.fromhex("811104afaf03812033ff"),
+            ALLOWED_YHM_BASELINES,
+        )
+        args = build_parser().parse_args([
+            "flash-candidate-cfw-2.2.9.28",
+            "candidate.bin",
+            "--device",
+            "/dev/null",
+            "--confirm-image-sha256",
+            CFW_2_2_9_CANDIDATE_SHA256,
+            "--log",
+            "audit.json",
+        ])
+        self.assertEqual(args.command, "flash-candidate-cfw-2.2.9.28")
+        self.assertEqual(args.routes, "both")
+        self.assertEqual(ROUTE_PHASE_SETTLE_SECONDS, (45.0, 90.0, 180.0))
 
     def test_unqualified_pacing_profile_requires_explicit_risk_acceptance(self) -> None:
         with self.assertRaisesRegex(ValueError, "not hardware-qualified"):
@@ -347,6 +398,7 @@ class G2FlashToolTests(unittest.TestCase):
     def test_flash_stability_preflight_is_read_only_and_consecutive(self) -> None:
         self.assertEqual(case_flasher.FLASH_STABILITY_QUERIES, 1)
         self.assertEqual(case_flasher.FLASH_PRE_START_SETTLE_SECONDS, 0.250)
+        self.assertEqual(FLASH_PRE_START_HOST_PRIME_BYTES, 1)
 
         class FakeFlasher:
             def __init__(self) -> None:

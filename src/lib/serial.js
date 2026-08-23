@@ -99,6 +99,12 @@ const REVIEWED_CASE_ROM_COMMANDS = Object.freeze([
 // liveness gate; it is not a multi-query stability claim.
 const POGO_STABILITY_READ_QUERIES = 1;
 const POGO_STABILITY_INTERVAL_MS = 25;
+// The CH340 path has reproduced a deterministic post-idle boundary where
+// only the first five bytes of the next ten-byte host header reach SRAM.
+// Prime the bridge's host-only parser immediately before OTA START so the
+// first non-idempotent transaction begins only after a complete framed host
+// exchange. G2TS never reaches USART3 or either temple.
+const POGO_PRE_START_HOST_PRIME_BYTES = 1;
 const POGO_DEFERRED_BATCH_BYTES = 6000;
 const POGO_SERIALIZED_BATCH_BYTES = 1000;
 const POGO_DATA_BATCH_SETTLE_MS = 1000;
@@ -4026,6 +4032,7 @@ export class G2CaseSession {
       preflightVersion: null,
       transfer: null,
       postflightVersion: null,
+      preStartHostPrime: null,
       caseRestoreVerified: false,
       caseApplicationVersion: null,
       retainedResult: null,
@@ -4107,6 +4114,17 @@ export class G2CaseSession {
       );
       await delay(250);
       transport.drainInput();
+      await transport.stressHostReceive(POGO_PRE_START_HOST_PRIME_BYTES);
+      result.preStartHostPrime = {
+        protocol: "G2TS",
+        payloadBytes: POGO_PRE_START_HOST_PRIME_BYTES,
+        templeTransmission: false,
+        outcome: "success",
+      };
+      this.log(
+        `${route}: verified the host-only pre-START framing prime; no temple command or firmware byte was sent.`,
+        "success",
+      );
 
       // Start and header mutate OTA state and are intentionally never replayed.
       failureStage = "START";

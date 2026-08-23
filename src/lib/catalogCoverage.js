@@ -62,6 +62,11 @@ export function findUnservedPinnedImages({ catalog, targets } = {}) {
   if (newestServed === null) return [];
 
   return targets.filter((target) => {
+    // A reviewed local recovery candidate is intentionally absent from the
+    // public catalog until its first hardware validation. Its exact package
+    // and Apollo-main hashes remain compiled into the writer, so selecting the
+    // local file cannot widen trust through catalog data.
+    if (target?.localOnly === true) return false;
     const hash = String(target?.imageSha256 ?? "").toLowerCase();
     if (!hash || servedHashes.has(hash)) return false;
     return compareFirmwareVersions(target?.version, newestServed) > 0;

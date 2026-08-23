@@ -230,6 +230,52 @@ export const REVIEWED_CFW_2_2_9_25 = Object.freeze({
     REVIEWED_CFW_PENDING_VALIDATION,
   ],
 });
+export const REVIEWED_CFW_2_2_9_27 = Object.freeze({
+  version: "2.2.9.27",
+  reportedVersion: "2.2.9.27",
+  baseVersion: "2.2.9.22",
+  baseSha256: "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561",
+  sha256: "a1e38feb3d3afa05750fe839b46964abfa2b379f9eff608816dbb7ef26061e17",
+  mainPayloadBytes: 3731795,
+  mainPayloadSha256:
+    "ddea251a513e9275b50efea9197517eea70c148531d6c32499698ab429a01b2f",
+  capabilityMarker:
+    "EVENCFW/16 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10 cleanup11 texcache12 teximg13 texstr14 font15 diag7 multiseg8 rectcopy9 ringhold",
+  capabilities: [
+    "Uses the full 640×480 display for custom screens and images.",
+    "Makes compressed and changed-region image updates more efficient.",
+    "Supports different visuals on the left and right lenses.",
+    "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
+    "Keeps wear-status and compass updates available to connected apps.",
+    "Provides cached image/text rendering, diagnostic overlays, atomic multi-operation drawing, scrolling, rectangle copy, and ring-hold forwarding.",
+    "Preserves the stock Bluetooth setup and advertising behavior.",
+    "Withholds buzzer capability negotiation while the persistent-tone failure remains under review.",
+    REVIEWED_CFW_PENDING_VALIDATION,
+  ],
+});
+export const REVIEWED_CFW_2_2_9_28 = Object.freeze({
+  version: "2.2.9.28",
+  reportedVersion: "2.2.9.28",
+  baseVersion: "2.2.9.22",
+  baseSha256: "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561",
+  sha256: "dc4c4de98d183a98f8b2e98b91ab0c920b46a1ec30fcdf3d447637f2022df484",
+  mainPayloadBytes: 3731795,
+  mainPayloadSha256:
+    "0f41679fdd38877b57e3d12f7aaddc36771fa51ecd7e118bf23dfa0eb1b47d74",
+  capabilityMarker:
+    "EVENCFW/16 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10 cleanup11 texcache12 teximg13 texstr14 font15 diag7 multiseg8 rectcopy9 ringhold",
+  capabilities: [
+    "Uses the full 640×480 display for custom screens and images.",
+    "Makes compressed and changed-region image updates more efficient.",
+    "Supports different visuals on the left and right lenses.",
+    "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
+    "Keeps wear-status and compass updates available to connected apps.",
+    "Provides cached image/text rendering, diagnostic overlays, atomic multi-operation drawing, scrolling, rectangle copy, and ring-hold forwarding.",
+    "Preserves the stock Bluetooth setup and advertising behavior.",
+    "Withholds buzzer capability negotiation while the persistent-tone failure remains under review.",
+    REVIEWED_CFW_PENDING_VALIDATION,
+  ],
+});
 export const G2_FIRMWARE_REVOCATIONS = Object.freeze([
   Object.freeze({
     version: "2.2.8.7",
@@ -1091,6 +1137,8 @@ export function parseMainOTAPreamble(payload) {
 export function classifyG2Firmware(fileSha256) {
   const digest = fileSha256.toLowerCase();
   const reviewed = [
+    REVIEWED_CFW_2_2_9_28,
+    REVIEWED_CFW_2_2_9_27,
     REVIEWED_CFW_2_2_9_25,
     REVIEWED_CFW_2_2_9_24,
     REVIEWED_CFW_2_2_9_23,

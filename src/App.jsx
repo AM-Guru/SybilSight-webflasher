@@ -106,6 +106,7 @@ import {
 import {
   G2BleOtaSession,
   assertPinnedG2BleBundle,
+  findAuthorizedG2BleDevice,
   flashG2BleSessionsConcurrently,
   g2BleDeviceSide,
   g2BleRoutesAwaitingCaseVerification,
@@ -965,7 +966,7 @@ function BluetoothRecoveryCard({
         <p>
           {primary
             ? "Select the clearly labeled left and right temples. SybilSight updates them together and verifies each side independently—no Case cable required."
-            : "Chrome transfers every component in the selected hash-pinned package to both temples simultaneously, using independent per-block acknowledgements and component verification for each side. No Case USB connection is required."}
+            : "Chrome transfers the selected hash-pinned component set to both temples simultaneously, using independent per-block acknowledgements and component verification for each side. No Case USB connection is required."}
         </p>
         <details className="ble-instructions" open={advanced}>
           <summary>Before you begin</summary>
@@ -3203,18 +3204,32 @@ function App() {
     if (operation) return;
     setError("");
     const marker = side === "left" ? "_L_" : "_R_";
-    setBleStatus(
-      `Waiting for Chrome's Bluetooth chooser · it will list Even G2 devices whose name contains ${marker}.`,
-    );
-    addLog(
-      `Waiting for the ${side} G2 temple in Chrome's Bluetooth chooser · restricted to names containing ${marker}.`,
-    );
     try {
-      const device = await requestG2BleDevice(side, undefined, {
-        // This side's own remembered name, never the other arm's.
-        expectedName: readRememberedTempleNames()[side],
-        tokens: readObservedNameTokens(),
+      const rememberedName = readRememberedTempleNames()[side];
+      let device = await findAuthorizedG2BleDevice(side, {
+        expectedName: rememberedName,
       });
+      if (device) {
+        setBleStatus(
+          `${side}: reusing Chrome's previously authorized ${device.name} handle; no chooser is required.`,
+        );
+        addLog(
+          `${side}: reused previously authorized Bluetooth device ${JSON.stringify(device.name)}. No firmware bytes were sent.`,
+          "success",
+        );
+      } else {
+        setBleStatus(
+          `Waiting for Chrome's Bluetooth chooser · it will list Even G2 devices whose name contains ${marker}.`,
+        );
+        addLog(
+          `Waiting for the ${side} G2 temple in Chrome's Bluetooth chooser · restricted to names containing ${marker}.`,
+        );
+        device = await requestG2BleDevice(side, undefined, {
+          // This side's own remembered name, never the other arm's.
+          expectedName: rememberedName,
+          tokens: readObservedNameTokens(),
+        });
+      }
       rememberNameToken(device?.name);
       rememberTempleName(side, device?.name);
       const otherSide = side === "left" ? "right" : "left";
@@ -3294,7 +3309,7 @@ function App() {
   };
 
   const flashBleTempleFirmware = async ({ bypassReadyConfirmation = false } = {}) => {
-    const release = catalog.find((item) => item.id === selectedReleaseId);
+    const release = selectedBleRelease;
     if (
       !release ||
       !bleDevices.left ||
@@ -3314,11 +3329,21 @@ function App() {
             : {};
         try {
           setBleStatus("Loading and re-validating the pinned Bluetooth package…");
-          const prepared = await fetchCatalogFirmware(release);
+          const prepared = release.localOnly
+            ? firmware
+            : await fetchCatalogFirmware(release);
+          if (!prepared || prepared.fileSha256 !== release.sha256) {
+            throw new Error(
+              "The selected local Bluetooth package no longer matches its compiled-in release pin. Reload and validate the exact file again.",
+            );
+          }
           assertPinnedG2BleBundle(prepared);
           acceptPreparedFirmware(prepared);
           const targetReportedVersion =
             g2BleTargetReportedVersion(prepared);
+          const bleFlashOptions = release.bleComponentNames?.length
+            ? { componentNames: release.bleComponentNames }
+            : {};
           addLog(
             `Direct Bluetooth gate passed · exact package ${prepared.fileSha256.slice(0, 16)}… · ${prepared.componentImages.length} component headers, payload CRC32Cs, and Apollo MRAM bounds verified.`,
             "success",
@@ -3406,7 +3431,7 @@ function App() {
                 "verified",
               );
               addLog(
-                `${side}: this exact device already completed all six components in the current recovery attempt; it will not be rewritten.`,
+                `${side}: this exact device already completed the selected component set in the current recovery attempt; it will not be rewritten.`,
                 "success",
               );
               continue;
@@ -3431,7 +3456,7 @@ function App() {
             );
             addLog(
               simultaneous
-                ? "left + right: starting simultaneous direct Bluetooth OTA sessions. Each side retains independent ACK, retry, heartbeat, and completion evidence."
+                ? "left + right: starting simultaneous authenticated Bluetooth OTA sessions. Each side retains independent ACK, retry, reconnect, and completion evidence."
                 : `${flashingSides[0]}: starting the only Bluetooth OTA session still required.`,
               "info",
             );
@@ -3459,6 +3484,7 @@ function App() {
             sessionEntries,
             prepared,
             {
+              flashOptions: bleFlashOptions,
               onSettled: ({ side, status, value, reason }) => {
                 if (status === "fulfilled") {
                   const postUpdate = value?.components?.at(-1)?.postUpdate;
@@ -3477,7 +3503,7 @@ function App() {
                   setRouteProgress(
                     side,
                     1,
-                    `${side}: all six components and fresh post-END GATT liveness verified`,
+                    `${side}: selected component set and fresh post-END GATT liveness verified`,
                     "verified",
                   );
                   return;
@@ -3519,14 +3545,14 @@ function App() {
                 setRouteProgress(
                   side,
                   1,
-                  `${side}: all six component ENDs verified; awaiting final Case version proof`,
+                  `${side}: selected component ENDs verified; awaiting final Case version proof`,
                   "awaiting verification",
                 );
               } else {
                 setRouteProgress(
                   side,
                   1,
-                  `${side}: all six Bluetooth components and post-reboot liveness verified`,
+                  `${side}: selected Bluetooth components and post-reboot liveness verified`,
                   "verified",
                 );
               }
@@ -3630,7 +3656,10 @@ function App() {
             try {
               let value;
               try {
-                value = await retrySession.flashBundle(prepared);
+                value = await retrySession.flashBundle(
+                  prepared,
+                  bleFlashOptions,
+                );
               } finally {
                 await retrySession.disconnect();
               }
@@ -3642,7 +3671,7 @@ function App() {
                 soloRetry: true,
               };
               addLog(
-                `${side}: the bounded solo Bluetooth retry verified the complete package after the simultaneous attempt failed.`,
+                `${side}: the bounded solo Bluetooth retry verified the selected component set after the simultaneous attempt failed.`,
                 "success",
               );
             } catch (retryError) {
@@ -3735,7 +3764,7 @@ function App() {
               ? `${retainedSides.join(" + ")} retained from fresh target-version proof`
               : null,
             transferredSides.length
-              ? `${transferredSides.join(" + ")} verified all six Bluetooth components`
+              ? `${transferredSides.join(" + ")} verified the selected Bluetooth component set`
               : null,
           ]
             .filter(Boolean)
@@ -4910,6 +4939,25 @@ function App() {
   const latestCaseRelease = findLatestOfficialStockRelease(caseReleases);
   const latestCaseFirmwareRelease = findLatestCaseFirmwareRelease(catalog);
   const selectedRelease = catalog.find((item) => item.id === selectedReleaseId);
+  const selectedLocalBleRelease =
+    firmware?.templeFlashEligible && firmware.templeFlashTarget?.localOnly
+      ? {
+          id: `local-${firmware.fileSha256}`,
+          displayName: firmware.templeFlashTarget.label,
+          channel: "custom",
+          trust: "reviewed-custom",
+          version: firmware.templeFlashTarget.version,
+          reportedVersion: firmware.templeFlashTarget.reportedVersion,
+          baseVersion: firmware.provenance?.baseVersion ?? null,
+          fileName: firmware.fileName,
+          size: firmware.fileSize,
+          sha256: firmware.fileSha256,
+          localOnly: true,
+          bleComponentNames:
+            firmware.templeFlashTarget.bleComponentNames ?? null,
+        }
+      : null;
+  const selectedBleRelease = selectedLocalBleRelease ?? selectedRelease;
   const selectedRingRelease = ringCatalog.find(
     (item) => item.id === selectedRingReleaseId,
   );
@@ -5021,7 +5069,7 @@ function App() {
   );
   const bleFlashReady = Boolean(
     directBleSupported &&
-      selectedRelease &&
+      selectedBleRelease &&
       bleDevices.left &&
       bleDevices.right &&
       bleReady &&
@@ -5029,7 +5077,7 @@ function App() {
   );
   const bluetoothUpdateComplete =
     bleResults?.outcome === "success" &&
-    bleResults?.imageSha256 === selectedRelease?.sha256;
+    bleResults?.imageSha256 === selectedBleRelease?.sha256;
   const bluetoothUpdateFailed =
     bleResults?.outcome === "failed_or_partial";
   const bluetoothUpdateAwaitingCase =
@@ -5456,7 +5504,7 @@ function App() {
                 onReadyChange={setBleReady}
                 bleFlashReady={bleFlashReady}
                 onFlash={flashBleTempleFirmware}
-                selectedRelease={selectedRelease}
+                selectedRelease={selectedBleRelease}
                 bleResults={bleResults}
                 bleStatus={bleStatus}
               />
@@ -6692,7 +6740,7 @@ function App() {
           <SectionHeading
             eyebrow="05 · Recovery Console"
             title="Update Smart Glasses over Bluetooth, with USB recovery when needed"
-            copy="Direct Bluetooth is the primary Smart Glasses path and transfers the complete six-component package. Use the Charging Case and Case-to-pogo USB tools below only to recover a failed, inaccessible, or generally non-working device. Read-only probes and recorded transfer evidence sit below."
+            copy="Direct Bluetooth is the primary Smart Glasses path and transfers the hash-pinned component set for the selected release. Use the Charging Case and Case-to-pogo USB tools below only to recover a failed, inaccessible, or generally non-working device. Read-only probes and recorded transfer evidence sit below."
           />
           <BluetoothRecoveryCard
             variant="advanced"
@@ -6704,7 +6752,7 @@ function App() {
             onReadyChange={setBleReady}
             bleFlashReady={bleFlashReady}
             onFlash={flashBleTempleFirmware}
-            selectedRelease={selectedRelease}
+            selectedRelease={selectedBleRelease}
             bleResults={bleResults}
             bleStatus={bleStatus}
           />

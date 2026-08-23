@@ -20,6 +20,8 @@ import {
   REVIEWED_CFW_2_2_9_23,
   REVIEWED_CFW_2_2_9_24,
   REVIEWED_CFW_2_2_9_25,
+  REVIEWED_CFW_2_2_9_27,
+  REVIEWED_CFW_2_2_9_28,
   additiveBigEndianWordSum,
   classifyG2Firmware,
   crc32,
@@ -276,6 +278,25 @@ test("recognizes the G2 2.2.9.25 EVENCFW/16 trust pin", () => {
   assert.equal(trust.capabilityMarker.includes("multiseg8"), true);
   assert.equal(trust.capabilityMarker.includes("buzzer5"), true);
   assert.equal(findG2FirmwareRevocation(REVIEWED_CFW_2_2_9_25.sha256), null);
+});
+
+test("recognizes the G2 2.2.9.27 canonical capability-marker trust pin", () => {
+  const trust = classifyG2Firmware(REVIEWED_CFW_2_2_9_27.sha256);
+  assert.equal(trust.trust, "reviewed-custom");
+  assert.equal(trust.version, "2.2.9.27");
+  assert.equal(trust.baseVersion, "2.2.9.22");
+  assert.equal(trust.capabilityMarker.includes("directfb"), true);
+  assert.equal(trust.capabilityMarker.includes("buzzer5"), false);
+  assert.equal(findG2FirmwareRevocation(REVIEWED_CFW_2_2_9_27.sha256), null);
+});
+
+test("recognizes the latest-upstream-pinned G2 2.2.9.28 trust pin", () => {
+  const trust = classifyG2Firmware(REVIEWED_CFW_2_2_9_28.sha256);
+  assert.equal(trust.trust, "reviewed-custom");
+  assert.equal(trust.version, "2.2.9.28");
+  assert.equal(trust.baseVersion, "2.2.9.22");
+  assert.equal(trust.capabilityMarker, REVIEWED_CFW_2_2_9_27.capabilityMarker);
+  assert.equal(findG2FirmwareRevocation(REVIEWED_CFW_2_2_9_28.sha256), null);
 });
 
 test("revokes every advertisement-modified 2.2.8 CFW hash", () => {
@@ -876,6 +897,48 @@ test("ships the exact official G2 2.2.9.22 bundle and six components", async () 
   assert.equal(firmware.caseVersion, "1.2.57");
   assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
   assert.equal(firmware.templeFlashTarget.reportedVersion, "2.2.9.22");
+});
+
+test("accepts the exact local-only G2 2.2.9.28 CFW for bilateral BLE recovery", async () => {
+  const releaseDirectory = new URL(
+    "../public/firmware-updates/source-files/2.2.9.28/",
+    import.meta.url,
+  );
+  const firmware = await parseFirmwareInput(
+    await readFile(new URL("g2-2.2.9.28.bin", releaseDirectory)),
+    "g2-2.2.9.28.bin",
+  );
+  assert.equal(firmware.fileSha256, REVIEWED_CFW_2_2_9_28.sha256);
+  assert.equal(firmware.g2Version, "2.2.9.28");
+  assert.equal(firmware.provenance.trust, "reviewed-custom");
+  assert.equal(firmware.caseRecoveryEligible, false);
+  assert.equal(firmware.templeFlashEligible, true);
+  assert.equal(firmware.templeFlashTarget.localOnly, true);
+  assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
+});
+
+test("records that the latest g2flash 2.2.9 fix is installer-only", async () => {
+  const recipe = JSON.parse(
+    await readFile(
+      new URL(
+        "../public/firmware-updates/source-files/2.2.9.28/cfw_patches-2.2.9.28.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  assert.equal(
+    recipe.g2flash_commit,
+    "7c6d3c15b0bac9ad7247163c12c53efeb101e503",
+  );
+  assert.equal(
+    recipe.source_provenance.upstream_2_2_9_compatibility_delta.patch_tree_unchanged,
+    true,
+  );
+  assert.match(
+    recipe.source_provenance.upstream_2_2_9_compatibility_delta.scope,
+    /authenticate every fresh CTRL connection.*no CTRL heartbeat/,
+  );
 });
 
 test("ships the exact official G2 2.2.7.14 bundle and six components", async () => {

@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
   G2_BLE_BEGIN_ATTEMPTS,
   G2_BLE_BLOCK_BYTES,
+  G2_BLE_FRAME_PACING_MS,
   G2_BLE_LOSS_RECONNECT_DELAY_MS,
   G2_BLE_POST_UPDATE_RECONNECT_ATTEMPTS,
   G2_BLE_POST_UPDATE_RECONNECT_INTERVAL_MS,
@@ -12,13 +14,16 @@ import {
   assertPinnedG2BleBundle,
   crc16CcittFalse,
   flashG2BleSessionsConcurrently,
+  findAuthorizedG2BleDevice,
   g2BleDeviceSide,
   g2BleRoutesAwaitingCaseVerification,
   g2BleTargetVersionProof,
   isG2BleConnectionLoss,
   makeBleControlFrames,
   makeBleEnvelopeFrames,
+  makeG2BleAuthenticationFrames,
   parseBleAck,
+  parseBleResponseEnvelope,
   probeAuthorizedG2BleDevices,
   requestG2BleDevice,
 } from "../src/lib/g2BleOta.js";
@@ -67,6 +72,75 @@ test("probes only previously authorized G2 handles and verifies application GATT
   assert.equal(services.length, 1);
 });
 
+test("reuses an exact previously authorized side handle before opening a chooser", async () => {
+  const devices = [
+    { name: "Even G2_32_L_OTHER", id: "other-left" },
+    { name: "Even G2_32_R_8D6E3C", id: "right" },
+    { name: "Even G2_32_L_ACD458", id: "remembered-left" },
+  ];
+  const bluetooth = { async getDevices() { return devices; } };
+  assert.equal(
+    (await findAuthorizedG2BleDevice("left", {
+      bluetooth,
+      expectedName: "Even G2_32_L_ACD458",
+    }))?.id,
+    "remembered-left",
+  );
+  assert.equal(
+    (await findAuthorizedG2BleDevice("right", { bluetooth }))?.id,
+    "right",
+  );
+});
+
+test("keeps the selected component set on the bounded solo retry", async () => {
+  const appSource = await readFile(
+    new URL("../src/App.jsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    appSource,
+    /retrySession\.flashBundle\(\s*prepared,\s*bleFlashOptions,?\s*\)/,
+  );
+});
+
+test("a component selection validates the whole pin but transfers only the selected main", async () => {
+  const target = { imageSha256: "b".repeat(64) };
+  const firmware = {
+    templeFlashEligible: true,
+    templeFlashTarget: target,
+    fileSha256: target.imageSha256,
+    g2Version: "2.2.9.27",
+    componentImages: EXPECTED_COMPONENTS.map((name, index) => ({
+      name,
+      typeId: EXPECTED_COMPONENT_TYPES[index],
+      header: new Uint8Array(128),
+      payload: Uint8Array.of(index),
+      payloadSize: 1,
+    })),
+  };
+  const session = new G2BleOtaSession(
+    { name: "Even G2_32_L_ACD458" },
+    { side: "left" },
+  );
+  session.connectForTransfer = async () => {};
+  session.startHeartbeat = () => {};
+  session.stopHeartbeat = () => {};
+  session.beginPackage = async () => 0;
+  session.settleFinalUpdate = async () => ({ reconnected: true });
+  const transferred = [];
+  session.flashComponent = async (component, index, totals) => {
+    transferred.push(component.name);
+    totals.completedBeforeComponent += component.payload.length;
+    totals.highWater = totals.completedBeforeComponent;
+    return { name: component.name, payloadBytes: 1, blocks: 1, endStatus: 8 };
+  };
+  const result = await session.flashBundle(firmware, {
+    componentNames: ["ota/s200_firmware_ota.bin"],
+  });
+  assert.deepEqual(transferred, ["ota/s200_firmware_ota.bin"]);
+  assert.equal(result.components.length, 1);
+});
+
 test("matches the captured G2 AA21 CRC and envelope vectors", () => {
   assert.equal(crc16CcittFalse(Buffer.from("123456789")), 0x29b1);
   assert.equal(crc16CcittFalse(Uint8Array.of(0)), 0xe1f0);
@@ -75,12 +149,8 @@ test("matches the captured G2 AA21 CRC and envelope vectors", () => {
     ["aa2101030101c00000f0e1"],
   );
   assert.deepEqual(
-    makeBleEnvelopeFrames(
-      0x80,
-      Uint8Array.from([0x08, 0x0e, 0x10, 0x26, 0x6a, 0x00]),
-      { sequence: 2 },
-    ).map(hex),
-    ["aa21020801018000080e10266a00da07"],
+    makeG2BleAuthenticationFrames(2).map(hex),
+    ["aa21020c01018000080410021a04080110044e8e"],
   );
 });
 
@@ -112,6 +182,100 @@ test("unwraps AA12 acknowledgement payloads", () => {
   assert.equal(ack.opcode, 0x02);
   assert.equal(ack.status, 0x07);
   assert.equal(parseBleAck(Uint8Array.of(0xaa, 0x21)), null);
+  assert.deepEqual(
+    [...parseBleResponseEnvelope(Uint8Array.from([
+      0xaa, 0x12, 0x02, 0x08, 0x01, 0x01, 0x80, 0x00,
+      0x08, 0x04, 0x10, 0x02, 0x1a, 0x00, 0x00, 0x00,
+    ])).payload],
+    [0x08, 0x04, 0x10, 0x02, 0x1a, 0x00],
+  );
+});
+
+test("authenticates with jimrandomh's stock 2.2.9 request and exact echoed reply", async () => {
+  const written = [];
+  const session = new G2BleOtaSession(
+    { name: "Even G2_32_L_ACD458" },
+    { side: "left", authTimeoutMs: 50 },
+  );
+  session.controlWrite = {
+    async writeValueWithoutResponse(frame) {
+      written.push(frame.slice());
+      queueMicrotask(() => {
+        session.controlNotifyHandler({
+          target: {
+            value: new DataView(Uint8Array.from([
+              0xaa, 0x12, 0x01, 0x08, 0x01, 0x01, 0x80, 0x00,
+              0x08, 0x04, 0x10, 0x01, 0x1a, 0x00, 0x00, 0x00,
+            ]).buffer),
+          },
+        });
+      });
+    },
+  };
+
+  await session.authenticate();
+  assert.deepEqual(written.map(hex), [
+    "aa21010c01018000080410011a0408011004cc56",
+  ]);
+  assert.equal(session.sequence, 1);
+  assert.equal(session.startHeartbeat, undefined);
+});
+
+test("every fresh GATT connect authenticates and resets the independent OTA sequence", async () => {
+  const listeners = new Set();
+  const controlNotify = {
+    addEventListener(_name, listener) { listeners.add(listener); },
+    removeEventListener(_name, listener) { listeners.delete(listener); },
+    async startNotifications() {},
+    async stopNotifications() {},
+  };
+  const authWrites = [];
+  const controlWrite = {
+    async writeValueWithoutResponse(frame) {
+      authWrites.push(frame.slice());
+      const magic = frame[2];
+      const response = new DataView(Uint8Array.from([
+        0xaa, 0x12, magic, 0x08, 0x01, 0x01, 0x80, 0x00,
+        0x08, 0x04, 0x10, magic, 0x1a, 0x00, 0x00, 0x00,
+      ]).buffer);
+      queueMicrotask(() => {
+        for (const listener of listeners) listener({ target: { value: response } });
+      });
+    },
+  };
+  const dataNotify = {
+    addEventListener() {},
+    removeEventListener() {},
+    async startNotifications() {},
+    async stopNotifications() {},
+  };
+  const dataWrite = { async writeValueWithoutResponse() {} };
+  const gatt = {
+    connected: true,
+    async getPrimaryService(uuid) {
+      const control = uuid.endsWith("5450");
+      return {
+        async getCharacteristic(characteristic) {
+          if (control) {
+            return characteristic.endsWith("5401")
+              ? controlWrite
+              : controlNotify;
+          }
+          return characteristic.endsWith("0001") ? dataWrite : dataNotify;
+        },
+      };
+    },
+  };
+  const session = new G2BleOtaSession(
+    { name: "Even G2_32_R_693CCB", gatt },
+    { side: "right", notificationSettleMs: 0, authTimeoutMs: 50 },
+  );
+  session.sequence = 99;
+
+  await session.connect();
+  assert.equal(authWrites.length, 1);
+  assert.equal(authWrites[0][6], 0x80);
+  assert.equal(session.sequence, 0);
 });
 
 test("uses one shared sequence for a block marker and all block fragments", async () => {
@@ -133,6 +297,7 @@ test("uses one shared sequence for a block marker and all block fragments", asyn
   assert.equal(written[0][6], 0xc0);
   assert.equal(written[1][6], 0xc1);
   assert.ok(written.every((frame) => frame[2] === 1));
+  assert.equal(G2_BLE_FRAME_PACING_MS, 3);
 });
 
 test("an explicit block NAK is safely resent in place", async () => {
@@ -342,11 +507,13 @@ test("left and right BLE sessions flash concurrently and settle independently", 
   const disconnected = [];
   const settledSides = [];
   let completed = false;
+  const receivedOptions = [];
   const entries = ["left", "right"].map((side) => ({
     side,
     device: { id: `${side}-id`, name: `Even G2_32_${side[0].toUpperCase()}_TEST` },
     session: {
-      async flashBundle() {
+      async flashBundle(_firmware, options) {
+        receivedOptions.push(options);
         started.push(side);
         if (side === "left") {
           await leftGate;
@@ -368,6 +535,7 @@ test("left and right BLE sessions flash concurrently and settle independently", 
   }));
 
   const pending = flashG2BleSessionsConcurrently(entries, {}, {
+    flashOptions: { componentNames: ["ota/s200_firmware_ota.bin"] },
     onSettled: ({ side, status }) => settledSides.push({ side, status }),
   }).then((value) => {
     completed = true;
@@ -396,6 +564,10 @@ test("left and right BLE sessions flash concurrently and settle independently", 
     outcomes[1].reason.partialResult.components[0].endStatus,
     8,
   );
+  assert.deepEqual(receivedOptions, [
+    { componentNames: ["ota/s200_firmware_ota.bin"] },
+    { componentNames: ["ota/s200_firmware_ota.bin"] },
+  ]);
 });
 
 test("connection-loss recovery waits 10 seconds by default and recognizes Chrome errors", () => {
@@ -483,7 +655,6 @@ test("reconnect after loss uses the original paired device ID without a chooser"
   const logs = [];
   const statuses = [];
   let connectAttempts = 0;
-  let heartbeatStarts = 0;
   const device = {
     id: "left-paired-id",
     name: "Even G2_32_L_TEST",
@@ -511,9 +682,6 @@ test("reconnect after loss uses the original paired device ID without a chooser"
     }
     device.gatt.connected = true;
   };
-  session.startHeartbeat = () => {
-    heartbeatStarts += 1;
-  };
   session.sendControl = async (opcode) => {
     assert.equal(opcode, 0x00);
     return 0;
@@ -525,7 +693,6 @@ test("reconnect after loss uses the original paired device ID without a chooser"
     beginStatus: 0,
   });
   assert.equal(connectAttempts, 2);
-  assert.equal(heartbeatStarts, 1);
   assert.deepEqual(
     statuses.map(({ status }) => status),
     ["reconnecting", "flashing"],
@@ -599,7 +766,6 @@ test("the post-update reconnect budget outlasts the temple's firmware apply", ()
 test("a silent BEGIN is retried on a rebuilt link instead of failing the side", async () => {
   const logs = [];
   let rebuilds = 0;
-  let heartbeatStarts = 0;
   let disconnects = 0;
   let sends = 0;
   const session = new G2BleOtaSession(
@@ -611,9 +777,6 @@ test("a silent BEGIN is retried on a rebuilt link instead of failing the side", 
   };
   session.connectForTransfer = async () => {
     rebuilds += 1;
-  };
-  session.startHeartbeat = () => {
-    heartbeatStarts += 1;
   };
   session.sendControl = async (opcode) => {
     assert.equal(opcode, 0x00);
@@ -631,7 +794,6 @@ test("a silent BEGIN is retried on a rebuilt link instead of failing the side", 
   assert.equal(sends, 2);
   assert.equal(disconnects, 1);
   assert.equal(rebuilds, 1);
-  assert.equal(heartbeatStarts, 1);
   assert.match(logs[0].message, /BEGIN attempt 2\/3/);
   assert.match(logs[0].message, /safe to resend/);
 });

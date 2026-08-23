@@ -77,6 +77,27 @@ python3 scripts/g2_case_pogo_flasher.py flash-reviewed-cfw \
   --log /path/to/g2-cfw-flash-audit.json
 ```
 
+Latest-upstream-pinned 2.2.9.28 recovery candidate, right route followed by
+left. This profile accepts a live 2.2.9.22, withdrawn 2.2.9.25, 2.2.9.26, or
+2.2.9.27 source and pins both the complete package and Apollo-main payload. It also
+canonically encodes the 162-byte CFW marker length so SybilSight can negotiate
+the 640×480 direct-framebuffer mode. The buzzer mode remains implemented but
+is intentionally not capability-advertised while the reported persistent-tone
+failure is isolated:
+
+```bash
+python3 scripts/g2_case_pogo_flasher.py flash-candidate-cfw-2.2.9.28 \
+  public/firmware-updates/source-files/2.2.9.28/g2-2.2.9.28.bin \
+  --device /dev/cu.usbserial-XXXX \
+  --routes both \
+  --glasses-seated-confirmed \
+  --execute-main-ota \
+  --accept-single-slot-risk \
+  --confirm-image-sha256 \
+  dc4c4de98d183a98f8b2e98b91ab0c920b46a1ec30fcdf3d447637f2022df484 \
+  --log /path/to/g2-2.2.9.28-candidate-flash-audit.json
+```
+
 Pinned official 2.2.6.10 main restore:
 
 ```bash

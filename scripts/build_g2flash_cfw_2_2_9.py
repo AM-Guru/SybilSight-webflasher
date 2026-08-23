@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Build SybilSight G2 CFW 2.2.9.25 from official 2.2.9.22.
+"""Build SybilSight G2 CFW 2.2.9.28 from official 2.2.9.22.
 
 The injected feature code is compiled from the pinned g2flash main checkout after
 applying the reviewed 2.2.9 address profile in memory.  Every live-code edit is
-expected-byte gated, all package/runtime identities are advanced to 2.2.9.25,
+expected-byte gated, all package/runtime identities are advanced to 2.2.9.28,
 and the emitted JSON recipe reproduces the output from the stock CDN image.
 """
 
@@ -22,14 +22,15 @@ import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE_VERSION = "2.2.9.22"
-OUTPUT_VERSION = "2.2.9.25"
+OUTPUT_VERSION = "2.2.9.28"
 BASE_SHA256 = "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561"
-G2FLASH_COMMIT = "469d78e332040f6ed77e978df496d3e7d427b4f2"
+G2FLASH_COMMIT = "7c6d3c15b0bac9ad7247163c12c53efeb101e503"
+G2FLASH_PREVIOUS_CFW_COMMIT = "469d78e332040f6ed77e978df496d3e7d427b4f2"
 G2FLASH_RECIPE_SHA256 = "fe76eb55a6a52eec06f0818e56e310ab419731169b12305aed755a7318419410"
 CAPABILITY_MARKER = (
     "EVENCFW/16 img576 img640 imgz rle wakelease directfb fbguard "
     "wearnotify compass10 cleanup11 texcache12 teximg13 texstr14 font15 "
-    "buzzer5 diag7 multiseg8 rectcopy9 ringhold"
+    "diag7 multiseg8 rectcopy9 ringhold"
 )
 UPSTREAM_CAPABILITY_MARKER = (
     "EVENCFW/15 img576 img640 imgz rle wakelease directfb fbguard "
@@ -53,6 +54,18 @@ class BuildError(RuntimeError):
 
 def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def protobuf_varint(value: int) -> bytes:
+    if value < 0:
+        raise ValueError("protobuf varints cannot encode negative values")
+    encoded = bytearray()
+    while True:
+        byte = value & 0x7F
+        value >>= 7
+        encoded.append(byte | (0x80 if value else 0))
+        if not value:
+            return bytes(encoded)
 
 
 def crc32c_msb(data: bytes) -> int:
@@ -114,20 +127,20 @@ ADDRESS_PROFILE = {
     "0x00490121": "0x0049da09", "0x00464b2f": "0x0046a39f",
     "0x0045a569": "0x0045cfdd", "0x0049eb8f": "0x004ac333",
     "0x0045f8fd": "0x004622ed", "0x0045f8e7": "0x004622d7",
-    "0x004da16b": "0x004ebad3", "0x00474cd3": "0x0047c9c7",
-    "0x00474d17": "0x0047ca0b", "0x005beac3": "0x005d6167",
+    "0x004da16b": "0x004ebad3", "0x00474cd3": "0x00458383",
+    "0x00474d17": "0x004583c7", "0x005beac3": "0x005d6167",
     "0x005beb91": "0x005d6235", "0x005bea87": "0x005d612b",
     "0x004dc5af": "0x004ee3bb", "0x0047510f": "0x0047ce03",
     "0x00498681": "0x004a60c1", "0x00440657": "0x00440d9b",
     "0x00502b5b": "0x00516f0b", "0x00502bf9": "0x00516fa9",
     "0x00502ac5": "0x00516e75", "0x00502c89": "0x00517039",
     "0x00449499": "0x00442c4d", "0x004493b1": "0x00442b65",
-    "0x004494d9": "0x00442c8d", "0x004e0cbb": "0x004f3d87",
-    "0x004e0ccf": "0x004f3d9b", "0x004da383": "0x004ebd09",
+    "0x004494d9": "0x00442c8d", "0x004e0cbb": "0x004f3d77",
+    "0x004e0ccf": "0x004f3d8b", "0x004da383": "0x004ebd09",
     "0x0047381f": "0x00479483", "0x0047386b": "0x004794cf",
     "0x00474067": "0x00479d83", "0x0046ca15": "0x004708d1",
     "0x005455e5": "0x0055d4d7", "0x0054566d": "0x0055d55f",
-    "0x0058705d": "0x0059f487", "0x200007b8": "0x200008b4",
+    "0x0058705d": "0x0059f47d", "0x200007b8": "0x200008b4",
     "0x20074504": "0x200767a0", "0x20074a34": "0x20076d80",
     "0x200744d0": "0x20076768", "0x2034dc30": "0x20349450",
     "0x20003ffc": "0x2000475c", "0x0044953f": "0x00442cf3",
@@ -144,7 +157,7 @@ ADDRESS_PROFILE = {
 
 
 HOOKS = (
-    (0x00444A74, "25f093fc", "evenhub_longpress", "tap-then-long-press forwarding"),
+    (0x004A4A98, "46f0cafa", "evenhub_longpress", "tap-then-long-press forwarding"),
     (0x00444D36, "1df0d9fa", "ring_release", "ring long-press release forwarding"),
     (0x00444DFC, "1df076fa", "compass_event_forward", "global compass forwarding"),
     (0x0045F146, "0bf02af9", "faceclaw_display_start", "local display-start lease"),
@@ -167,6 +180,56 @@ IN_PLACE = (
     (0x004EDE9E, "9128", "8842", "image-container height comparison"),
 )
 EVEN_AI_ENTRY = (0x004F5156, "7fb50600")
+
+# Independent ABI signatures for the most sensitive rebased symbols. The
+# withdrawn 2.2.9.25 recipe landed several entries 10-17 bytes into matching or
+# unrelated functions. A stock hash and four-byte call-site checks cannot catch
+# that semantic error, so fail before compiling if any true function entry or
+# protocol identity below differs.
+STOCK_RUNTIME_SIGNATURES = (
+    (0x00458382, "70b504000025", "primary malloc entry"),
+    (0x004583C6, "38b504005c4d", "primary free entry"),
+    (0x004F3D76, "0020dff8501808607047", "EvenHub keepalive reset entry"),
+    (0x004F3D8A, "e0b5dff818281168", "image-state lookup entry"),
+    (0x0059F47C, "2de9f8438ab0070042f22408", "navigation compass notifier entry"),
+    (0x0059F542, "0f202070002060700a206080", "compass notifier wire identity"),
+    (0x004EB030, "7fb505000c000a2100226e46", "stock force-quit dialog entry"),
+    (
+        0x0048C3D0,
+        "a82827203c03002058030020a8501320",
+        "primary and secondary TLSF arena descriptors",
+    ),
+)
+
+CFW_RESERVED_BASE = 0x2029F4A8
+CFW_ALLOC_DIAG_SLOT = CFW_RESERVED_BASE + 4
+
+
+def validate_stock_runtime(
+    image: bytes, payload_start: int, payload_size: int
+) -> None:
+    runtime = image[
+        payload_start + APP_PREAMBLE : payload_start + payload_size
+    ]
+    for address, expected_hex, description in STOCK_RUNTIME_SIGNATURES:
+        expected = bytes.fromhex(expected_hex)
+        offset = address - APP_LOAD_ADDR
+        observed = runtime[offset : offset + len(expected)]
+        if observed != expected:
+            raise BuildError(
+                f"{description} at {address:#x}: expected "
+                f"{expected.hex()}, got {observed.hex()}"
+            )
+
+    # These two words are the only CFW-owned locations in the 1-KiB TLSF tail.
+    # Reject a base that contains an absolute stock reference to either word.
+    # (Scanning the entire range byte-by-byte creates false positives from Thumb
+    # instruction encodings that happen to resemble SRAM pointers.)
+    for address in (CFW_RESERVED_BASE, CFW_ALLOC_DIAG_SLOT):
+        if struct.pack("<I", address) in runtime:
+            raise BuildError(
+                f"stock firmware references CFW-reserved word {address:#x}"
+            )
 
 
 def prepare_sources(checkout: Path, destination: Path) -> Path:
@@ -197,6 +260,30 @@ def prepare_sources(checkout: Path, destination: Path) -> Path:
         CAPABILITY_MARKER,
         settings.name,
     )
+    # Upstream contract 15 is exactly 127 bytes, so its one-byte protobuf
+    # length happens to be canonical. Contract 16 is 162 bytes and must encode
+    # that length as the two-byte varint A2 01. Leaving the old p[2] assignment
+    # makes the first marker character part of the length and causes every host
+    # protobuf decoder to discard field 100, silently disabling all CFW modes.
+    old_append = """        unsigned char *p = buf + len;
+        p[0] = 0xA2; p[1] = 0x06;                          // field 100, wire type 2: tag 802
+        unsigned clen = strlcpy((char *)(p + 3), caps, sizeof(caps));
+        p[2] = (unsigned char)clen;                        // length-delimited payload length
+        len += 3 + clen;"""
+    canonical_append = """        unsigned char *p = buf + len;
+        unsigned clen = (unsigned)(sizeof(caps) - 1u);
+        unsigned header = 2u;
+        unsigned remaining = clen;
+        p[0] = 0xA2; p[1] = 0x06;                          // field 100, wire type 2: tag 802
+        do {
+            unsigned char byte = (unsigned char)(remaining & 0x7fu);
+            remaining >>= 7;
+            if (remaining) byte |= 0x80u;
+            p[header++] = byte;
+        } while (remaining);
+        strlcpy((char *)(p + header), caps, sizeof(caps));
+        len += header + clen;"""
+    text = checked_replace(text, old_append, canonical_append, settings.name)
     text = checked_replace(text, '"movw r12, #0x1fd7\\n"', '"movw r12, #0x515b\\n"', settings.name)
     text = checked_replace(text, '"movt r12, #0x004e\\n"', '"movt r12, #0x004f\\n"', settings.name)
     settings.write_text(text)
@@ -241,6 +328,11 @@ def compile_blob(checkout: Path) -> dict:
 
 
 def build(checkout: Path) -> tuple[bytes, dict]:
+    marker_bytes = CAPABILITY_MARKER.encode("ascii")
+    if protobuf_varint(len(marker_bytes)) != b"\xa2\x01":
+        raise BuildError(
+            "contract-16 marker no longer has its reviewed two-byte protobuf length"
+        )
     base = BASE.read_bytes()
     if sha256(base) != BASE_SHA256:
         raise BuildError("official G2 2.2.9.22 base hash changed")
@@ -254,10 +346,11 @@ def build(checkout: Path) -> tuple[bytes, dict]:
     if recipe_hash != G2FLASH_RECIPE_SHA256:
         raise BuildError("g2flash main patch recipe changed")
 
+    index, component_offset, payload_start, old_size = find_main_application(base)
+    validate_stock_runtime(base, payload_start, old_size)
     built = compile_blob(checkout)
     blob = bytes.fromhex(built["text"])
     functions = {item["name"]: item["offset"] for item in built["functions"]}
-    index, component_offset, payload_start, old_size = find_main_application(base)
     blob_offset = (old_size + 3) & ~3
     blob_address = APP_LOAD_ADDR + blob_offset - APP_PREAMBLE
     programmed_end = blob_address + len(blob)
@@ -355,6 +448,14 @@ def build(checkout: Path) -> tuple[bytes, dict]:
 
     profile = {
         "rom_and_ram_symbols": ADDRESS_PROFILE,
+        "runtime_signatures": [
+            {
+                "address": f"0x{address:08x}",
+                "bytes": expected,
+                "purpose": purpose,
+            }
+            for address, expected, purpose in STOCK_RUNTIME_SIGNATURES
+        ],
         "hooks": [
             {"address": f"0x{address:08x}", "stock_bytes": old, "entry": function, "purpose": purpose}
             for address, old, function, purpose in HOOKS
@@ -362,11 +463,38 @@ def build(checkout: Path) -> tuple[bytes, dict]:
         "image_completion_adaptation": "wraps the 2.2.9 four-argument completion routine after taking the FIFO snapshot",
         "gesture_adaptation": "uses the pinned upstream tap-then-long-press forwarding implementation without a 2.2.9-only source rewrite",
         "even_ai_resume": "0x004f515b (Thumb)",
+        "corrected_withdrawn_rebase": {
+            "release": "2.2.9.25",
+            "findings": [
+                "primary malloc/free pointers landed inside unrelated functions",
+                "keepalive reset and image lookup pointers landed after their entries",
+                "compass notification pointer skipped its allocator/setup prologue",
+                "long-press hook replaced an unrelated display-start request",
+            ],
+        },
+        "capability_advertisement": {
+            "field": 100,
+            "marker_bytes": len(CAPABILITY_MARKER.encode("ascii")),
+            "length_encoding": "canonical protobuf varint",
+            "regression_fixed": (
+                "2.2.9.26 encoded the 162-byte marker length as one byte, so "
+                "hosts could not parse field 100 and disabled private display modes"
+            ),
+        },
     }
     rebase_patch_sha256 = sha256(json.dumps(profile, sort_keys=True).encode())
     excluded_feature = {
         "id": "ble-advertised-name", "status": "omitted",
         "reason": "Not present on the pinned g2flash main branch and withdrawn after hardware failure evidence.",
+    }
+    withheld_feature = {
+        "id": "buzzer5",
+        "status": "implemented-but-not-advertised",
+        "reason": (
+            "The withdrawn 2.2.9.25 build was observed producing a persistent "
+            "tone. Keep upstream mode 5 unreachable through normal capability "
+            "negotiation until it is independently hardware-qualified."
+        ),
     }
     direct_framebuffer_commits = [
         "235a8b304447e330df6a0bce0351e3b6dc3d6f08",
@@ -387,17 +515,28 @@ def build(checkout: Path) -> tuple[bytes, dict]:
         "g2flash_patch_sha256": recipe_hash,
         "g2flash_rebase_patch_sha256": rebase_patch_sha256,
         "excluded_feature": excluded_feature,
+        "withheld_feature": withheld_feature,
         "source_provenance": {
             "g2flash_upstream_commit": commit,
+            "upstream_2_2_9_compatibility_delta": {
+                "previous_cfw_commit": G2FLASH_PREVIOUS_CFW_COMMIT,
+                "patch_tree_unchanged": True,
+                "scope": (
+                    "installer transport: authenticate every fresh CTRL connection, "
+                    "reset the independent OTA sequence, and send no CTRL heartbeat "
+                    "between BEGIN and final END"
+                ),
+            },
             "g2flash_rebase_patch_sha256": rebase_patch_sha256,
             "excluded_feature": excluded_feature,
+            "withheld_feature": withheld_feature,
             "direct_framebuffer_commits": direct_framebuffer_commits,
             "vendor_base_sha256": BASE_SHA256,
             "address_profile": profile,
             "hardware_validation": "not-yet-hardware-flashed",
             "downstream_contract": {
                 "version": 16,
-                "change": "Advertises already-present upstream modes 5, 7, 8, and 9 plus ring hold/release forwarding as individually negotiated features.",
+                "change": "Canonically encodes the 162-byte field-100 marker length while advertising upstream modes 7, 8, and 9 plus ring hold/release forwarding; mode 5 remains unadvertised pending isolated buzzer validation.",
                 "upstream_marker": UPSTREAM_CAPABILITY_MARKER,
             },
         },

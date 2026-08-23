@@ -54,7 +54,7 @@ export const G2_BLE_BLOCK_BYTES = 4096;
 export const G2_BLE_ENVELOPE_CHUNK_BYTES = 232;
 export const G2_BLE_BLOCK_ACK_TIMEOUT_MS = 4000;
 export const G2_BLE_CONTROL_ACK_TIMEOUT_MS = 8000;
-export const G2_BLE_HEARTBEAT_INTERVAL_MS = 12000;
+export const G2_BLE_AUTH_TIMEOUT_MS = 4000;
 export const G2_BLE_BLOCK_NAK_ATTEMPTS = 3;
 export const G2_BLE_COMPONENT_ATTEMPTS = 3;
 export const G2_BLE_LOSS_RECONNECT_DELAY_MS = 10000;
@@ -75,6 +75,11 @@ export const G2_BLE_BEGIN_ATTEMPTS = 3;
 export const G2_BLE_POST_UPDATE_RECONNECT_INTERVAL_MS = 5000;
 export const G2_BLE_POST_UPDATE_RECONNECT_ATTEMPTS = 24;
 export const G2_BLE_VISIBILITY_RESUME_SETTLE_MS = 250;
+// CoreBluetooth/Web Bluetooth resolves a write-without-response call before
+// the radio has necessarily drained the native transmit queue. Space the 232 B
+// fragments slightly so long transfers cannot build a hidden queue until the
+// link falls over at the repeatedly observed ~46-block boundary.
+export const G2_BLE_FRAME_PACING_MS = 3;
 export const G2_BLE_TARGET_PROOF_MAX_AGE_MS = 15 * 60 * 1000;
 
 export const G2_BLE_OTA_STATUS = Object.freeze({
@@ -92,10 +97,6 @@ export const G2_BLE_OTA_STATUS = Object.freeze({
 });
 
 const END_OK = new Set([0, 8, 9]);
-const HEARTBEAT_PAYLOAD = Uint8Array.from([
-  0x08, 0x0e, 0x10, 0x26, 0x6a, 0x00,
-]);
-
 // Device Information characteristics are UTF-8 strings, but firmware commonly
 // pads or NUL-terminates them into a fixed buffer. Cut at the first NUL and
 // strip the control bytes rather than carrying them into a comparison, which
@@ -200,7 +201,18 @@ export function makeBleControlFrames(opcode, data, sequence) {
   );
 }
 
-export function parseBleAck(input) {
+export function makeG2BleAuthenticationFrames(sequence) {
+  return makeBleEnvelopeFrames(
+    0x80,
+    Uint8Array.from([
+      0x08, 0x04, 0x10, sequence,
+      0x1a, 0x04, 0x08, 0x01, 0x10, 0x04,
+    ]),
+    { sequence },
+  );
+}
+
+export function parseBleResponseEnvelope(input) {
   const frame = asBytes(input);
   if (
     frame.length < 10 ||
@@ -218,8 +230,16 @@ export function parseBleAck(input) {
     sid: frame[6],
     flag: frame[7],
     payload,
-    opcode: payload[0] ?? null,
-    status: payload[1] ?? null,
+  };
+}
+
+export function parseBleAck(input) {
+  const envelope = parseBleResponseEnvelope(input);
+  if (!envelope) return null;
+  return {
+    ...envelope,
+    opcode: envelope.payload[0] ?? null,
+    status: envelope.payload[1] ?? null,
   };
 }
 
@@ -429,6 +449,31 @@ export function g2BleDeviceSide(name) {
   );
   const unique = [...new Set(markers)];
   return unique.length === 1 ? unique[0] : null;
+}
+
+export async function findAuthorizedG2BleDevice(
+  side,
+  {
+    bluetooth = globalThis.navigator?.bluetooth,
+    expectedName = null,
+  } = {},
+) {
+  if (
+    !["left", "right"].includes(side) ||
+    typeof bluetooth?.getDevices !== "function"
+  ) {
+    return null;
+  }
+  const devices = await bluetooth.getDevices();
+  const matching = devices.filter(
+    (device) => g2BleDeviceSide(device?.name) === side,
+  );
+  const remembered = String(expectedName ?? "").trim();
+  return (
+    matching.find((device) => String(device?.name ?? '').trim() === remembered) ??
+    matching[0] ??
+    null
+  );
 }
 
 export function g2BleTargetVersionProof(
@@ -961,7 +1006,7 @@ export class G2BleOtaSession {
       progress = () => {},
       blockAckTimeoutMs = G2_BLE_BLOCK_ACK_TIMEOUT_MS,
       controlAckTimeoutMs = G2_BLE_CONTROL_ACK_TIMEOUT_MS,
-      heartbeatIntervalMs = G2_BLE_HEARTBEAT_INTERVAL_MS,
+      authTimeoutMs = G2_BLE_AUTH_TIMEOUT_MS,
       blockNakAttempts = G2_BLE_BLOCK_NAK_ATTEMPTS,
       componentAttempts = G2_BLE_COMPONENT_ATTEMPTS,
       componentRetrySettleMs = 1500,
@@ -974,6 +1019,8 @@ export class G2BleOtaSession {
       postUpdateReconnectAttempts = G2_BLE_POST_UPDATE_RECONNECT_ATTEMPTS,
       initialConnectAttempts = G2_BLE_RECONNECT_ATTEMPTS,
       visibilityResumeSettleMs = G2_BLE_VISIBILITY_RESUME_SETTLE_MS,
+      notificationSettleMs = 2500,
+      framePacingMs = G2_BLE_FRAME_PACING_MS,
       documentObject =
         typeof document === "undefined" ? null : document,
     } = {},
@@ -984,7 +1031,7 @@ export class G2BleOtaSession {
     this.progress = progress;
     this.blockAckTimeoutMs = blockAckTimeoutMs;
     this.controlAckTimeoutMs = controlAckTimeoutMs;
-    this.heartbeatIntervalMs = heartbeatIntervalMs;
+    this.authTimeoutMs = authTimeoutMs;
     this.blockNakAttempts = blockNakAttempts;
     this.componentAttempts = componentAttempts;
     this.componentRetrySettleMs = componentRetrySettleMs;
@@ -997,14 +1044,16 @@ export class G2BleOtaSession {
     this.postUpdateReconnectAttempts = postUpdateReconnectAttempts;
     this.initialConnectAttempts = initialConnectAttempts;
     this.visibilityResumeSettleMs = visibilityResumeSettleMs;
+    this.notificationSettleMs = notificationSettleMs;
+    this.framePacingMs = framePacingMs;
     this.documentObject = documentObject;
     this.foregroundPauses = 0;
     this.sequence = 0;
     this.ackQueue = [];
     this.ackWaiters = [];
+    this.authenticationQueue = [];
+    this.authenticationWaiters = [];
     this.writeTail = Promise.resolve();
-    this.heartbeatTimer = null;
-    this.heartbeatError = null;
     this.connectionRecoveries = 0;
     this.selectedDeviceId = device?.id ?? null;
     // Filled by readDeviceIdentity() on connect; stays null when the temple
@@ -1024,6 +1073,29 @@ export class G2BleOtaSession {
         this.ackQueue.push(ack);
       }
     };
+    this.controlNotifyHandler = (event) => {
+      const response = parseBleResponseEnvelope(event?.target?.value);
+      if (
+        response?.sid !== 0x80 ||
+        response.payload.length < 4 ||
+        response.payload[0] !== 0x08 ||
+        response.payload[1] !== 0x04 ||
+        response.payload[2] !== 0x10
+      ) {
+        return;
+      }
+      const magic = response.payload[3];
+      const waiterIndex = this.authenticationWaiters.findIndex(
+        (waiter) => waiter.magic === magic,
+      );
+      if (waiterIndex >= 0) {
+        const [waiter] = this.authenticationWaiters.splice(waiterIndex, 1);
+        clearTimeout(waiter.timer);
+        waiter.resolve(response);
+      } else {
+        this.authenticationQueue.push(response);
+      }
+    };
   }
 
   nextSequence() {
@@ -1033,6 +1105,10 @@ export class G2BleOtaSession {
 
   drainAcks() {
     this.ackQueue = [];
+  }
+
+  drainAuthenticationResponses() {
+    this.authenticationQueue = [];
   }
 
   assertSelectedDeviceIdentity() {
@@ -1106,6 +1182,60 @@ export class G2BleOtaSession {
     );
   }
 
+  waitForAuthentication(magic, timeoutMs = this.authTimeoutMs) {
+    const queuedIndex = this.authenticationQueue.findIndex(
+      (response) => response.payload[3] === magic,
+    );
+    if (queuedIndex >= 0) {
+      const [response] = this.authenticationQueue.splice(queuedIndex, 1);
+      return Promise.resolve(response);
+    }
+    return new Promise((resolve, reject) => {
+      const waiter = { magic, resolve, reject, timer: null };
+      waiter.timer = setTimeout(() => {
+        const index = this.authenticationWaiters.indexOf(waiter);
+        if (index >= 0) this.authenticationWaiters.splice(index, 1);
+        reject(
+          new G2BleOtaError(
+            `${this.side}: no G2 authentication response arrived on the control channel.`,
+            { code: "AUTH_TIMEOUT", magic },
+          ),
+        );
+      }, timeoutMs);
+      this.authenticationWaiters.push(waiter);
+    });
+  }
+
+  async authenticate() {
+    const magic = this.nextSequence();
+    this.drainAuthenticationResponses();
+    await this.writeFrames(
+      this.controlWrite,
+      makeG2BleAuthenticationFrames(magic),
+    );
+    const response = await this.waitForAuthentication(magic);
+    const expected = Uint8Array.from([
+      0x08, 0x04, 0x10, magic, 0x1a, 0x00,
+    ]);
+    if (
+      response.payload.length !== expected.length ||
+      !response.payload.every((byte, index) => byte === expected[index])
+    ) {
+      throw new G2BleOtaError(
+        `${this.side}: the G2 rejected or returned an unsupported authentication response.`,
+        {
+          code: "AUTH_REJECTED",
+          magic,
+          responsePayload: [...response.payload],
+        },
+      );
+    }
+    this.log(
+      `${this.side}: stock G2 authentication completed before OTA.`,
+      "success",
+    );
+  }
+
   async connect() {
     this.assertSelectedDeviceIdentity();
     if (!this.device?.gatt) {
@@ -1135,12 +1265,26 @@ export class G2BleOtaSession {
       "characteristicvaluechanged",
       this.dataNotifyHandler,
     );
+    this.controlNotify.addEventListener(
+      "characteristicvaluechanged",
+      this.controlNotifyHandler,
+    );
     await this.dataNotify.startNotifications();
     await this.controlNotify.startNotifications();
-    await new Promise((resolve) => setTimeout(resolve, 2500));
+    if (this.notificationSettleMs > 0) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, this.notificationSettleMs),
+      );
+    }
+    this.drainAcks();
+    this.drainAuthenticationResponses();
+    await this.authenticate();
+    // The stock application uses independent counters for control-channel
+    // authentication and OTA data. BEGIN therefore starts at OTA sequence 1.
+    this.sequence = 0;
     this.drainAcks();
     this.log(
-      `${this.side}: direct Bluetooth OTA services and notifications are ready.`,
+      `${this.side}: authenticated Bluetooth OTA services and notifications are ready.`,
       "success",
     );
   }
@@ -1172,6 +1316,10 @@ export class G2BleOtaSession {
           "characteristicvaluechanged",
           this.dataNotifyHandler,
         );
+        this.controlNotify?.removeEventListener?.(
+          "characteristicvaluechanged",
+          this.controlNotifyHandler,
+        );
         try {
           this.device?.gatt?.disconnect();
         } catch {
@@ -1197,11 +1345,16 @@ export class G2BleOtaSession {
   }
 
   async disconnect() {
-    this.stopHeartbeat();
     for (const waiter of this.ackWaiters.splice(0)) {
       clearTimeout(waiter.timer);
       waiter.reject(
         new G2BleOtaError(`${this.side}: Bluetooth OTA session closed.`),
+      );
+    }
+    for (const waiter of this.authenticationWaiters.splice(0)) {
+      clearTimeout(waiter.timer);
+      waiter.reject(
+        new G2BleOtaError(`${this.side}: Bluetooth authentication session closed.`),
       );
     }
     try {
@@ -1214,6 +1367,10 @@ export class G2BleOtaSession {
       // A successful OTA commonly reboots the temple before cleanup.
     }
     try {
+      this.controlNotify?.removeEventListener(
+        "characteristicvaluechanged",
+        this.controlNotifyHandler,
+      );
       await this.controlNotify?.stopNotifications();
     } catch {
       // A successful OTA commonly reboots the temple before cleanup.
@@ -1237,7 +1394,6 @@ export class G2BleOtaSession {
       "reconnecting",
     );
     await this.disconnect();
-    this.heartbeatError = null;
     this.writeTail = Promise.resolve();
     if (this.lossReconnectDelayMs > 0) {
       await new Promise((resolve) =>
@@ -1255,7 +1411,6 @@ export class G2BleOtaSession {
       try {
         this.assertSelectedDeviceIdentity();
         await this.connect();
-        this.startHeartbeat();
         let beginStatus = null;
         if (reenterPackage) {
           beginStatus = await this.sendControl(0x00);
@@ -1283,10 +1438,13 @@ export class G2BleOtaSession {
         };
       } catch (error) {
         lastError = error;
-        this.stopHeartbeat();
         this.dataNotify?.removeEventListener?.(
           "characteristicvaluechanged",
           this.dataNotifyHandler,
+        );
+        this.controlNotify?.removeEventListener?.(
+          "characteristicvaluechanged",
+          this.controlNotifyHandler,
         );
         try {
           this.device?.gatt?.disconnect();
@@ -1348,9 +1506,14 @@ export class G2BleOtaSession {
     const operation = this.writeTail
       .catch(() => {})
       .then(async () => {
-        for (const frame of frames) {
+        for (const [index, frame] of frames.entries()) {
           if (typeof characteristic.writeValueWithoutResponse === "function") {
             await characteristic.writeValueWithoutResponse(frame);
+            if (this.framePacingMs > 0 && index < frames.length - 1) {
+              await new Promise((resolve) =>
+                setTimeout(resolve, this.framePacingMs),
+              );
+            }
           } else {
             await characteristic.writeValue(frame);
           }
@@ -1387,27 +1550,8 @@ export class G2BleOtaSession {
     return this.waitForAck(0x02, this.blockAckTimeoutMs);
   }
 
-  startHeartbeat() {
-    this.heartbeatError = null;
-    this.heartbeatTimer = setInterval(() => {
-      const frames = makeBleEnvelopeFrames(0x80, HEARTBEAT_PAYLOAD, {
-        sequence: this.nextSequence(),
-      });
-      void this.writeFrames(this.controlWrite, frames).catch((error) => {
-        this.heartbeatError ??= error;
-      });
-    }, this.heartbeatIntervalMs);
-  }
-
-  stopHeartbeat() {
-    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
-    this.heartbeatTimer = null;
-  }
-
   async settleFinalUpdate(endStatus) {
-    this.stopHeartbeat();
-    // A heartbeat may already be queued behind the final END write. Let that
-    // queue settle before deciding whether its failure was the expected reboot.
+    // Let the final END write drain before observing the expected reboot.
     await this.writeTail.catch(() => {});
     this.log(
       `${this.side}: final END ${endStatus} (${g2BleStatusName(endStatus)}) is verified. Pausing 10 seconds for the temple reboot before reconnecting the same paired device ID ${this.selectedDeviceId ?? "unavailable"}.`,
@@ -1421,7 +1565,6 @@ export class G2BleOtaSession {
     await new Promise((resolve) => setTimeout(resolve, this.rebootSettleMs));
 
     const rebootObserved = !this.device?.gatt?.connected;
-    const finalHeartbeatError = this.heartbeatError;
     if (rebootObserved) {
       this.log(
         `${this.side}: final END ${endStatus} (${g2BleStatusName(endStatus)}) triggered the expected temple reboot. The 10-second reboot pause is complete; reconnecting the same paired device ID ${this.selectedDeviceId ?? "unavailable"}.`,
@@ -1438,8 +1581,7 @@ export class G2BleOtaSession {
     // disconnected so the selected Web Bluetooth handle must prove a fresh
     // post-END connection.
     await this.disconnect();
-    let lastError = finalHeartbeatError;
-    this.heartbeatError = null;
+    let lastError = null;
     this.writeTail = Promise.resolve();
     // END 8 (UPDATING) means the temple is now writing the staged image and
     // stays off the air until that apply finishes, so this loop uses the long
@@ -1478,6 +1620,10 @@ export class G2BleOtaSession {
         this.dataNotify?.removeEventListener?.(
           "characteristicvaluechanged",
           this.dataNotifyHandler,
+        );
+        this.controlNotify?.removeEventListener?.(
+          "characteristicvaluechanged",
+          this.controlNotifyHandler,
         );
         try {
           this.device?.gatt?.disconnect();
@@ -1527,12 +1673,9 @@ export class G2BleOtaSession {
       try {
         if (attempt > 1) {
           await this.connectForTransfer();
-          this.startHeartbeat();
           // The rebuilt link restarts the package from scratch, so mirror
-          // flashBundle's fresh-session state: transport sequence from zero,
-          // and the rebuild counted as a connection recovery in the evidence
-          // record like every reconnectAfterLoss recovery is.
-          this.sequence = 0;
+          // flashBundle's authenticated fresh-session state. connect() has
+          // already reset the independent OTA transport sequence to zero.
           this.connectionRecoveries += 1;
         }
         return await this.sendControl(0x00);
@@ -1551,7 +1694,6 @@ export class G2BleOtaSession {
             "warn",
           );
           await this.disconnect();
-          this.heartbeatError = null;
           this.writeTail = Promise.resolve();
         }
       }
@@ -1697,10 +1839,32 @@ export class G2BleOtaSession {
     );
   }
 
-  async flashBundle(firmware, { progressBase = 0, progressSpan = 1 } = {}) {
+  async flashBundle(
+    firmware,
+    { progressBase = 0, progressSpan = 1, componentNames = null } = {},
+  ) {
     assertPinnedG2BleBundle(firmware);
+    const requestedNames = Array.isArray(componentNames)
+      ? [...new Set(componentNames)]
+      : null;
+    const components = requestedNames
+      ? firmware.componentImages.filter((component) =>
+          requestedNames.includes(component.name),
+        )
+      : firmware.componentImages;
+    if (
+      requestedNames &&
+      (requestedNames.length === 0 || components.length !== requestedNames.length)
+    ) {
+      const found = new Set(components.map((component) => component.name));
+      const missing = requestedNames.filter((name) => !found.has(name));
+      throw new G2BleOtaError(
+        `The pinned Bluetooth package does not contain every requested component: ${missing.join(", ") || "none selected"}.`,
+        { code: "COMPONENT_SELECTION_INVALID" },
+      );
+    }
     this.sequence = 0;
-    const totalBytes = firmware.componentImages.reduce(
+    const totalBytes = components.reduce(
       (sum, component) => sum + component.payload.length,
       0,
     );
@@ -1712,11 +1876,10 @@ export class G2BleOtaSession {
     const componentResults = [];
     this.progress(
       progressBase,
-      `${this.side}: starting the pinned six-component Bluetooth package`,
+      `${this.side}: starting ${components.length}/${firmware.componentImages.length} pinned Bluetooth component${components.length === 1 ? "" : "s"}`,
     );
     try {
       await this.connectForTransfer();
-      this.startHeartbeat();
       const beginStatus = await this.beginPackage();
       if (!END_OK.has(beginStatus)) {
         this.log(
@@ -1724,7 +1887,7 @@ export class G2BleOtaSession {
           "warn",
         );
       }
-      for (const [index, component] of firmware.componentImages.entries()) {
+      for (const [index, component] of components.entries()) {
         const result = await this.flashComponent(
           component,
           index,
@@ -1734,23 +1897,15 @@ export class G2BleOtaSession {
         const localFraction = totals.completedBeforeComponent / totalBytes;
         this.progress(
           progressBase + localFraction * progressSpan,
-          `${this.side}: verified ${index + 1}/${firmware.componentImages.length} components`,
+          `${this.side}: verified ${index + 1}/${components.length} selected components`,
         );
         const isFinalComponent =
-          index === firmware.componentImages.length - 1;
+          index === components.length - 1;
         if (
           isFinalComponent &&
           (result.endStatus === 8 || result.endStatus === 9)
         ) {
           result.postUpdate = await this.settleFinalUpdate(result.endStatus);
-        } else if (this.heartbeatError) {
-          const heartbeatError = this.heartbeatError;
-          if (!isG2BleConnectionLoss(heartbeatError, this.device)) {
-            throw heartbeatError;
-          }
-          await this.reconnectAfterLoss(
-            `the verified ${component.name} boundary`,
-          );
         }
       }
     } catch (error) {
@@ -1797,12 +1952,10 @@ export class G2BleOtaSession {
         error.partialResult = partialResult;
       }
       throw error;
-    } finally {
-      this.stopHeartbeat();
     }
     this.progress(
       progressBase + progressSpan,
-      `${this.side}: all six Bluetooth OTA components verified`,
+      `${this.side}: all ${components.length} selected Bluetooth OTA component${components.length === 1 ? "" : "s"} verified`,
     );
     return {
       side: this.side,
@@ -1825,7 +1978,7 @@ export class G2BleOtaSession {
 export async function flashG2BleSessionsConcurrently(
   entries,
   firmware,
-  { onSettled = () => {} } = {},
+  { onSettled = () => {}, flashOptions = {} } = {},
 ) {
   const sessions = Array.isArray(entries) ? entries : [];
   const notifySettled = (outcome) => {
@@ -1844,7 +1997,7 @@ export async function flashG2BleSessionsConcurrently(
       (async () => {
         await startGate;
         try {
-          return await session.flashBundle(firmware);
+          return await session.flashBundle(firmware, flashOptions);
         } finally {
           await session.disconnect();
         }
