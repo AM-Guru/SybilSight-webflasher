@@ -276,6 +276,30 @@ export const REVIEWED_CFW_2_2_9_28 = Object.freeze({
     REVIEWED_CFW_PENDING_VALIDATION,
   ],
 });
+export const REVIEWED_CFW_2_2_9_29 = Object.freeze({
+  version: "2.2.9.29",
+  reportedVersion: "2.2.9.29",
+  baseVersion: "2.2.9.22",
+  baseSha256: "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561",
+  sha256: "960b964f2dfdfb17edf222f0ec3c5c44ca9ee502fe2a9873919e951a6c158ac5",
+  mainPayloadBytes: 3736231,
+  mainPayloadSha256:
+    "a7f170a7e3870cfc8ce642ac3b05e6bec7fb02b2ae75231afac244a093e6adf6",
+  capabilityMarker:
+    "EVENCFW/17 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10 cleanup11 texcache12 teximg13 texstr14 font15 diag7 multiseg8 rectcopy9 ringhold micctl micmc micraw",
+  capabilities: [
+    "Uses the full 640×480 display for custom screens and images.",
+    "Makes compressed and changed-region image updates more efficient.",
+    "Supports different visuals on the left and right lenses.",
+    "Keeps custom screens active when needed, then returns to the standard Even AI experience.",
+    "Keeps wear-status and compass updates available to connected apps.",
+    "Provides cached image/text rendering, diagnostic overlays, atomic multi-operation drawing, scrolling, rectangle copy, and ring-hold forwarding.",
+    "Adds microphone configuration, multichannel, and raw-frame protocols; hardware capture remains disarmed until explicitly requested.",
+    "Preserves the stock Bluetooth setup and advertising behavior.",
+    "Withholds buzzer capability negotiation while the persistent-tone failure remains under review.",
+    REVIEWED_CFW_PENDING_VALIDATION,
+  ],
+});
 export const G2_FIRMWARE_REVOCATIONS = Object.freeze([
   Object.freeze({
     version: "2.2.8.7",
@@ -1137,6 +1161,7 @@ export function parseMainOTAPreamble(payload) {
 export function classifyG2Firmware(fileSha256) {
   const digest = fileSha256.toLowerCase();
   const reviewed = [
+    REVIEWED_CFW_2_2_9_29,
     REVIEWED_CFW_2_2_9_28,
     REVIEWED_CFW_2_2_9_27,
     REVIEWED_CFW_2_2_9_25,

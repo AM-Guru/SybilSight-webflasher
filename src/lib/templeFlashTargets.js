@@ -23,6 +23,16 @@ export const TEMPLE_FLASH_TARGETS = Object.freeze([
     bleComponentNames: Object.freeze(["ota/s200_firmware_ota.bin"]),
   }),
   Object.freeze({
+    imageSha256: "960b964f2dfdfb17edf222f0ec3c5c44ca9ee502fe2a9873919e951a6c158ac5",
+    mainSha256: "a7f170a7e3870cfc8ce642ac3b05e6bec7fb02b2ae75231afac244a093e6adf6",
+    mainBytes: 3736231,
+    version: "2.2.9.29",
+    reportedVersion: "2.2.9.29",
+    label: "SybilSight CFW (2.2.9.29)",
+    hardwareValidated: false,
+    bleComponentNames: Object.freeze(["ota/s200_firmware_ota.bin"]),
+  }),
+  Object.freeze({
     imageSha256: "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561",
     mainSha256: "35844c95c6ffe62baca961d396c870225cdc91372f253abaece40c3e99a1c3d2",
     mainBytes: 3697284,

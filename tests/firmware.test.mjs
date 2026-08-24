@@ -22,6 +22,7 @@ import {
   REVIEWED_CFW_2_2_9_25,
   REVIEWED_CFW_2_2_9_27,
   REVIEWED_CFW_2_2_9_28,
+  REVIEWED_CFW_2_2_9_29,
   additiveBigEndianWordSum,
   classifyG2Firmware,
   crc32,
@@ -857,10 +858,37 @@ test("decodes Apollo510 INFOC and INFO0 recovery provisioning offline", () => {
   assert.equal(report.decision.sblUartRestoreCandidate, true);
   assert.equal(report.decision.forcedEntryContactCandidate, true);
   assert.equal(report.decision.mramWiredRecoveryCandidate, true);
+  assert.equal(report.decision.dumpProvisioningMatches, true);
+  assert.equal(report.decision.deviceIdentityBound, false);
+  assert.equal(report.decision.activeSblSessionProven, false);
+  assert.equal(report.decision.firmwareWriteAuthorized, false);
+  assert.deepEqual(report.decision.writeAuthorizationBlockingReasons, [
+    "dump-not-bound-to-authorized-device-identity",
+    "active-sbl-status-frame-not-proven",
+  ]);
   assert.equal(report.backupReadbackProvided, false);
 });
 
-test("ships the complete official catalog without CFW releases", async () => {
+test("INFOC and INFO0 dumps never authorize a firmware write by themselves", () => {
+  const infoc = new Uint8Array(0x400);
+  writeU32LE(infoc, 0x250, 0x0000022a);
+  writeU32LE(infoc, 0x254, 0x00020001);
+
+  const info0 = new Uint8Array(0x6c);
+  writeU32LE(info0, 0x28, 0x0f4240c0);
+  writeU32LE(info0, 0x2c, 0x00002a2c);
+  writeU32LE(info0, 0x30, 4);
+  writeU32LE(info0, 0x34, 4);
+  writeU32LE(info0, 0x54, 250);
+  writeU32LE(info0, 0x68, 0x60000002);
+
+  const report = decodeApollo510RecoveryConfig({ infoc, info0 });
+  assert.equal(report.decision.dumpProvisioningMatches, true);
+  assert.equal(report.decision.firmwareWriteAuthorized, false);
+  assert.match(report.decision.interpretation, /not write authorization/i);
+});
+
+test("ships the complete official catalog plus the pinned 2.2.9.29 CFW", async () => {
   const catalog = JSON.parse(
     await readFile(
       new URL("../public/firmware-updates/source-files/index.json", import.meta.url),
@@ -879,7 +907,10 @@ test("ships the complete official catalog without CFW releases", async () => {
   assert.equal(latestOfficial.sha256, OFFICIAL_G2_SHA256["2.2.9.22"]);
   assert.equal(latestOfficial.caseVersion, "1.2.57");
   const custom = catalog.releases.filter((release) => release.channel === "custom");
-  assert.deepEqual(custom, []);
+  assert.equal(custom.length, 1);
+  assert.equal(custom[0].id, "g2-custom-2.2.9.29");
+  assert.equal(custom[0].sha256, REVIEWED_CFW_2_2_9_29.sha256);
+  assert.deepEqual(custom[0].bleComponentNames, ["ota/s200_firmware_ota.bin"]);
 });
 
 test("ships the exact official G2 2.2.9.22 bundle and six components", async () => {
@@ -938,6 +969,59 @@ test("records that the latest g2flash 2.2.9 fix is installer-only", async () => 
   assert.match(
     recipe.source_provenance.upstream_2_2_9_compatibility_delta.scope,
     /authenticate every fresh CTRL connection.*no CTRL heartbeat/,
+  );
+});
+
+test("accepts the published AM-Guru 2.2.9.29 CFW with main-only BLE scope", async () => {
+  const releaseDirectory = new URL(
+    "../public/firmware-updates/source-files/2.2.9.29/",
+    import.meta.url,
+  );
+  const firmware = await parseFirmwareInput(
+    await readFile(new URL("g2-2.2.9.29.bin", releaseDirectory)),
+    "g2-2.2.9.29.bin",
+  );
+  assert.equal(firmware.fileSha256, REVIEWED_CFW_2_2_9_29.sha256);
+  assert.equal(firmware.g2Version, "2.2.9.29");
+  assert.equal(firmware.provenance.trust, "reviewed-custom");
+  assert.equal(firmware.caseRecoveryEligible, false);
+  assert.equal(firmware.templeFlashEligible, true);
+  assert.equal(firmware.templeFlashTarget.localOnly, undefined);
+  assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
+  assert.deepEqual(firmware.templeFlashTarget.bleComponentNames, [
+    "ota/s200_firmware_ota.bin",
+  ]);
+});
+
+test("pins the AM-Guru microphone rebase and keeps hardware activation fail-closed", async () => {
+  const recipe = JSON.parse(
+    await readFile(
+      new URL(
+        "../public/firmware-updates/source-files/2.2.9.29/cfw_patches-2.2.9.29.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  assert.equal(recipe.g2flash_commit, "29a688666b7524e88833746040457029ac662c68");
+  assert.equal(recipe.source_provenance.downstream_contract.version, 17);
+  assert.equal(
+    recipe.source_provenance.amguru_microphone_delta.hardware_activation_default,
+    "disarmed",
+  );
+  assert.equal(
+    recipe.source_provenance.address_profile.app_memory.programmed_end_exclusive,
+    "0x007c8287",
+  );
+  assert.equal(
+    recipe.source_provenance.address_profile.app_memory.reviewed_ceiling_exclusive,
+    "0x007f0000",
+  );
+  assert.equal(
+    Object.keys(
+      recipe.source_provenance.address_profile.microphone_symbol_rebase.symbols,
+    ).length,
+    8,
   );
 });
 

@@ -79,8 +79,9 @@ jobs:
             }
             const catalog = JSON.parse(catalogBytes);
             const customReleases = catalog.releases.filter((entry) => entry.channel === "custom");
-            if (customReleases.length !== 0) {
-              throw new Error("Catalog must not contain CFW releases");
+            const permittedCustom = new Map([["g2-custom-2.2.9.29", "960b964f2dfdfb17edf222f0ec3c5c44ca9ee502fe2a9873919e951a6c158ac5"]]);
+            if (customReleases.length !== permittedCustom.size || customReleases.some((entry) => permittedCustom.get(entry.id) !== entry.sha256)) {
+              throw new Error("Catalog contains an unexpected CFW release");
             }
             const newestOfficial = catalog.releases
               .filter((entry) => entry.channel === "official" && entry.trust === "official-pinned")
@@ -852,8 +853,9 @@ jobs:
             }
             const catalog = JSON.parse(catalogBytes);
             const customReleases = catalog.releases.filter((entry) => entry.channel === "custom");
-            if (customReleases.length !== 0) {
-              throw new Error("Production catalog must not contain CFW releases");
+            const permittedCustom = new Map([["g2-custom-2.2.9.29", "960b964f2dfdfb17edf222f0ec3c5c44ca9ee502fe2a9873919e951a6c158ac5"]]);
+            if (customReleases.length !== permittedCustom.size || customReleases.some((entry) => permittedCustom.get(entry.id) !== entry.sha256)) {
+              throw new Error("Production catalog contains an unexpected CFW release");
             }
           ' "${observed_release_file}" "${observed_catalog_file}" "${GITHUB_SHA}"
           echo "Verified production WebFlasher ${GITHUB_SHA} and official firmware catalog"

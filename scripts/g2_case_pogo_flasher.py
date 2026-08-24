@@ -23,6 +23,7 @@ import re
 import struct
 import sys
 import time
+import zlib
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -60,8 +61,21 @@ BRIDGE_SHA256 = (
 OBSERVED_CHARGING_BRIDGE_SHA256 = (
     "b341adc44630ffe87b572523ace82b2581785892fff6d7de4e3cf1b0c87861d2"
 )
+SBL_HELLO_PROBE_BRIDGE_SHA256 = (
+    "1a20b88c93dde23a7d08bda16efa4e5c7f40dc315e8787bf06fcbef109763404"
+)
+SBL_HELLO_PROBE_CHARGING_BRIDGE_SHA256 = (
+    "2729f38cd9ac3f0e363412a382743532657fb5d33776c415c2ace987cefa2cd1"
+)
 OBSERVED_CHARGING_TABLE_OFFSETS = (2826, 2836, 2846, 2856)
 BRIDGE_BANNER = b"G2_POGO_FLASH_BRIDGE_V7\n"
+SBL_HELLO_HEADER = struct.pack("<I", 8 << 16)
+SBL_HELLO_REQUEST = (
+    struct.pack("<I", zlib.crc32(SBL_HELLO_HEADER) & 0xFFFFFFFF)
+    + SBL_HELLO_HEADER
+)
+SBL_STATUS_MESSAGE_TYPE = 1
+SBL_CAPTURE_BYTES = 128
 REVIEWED_CFW_SHA256 = (
     "105032302d02ccf943b785070cf15877a918c120b7ca1332bb6261f70eb6d683"
 )
@@ -78,6 +92,14 @@ REVIEWED_MAIN_SHA256 = (
 REVIEWED_MAIN_BYTES = 3_543_523
 REVIEWED_BASE_VERSION = "2.2.6.10"
 REVIEWED_CFW_VERSION = "2.2.6.11"
+OPENCFW_2_2_6_RELEASE_SHA256 = (
+    "755e25c3f1685749918e84c1f0af64cbe1635d5f5a4b73e294cab0a517b8c95b"
+)
+OPENCFW_2_2_6_RELEASE_MAIN_SHA256 = (
+    "c8275de8f328c3dd86ed74d9ebee4e37aff02c5959e4a56af9305eebd9a592f0"
+)
+OPENCFW_2_2_6_RELEASE_MAIN_BYTES = 3_714_962
+OPENCFW_2_2_6_RELEASE_VERSION = "2.2.6.0"
 CFW_2_2_9_CANDIDATE_SHA256 = (
     "dc4c4de98d183a98f8b2e98b91ab0c920b46a1ec30fcdf3d447637f2022df484"
 )
@@ -108,8 +130,10 @@ POST_RESET_REOPEN_DELAY_SECONDS = 0.5
 # probes are diagnostic load, not evidence that the later mutation will work.
 FLASH_STABILITY_QUERIES = 1
 FLASH_STABILITY_INTERVAL_SECONDS = 0.025
-FLASH_PRE_START_SETTLE_SECONDS = 0.250
-FLASH_PRE_START_HOST_PRIME_BYTES = 1
+FLASH_RESPONSE_SCAN_LIMIT = 256
+FLASH_RESPONSE_CANDIDATE_GAP_SECONDS = 2.0
+FLASH_HOST_HEADER_BYTE_INTERVAL_SECONDS = 0.005
+RECENT_RESET_PROOF_MAX_AGE_SECONDS = 120.0
 # A status-3 setup stop with the exact opposite-route baseline is a charging
 # phase, not a bridge failure.  Keep the normal Case application running long
 # enough for that phase to settle before another fresh SRAM setup.  These are
@@ -422,6 +446,135 @@ def build_bridge(*, observed_charging_phase: bool = False) -> bytes:
     return payload
 
 
+def build_sbl_hello_probe_bridge(
+    *, observed_charging_phase: bool = False
+) -> bytes:
+    """Build the exact read-only Apollo SBL HELLO probe bridge.
+
+    This derives from the reviewed V7 running-application bridge, but replaces
+    its request validator with an exact eight-byte Ambiq HELLO validator and
+    replaces the framed application receiver with a bounded raw UART capture.
+    It cannot accept OTA, DATA, RESET, ABORT, or arbitrary temple bytes.
+    """
+    payload = bytearray(
+        build_bridge(observed_charging_phase=observed_charging_phase)
+    )
+
+    patches = (
+        (
+            0x380,
+            bytes.fromhex(
+                "70b504460d462678242e08d0522e0ed0532e12d0542e2fd0552e67d0"
+                "73e0052d71d1786a002866d0"
+            ),
+            bytes.fromhex(
+                "10b5082909d10268054b9a4205d14268044b9a4201d1012010bd0020"
+                "10bd00bf14559de900000800"
+            ),
+            # The surrounding bridge treats zero as an accepted request.
+            # Swap the two return immediates after assembling the compact
+            # validator below; keeping this in the pinned patch prevents a
+            # permissive fallback or a second accepted command.
+        ),
+        (
+            0x63C,
+            bytes.fromhex(
+                "fcb504460d46002600271e4b1e4a1278522a05d0532a03d0542a01d0"
+                "552a00d11a4b1b48c1690f220a4017432022114221d0416ac9b2ae42"
+                "1dd2002e02d15a2919d10ee0012e05d1a5290ad000265a2911d106e0"
+                "022e04d1ff2902d000265a2909d1a1550136042e05d3e1780531a942"
+                "04d88e4203d2013bd4d100e0002630463946fcbd"
+            ),
+            bytes.fromhex(
+                "f0b504460d46002600270b4b0b48c1690f220a4017432022114207d0"
+                "416ac9b2ae4205d2a155761cae4201d25b1eeed130463946f0bd00bf"
+                "0000000400480040"
+            )
+            + bytes.fromhex("00bf") * 34,
+        ),
+        (0x2B8, bytes.fromhex("4021"), bytes.fromhex("8021")),
+        (0x2C8, bytes.fromhex("0528"), bytes.fromhex("0128")),
+        (0x2CC, bytes.fromhex("2a4c"), bytes.fromhex("08e0")),
+        (
+            0x2E4,
+            bytes.fromhex("00f0d1f8"),
+            bytes.fromhex("00bf00bf"),
+        ),
+        (
+            0x5D4,
+            bytes.fromhex("402e00d94026"),
+            bytes.fromhex("802e00d98026"),
+        ),
+    )
+    for offset, expected, replacement in patches:
+        if len(expected) != len(replacement):
+            raise SafetyError("SBL bridge patch changes the reviewed layout")
+        if payload[offset : offset + len(expected)] != expected:
+            raise SafetyError(
+                f"SBL bridge source bytes differ at offset 0x{offset:x}"
+            )
+        payload[offset : offset + len(replacement)] = replacement
+
+    if payload[0x396:0x398] != bytes.fromhex("0120") or payload[
+        0x39A:0x39C
+    ] != bytes.fromhex("0020"):
+        raise SafetyError("SBL validator return sites differ from reviewed bytes")
+    payload[0x396:0x398] = bytes.fromhex("0020")
+    payload[0x39A:0x39C] = bytes.fromhex("0120")
+
+    result = bytes(payload)
+    expected_digest = (
+        SBL_HELLO_PROBE_CHARGING_BRIDGE_SHA256
+        if observed_charging_phase
+        else SBL_HELLO_PROBE_BRIDGE_SHA256
+    )
+    if len(result) != BRIDGE_BYTES or hashlib.sha256(result).hexdigest() != (
+        expected_digest
+    ):
+        raise SafetyError("SBL HELLO probe bridge differs from reviewed bytes")
+    return result
+
+
+def parse_sbl_status_response(captured: bytes) -> dict[str, object]:
+    """Validate and decode a complete Apollo wired-HELLO STATUS response."""
+    if len(captured) < 8:
+        raise ProtocolError("Apollo SBL response is shorter than its header")
+    declared_crc, message = struct.unpack_from("<II", captured)
+    message_type = message & 0xFFFF
+    declared_length = message >> 16
+    if message_type != SBL_STATUS_MESSAGE_TYPE:
+        raise ProtocolError(
+            f"Apollo SBL returned message type {message_type}, expected STATUS"
+        )
+    if declared_length < 24 or declared_length > SBL_CAPTURE_BYTES:
+        raise ProtocolError(
+            f"Apollo SBL declared invalid STATUS length {declared_length}"
+        )
+    if len(captured) < declared_length:
+        raise ProtocolError(
+            "Apollo SBL STATUS was truncated: "
+            f"captured {len(captured)}/{declared_length} bytes"
+        )
+    frame = captured[:declared_length]
+    calculated_crc = zlib.crc32(frame[4:]) & 0xFFFFFFFF
+    if calculated_crc != declared_crc:
+        raise ProtocolError(
+            "Apollo SBL STATUS CRC mismatch: "
+            f"declared 0x{declared_crc:08x}, calculated 0x{calculated_crc:08x}"
+        )
+    return {
+        "message_type": message_type,
+        "declared_length": declared_length,
+        "protocol_version": struct.unpack_from("<I", frame, 8)[0],
+        "max_storage": struct.unpack_from("<I", frame, 12)[0],
+        "status": struct.unpack_from("<I", frame, 16)[0],
+        "state": struct.unpack_from("<I", frame, 20)[0],
+        "crc32": f"0x{declared_crc:08x}",
+        "frame_hex": frame.hex(),
+        "trailing_bytes_hex": captured[declared_length:].hex(),
+    }
+
+
 class CaseSramTempleTransport(TempleTransport):
     """Main-only temple transport through a volatile case SRAM bridge."""
 
@@ -432,6 +585,7 @@ class CaseSramTempleTransport(TempleTransport):
         *,
         require_route_phase: bool = False,
         observed_charging_phase: bool = False,
+        sbl_hello_probe: bool = False,
     ) -> None:
         if route not in ("left", "right"):
             raise ValueError("route must be left or right")
@@ -439,8 +593,18 @@ class CaseSramTempleTransport(TempleTransport):
         self.route = route
         self.require_route_phase = require_route_phase
         self.observed_charging_phase = observed_charging_phase
-        self.payload = build_bridge(
-            observed_charging_phase=observed_charging_phase
+        self.sbl_hello_probe = sbl_hello_probe
+        self.max_capture_bytes = (
+            SBL_CAPTURE_BYTES if sbl_hello_probe else 64
+        )
+        self.payload = (
+            build_sbl_hello_probe_bridge(
+                observed_charging_phase=observed_charging_phase
+            )
+            if sbl_hello_probe
+            else build_bridge(
+                observed_charging_phase=observed_charging_phase
+            )
         )
         self.port: serial.Serial | None = None
         self.sequence = 0
@@ -586,13 +750,17 @@ class CaseSramTempleTransport(TempleTransport):
         """Pace the fixed header across the CH340 after an idle transition."""
         if len(data) != 10:
             raise ProtocolError("case bridge transaction header must be 10 bytes")
-        # Hardware evidence captured only the first five bytes of a 10-byte
-        # header after the former two-second pre-start idle. Two independently flushed
-        # five-byte writes avoid that silent CH340 truncation while staying well
-        # inside the bridge's bounded per-byte receive deadline.
-        self._write_host_bytes(data[:5], "transaction header prefix")
-        time.sleep(0.005)
-        self._write_host_bytes(data[5:], "transaction header suffix")
+        # Two hardware START attempts retained host_chunk_offset=5: the first
+        # independently flushed five-byte write arrived, while the second was
+        # silently lost by the CH340 path. Flush each header byte separately so
+        # no USB packet boundary contains the entire missing suffix. The total
+        # 45 ms pacing remains well inside the bridge's bounded per-byte timer.
+        for offset, byte in enumerate(data):
+            self._write_host_bytes(
+                bytes((byte,)), f"transaction header byte {offset}"
+            )
+            if offset + 1 < len(data):
+                time.sleep(FLASH_HOST_HEADER_BYTE_INTERVAL_SECONDS)
 
     def _read_exact_until(
         self, count: int, deadline: float, what: str
@@ -615,54 +783,168 @@ class CaseSramTempleTransport(TempleTransport):
     def _read_response(self, timeout: float) -> tuple[int, int, bytes]:
         if self.port is None:
             raise ProtocolError("case bridge is not open")
+        # Preserve the application bridge's historical limit for older
+        # callers and lightweight test fixtures that bypass __init__.  The
+        # separately selected SBL probe explicitly raises this to 128 bytes.
+        max_capture_bytes = getattr(self, "max_capture_bytes", 64)
         deadline = time.monotonic() + max(10.0, timeout + 10.0)
         window = bytearray()
+        candidate: bytearray | None = None
+        expected_length: int | None = None
         inspected = 0
-        while inspected < 128:
-            window.extend(
-                self._read_exact_until(
-                    1, deadline, "case bridge response synchronization byte"
+        discarded = 0
+        last_problem: str | None = None
+
+        def abandon(reason: str) -> None:
+            nonlocal candidate, expected_length, last_problem
+            if candidate is None:
+                return
+            last_problem = reason
+            window[:] = candidate[-3:]
+            candidate = None
+            expected_length = None
+
+        while inspected < FLASH_RESPONSE_SCAN_LIMIT:
+            byte_deadline = deadline
+            if candidate is not None:
+                byte_deadline = min(
+                    deadline,
+                    time.monotonic() + FLASH_RESPONSE_CANDIDATE_GAP_SECONDS,
                 )
-            )
+            try:
+                byte = self._read_exact_until(
+                    1,
+                    byte_deadline,
+                    (
+                        "case bridge response candidate byte"
+                        if candidate is not None
+                        else "case bridge response synchronization byte"
+                    ),
+                )[0]
+            except TransportTimeout:
+                if candidate is not None:
+                    abandon(
+                        f"cached candidate stopped after {len(candidate)} bytes"
+                    )
+                    continue
+                if last_problem is not None:
+                    break
+                raise
             inspected += 1
+
+            if candidate is None:
+                window.append(byte)
+                if len(window) > 4:
+                    del window[0]
+                if window == b"G2RX":
+                    discarded = inspected - 4
+                    candidate = bytearray(window)
+                continue
+
+            candidate.append(byte)
+            if len(candidate) > 4 and candidate[-4:] == b"G2RX":
+                last_problem = (
+                    f"cached candidate stopped after {len(candidate) - 4} bytes"
+                )
+                candidate = bytearray(b"G2RX")
+                expected_length = None
+                continue
+            if len(candidate) == 11:
+                if candidate[4] != 1:
+                    abandon(f"unsupported response version {candidate[4]}")
+                    continue
+                if candidate[5] != self.sequence:
+                    abandon(
+                        f"stale response sequence {candidate[5]}, "
+                        f"expected {self.sequence}"
+                    )
+                    continue
+                if candidate[8] > max_capture_bytes:
+                    abandon(
+                        f"capture length {candidate[8]} exceeds "
+                        f"{max_capture_bytes}"
+                    )
+                    continue
+                expected_length = 11 + candidate[8] + 1
+            if expected_length is not None and len(candidate) == expected_length:
+                response = bytes(candidate)
+                if response[-1] != sum(response[:-1]) & 0xFF:
+                    abandon("response checksum is invalid")
+                    continue
+                if discarded:
+                    print(
+                        "case bridge: discarded "
+                        f"{discarded} short-response prefix bytes and "
+                        "synchronized to a complete G2RX frame",
+                        flush=True,
+                    )
+                return response[6], response[7], response[11:-1]
+
+        detail = f"; last candidate: {last_problem}" if last_problem else ""
+        raise ProtocolError(
+            "case bridge emitted "
+            f"{inspected} bytes without a complete checksum-valid G2RX frame"
+            f"{detail}"
+        )
+
+    def _read_header_flow_token(self, deadline: float) -> None:
+        """Wait for C3 while safely consuming late cached G2RX frames.
+
+        The SRAM bridge retransmits its cached response when the CH340 host
+        path was short. A checksum-valid version response can therefore be
+        followed by another copy that arrives after the next transaction
+        header. That cached frame must not be mistaken for the header token.
+        """
+        if self.port is None:
+            raise ProtocolError("case bridge is not open")
+        window = bytearray()
+        inspected = 0
+        cached_frames = 0
+        while inspected < FLASH_RESPONSE_SCAN_LIMIT:
+            byte = self._read_exact_until(
+                1, deadline, "transaction-header flow-control stream"
+            )[0]
+            inspected += 1
+            if byte == 0xC3 and not window:
+                if cached_frames:
+                    print(
+                        "case bridge: discarded "
+                        f"{cached_frames} late checksum-valid cached G2RX "
+                        "frame(s) before the transaction-header token",
+                        flush=True,
+                    )
+                return
+            window.append(byte)
             if len(window) > 4:
                 del window[0]
-            if window == b"G2RX":
-                break
-        else:
-            raise ProtocolError(
-                "case bridge emitted 128 bytes without a complete G2RX marker"
+            if window != b"G2RX":
+                continue
+            suffix = self._read_exact_until(
+                7, deadline, "late cached G2RX header suffix"
             )
-        header = b"G2RX" + self._read_exact_until(
-            7, deadline, "case bridge response header suffix"
+            inspected += 7
+            header = b"G2RX" + suffix
+            if header[4] != 1 or header[8] > 64:
+                raise ProtocolError(
+                    "late cached G2RX header is invalid: " + header.hex()
+                )
+            tail = self._read_exact_until(
+                header[8] + 1,
+                deadline,
+                "late cached G2RX payload/checksum",
+            )
+            inspected += len(tail)
+            frame = header + tail
+            if frame[-1] != sum(frame[:-1]) & 0xFF:
+                raise ProtocolError(
+                    "late cached G2RX response checksum is invalid"
+                )
+            cached_frames += 1
+            window.clear()
+        raise ProtocolError(
+            "case bridge emitted "
+            f"{inspected} bytes without transaction-header token c3"
         )
-        if inspected > 4:
-            print(
-                "case bridge: discarded "
-                f"{inspected - 4} short-response prefix bytes and "
-                "synchronized to the retransmitted G2RX frame",
-                flush=True,
-            )
-        if header[:5] != b"G2RX\x01":
-            raise ProtocolError(
-                f"invalid case bridge response header: {header.hex()}"
-            )
-        length = header[8]
-        if length > 64:
-            raise ProtocolError("case bridge capture length exceeds 64")
-        tail = self._read_exact_until(
-            length + 1,
-            deadline,
-            "case bridge response payload/checksum",
-        )
-        response = header + tail
-        if response[-1] != sum(response[:-1]) & 0xFF:
-            raise ProtocolError("case bridge response checksum is invalid")
-        if header[5] != self.sequence:
-            raise ProtocolError(
-                f"case bridge sequence is {header[5]}, expected {self.sequence}"
-            )
-        return header[6], header[7], response[11:-1]
 
     def _exchange(
         self, magic: bytes, request: bytes, timeout: float
@@ -681,10 +963,7 @@ class CaseSramTempleTransport(TempleTransport):
         header.append(sum(header) & 0xFF)
         self._write_host_header(bytes(header))
         deadline = time.monotonic() + 8.0
-        if self._read_exact_until(
-            1, deadline, "transaction-header flow-control token"
-        ) != b"\xc3":
-            raise ProtocolError("case bridge rejected the transaction header")
+        self._read_header_flow_token(deadline)
         # macOS occasionally reported a full ~1 KiB buffer accepted although
         # the CH340 delivered a truncated stream.  Stop-and-wait flow control
         # proves that the case consumed each short chunk before sending more.
@@ -810,6 +1089,22 @@ class CaseSramTempleTransport(TempleTransport):
                     and self.baseline in ALLOWED_YHM_BASELINES
                     and self.baseline == self.restored
                 )
+                diagnostic_failure_restored = (
+                    self.sbl_hello_probe and words[4] in (2, 5, 6)
+                )
+                zero_write_setup_stop = (
+                    words[4] == 3
+                    and words[5] == 0x3FF
+                    and words[6] == 0
+                    and words[7] == 0
+                    and words[8] == 0
+                    and words[13] == 0
+                    and words[14] == 0
+                    and words[15] == 0
+                    and words[30] == 0
+                    and words[31] == 0
+                    and self.restored == bytes(10)
+                )
                 if (
                     proof != PROOF
                     or words[0] != 0x57463247
@@ -817,13 +1112,28 @@ class CaseSramTempleTransport(TempleTransport):
                     or words[2] != expected_route
                     or (
                         not host_timeout_restored
+                        and not zero_write_setup_stop
                         and words[3] != self.sequence
                     )
-                    or words[4] not in (0, 16)
+                    or (
+                        words[4] not in (0, 16)
+                        and not diagnostic_failure_restored
+                        and not zero_write_setup_stop
+                    )
                     or words[5] != 0x3FF
-                    or words[6] != 0x3FF
-                    or words[7] != 0x3FF
+                    or (
+                        not zero_write_setup_stop
+                        and words[6] != 0x3FF
+                    )
+                    or (
+                        not zero_write_setup_stop
+                        and words[7] != 0x3FF
+                    )
                     or words[15] != 0
+                    or (
+                        not zero_write_setup_stop
+                        and self.baseline not in ALLOWED_YHM_BASELINES
+                    )
                     or (
                         not host_timeout_restored
                         and
@@ -834,7 +1144,10 @@ class CaseSramTempleTransport(TempleTransport):
                             or words[10] != self.completed_transfer[1]
                         )
                     )
-                    or self.baseline != self.restored
+                    or (
+                        not zero_write_setup_stop
+                        and self.baseline != self.restored
+                    )
                 ):
                     raise SafetyError(
                         "case bridge restore proof is incomplete or belongs "
@@ -846,6 +1159,14 @@ class CaseSramTempleTransport(TempleTransport):
                 if host_timeout_restored:
                     self.retained_result[
                         "host_timeout_restoration_verified"
+                    ] = True
+                if diagnostic_failure_restored:
+                    self.retained_result[
+                        "diagnostic_failure_restoration_verified"
+                    ] = True
+                if zero_write_setup_stop:
+                    self.retained_result[
+                        "zero_write_setup_stop_verified"
                     ] = True
             except Exception as error:
                 verification_error = error
@@ -944,6 +1265,97 @@ def _close_checked(transport: CaseSramTempleTransport) -> None:
         f"B200 {transport.application_version}",
         flush=True,
     )
+
+
+def reset_for_sbl_hello_window(device: str) -> dict[str, object]:
+    """Issue one traced bilateral reset and return as soon as B0 is confirmed."""
+    port = _open_case_console(device)
+    try:
+        # Opening the console resets the Case MCU.  Perform the presence check
+        # and DEB0 in this same session: reopening here would send DEB0 during
+        # the Case boot banner and can silently miss the command.
+        preflight_capture = bytearray(_drain_case_console(port, 2.5))
+        port.reset_input_buffer()
+        if port.write(b"DEA3\n") != 5:
+            raise ProtocolError("case telemetry query was truncated")
+        port.flush()
+        preflight_capture.extend(_drain_case_console(port, 1.0))
+        preflight = parse_case_restore_evidence(
+            bytes(preflight_capture),
+            require_reset_confirmation=False,
+        )
+        if not preflight["right_present"]:
+            raise SafetyError(
+                "fresh case telemetry does not report right as seated"
+            )
+
+        port.reset_input_buffer()
+        if port.write(FINAL_RESET_COMMAND) != len(FINAL_RESET_COMMAND):
+            raise ProtocolError("case SBL-window reset command was truncated")
+        port.flush()
+        deadline = time.monotonic() + 0.8
+        captured = bytearray()
+        while time.monotonic() < deadline:
+            captured.extend(port.read(4096))
+            if FINAL_RESET_CONFIRMATION.search(captured):
+                break
+        if not FINAL_RESET_CONFIRMATION.search(captured):
+            raise SafetyError(
+                "case did not confirm the single SBL-window bilateral reset"
+            )
+    finally:
+        port.close()
+    return {
+        "case_version": preflight["case_version"],
+        "left_present": preflight["left_present"],
+        "right_present": preflight["right_present"],
+        "reset_command": FINAL_RESET_COMMAND.decode("ascii").strip(),
+        "reset_confirmed": True,
+        "confirmation_hex": bytes(captured).hex(),
+    }
+
+
+def probe_right_apollo_sbl(
+    device: str,
+    *,
+    observed_charging_phase: bool = False,
+) -> dict[str, object]:
+    """Send exactly one read-only Ambiq wired HELLO to the seated right route."""
+    reset_report = reset_for_sbl_hello_window(device)
+    transport: CaseSramTempleTransport | None = None
+    primary_error: Exception | None = None
+    try:
+        transport = CaseSramTempleTransport(
+            device,
+            "right",
+            observed_charging_phase=observed_charging_phase,
+            sbl_hello_probe=True,
+        )
+        captured = transport.transact(SBL_HELLO_REQUEST, timeout=12.0)
+        status = parse_sbl_status_response(captured)
+        return {
+            "outcome": "apollo_sbl_status_verified",
+            "route": "right",
+            "request_hex": SBL_HELLO_REQUEST.hex(),
+            "request_sha256": hashlib.sha256(SBL_HELLO_REQUEST).hexdigest(),
+            "bridge_sha256": hashlib.sha256(transport.payload).hexdigest(),
+            "reset": reset_report,
+            "status": status,
+        }
+    except Exception as error:
+        primary_error = error
+        raise
+    finally:
+        if transport is not None:
+            try:
+                _close_checked(transport)
+            except Exception as close_error:
+                if primary_error is None:
+                    raise
+                raise SafetyError(
+                    f"SBL HELLO probe failed: {primary_error}; "
+                    f"case/YHM cleanup also failed: {close_error}"
+                ) from primary_error
 
 
 def final_reset_and_verify_liveness(
@@ -1089,6 +1501,64 @@ def _write_audit(path: Path, audit: dict[str, object]) -> None:
     os.replace(partial, path)
 
 
+def load_recent_reset_proof(
+    path: Path,
+    *,
+    device: str,
+    accepted_versions: set[str],
+) -> dict[str, object]:
+    """Validate a fresh bilateral DEB0/version proof for a zero-query START."""
+    try:
+        proof = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SafetyError(f"cannot read recent reset proof {path}: {error}") from error
+    if proof.get("schema_version") != 1 or proof.get("operation") != (
+        "g2_case_usb_bilateral_reset_proof"
+    ):
+        raise SafetyError("recent reset proof has the wrong schema or operation")
+    if proof.get("device") != device:
+        raise SafetyError("recent reset proof belongs to a different USB device")
+    try:
+        created = datetime.fromisoformat(str(proof["created_at_utc"]))
+    except (KeyError, ValueError) as error:
+        raise SafetyError("recent reset proof timestamp is invalid") from error
+    if created.tzinfo is None:
+        raise SafetyError("recent reset proof timestamp lacks a timezone")
+    age = (datetime.now(timezone.utc) - created).total_seconds()
+    if age < -5.0 or age > RECENT_RESET_PROOF_MAX_AGE_SECONDS:
+        raise SafetyError(
+            f"recent reset proof age {age:.1f}s is outside the "
+            f"0..{RECENT_RESET_PROOF_MAX_AGE_SECONDS:.0f}s window"
+        )
+    report = proof.get("report")
+    if not isinstance(report, dict) or report.get("outcome") != "success":
+        raise SafetyError("recent reset proof does not record reset success")
+    case = report.get("case")
+    if (
+        not isinstance(case, dict)
+        or case.get("case_version") != REVIEWED_CASE_VERSION
+        or case.get("reset_confirmed") is not True
+        or case.get("left_present") is not True
+        or case.get("right_present") is not True
+    ):
+        raise SafetyError("recent reset proof lacks bilateral Case/contact evidence")
+    versions = report.get("versions")
+    if not isinstance(versions, dict):
+        raise SafetyError("recent reset proof lacks bilateral versions")
+    for route in ("left", "right"):
+        observed = versions.get(route)
+        if (
+            not isinstance(observed, dict)
+            or observed.get("firmware") not in accepted_versions
+            or observed.get("hardware") != 5
+        ):
+            raise SafetyError(
+                f"recent reset proof has an invalid {route} identity"
+            )
+    proof["validated_age_seconds"] = age
+    return proof
+
+
 def resolve_pacing_profile(
     name: str,
     *,
@@ -1171,11 +1641,40 @@ def build_parser() -> argparse.ArgumentParser:
     reset.add_argument("--expect-version", default=REVIEWED_BASE_VERSION)
     reset.add_argument("--glasses-seated-confirmed", action="store_true")
     reset.add_argument(
+        "--log",
+        type=Path,
+        help="write a timestamped bilateral proof usable for a zero-query START",
+    )
+    reset.add_argument(
         "--observed-2-2-9-charging-phase",
         action="store_true",
         help=(
             "use the separately hash-pinned bridge table for post-reset "
             "liveness when Case 1.2.57 reports the YHM ...33ff charging phase"
+        ),
+    )
+
+    sbl_probe = subparsers.add_parser(
+        "probe-apollo-sbl-right",
+        help=(
+            "issue one traced bilateral reset, then send only the exact "
+            "read-only Apollo wired HELLO on the seated right route"
+        ),
+    )
+    sbl_probe.add_argument("--device", required=True)
+    sbl_probe.add_argument("--glasses-seated-confirmed", action="store_true")
+    sbl_probe.add_argument(
+        "--execute-bounded-reset-and-hello",
+        action="store_true",
+        help="confirm the single reset and exact eight-byte SBL HELLO",
+    )
+    sbl_probe.add_argument("--log", type=Path, required=True)
+    sbl_probe.add_argument(
+        "--observed-2-2-9-charging-phase",
+        action="store_true",
+        help=(
+            "use the separately hash-pinned bridge table for the observed "
+            "Case 1.2.57 YHM ...33ff charging phase"
         ),
     )
 
@@ -1192,6 +1691,10 @@ def build_parser() -> argparse.ArgumentParser:
             "flash-candidate-cfw-2.2.9.28",
             "flash the latest-upstream-pinned 2.2.9.28 CFW candidate",
         ),
+        (
+            "flash-opencfw-2.2.6.0",
+            "flash the exact source-built openCFW 2.2.6.0 Apollo-main image",
+        ),
     ):
         flash = subparsers.add_parser(command, help=help_text)
         flash.add_argument("image", type=Path)
@@ -1203,6 +1706,14 @@ def build_parser() -> argparse.ArgumentParser:
         flash.add_argument("--execute-main-ota", action="store_true")
         flash.add_argument("--accept-single-slot-risk", action="store_true")
         flash.add_argument("--confirm-image-sha256", required=True)
+        flash.add_argument(
+            "--recent-reset-proof",
+            type=Path,
+            help=(
+                "use a <=120-second bilateral DEB0/version proof instead of "
+                "spending the selected route window on another version query"
+            ),
+        )
         flash.add_argument(
             "--expect-current-version",
             default=None,
@@ -1245,6 +1756,44 @@ def main() -> int:
     if not args.glasses_seated_confirmed:
         parser.error("hardware access requires --glasses-seated-confirmed")
 
+    if args.command == "probe-apollo-sbl-right":
+        if not args.execute_bounded_reset_and_hello:
+            parser.error(
+                "SBL probing requires --execute-bounded-reset-and-hello"
+            )
+        audit: dict[str, object] = {
+            "schema_version": 1,
+            "operation": "g2_case_usb_right_apollo_sbl_hello_probe",
+            "created_at_utc": datetime.now(timezone.utc).isoformat(),
+            "device": args.device,
+            "route": "right",
+            "temple_write_bytes": 0,
+            "sbl_request_bytes_allowed": len(SBL_HELLO_REQUEST),
+        }
+        try:
+            report = probe_right_apollo_sbl(
+                args.device,
+                observed_charging_phase=(
+                    args.observed_2_2_9_charging_phase
+                ),
+            )
+            audit["outcome"] = "success"
+            audit["report"] = report
+            _write_audit(args.log, audit)
+            print(json.dumps(report, indent=2, sort_keys=True))
+            return 0
+        except (
+            OSError,
+            FlasherError,
+            BootloaderError,
+            serial.SerialException,
+        ) as error:
+            audit["outcome"] = "failed_safely"
+            audit["error"] = str(error)
+            _write_audit(args.log, audit)
+            print(f"Apollo SBL HELLO probe failed safely: {error}", file=sys.stderr)
+            return 1
+
     if args.command == "reset-both-temples":
         try:
             report = final_reset_and_verify_liveness(
@@ -1253,6 +1802,18 @@ def main() -> int:
                 args.expect_version,
                 observed_charging_phase=args.observed_2_2_9_charging_phase,
             )
+            if args.log is not None:
+                _write_audit(
+                    args.log,
+                    {
+                        "schema_version": 1,
+                        "operation": "g2_case_usb_bilateral_reset_proof",
+                        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+                        "device": args.device,
+                        "expected_version": args.expect_version,
+                        "report": report,
+                    },
+                )
             print(json.dumps(report, indent=2, sort_keys=True))
             return 0
         except (
@@ -1408,6 +1969,7 @@ def main() -> int:
         "flash-reviewed-cfw",
         "flash-reviewed-official",
         "flash-candidate-cfw-2.2.9.28",
+        "flash-opencfw-2.2.6.0",
     )
     if args.command == "flash-reviewed-cfw":
         image_kind = "CFW"
@@ -1421,6 +1983,15 @@ def main() -> int:
         pinned_main_sha256 = CFW_2_2_9_CANDIDATE_MAIN_SHA256
         pinned_main_bytes = CFW_2_2_9_CANDIDATE_MAIN_BYTES
         default_source_versions = set(CFW_2_2_9_CANDIDATE_SOURCE_VERSIONS)
+    elif args.command == "flash-opencfw-2.2.6.0":
+        image_kind = "openCFW 2.2.6.0"
+        pinned_sha256 = OPENCFW_2_2_6_RELEASE_SHA256
+        pinned_main_sha256 = OPENCFW_2_2_6_RELEASE_MAIN_SHA256
+        pinned_main_bytes = OPENCFW_2_2_6_RELEASE_MAIN_BYTES
+        default_source_versions = {
+            REVIEWED_BASE_VERSION,
+            OPENCFW_2_2_6_RELEASE_VERSION,
+        }
     else:
         image_kind = "official"
         pinned_sha256 = REVIEWED_OFFICIAL_SHA256
@@ -1444,6 +2015,16 @@ def main() -> int:
         if args.expect_current_version
         else default_source_versions
     )
+    recent_reset_proof = None
+    if args.recent_reset_proof is not None:
+        try:
+            recent_reset_proof = load_recent_reset_proof(
+                args.recent_reset_proof,
+                device=args.device,
+                accepted_versions=expected_current_versions,
+            )
+        except SafetyError as error:
+            parser.error(str(error))
     if not args.execute_main_ota:
         parser.error("flash requires --execute-main-ota")
     if not args.accept_single_slot_risk:
@@ -1622,50 +2203,90 @@ def main() -> int:
                     ),
                     progress=_progress(route),
                 )
-                current = flasher.read_version()
-                route_result["preflight_version"] = asdict(current)
+                if recent_reset_proof is not None:
+                    # Route-phase retries may wait up to several minutes.  A
+                    # proof that was fresh during argument validation must
+                    # still be fresh immediately before the first mutating
+                    # temple request.
+                    assert args.recent_reset_proof is not None
+                    recent_reset_proof = load_recent_reset_proof(
+                        args.recent_reset_proof,
+                        device=args.device,
+                        accepted_versions=expected_current_versions,
+                    )
+                    proof_report = recent_reset_proof["report"]
+                    assert isinstance(proof_report, dict)
+                    proof_versions = proof_report["versions"]
+                    assert isinstance(proof_versions, dict)
+                    observed = proof_versions[route]
+                    assert isinstance(observed, dict)
+                    current_firmware = str(observed["firmware"])
+                    current_hardware = int(observed["hardware"])
+                    route_result["preflight_version"] = dict(observed)
+                    route_result["preflight_version_source"] = (
+                        "recent bilateral DEB0 proof; zero selected-route queries"
+                    )
+                    route_result["recent_reset_proof"] = {
+                        "path": str(args.recent_reset_proof),
+                        "created_at_utc": recent_reset_proof["created_at_utc"],
+                        "validated_age_seconds": recent_reset_proof[
+                            "validated_age_seconds"
+                        ],
+                    }
+                else:
+                    current = flasher.read_version()
+                    current_firmware = current.firmware
+                    current_hardware = current.hardware
+                    route_result["preflight_version"] = asdict(current)
+                    route_result["preflight_version_source"] = (
+                        "just-in-time selected-route query"
+                    )
                 print(
-                    f"{route}: preflight firmware={current.firmware}, "
-                    f"hardware={current.hardware}",
+                    f"{route}: preflight firmware={current_firmware}, "
+                    f"hardware={current_hardware}",
                     flush=True,
                 )
-                if current.firmware not in expected_current_versions:
+                if current_firmware not in expected_current_versions:
                     raise SafetyError(
                         f"{route}: expected source firmware in "
                         f"{sorted(expected_current_versions)}, observed "
-                        f"{current.firmware}"
+                        f"{current_firmware}"
                     )
-                if current.hardware != 5:
+                if current_hardware != 5:
                     raise SafetyError(
                         f"{route}: expected hardware 5, "
-                        f"observed {current.hardware}"
+                        f"observed {current_hardware}"
                     )
-                route_result["stability_preflight"] = verify_route_stability(
-                    flasher,
-                    current.firmware,
-                    current.hardware,
-                )
+                # The product-test route has a short elapsed app-mode window.
+                # Hardware proved that repeated liveness queries consume that
+                # window: START failed after the old gate but the identical
+                # START acknowledged after one fresh version query. The query
+                # above is therefore the entire just-in-time gate. Do not add
+                # a second query, settle, or host-only prime before START.
+                route_result["stability_preflight"] = {
+                    "outcome": "success",
+                    "queries": 0 if recent_reset_proof is not None else 1,
+                    "interval_ms": 0.0,
+                    "firmware": current_firmware,
+                    "hardware": current_hardware,
+                    "source": route_result["preflight_version_source"],
+                }
                 print(
-                    f"{route}: completed {FLASH_STABILITY_QUERIES} "
-                    "consecutive read-only stability queries",
+                    f"{route}: identity gate complete with "
+                    f"{route_result['stability_preflight']['queries']} "
+                    "selected-route queries",
                     flush=True,
                 )
-                time.sleep(FLASH_PRE_START_SETTLE_SECONDS)
-                transport.drain_input()
-                # The CH340/ROM bridge has twice reproduced a deterministic
-                # post-idle boundary where only the first five bytes of the
-                # next ten-byte host header reached SRAM. Prime that host-only
-                # parser path after the required settle, then issue START while
-                # it is demonstrably receiving complete framed transactions.
-                # G2TS never touches USART3 or either temple.
-                transport.stress_host_receive(
-                    FLASH_PRE_START_HOST_PRIME_BYTES
-                )
-                route_result["pre_start_host_prime"] = {
-                    "protocol": "G2TS",
-                    "payload_bytes": FLASH_PRE_START_HOST_PRIME_BYTES,
+                # The bridge can retransmit a cached G2RX frame after the host
+                # has already accepted the checksum-valid version response.
+                # Discard only those host-side leftovers immediately; this is
+                # not a temple transaction and adds no route-window delay.
+                if recent_reset_proof is None:
+                    transport.drain_input()
+                route_result["pre_start_input_drain"] = {
+                    "host_only": True,
                     "temple_transmission": False,
-                    "outcome": "success",
+                    "delay_seconds": 0.0,
                 }
                 print(
                     f"{route}: starting pinned {image_kind} "

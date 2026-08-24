@@ -1,8 +1,93 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-21T05:37:44.022Z",
+  "generatedAt": "2026-08-24T05:51:20.937Z",
   "source": "Even Realities G2/R1 CDN plus SybilSight release evidence",
   "releases": [
+    {
+      "id": "g2-custom-2.2.9.29",
+      "displayName": "SybilSight CFW (2.2.9.29)",
+      "channel": "custom",
+      "trust": "reviewed-custom",
+      "hardwareValidated": false,
+      "version": "2.2.9.29",
+      "archiveKey": "2.2.9.29-960b964f2dfd",
+      "internalVersion": "2.2.9.29",
+      "reportedVersion": "2.2.9.29",
+      "baseVersion": "2.2.9.22",
+      "notes": "Built from the AM-Guru microphone-configurations patch branch on the pinned official G2 2.2.9.22 base. All hook bytes and rebased ROM call entries are stock-signature gated; microphone hardware activation remains explicit and the upstream-inferred audio ABIs remain pending hardware validation.",
+      "capabilities": [
+        "Full-panel and compressed custom display transports",
+        "Wear, compass, ring-hold, diagnostics, texture cache, and atomic drawing extensions",
+        "Microphone configuration, multichannel, and raw-frame protocols with hardware activation disarmed by default"
+      ],
+      "bleComponentNames": [
+        "ota/s200_firmware_ota.bin"
+      ],
+      "recoveryTarget": "glasses",
+      "caseRecoveryEligible": false,
+      "caseVersion": "1.2.57",
+      "url": "/firmware-updates/source-files/2.2.9.29-960b964f2dfd/g2-2.2.9.29.bin",
+      "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.9.29-960b964f2dfd/g2-2.2.9.29.bin",
+      "fileName": "g2-2.2.9.29.bin",
+      "size": 4515465,
+      "md5": "8248aa5d92b268e3edb60a74db53a22b",
+      "sha256": "960b964f2dfdfb17edf222f0ec3c5c44ca9ee502fe2a9873919e951a6c158ac5",
+      "patchUrl": "/firmware-updates/source-files/2.2.9.29-960b964f2dfd/cfw_patches-2.2.9.29.json",
+      "patchSha256": "920b201f7026d00c64a0fd1de4b3c7f642b5372963fb3400eb3ebc6cfbc5d7c3",
+      "manifestUrl": "/firmware-updates/source-files/2.2.9.29-960b964f2dfd/manifest.json",
+      "manifestSha256": "fdc830370bbcd64500ce9992dc78c88fd73c9a14a923a6d31ffb6f89cdb01522",
+      "archivedFrom": "WebFlasher local evidence",
+      "mainFirmware": {
+        "runBase": "0x00438000",
+        "installedImageSize": 3736199,
+        "installedImageEnd": "0x007c8287",
+        "crc32": "029ea278"
+      },
+      "components": [
+        {
+          "name": "firmware/codec.bin",
+          "typeId": 4,
+          "size": 326092,
+          "crc32c": "bdcfeeac",
+          "sha256": "b06dfef7faa2f1e52d2aacd07958d4b96ffc36dca5077ac9149e48f19fc9c4d0"
+        },
+        {
+          "name": "firmware/ble_em9305.bin",
+          "typeId": 5,
+          "size": 211948,
+          "crc32c": "c074baf7",
+          "sha256": "91a38f7fc05555f86181ecb22b363e3239bfcaaa2ff6171e98524ae64821eca9"
+        },
+        {
+          "name": "firmware/touch.bin",
+          "typeId": 3,
+          "size": 34720,
+          "crc32c": "903ca49a",
+          "sha256": "c14456cd4d432815d79700b251c9a575f75c76a3710f4148c0df6ddba4cb7ba2"
+        },
+        {
+          "name": "firmware/box.bin",
+          "typeId": 6,
+          "size": 55784,
+          "crc32c": "7d443be0",
+          "sha256": "36ca0c13558f252af286ae2b36b5e576d087d21d37b15d778e7da9f502a70374"
+        },
+        {
+          "name": "ota/s200_bootloader.bin",
+          "typeId": 1,
+          "size": 149746,
+          "crc32c": "1b91e2b5",
+          "sha256": "0d6837c3eb3153303e408ec02bc7f67ecbe77095c4f12e80bf9b45cabd3cf11e"
+        },
+        {
+          "name": "ota/s200_firmware_ota.bin",
+          "typeId": 0,
+          "size": 3736231,
+          "crc32c": "6643dce5",
+          "sha256": "a7f170a7e3870cfc8ce642ac3b05e6bec7fb02b2ae75231afac244a093e6adf6"
+        }
+      ]
+    },
     {
       "id": "g2-official-2.2.9.22",
       "channel": "official",

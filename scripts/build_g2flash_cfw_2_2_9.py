@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Build SybilSight G2 CFW 2.2.9.28 from official 2.2.9.22.
+"""Build SybilSight G2 CFW 2.2.9.29 from official 2.2.9.22.
 
-The injected feature code is compiled from the pinned g2flash main checkout after
+The injected feature code is compiled from the pinned g2flash-amguru checkout after
 applying the reviewed 2.2.9 address profile in memory.  Every live-code edit is
-expected-byte gated, all package/runtime identities are advanced to 2.2.9.28,
+expected-byte gated, all package/runtime identities are advanced to 2.2.9.29,
 and the emitted JSON recipe reproduces the output from the stock CDN image.
 """
 
@@ -22,19 +22,21 @@ import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE_VERSION = "2.2.9.22"
-OUTPUT_VERSION = "2.2.9.28"
+OUTPUT_VERSION = "2.2.9.29"
 BASE_SHA256 = "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561"
-G2FLASH_COMMIT = "7c6d3c15b0bac9ad7247163c12c53efeb101e503"
+G2FLASH_COMMIT = "29a688666b7524e88833746040457029ac662c68"
 G2FLASH_PREVIOUS_CFW_COMMIT = "469d78e332040f6ed77e978df496d3e7d427b4f2"
-G2FLASH_RECIPE_SHA256 = "fe76eb55a6a52eec06f0818e56e310ab419731169b12305aed755a7318419410"
+G2FLASH_2_2_9_COMPAT_COMMIT = "7c6d3c15b0bac9ad7247163c12c53efeb101e503"
+G2FLASH_RECIPE_SHA256 = "d86051d274f75af73297fa3448811461bd513cdac522a6b1666a384d233ec2d7"
 CAPABILITY_MARKER = (
-    "EVENCFW/16 img576 img640 imgz rle wakelease directfb fbguard "
+    "EVENCFW/17 img576 img640 imgz rle wakelease directfb fbguard "
     "wearnotify compass10 cleanup11 texcache12 teximg13 texstr14 font15 "
-    "diag7 multiseg8 rectcopy9 ringhold"
+    "diag7 multiseg8 rectcopy9 ringhold micctl micmc micraw"
 )
 UPSTREAM_CAPABILITY_MARKER = (
-    "EVENCFW/15 img576 img640 imgz rle wakelease directfb fbguard "
-    "wearnotify compass10 cleanup11 texcache12 teximg13 texstr14 font15"
+    "EVENCFW/16 img576 img640 imgz rle wakelease directfb fbguard "
+    "wearnotify compass10 cleanup11 texcache12 teximg13 texstr14 font15 "
+    "micctl micmc micraw"
 )
 BASE = (
     ROOT / "public" / "firmware-updates" / "source-files" / BASE_VERSION
@@ -46,6 +48,8 @@ DEFAULT_OUTPUT_DIR = (
 APP_LOAD_ADDR = 0x00438000
 APP_PREAMBLE = 0x20
 APP_MAX_END = 0x007F0000
+APP_MRAM_END = 0x00800000
+OTA_FLAG_PAGE = 0x007FE000
 
 
 class BuildError(RuntimeError):
@@ -155,6 +159,22 @@ ADDRESS_PROFILE = {
     "0x202a6274": "0x2029f4ac", "0x202a6670": "0x2029f8a8",
 }
 
+# These AM-Guru microphone/audio entry points were newly introduced after the
+# upstream 2.2.9 compatibility fix. Each value is a Thumb function pointer to
+# a 2.2.9.22 stock function entry, identified independently from retained
+# strings, xrefs, neighboring function topology, and exact stock prologues.
+MIC_ADDRESS_PROFILE = {
+    "0x0058F69B": "0x005A8CA3",  # production_codec_mic_func_init
+    "0x0058F74B": "0x005A8D53",  # production_codec_mic_func_deinit
+    "0x0058F7B1": "0x005A8DB9",  # production_pdm_mic_func_init
+    "0x0058F807": "0x005A8E0F",  # production_pdm_mic_func_deinit
+    "0x0057AB79": "0x00593371",  # SVC_PcmAppRegister (ABI inferred upstream)
+    "0x0057ACD1": "0x005934C9",  # SVC_PcmAppUnregister (ABI inferred upstream)
+    "0x00591BFD": "0x005AB2F1",  # service_algo_process (ABI inferred upstream)
+    "0x00475D79": "0x0047DA6D",  # streaming notify (ABI inferred upstream)
+}
+ADDRESS_PROFILE = {**ADDRESS_PROFILE, **MIC_ADDRESS_PROFILE}
+
 
 HOOKS = (
     (0x004A4A98, "46f0cafa", "evenhub_longpress", "tap-then-long-press forwarding"),
@@ -199,10 +219,33 @@ STOCK_RUNTIME_SIGNATURES = (
         "a82827203c03002058030020a8501320",
         "primary and secondary TLSF arena descriptors",
     ),
+    (0x005A8CA2, "e0b500217c4a11600100c9b2002922d1", "codec microphone init entry"),
+    (0x005A8D52, "1cb50020aaf7efff002140f20b10eaf7", "codec microphone deinit entry"),
+    (0x005A8DB8, "e0b594f6c8fc800709d5404801909220", "PDM microphone init entry"),
+    (0x005A8E0E, "1cb50020aaf7a2ff012140f20b10eaf7", "PDM microphone deinit entry"),
+    (0x00593370, "2de9f84384b004000d0090462800c0b2", "PCM application register entry"),
+    (0x005934C8, "f8b584b007000c000c25dff8d8662000", "PCM application unregister entry"),
+    (0x005AB2F0, "f8b504000d0016001f0029002000fff7", "service audio algorithm process entry"),
+    (0x0047DA6C, "3eb504000d00cdf70ff900281ed0bff7", "streaming audio notify entry"),
 )
 
 CFW_RESERVED_BASE = 0x2029F4A8
 CFW_ALLOC_DIAG_SLOT = CFW_RESERVED_BASE + 4
+
+
+def validate_microphone_address_profile() -> None:
+    for old_text, new_text in MIC_ADDRESS_PROFILE.items():
+        old = int(old_text, 16)
+        new = int(new_text, 16)
+        if (old & 1) != 1 or (new & 1) != 1:
+            raise BuildError(
+                f"microphone call target {old_text}->{new_text} is not a Thumb pointer"
+            )
+        entry = new & ~1
+        if not APP_LOAD_ADDR <= entry < APP_MAX_END:
+            raise BuildError(
+                f"microphone call target {new_text} lies outside the reviewed app image"
+            )
 
 
 def validate_stock_runtime(
@@ -238,10 +281,11 @@ def prepare_sources(checkout: Path, destination: Path) -> Path:
         "build.py", "patches_main.c", "utils.c", "utils.h", "malloc.c", "malloc.h",
         "draw.c", "draw.h", "cfw_context.c", "cfw_context.h", "rle.c", "rle.h",
         "texture_cache.c", "texture_cache.h", "zlib_glue.c", "settings_ext.c",
-        "gesture_fwd.c", "debug.c", "debug.h",
+        "gesture_fwd.c", "debug.c", "debug.h", "mic_control.c",
     )
     for name in source_names:
         shutil.copy2(patch_dir / name, destination / name)
+    mic_profile_hits = {address: 0 for address in MIC_ADDRESS_PROFILE}
     for name in source_names:
         if not name.endswith((".c", ".h")):
             continue
@@ -249,8 +293,19 @@ def prepare_sources(checkout: Path, destination: Path) -> Path:
         text = path.read_text()
         for old, new in ADDRESS_PROFILE.items():
             if old in text:
+                if old in mic_profile_hits:
+                    mic_profile_hits[old] += text.count(old)
                 text = checked_replace(text, old, new, name)
         path.write_text(text)
+
+    invalid_hits = {
+        address: count for address, count in mic_profile_hits.items() if count != 1
+    }
+    if invalid_hits:
+        raise BuildError(
+            "AM-Guru microphone address profile expected exactly one source use "
+            f"per entry; observed {invalid_hits}"
+        )
 
     settings = destination / "settings_ext.c"
     text = settings.read_text()
@@ -260,9 +315,8 @@ def prepare_sources(checkout: Path, destination: Path) -> Path:
         CAPABILITY_MARKER,
         settings.name,
     )
-    # Upstream contract 15 is exactly 127 bytes, so its one-byte protobuf
-    # length happens to be canonical. Contract 16 is 162 bytes and must encode
-    # that length as the two-byte varint A2 01. Leaving the old p[2] assignment
+    # The expanded downstream contract requires a two-byte protobuf length.
+    # Leaving the old p[2] assignment
     # makes the first marker character part of the length and causes every host
     # protobuf decoder to discard field 100, silently disabling all CFW modes.
     old_append = """        unsigned char *p = buf + len;
@@ -328,10 +382,11 @@ def compile_blob(checkout: Path) -> dict:
 
 
 def build(checkout: Path) -> tuple[bytes, dict]:
+    validate_microphone_address_profile()
     marker_bytes = CAPABILITY_MARKER.encode("ascii")
-    if protobuf_varint(len(marker_bytes)) != b"\xa2\x01":
+    if protobuf_varint(len(marker_bytes)) != b"\xb6\x01":
         raise BuildError(
-            "contract-16 marker no longer has its reviewed two-byte protobuf length"
+            "contract-17 marker no longer has its reviewed 182-byte protobuf length"
         )
     base = BASE.read_bytes()
     if sha256(base) != BASE_SHA256:
@@ -353,9 +408,24 @@ def build(checkout: Path) -> tuple[bytes, dict]:
     functions = {item["name"]: item["offset"] for item in built["functions"]}
     blob_offset = (old_size + 3) & ~3
     blob_address = APP_LOAD_ADDR + blob_offset - APP_PREAMBLE
+    if blob_address % 4:
+        raise BuildError(f"injected feature blob is not word-aligned: {blob_address:#x}")
+    required_functions = {hook[2] for hook in HOOKS} | {
+        "faceclaw_evenai_display_entry"
+    }
+    for function in sorted(required_functions):
+        offset = functions.get(function)
+        if not isinstance(offset, int) or not 0 <= offset < len(blob):
+            raise BuildError(f"required injected function {function} is outside the blob")
+        if offset % 2:
+            raise BuildError(f"required injected function {function} is not halfword-aligned")
     programmed_end = blob_address + len(blob)
     if programmed_end > APP_MAX_END:
         raise BuildError(f"injected app ends at {programmed_end:#x}, above {APP_MAX_END:#x}")
+    if not APP_LOAD_ADDR <= blob_address < programmed_end <= APP_MAX_END:
+        raise BuildError("injected feature blob lies outside the reviewed application range")
+    if APP_MAX_END >= OTA_FLAG_PAGE or OTA_FLAG_PAGE >= APP_MRAM_END:
+        raise BuildError("reviewed application ceiling no longer protects the OTA flag page")
 
     data = bytearray(base)
     operations: list[dict] = []
@@ -448,6 +518,17 @@ def build(checkout: Path) -> tuple[bytes, dict]:
 
     profile = {
         "rom_and_ram_symbols": ADDRESS_PROFILE,
+        "microphone_symbol_rebase": {
+            "symbols": MIC_ADDRESS_PROFILE,
+            "method": (
+                "retained-string xrefs and function-boundary topology, checked "
+                "against exact 2.2.9.22 stock prologue signatures"
+            ),
+            "hardware_activation": (
+                "fail-closed: AM-Guru MIC_FLAG_ARM_HW must be explicitly set; "
+                "configuration/status alone does not start audio hardware"
+            ),
+        },
         "runtime_signatures": [
             {
                 "address": f"0x{address:08x}",
@@ -480,6 +561,16 @@ def build(checkout: Path) -> tuple[bytes, dict]:
                 "2.2.9.26 encoded the 162-byte marker length as one byte, so "
                 "hosts could not parse field 100 and disabled private display modes"
             ),
+        },
+        "app_memory": {
+            "load_address": f"0x{APP_LOAD_ADDR:08x}",
+            "feature_blob_address": f"0x{blob_address:08x}",
+            "feature_blob_bytes": len(blob),
+            "programmed_end_exclusive": f"0x{programmed_end:08x}",
+            "reviewed_ceiling_exclusive": f"0x{APP_MAX_END:08x}",
+            "headroom_bytes": APP_MAX_END - programmed_end,
+            "ota_flag_page": f"0x{OTA_FLAG_PAGE:08x}",
+            "mram_end_exclusive": f"0x{APP_MRAM_END:08x}",
         },
     }
     rebase_patch_sha256 = sha256(json.dumps(profile, sort_keys=True).encode())
@@ -518,13 +609,24 @@ def build(checkout: Path) -> tuple[bytes, dict]:
         "withheld_feature": withheld_feature,
         "source_provenance": {
             "g2flash_upstream_commit": commit,
+            "g2flash_patch_sha256": recipe_hash,
             "upstream_2_2_9_compatibility_delta": {
                 "previous_cfw_commit": G2FLASH_PREVIOUS_CFW_COMMIT,
+                "compatibility_commit": G2FLASH_2_2_9_COMPAT_COMMIT,
                 "patch_tree_unchanged": True,
                 "scope": (
                     "installer transport: authenticate every fresh CTRL connection, "
                     "reset the independent OTA sequence, and send no CTRL heartbeat "
                     "between BEGIN and final END"
+                ),
+            },
+            "amguru_microphone_delta": {
+                "base_commit": G2FLASH_2_2_9_COMPAT_COMMIT,
+                "commit": commit,
+                "hardware_activation_default": "disarmed",
+                "abi_status": (
+                    "call targets are statically rebased and stock-signature gated; "
+                    "upstream marks register/unregister/process/notify ABIs as inferred"
                 ),
             },
             "g2flash_rebase_patch_sha256": rebase_patch_sha256,
@@ -535,8 +637,8 @@ def build(checkout: Path) -> tuple[bytes, dict]:
             "address_profile": profile,
             "hardware_validation": "not-yet-hardware-flashed",
             "downstream_contract": {
-                "version": 16,
-                "change": "Canonically encodes the 162-byte field-100 marker length while advertising upstream modes 7, 8, and 9 plus ring hold/release forwarding; mode 5 remains unadvertised pending isolated buzzer validation.",
+                "version": 17,
+                "change": "Canonically encodes the 182-byte field-100 marker while advertising upstream microphone control, multichannel, and raw-frame capabilities plus modes 7, 8, and 9 and ring forwarding; microphone hardware remains explicitly gated and mode 5 remains unadvertised.",
                 "upstream_marker": UPSTREAM_CAPABILITY_MARKER,
             },
         },
@@ -547,7 +649,7 @@ def build(checkout: Path) -> tuple[bytes, dict]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--g2flash", type=Path, default=Path.home() / "Repo" / "g2flash")
+    parser.add_argument("--g2flash", type=Path, default=Path.home() / "Repo" / "g2flash-amguru")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     arguments = parser.parse_args()
     output, recipe = build(arguments.g2flash.resolve())

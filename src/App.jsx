@@ -704,12 +704,22 @@ function RecoveryConfigResult({ report }) {
             {decision?.mramWiredRecoveryCandidate ? "Provisioning matches" : "Not proven"}
           </strong>
         </div>
+        <div>
+          <span>FIRMWARE WRITE</span>
+          <strong>
+            {decision?.firmwareWriteAuthorized
+              ? "Authorized"
+              : "Blocked — identity + live SBL proof required"}
+          </strong>
+        </div>
       </div>
       <small>
         GPIO override on a known contact:{" "}
         {decision?.forcedEntryContactCandidate ? "candidate" : "not proven"}.
-        {" "}Restore evidence only; Ambiq's documented UART host does not provide
-        installed-MRAM backup or readback.
+        {" "}Provisioning evidence is not write authorization. Bind these dumps to
+        the exact authorized temple and validate a live CRC-correct SBL STATUS
+        frame first. Ambiq's documented UART host does not provide installed-MRAM
+        backup or readback.
       </small>
     </div>
   );

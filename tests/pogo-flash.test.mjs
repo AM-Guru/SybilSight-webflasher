@@ -1878,6 +1878,9 @@ test("keeps the generated pin table in sync with the firmware archive", async ()
       reportedVersion:
         release.reportedVersion ?? release.internalVersion ?? release.version,
       hardwareValidated: HARDWARE_VALIDATED_IMAGE_SHA256.has(release.sha256),
+      ...(release.channel === "custom" && release.bleComponentNames
+        ? { bleComponentNames: release.bleComponentNames }
+        : {}),
     })),
   ];
   assert.deepEqual(

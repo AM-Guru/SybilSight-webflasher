@@ -198,6 +198,26 @@ export function decodeApollo510RecoveryConfig({ infoc = null, info0 = null }) {
       pinConfigurationWordsMatch
     );
     const configuredReceiveWindowNonzero = wiredTimeoutMs > 0;
+    const dumpProvisioningMatches = Boolean(
+      infoc && allKnownFieldsMatch && configuredReceiveWindowNonzero
+    );
+    const writeAuthorizationBlockingReasons = [];
+    if (!infoc) {
+      writeAuthorizationBlockingReasons.push("complete-infoc-dump-required");
+    }
+    if (!allKnownFieldsMatch) {
+      writeAuthorizationBlockingReasons.push("pogo-uart-provisioning-mismatch");
+    }
+    if (!configuredReceiveWindowNonzero) {
+      writeAuthorizationBlockingReasons.push("wired-receive-window-is-zero");
+    }
+    // A dump file has no trustworthy physical-device identity binding, and
+    // provisioning alone does not prove that this boot is currently in SBL.
+    // Those two facts must come from the exact debugger/session workflow.
+    writeAuthorizationBlockingReasons.push(
+      "dump-not-bound-to-authorized-device-identity",
+      "active-sbl-status-frame-not-proven",
+    );
     report.pogoMatch = {
       uartModuleMatches: wired?.uartModule === G2_APPLICATION_UART.module,
       baudMatches: uart.baud === G2_APPLICATION_UART.baud,
@@ -213,8 +233,8 @@ export function decodeApollo510RecoveryConfig({ infoc = null, info0 = null }) {
     };
     report.decision = {
       completeProvisioningEvidence: Boolean(infoc),
-      sblUartRestoreCandidate:
-        Boolean(infoc) && allKnownFieldsMatch && configuredReceiveWindowNonzero,
+      dumpProvisioningMatches,
+      sblUartRestoreCandidate: dumpProvisioningMatches,
       configuredReceiveWindowNonzero,
       forcedEntryContactCandidate: Boolean(
         report.bootOverride?.enabled &&
@@ -226,8 +246,13 @@ export function decodeApollo510RecoveryConfig({ infoc = null, info0 = null }) {
         configuredReceiveWindowNonzero &&
         mramRecovery.masterEnabled &&
         mramRecovery.wiredRecoveryEnabled,
+      dumpOnlyEvidence: true,
+      deviceIdentityBound: false,
+      activeSblSessionProven: false,
+      firmwareWriteAuthorized: false,
+      writeAuthorizationBlockingReasons,
       interpretation:
-        "A positive result supports a restore candidate only; Ambiq's documented UART host does not provide installed-MRAM readback.",
+        "A positive provisioning result is not write authorization. Bind the dumps to the exact authorized temple and validate a live CRC-correct SBL STATUS frame first. Ambiq's documented UART host does not provide installed-MRAM readback.",
     };
   }
 

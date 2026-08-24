@@ -324,6 +324,51 @@ const RELEASES = [
       "Changed the Menu gesture to tap then long press; allows more settings while features run, lets features continue with the display off, and supports ending features via Even AI.",
   },
   {
+    id: "g2-custom-2.2.9.29",
+    displayName: "SybilSight CFW (2.2.9.29)",
+    version: "2.2.9.29",
+    internalVersion: "2.2.9.29",
+    reportedVersion: "2.2.9.29",
+    baseVersion: "2.2.9.22",
+    baseSha256: "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561",
+    channel: "custom",
+    trust: "reviewed-custom",
+    hash: "8248aa5d92b268e3edb60a74db53a22b",
+    sha256: "960b964f2dfdfb17edf222f0ec3c5c44ca9ee502fe2a9873919e951a6c158ac5",
+    size: 4515465,
+    fileName: "g2-2.2.9.29.bin",
+    preferLocalEvidence: true,
+    fallbacks: [[
+      "webflasher",
+      "public/firmware-updates/source-files/2.2.9.29/g2-2.2.9.29.bin",
+    ]],
+    patchFallbackRoot: "webflasher",
+    patchFallback:
+      "public/firmware-updates/source-files/2.2.9.29/cfw_patches-2.2.9.29.json",
+    patchFileName: "cfw_patches-2.2.9.29.json",
+    patchCount: 40,
+    manifestFileName: "manifest.json",
+    capabilityMarker:
+      "EVENCFW/17 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10 cleanup11 texcache12 teximg13 texstr14 font15 diag7 multiseg8 rectcopy9 ringhold micctl micmc micraw",
+    g2flashCommit: "29a688666b7524e88833746040457029ac662c68",
+    g2flashPatchSha256:
+      "d86051d274f75af73297fa3448811461bd513cdac522a6b1666a384d233ec2d7",
+    g2flashRebasePatchSha256:
+      "1a0f3fa2f652b62dbd81b9e4c1e464627270b48e99847d4a4742c120799c6914",
+    directFramebufferCommits: [
+      "235a8b304447e330df6a0bce0351e3b6dc3d6f08",
+      "28aad42757837db14c08225884a7cc5201e08595",
+    ],
+    bleComponentNames: ["ota/s200_firmware_ota.bin"],
+    capabilities: [
+      "Full-panel and compressed custom display transports",
+      "Wear, compass, ring-hold, diagnostics, texture cache, and atomic drawing extensions",
+      "Microphone configuration, multichannel, and raw-frame protocols with hardware activation disarmed by default",
+    ],
+    notes:
+      "Built from the AM-Guru microphone-configurations patch branch on the pinned official G2 2.2.9.22 base. All hook bytes and rebased ROM call entries are stock-signature gated; microphone hardware activation remains explicit and the upstream-inferred audio ABIs remain pending hardware validation.",
+  },
+  {
     version: "2.2.8.4",
     hash: "d495a1dffb919795e95135e144345f04",
     sha256: "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7",
@@ -712,6 +757,9 @@ async function saveRelease(root, release, fallbackRoots) {
     baseVersion: release.baseVersion ?? null,
     notes: release.notes ?? null,
     capabilities: release.capabilities ?? [],
+    ...(release.bleComponentNames
+      ? { bleComponentNames: release.bleComponentNames }
+      : {}),
     caseVersion: parsed.chargingCase.version,
     sourceUrl,
     archivedFrom,
@@ -775,6 +823,9 @@ async function saveRelease(root, release, fallbackRoots) {
     baseVersion: release.baseVersion ?? null,
     notes: release.notes ?? null,
     capabilities: release.capabilities ?? [],
+    ...(release.bleComponentNames
+      ? { bleComponentNames: release.bleComponentNames }
+      : {}),
     recoveryTarget: release.channel === "custom" ? "glasses" : "case-and-glasses-bundle",
     caseRecoveryEligible: release.channel !== "custom",
     caseVersion: parsed.chargingCase.version,
@@ -927,6 +978,9 @@ async function writeTempleFlashTargets(releases) {
         : `Stock Even Realities G2 ${release.version}`,
       // Only images with a recorded successful hardware transfer may claim this.
       hardwareValidated: HARDWARE_VALIDATED_TEMPLE_IMAGES.has(release.sha256),
+      ...(custom && release.bleComponentNames
+        ? { bleComponentNames: release.bleComponentNames }
+        : {}),
     });
   }
   const entries = targets
