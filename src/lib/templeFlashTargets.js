@@ -23,6 +23,15 @@ export const TEMPLE_FLASH_TARGETS = Object.freeze([
     bleComponentNames: Object.freeze(["ota/s200_firmware_ota.bin"]),
   }),
   Object.freeze({
+    imageSha256: "927879057685a4147c6ba1fe33e5f3740d3cc48f87141a9039204d94516e65b8",
+    mainSha256: "6ff47ca0cf9efa222e4e96bff85a87921a0e2fff657d7b51aab7a1a8da7d847b",
+    mainBytes: 3713884,
+    version: "2.2.10.10",
+    reportedVersion: "2.2.10.10",
+    label: "Stock Even Realities G2 2.2.10.10",
+    hardwareValidated: false,
+  }),
+  Object.freeze({
     imageSha256: "960b964f2dfdfb17edf222f0ec3c5c44ca9ee502fe2a9873919e951a6c158ac5",
     mainSha256: "a7f170a7e3870cfc8ce642ac3b05e6bec7fb02b2ae75231afac244a093e6adf6",
     mainBytes: 3736231,

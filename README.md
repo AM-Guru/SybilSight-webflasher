@@ -40,7 +40,7 @@ Production deployment:
   explicit omission while the live snapshots are still captured.
 - Accepts official five- or six-component `EVENOTA` bundles, wrapped
   `firmware_box.bin` components, and validated raw case images.
-- Recognizes and offers all 15 archived official G2 SHA-256 values. CFW images
+- Recognizes and offers all 16 archived official G2 SHA-256 values. CFW images
   are not shipped, cataloged, or included in either flash allowlist.
 - Validates the Apollo main application's independent preamble, CRC-32, target
   region, installed-image boundary, and vector.
@@ -1426,7 +1426,7 @@ and both routes receive read-only liveness verification.
 
 ## Firmware archive
 
-The archive builder offers all 15 official G2 releases evidenced by the
+The archive builder offers all 16 official G2 releases evidenced by the
 SybilSight research plus reviewed CFW 2.2.6.11, 2.2.7.16, 2.2.8.11, and 2.2.9.23.
 Historical withdrawn CFW evidence remains in immutable versioned directories
 but is not emitted in the WebFlasher catalog or writer pin table. The builder
@@ -1802,3 +1802,19 @@ Licensed under the [MIT License](LICENSE.md).
 
 The G2 product image is a user-supplied Even Realities CDN asset and is not
 granted additional rights by this repository's MIT license.
+
+### September 8, 2026 vendor firmware check
+
+With app version 2.2.10, both authenticated Even firmware endpoints selected
+G2 **2.2.10.10** and R1 **2.2.9.0003**. The R1 package was downloaded again
+and is byte-identical to the already archived version; no R1 2.2.10 package
+was offered. CDN size and MD5 were checked before pinning SHA-256.
+See `docs/firmware/2.2.10-vendor-check.json` for the public release metadata.
+
+The CFW 2.2.10 release was withheld: all 17 named hook sites from g2flash
+`b20bfb1551b7857b3260207ca6a841ec52191e89` fail their stock expected-byte
+checks at the 2.2.9 addresses. The main payload also moves from file offset
+779234 to 779181 because the bootloader shrank by 53 bytes. Codec, BLE,
+touch, and case payloads remain byte-identical. A full ROM/RAM/hook rebase
+is required before using the latest patches on this stock version.
+See `docs/firmware/2.2.9-to-2.2.10-address-comparison.json` for the comparison.

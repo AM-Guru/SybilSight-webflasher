@@ -1,0 +1,144 @@
+{
+  "checkedAt": "2026-09-08",
+  "appVersion": "2.2.10",
+  "source": "https://api2.evenreal.co",
+  "checks": [
+    {
+      "endpoint": "check_firmware",
+      "query": "is_ring=false",
+      "response": {
+        "code": 0,
+        "msg": "Success",
+        "data": {
+          "id": 164,
+          "createdAt": "2026-09-02T10:44:32.256+08:00",
+          "updatedAt": "2026-09-02T10:44:51.202+08:00",
+          "title": "G2 2.2.10.10",
+          "message": "1. Fixed duplicate Notifications in certain scenarios.  \n2. Bug fixes and UI improvements.",
+          "mode": 1,
+          "name": "ALL",
+          "type": 1,
+          "minAppVer": "2.2.10",
+          "maxAppVer": null,
+          "region": "ALL",
+          "fileId": 4337,
+          "subPath": "/firmware/5d2abaf086ad7cc4709cad679b7b24d1.bin",
+          "version": "2.2.10.10",
+          "directFrom": "",
+          "enable": true,
+          "fileSign": "5d2abaf086ad7cc4709cad679b7b24d1",
+          "uid": 0,
+          "sn": "",
+          "model": "G2",
+          "fileSize": 4493065
+        }
+      }
+    },
+    {
+      "endpoint": "check_latest_firmware",
+      "query": "is_ring=false",
+      "response": {
+        "code": 0,
+        "msg": "Success",
+        "data": {
+          "id": 164,
+          "createdAt": "2026-09-02T10:44:32.256+08:00",
+          "updatedAt": "2026-09-02T10:44:51.202+08:00",
+          "title": "G2 2.2.10.10",
+          "message": "1. Fixed duplicate Notifications in certain scenarios.  \n2. Bug fixes and UI improvements.",
+          "mode": 1,
+          "name": "ALL",
+          "type": 1,
+          "minAppVer": "2.2.10",
+          "maxAppVer": null,
+          "region": "ALL",
+          "fileId": 4337,
+          "subPath": "/firmware/5d2abaf086ad7cc4709cad679b7b24d1.bin",
+          "version": "2.2.10.10",
+          "directFrom": "",
+          "enable": true,
+          "fileSign": "5d2abaf086ad7cc4709cad679b7b24d1",
+          "uid": 0,
+          "sn": "",
+          "model": "G2",
+          "fileSize": 4493065
+        }
+      }
+    },
+    {
+      "endpoint": "check_firmware",
+      "query": "is_ring=true",
+      "response": {
+        "code": 0,
+        "msg": "Success",
+        "data": {
+          "id": 163,
+          "createdAt": "2026-08-20T11:00:07.428+08:00",
+          "updatedAt": "2026-08-20T11:00:24.516+08:00",
+          "title": "R1 2.2.9.0003",
+          "message": "1. Bug fixes.",
+          "mode": 1,
+          "name": "ALL",
+          "type": 1,
+          "minAppVer": "2.2.9",
+          "maxAppVer": null,
+          "region": "ALL",
+          "fileId": 4314,
+          "subPath": "/firmware/eac75275743ed88ed52704cf5079d4d5.zip",
+          "version": "2.2.9.0003",
+          "directFrom": "",
+          "enable": true,
+          "fileSign": "eac75275743ed88ed52704cf5079d4d5",
+          "uid": 0,
+          "sn": "",
+          "model": "R1",
+          "fileSize": 655347
+        }
+      }
+    },
+    {
+      "endpoint": "check_latest_firmware",
+      "query": "is_ring=true",
+      "response": {
+        "code": 0,
+        "msg": "Success",
+        "data": {
+          "id": 163,
+          "createdAt": "2026-08-20T11:00:07.428+08:00",
+          "updatedAt": "2026-08-20T11:00:24.516+08:00",
+          "title": "R1 2.2.9.0003",
+          "message": "1. Bug fixes.",
+          "mode": 1,
+          "name": "ALL",
+          "type": 1,
+          "minAppVer": "2.2.9",
+          "maxAppVer": null,
+          "region": "ALL",
+          "fileId": 4314,
+          "subPath": "/firmware/eac75275743ed88ed52704cf5079d4d5.zip",
+          "version": "2.2.9.0003",
+          "directFrom": "",
+          "enable": true,
+          "fileSign": "eac75275743ed88ed52704cf5079d4d5",
+          "uid": 0,
+          "sn": "",
+          "model": "R1",
+          "fileSize": 655347
+        }
+      }
+    }
+  ],
+  "downloadVerification": {
+    "G2": {
+      "size": 4493065,
+      "md5": "5d2abaf086ad7cc4709cad679b7b24d1",
+      "sha256": "927879057685a4147c6ba1fe33e5f3740d3cc48f87141a9039204d94516e65b8"
+    },
+    "R1": {
+      "size": 655347,
+      "md5": "eac75275743ed88ed52704cf5079d4d5",
+      "sha256": "38089992808e39ad933d584d2962dc3dc9d9f51ae0dd3b30d17c8a8cf8d14de8",
+      "matchesExistingArchive": true
+    }
+  }
+}

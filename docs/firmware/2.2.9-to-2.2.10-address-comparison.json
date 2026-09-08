@@ -1,0 +1,199 @@
+{
+  "oldVersion": "2.2.9.22",
+  "newVersion": "2.2.10.10",
+  "upstreamCommit": "b20bfb1551b7857b3260207ca6a841ec52191e89",
+  "oldSha256": "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561",
+  "newSha256": "927879057685a4147c6ba1fe33e5f3740d3cc48f87141a9039204d94516e65b8",
+  "components": [
+    {
+      "name": "firmware/codec.bin",
+      "oldSize": 326092,
+      "newSize": 326092,
+      "unchanged": true,
+      "oldPayloadOffset": 304,
+      "newPayloadOffset": 304
+    },
+    {
+      "name": "firmware/ble_em9305.bin",
+      "oldSize": 211948,
+      "newSize": 211948,
+      "unchanged": true,
+      "oldPayloadOffset": 326524,
+      "newPayloadOffset": 326524
+    },
+    {
+      "name": "firmware/touch.bin",
+      "oldSize": 34720,
+      "newSize": 34720,
+      "unchanged": true,
+      "oldPayloadOffset": 538600,
+      "newPayloadOffset": 538600
+    },
+    {
+      "name": "firmware/box.bin",
+      "oldSize": 55784,
+      "newSize": 55784,
+      "unchanged": true,
+      "oldPayloadOffset": 573448,
+      "newPayloadOffset": 573448
+    },
+    {
+      "name": "ota/s200_bootloader.bin",
+      "oldSize": 149746,
+      "newSize": 149693,
+      "unchanged": false,
+      "oldPayloadOffset": 629360,
+      "newPayloadOffset": 629360
+    },
+    {
+      "name": "ota/s200_firmware_ota.bin",
+      "oldSize": 3697284,
+      "newSize": 3713884,
+      "unchanged": false,
+      "oldPayloadOffset": 779234,
+      "newPayloadOffset": 779181
+    }
+  ],
+  "hookSites": [
+    {
+      "symbol": "PRIMARY_TLSF_SIZE_SITE",
+      "address": "0x48c350",
+      "stock_2_2_9": "5ff43432",
+      "stock_2_2_10_same_address": "10310322",
+      "unchanged": false,
+      "exact_48_byte_window_matches": []
+    },
+    {
+      "symbol": "LOADBMP_BL_SITE",
+      "address": "0x4a4402",
+      "stock_2_2_9": "49f0daff",
+      "stock_2_2_10_same_address": "400706d5",
+      "unchanged": false,
+      "exact_48_byte_window_matches": []
+    },
+    {
+      "symbol": "SNAPSHOT_BL_SITE",
+      "address": "0x4ec0ee",
+      "stock_2_2_9": "70f775ff",
+      "stock_2_2_10_same_address": "06f28058",
+      "unchanged": false,
+      "exact_48_byte_window_matches": []
+    },
+    {
+      "symbol": "IMAGE_ACK_SUCCESS_SITE",
+      "address": "0x4ec10e",
+      "stock_2_2_9": "30d0",
+      "stock_2_2_10_same_address": "2068",
+      "unchanged": false,
+      "exact_48_byte_window_matches": []
+    },
+    {
+      "symbol": "SETTINGS_BL_SITE",
+      "address": "0x4a90e4",
+      "stock_2_2_9": "d4f790fb",
+      "stock_2_2_10_same_address": "0f000328",
+      "unchanged": false,
+      "exact_48_byte_window_matches": []
+    },
+    {
+      "symbol": "SETTINGS_DECODE_BL_SITE",
+      "address": "0x4a87e4",
+      "stock_2_2_9": "f5f710f9",
+      "stock_2_2_10_same_address": "dff83005",
+      "unchanged": false,
+      "exact_48_byte_window_matches": []
+    },
+    {
+      "symbol": "DISPLAY_START_BL_SITES",
+      "address": "0x45f146",
+      "stock_2_2_9": "0bf02af9",
+      "stock_2_2_10_same_address": "8250ddf7",
+      "unchanged": false,
+      "exact_48_byte_window_matches": []
+    },
+    {
+      "symbol": "DISPLAY_START_BL_SITES",
+      "address": "0x45f206",
+      "stock_2_2_9": "0bf0caf8",
+      "stock_2_2_10_same_address": "dff8f40c",
+      "unchanged": false,
+      "exact_48_byte_window_matches": []
+    },
+    {
+      "symbol": "GESTURE_PRESS_SITE",
+      "address": "0x444a3a",
+      "stock_2_2_9": "1df057fc",
+      "stock_2_2_10_same_address": "e81a0320",
+      "unchanged": false,
+      "exact_48_byte_window_matches": []
+    },
+    {
+      "symbol": "GESTURE_SHORT_LONG_SITE",
+      "address": "0x444a40",
+      "stock_2_2_9": "24f023f9",
+      "stock_2_2_10_same_address": "2df9f8f7",
+      "unchanged": false,
+      "exact_48_byte_window_matches": []
+    },
+    {
+      "symbol": "GESTURE_RELEASE_SITE",
+      "address": "0x444d36",
+      "stock_2_2_9": "1df0d9fa",
+      "stock_2_2_10_same_address": "0024377a",
+      "unchanged": false,
+      "exact_48_byte_window_matches": []
+    },
+    {
+      "symbol": "EVENAI_ENTRY_SITE",
+      "address": "0x4f5156",
+      "stock_2_2_9": "7fb50600",
+      "stock_2_2_10_same_address": "c8223100",
+      "unchanged": false,
+      "exact_48_byte_window_matches": []
+    },
+    {
+      "symbol": "DISPLAY_COPY_BL_SITES",
+      "address": "0x4798f2",
+      "stock_2_2_9": "f6f7edff",
+      "stock_2_2_10_same_address": "2dff4007",
+      "unchanged": false,
+      "exact_48_byte_window_matches": []
+    },
+    {
+      "symbol": "DISPLAY_COPY_BL_SITES",
+      "address": "0x479a2e",
+      "stock_2_2_9": "f6f74fff",
+      "stock_2_2_10_same_address": "20100791",
+      "unchanged": false,
+      "exact_48_byte_window_matches": []
+    },
+    {
+      "symbol": "WEAR_NOTIFY_BL_SITES",
+      "address": "0x4ac3ea",
+      "stock_2_2_9": "d9f758ff",
+      "stock_2_2_10_same_address": "c00703d4",
+      "unchanged": false,
+      "exact_48_byte_window_matches": []
+    },
+    {
+      "symbol": "WEAR_NOTIFY_BL_SITES",
+      "address": "0x4ac44e",
+      "stock_2_2_9": "d9f726ff",
+      "stock_2_2_10_same_address": "984c2500",
+      "unchanged": false,
+      "exact_48_byte_window_matches": []
+    },
+    {
+      "symbol": "COMPASS_EVENT_BL_SITE",
+      "address": "0x444dfc",
+      "stock_2_2_9": "1df076fa",
+      "stock_2_2_10_same_address": "94e2b479",
+      "unchanged": false,
+      "exact_48_byte_window_matches": []
+    }
+  ],
+  "unchangedHookCount": 0,
+  "hookCount": 17,
+  "scope": "Expected-byte comparison of every named upstream hook site. Exact-window matches are evidence of relocation, not a reviewed address rebase. Does not certify ROM call ABIs or RAM layout.",
+  "cfwStatus": "blocked-address-rebase-required"
+}

@@ -316,6 +316,13 @@ const RELEASES = [
       "Enhanced Bluetooth connection stability and Teleprompt AI noise reduction; fixed Teleprompt Remote Control and earlier-version firmware update failures in specific scenarios.",
   },
   {
+    version: "2.2.10.10",
+    hash: "5d2abaf086ad7cc4709cad679b7b24d1",
+    sha256: "927879057685a4147c6ba1fe33e5f3740d3cc48f87141a9039204d94516e65b8",
+    size: 4493065,
+    notes: "Fixed duplicate Notifications in certain scenarios; bug fixes and UI improvements.",
+  },
+  {
     version: "2.2.9.22",
     hash: "fc250b05e98a9ff998b4b68f5f99f994",
     sha256: "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561",
