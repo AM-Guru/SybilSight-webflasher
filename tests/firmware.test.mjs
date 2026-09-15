@@ -23,6 +23,7 @@ import {
   REVIEWED_CFW_2_2_9_27,
   REVIEWED_CFW_2_2_9_28,
   REVIEWED_CFW_2_2_9_29,
+  REVIEWED_CFW_2_2_10_72,
   additiveBigEndianWordSum,
   classifyG2Firmware,
   crc32,
@@ -888,7 +889,7 @@ test("INFOC and INFO0 dumps never authorize a firmware write by themselves", () 
   assert.match(report.decision.interpretation, /not write authorization/i);
 });
 
-test("ships the complete official catalog plus the pinned 2.2.9.29 CFW", async () => {
+test("ships the complete official catalog plus the pinned 2.2.10.72 CFW", async () => {
   const catalog = JSON.parse(
     await readFile(
       new URL("../public/firmware-updates/source-files/index.json", import.meta.url),
@@ -908,8 +909,8 @@ test("ships the complete official catalog plus the pinned 2.2.9.29 CFW", async (
   assert.equal(latestOfficial.caseVersion, "1.2.57");
   const custom = catalog.releases.filter((release) => release.channel === "custom");
   assert.equal(custom.length, 1);
-  assert.equal(custom[0].id, "g2-custom-2.2.9.29");
-  assert.equal(custom[0].sha256, REVIEWED_CFW_2_2_9_29.sha256);
+  assert.equal(custom[0].id, "g2-custom-2.2.10.72");
+  assert.equal(custom[0].sha256, REVIEWED_CFW_2_2_10_72.sha256);
   assert.deepEqual(custom[0].bleComponentNames, ["ota/s200_firmware_ota.bin"]);
 });
 
@@ -928,101 +929,6 @@ test("ships the exact official G2 2.2.9.22 bundle and six components", async () 
   assert.equal(firmware.caseVersion, "1.2.57");
   assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
   assert.equal(firmware.templeFlashTarget.reportedVersion, "2.2.9.22");
-});
-
-test("accepts the exact local-only G2 2.2.9.28 CFW for bilateral BLE recovery", async () => {
-  const releaseDirectory = new URL(
-    "../public/firmware-updates/source-files/2.2.9.28/",
-    import.meta.url,
-  );
-  const firmware = await parseFirmwareInput(
-    await readFile(new URL("g2-2.2.9.28.bin", releaseDirectory)),
-    "g2-2.2.9.28.bin",
-  );
-  assert.equal(firmware.fileSha256, REVIEWED_CFW_2_2_9_28.sha256);
-  assert.equal(firmware.g2Version, "2.2.9.28");
-  assert.equal(firmware.provenance.trust, "reviewed-custom");
-  assert.equal(firmware.caseRecoveryEligible, false);
-  assert.equal(firmware.templeFlashEligible, true);
-  assert.equal(firmware.templeFlashTarget.localOnly, true);
-  assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
-});
-
-test("records that the latest g2flash 2.2.9 fix is installer-only", async () => {
-  const recipe = JSON.parse(
-    await readFile(
-      new URL(
-        "../public/firmware-updates/source-files/2.2.9.28/cfw_patches-2.2.9.28.json",
-        import.meta.url,
-      ),
-      "utf8",
-    ),
-  );
-  assert.equal(
-    recipe.g2flash_commit,
-    "7c6d3c15b0bac9ad7247163c12c53efeb101e503",
-  );
-  assert.equal(
-    recipe.source_provenance.upstream_2_2_9_compatibility_delta.patch_tree_unchanged,
-    true,
-  );
-  assert.match(
-    recipe.source_provenance.upstream_2_2_9_compatibility_delta.scope,
-    /authenticate every fresh CTRL connection.*no CTRL heartbeat/,
-  );
-});
-
-test("accepts the published AM-Guru 2.2.9.29 CFW with main-only BLE scope", async () => {
-  const releaseDirectory = new URL(
-    "../public/firmware-updates/source-files/2.2.9.29/",
-    import.meta.url,
-  );
-  const firmware = await parseFirmwareInput(
-    await readFile(new URL("g2-2.2.9.29.bin", releaseDirectory)),
-    "g2-2.2.9.29.bin",
-  );
-  assert.equal(firmware.fileSha256, REVIEWED_CFW_2_2_9_29.sha256);
-  assert.equal(firmware.g2Version, "2.2.9.29");
-  assert.equal(firmware.provenance.trust, "reviewed-custom");
-  assert.equal(firmware.caseRecoveryEligible, false);
-  assert.equal(firmware.templeFlashEligible, true);
-  assert.equal(firmware.templeFlashTarget.localOnly, undefined);
-  assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
-  assert.deepEqual(firmware.templeFlashTarget.bleComponentNames, [
-    "ota/s200_firmware_ota.bin",
-  ]);
-});
-
-test("pins the AM-Guru microphone rebase and keeps hardware activation fail-closed", async () => {
-  const recipe = JSON.parse(
-    await readFile(
-      new URL(
-        "../public/firmware-updates/source-files/2.2.9.29/cfw_patches-2.2.9.29.json",
-        import.meta.url,
-      ),
-      "utf8",
-    ),
-  );
-  assert.equal(recipe.g2flash_commit, "29a688666b7524e88833746040457029ac662c68");
-  assert.equal(recipe.source_provenance.downstream_contract.version, 17);
-  assert.equal(
-    recipe.source_provenance.amguru_microphone_delta.hardware_activation_default,
-    "disarmed",
-  );
-  assert.equal(
-    recipe.source_provenance.address_profile.app_memory.programmed_end_exclusive,
-    "0x007c8287",
-  );
-  assert.equal(
-    recipe.source_provenance.address_profile.app_memory.reviewed_ceiling_exclusive,
-    "0x007f0000",
-  );
-  assert.equal(
-    Object.keys(
-      recipe.source_provenance.address_profile.microphone_symbol_rebase.symbols,
-    ).length,
-    8,
-  );
 });
 
 test("ships the exact official G2 2.2.7.14 bundle and six components", async () => {

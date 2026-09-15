@@ -214,17 +214,6 @@ const HARDWARE_VALIDATED_TEMPLE_IMAGES = new Set([
   HARDWARE_VALIDATED_G2_2_2_6_10_SHA256,
 ]);
 const LOCAL_REVIEWED_TEMPLE_TARGETS = Object.freeze([
-  Object.freeze({
-    imageSha256: "dc4c4de98d183a98f8b2e98b91ab0c920b46a1ec30fcdf3d447637f2022df484",
-    mainSha256: "0f41679fdd38877b57e3d12f7aaddc36771fa51ecd7e118bf23dfa0eb1b47d74",
-    mainBytes: 3731795,
-    version: "2.2.9.28",
-    reportedVersion: "2.2.9.28",
-    label: "SybilSight CFW 2.2.9.28 (latest-upstream recovery candidate)",
-    hardwareValidated: false,
-    localOnly: true,
-    bleComponentNames: ["ota/s200_firmware_ota.bin"],
-  }),
 ]);
 const RELEASES = [
   {
@@ -323,57 +312,47 @@ const RELEASES = [
     notes: "Fixed duplicate Notifications in certain scenarios; bug fixes and UI improvements.",
   },
   {
+    id: "g2-custom-2.2.10.72",
+    displayName: "SybilSight CFW (2.2.10.72)",
+    version: "2.2.10.72",
+    internalVersion: "2.2.10.72",
+    reportedVersion: "2.2.10.72",
+    baseVersion: "2.2.10.10",
+    baseSha256: "927879057685a4147c6ba1fe33e5f3740d3cc48f87141a9039204d94516e65b8",
+    channel: "custom",
+    trust: "reviewed-custom",
+    hash: "4fe44f3e74db8319b80a466e20617ed0",
+    sha256: "f3bd05f9adaae94cbf2a693b7259a98c11454ba270fe09311bdfd38484d1161c",
+    size: 4540503,
+    fileName: "g2-2.2.10.72.bin",
+    preferLocalEvidence: true,
+    fallbacks: [[
+      "webflasher",
+      "work/cfw-2.2.10/candidate-2.2.10.72/g2-2.2.10.72.bin",
+    ]],
+    patchFallbackRoot: "webflasher",
+    patchFallback: "work/cfw-2.2.10/candidate-2.2.10.72/cfw_patches-2.2.10.72.json",
+    patchFileName: "cfw_patches-2.2.10.72.json",
+    patchCount: 48,
+    manifestFileName: "manifest.json",
+    capabilityMarker: "Faceclaw/3",
+    bleComponentNames: ["ota/s200_firmware_ota.bin"],
+    capabilities: [
+      "Four-microphone array with the RIGHT temple's channels relayed to the LEFT over the inter-temple link and delivered to the phone as one four-channel LC3 stream",
+      "Display path: persistent inflate stream, checked display gate, word-wise RLE fill, dirty-row partial panel refresh, pipelined delta frames",
+      "LE data length request on the phone link, relay notify back-pressure below the stock queue's silent-drop watermark, RS v3 telemetry",
+      "Full-panel and compressed custom display transports; wear, compass, ring-hold, diagnostics, texture cache, and atomic drawing extensions",
+    ],
+    notes:
+      "Built from stock 2.2.10.10 and g2flash d968c2c (Faceclaw firmware revision 3) with the reviewed 2.2.10.72 overlays; every ROM/RAM seam is stock-signature gated by the 2.2.10.10 address profile. Exercised on hardware over Bluetooth OTA (both temples, 2026-09-15); not yet case-USB validated.",
+  },
+  {
     version: "2.2.9.22",
     hash: "fc250b05e98a9ff998b4b68f5f99f994",
     sha256: "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561",
     size: 4476518,
     notes:
       "Changed the Menu gesture to tap then long press; allows more settings while features run, lets features continue with the display off, and supports ending features via Even AI.",
-  },
-  {
-    id: "g2-custom-2.2.9.29",
-    displayName: "SybilSight CFW (2.2.9.29)",
-    version: "2.2.9.29",
-    internalVersion: "2.2.9.29",
-    reportedVersion: "2.2.9.29",
-    baseVersion: "2.2.9.22",
-    baseSha256: "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561",
-    channel: "custom",
-    trust: "reviewed-custom",
-    hash: "8248aa5d92b268e3edb60a74db53a22b",
-    sha256: "960b964f2dfdfb17edf222f0ec3c5c44ca9ee502fe2a9873919e951a6c158ac5",
-    size: 4515465,
-    fileName: "g2-2.2.9.29.bin",
-    preferLocalEvidence: true,
-    fallbacks: [[
-      "webflasher",
-      "public/firmware-updates/source-files/2.2.9.29/g2-2.2.9.29.bin",
-    ]],
-    patchFallbackRoot: "webflasher",
-    patchFallback:
-      "public/firmware-updates/source-files/2.2.9.29/cfw_patches-2.2.9.29.json",
-    patchFileName: "cfw_patches-2.2.9.29.json",
-    patchCount: 40,
-    manifestFileName: "manifest.json",
-    capabilityMarker:
-      "EVENCFW/17 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10 cleanup11 texcache12 teximg13 texstr14 font15 diag7 multiseg8 rectcopy9 ringhold micctl micmc micraw",
-    g2flashCommit: "29a688666b7524e88833746040457029ac662c68",
-    g2flashPatchSha256:
-      "d86051d274f75af73297fa3448811461bd513cdac522a6b1666a384d233ec2d7",
-    g2flashRebasePatchSha256:
-      "1a0f3fa2f652b62dbd81b9e4c1e464627270b48e99847d4a4742c120799c6914",
-    directFramebufferCommits: [
-      "235a8b304447e330df6a0bce0351e3b6dc3d6f08",
-      "28aad42757837db14c08225884a7cc5201e08595",
-    ],
-    bleComponentNames: ["ota/s200_firmware_ota.bin"],
-    capabilities: [
-      "Full-panel and compressed custom display transports",
-      "Wear, compass, ring-hold, diagnostics, texture cache, and atomic drawing extensions",
-      "Microphone configuration, multichannel, and raw-frame protocols with hardware activation disarmed by default",
-    ],
-    notes:
-      "Built from the AM-Guru microphone-configurations patch branch on the pinned official G2 2.2.9.22 base. All hook bytes and rebased ROM call entries are stock-signature gated; microphone hardware activation remains explicit and the upstream-inferred audio ABIs remain pending hardware validation.",
   },
   {
     version: "2.2.8.4",
@@ -414,6 +393,11 @@ function archiveKeyFor(release) {
 function applyReviewedPatchSet(stock, patchSet) {
   let result = Buffer.from(stock);
   for (const [index, operation] of patchSet.patches.entries()) {
+    // 2.2.10 recipes (build_g2flash_cfw_2_2_10.py) serialize offsets as decimal strings.
+    const offset = Number(operation.offset);
+    if (!Number.isInteger(offset) || offset < 0) {
+      throw new Error(`CFW patch operation ${index + 1} has an invalid offset`);
+    }
     const oldBytes = Buffer.from(operation.old, "hex");
     const newBytes = Buffer.from(operation.new, "hex");
     if (
@@ -423,7 +407,7 @@ function applyReviewedPatchSet(stock, patchSet) {
       throw new Error(`CFW patch operation ${index + 1} contains malformed hex`);
     }
     if (oldBytes.length === 0) {
-      if (operation.offset !== result.length) {
+      if (offset !== result.length) {
         throw new Error(
           `CFW append operation ${index + 1} targets ${operation.offset}, expected ${result.length}`,
         );
@@ -434,14 +418,11 @@ function applyReviewedPatchSet(stock, patchSet) {
     if (oldBytes.length !== newBytes.length) {
       throw new Error(`CFW patch operation ${index + 1} changes an in-place length`);
     }
-    const found = result.subarray(
-      operation.offset,
-      operation.offset + oldBytes.length,
-    );
+    const found = result.subarray(offset, offset + oldBytes.length);
     if (!found.equals(oldBytes)) {
       throw new Error(`CFW patch operation ${index + 1} did not match the stock bytes`);
     }
-    newBytes.copy(result, operation.offset);
+    newBytes.copy(result, offset);
   }
   return result;
 }
@@ -597,7 +578,8 @@ async function saveRelease(root, release, fallbackRoots) {
       );
     }
     patchSet = JSON.parse(patchBytes.toString("utf8"));
-    const patchVersion = patchSet.release_version ?? patchSet.version;
+    const patchVersion =
+      patchSet.release_version ?? patchSet.version ?? patchSet.output_version;
     const patchBaseVersion =
       patchSet.vendor_base_version ?? patchSet.base_version;
     const baseRelease = RELEASES.find(
@@ -985,6 +967,7 @@ async function writeTempleFlashTargets(releases) {
         : `Stock Even Realities G2 ${release.version}`,
       // Only images with a recorded successful hardware transfer may claim this.
       hardwareValidated: HARDWARE_VALIDATED_TEMPLE_IMAGES.has(release.sha256),
+      ...(custom && release.baseVersion ? { baseVersion: release.baseVersion } : {}),
       ...(custom && release.bleComponentNames
         ? { bleComponentNames: release.bleComponentNames }
         : {}),
@@ -999,6 +982,9 @@ async function writeTempleFlashTargets(releases) {
         `    mainBytes: ${target.mainBytes},\n` +
         `    version: ${JSON.stringify(target.version)},\n` +
         `    reportedVersion: ${JSON.stringify(target.reportedVersion)},\n` +
+        (target.baseVersion
+          ? `    baseVersion: ${JSON.stringify(target.baseVersion)},\n`
+          : "") +
         `    label: ${JSON.stringify(target.label)},\n` +
         `    hardwareValidated: ${target.hardwareValidated},\n` +
         (target.localOnly ? `    localOnly: true,\n` : "") +

@@ -99,6 +99,7 @@ import {
   assertStableMutationRuntime,
   assertCurrentWebFlasherRelease,
 } from "./lib/releaseIntegrity.js";
+
 import {
   IDLE_WAKE_LOCK_STATUS,
   MutationWakeLock,
@@ -107,11 +108,17 @@ import {
   G2BleOtaSession,
   assertPinnedG2BleBundle,
   findAuthorizedG2BleDevice,
+  g2BleSelectedHandleUnreachable,
+  applyG2BleReselectionProof,
+  g2BleRouteProvenOverBluetooth,
+  proveG2BleTempleByReselection,
+  flashG2BleSessionsSequentially,
   flashG2BleSessionsConcurrently,
   g2BleDeviceSide,
   g2BleRoutesAwaitingCaseVerification,
   G2_KNOWN_NAME_TOKENS,
   g2BleTargetReportedVersion,
+  g2BleExpectedFirmwareRevisions,
   g2BleTargetVersionProof,
   g2NameToken,
   probeAuthorizedG2BleDevices,
@@ -131,6 +138,12 @@ import {
   R1_UNLOCK_REVIEW,
   unlockR1Bootloader,
 } from "./lib/r1Unlock.js";
+
+const G2_BLE_VALIDATION_SIDE = ["left", "right"].includes(
+  import.meta.env.VITE_G2_BLE_VALIDATION_SIDE,
+)
+  ? import.meta.env.VITE_G2_BLE_VALIDATION_SIDE
+  : null;
 
 const EMPTY_PROGRESS = {
   fraction: 0,
@@ -230,6 +243,7 @@ const OPERATION_LABELS = Object.freeze({
   recheck: "Reset and recheck",
   "temple-flash": "Restore Smart Glasses",
   "ble-temple-flash": "Restore Smart Glasses over Bluetooth",
+  "ble-temple-proof": "Prove a rebooted temple over Bluetooth",
   "bluetooth-probe": "Check Bluetooth Application mode",
   "automatic-apply": "Recover Smart Glasses over USB",
   "automatic-plan": "Preview Smart Glasses USB transfer",
@@ -941,6 +955,8 @@ function BluetoothRecoveryCard({
   selectedRelease,
   bleResults,
   bleStatus,
+  awaitingReselection = [],
+  onProveTemple = null,
 }) {
   const advanced = variant === "advanced";
   const primary = variant === "primary";
@@ -1045,6 +1061,22 @@ function BluetoothRecoveryCard({
             : "selected firmware"}{" "}
           over Bluetooth
         </Button>
+        {awaitingReselection.length && onProveTemple ? (
+          <div className="ble-device-buttons ble-reselect-proof">
+            {awaitingReselection.map((side) => (
+              <Button
+                key={`prove-${side}`}
+                tone="secondary"
+                onClick={() => onProveTemple(side)}
+                busy={operation === "ble-temple-proof"}
+                disabled={!directBleSupported || Boolean(operation)}
+              >
+                Re-select {side === "left" ? "LEFT" : "RIGHT"} temple to prove
+                its update
+              </Button>
+            ))}
+          </div>
+        ) : null}
         <div className="automatic-status" role="status">
           <span
             className={cx(
@@ -1650,6 +1682,26 @@ function App() {
     "Choose firmware, disconnect the Even app, then pair the explicitly labeled Left and Right temples.",
   );
   const [bleResults, setBleResults] = useState(null);
+  // Routes proven over Bluetooth (post-END reconnect or chooser re-selection),
+  // keyed by image hash. Survives the bleResults reset that a temple
+  // re-selection performs, so a repeat Update after one side failed retains
+  // the proven side instead of transferring the same image to it again.
+  const provenBleRoutesRef = useRef({ imageSha256: null, routes: {} });
+  const rememberProvenBleRoutes = (imageSha256, routes) => {
+    const proven = Object.fromEntries(
+      ["left", "right"]
+        .filter((side) => g2BleRouteProvenOverBluetooth(routes?.[side]))
+        .map((side) => [side, routes[side]]),
+    );
+    if (provenBleRoutesRef.current.imageSha256 !== imageSha256) {
+      provenBleRoutesRef.current = { imageSha256, routes: proven };
+      return;
+    }
+    provenBleRoutesRef.current = {
+      imageSha256,
+      routes: { ...provenBleRoutesRef.current.routes, ...proven },
+    };
+  };
   const [bleRecoveryHint, setBleRecoveryHint] = useState(null);
   const [bleRouteProgress, setBleRouteProgress] = useState(
     EMPTY_BLE_ROUTE_PROGRESS,
@@ -3216,9 +3268,15 @@ function App() {
     const marker = side === "left" ? "_L_" : "_R_";
     try {
       const rememberedName = readRememberedTempleNames()[side];
-      let device = await findAuthorizedG2BleDevice(side, {
-        expectedName: rememberedName,
-      });
+      // A remembered Web Bluetooth handle can survive a temple reboot while
+      // CoreBluetooth can no longer reconnect it (Chrome reports the opaque
+      // "Unsupported device" error). Controlled validation builds force the
+      // chooser so the selected handle is tied to a current advertisement.
+      let device = G2_BLE_VALIDATION_SIDE
+        ? null
+        : await findAuthorizedG2BleDevice(side, {
+            expectedName: rememberedName,
+          });
       if (device) {
         setBleStatus(
           `${side}: reusing Chrome's previously authorized ${device.name} handle; no chooser is required.`,
@@ -3318,6 +3376,130 @@ function App() {
     }
   };
 
+  // The chooser is the one Bluetooth scan a page can always start. After a
+  // transfer whose post-END reconnect died on Chrome's stale device cache, a
+  // fresh pick refreshes that cache, the connect proves the rebooted image
+  // answers GATT, and the Firmware Revision string reports the running base
+  // version - Bluetooth-only proof, no Case cable, for exactly the case the
+  // Case cannot serve (a faulted temple contact).
+  const proveBleTempleByReselection = async (side) => {
+    if (operation) return;
+    if (
+      !["awaiting_case_verification", "failed_or_partial"].includes(
+        bleResults?.outcome,
+      )
+    ) {
+      return;
+    }
+    // A reviewed CFW temple reports its stock base version (bleResults.version)
+    // in Device Information, while the Case reports the package identity
+    // (bleResults.reportedVersion); either string proves the flashed release.
+    const expectedFirmwareRevisions = [
+      ...new Set(
+        [
+          ...(bleResults.expectedFirmwareRevisions ?? []),
+          bleResults.version,
+          bleResults.reportedVersion,
+        ].filter(Boolean),
+      ),
+    ];
+    const expectedFirmwareRevision = bleResults.reportedVersion ?? null;
+    await run("ble-temple-proof", async () => {
+      setBleStatus(
+        `Waiting for Chrome's Bluetooth chooser · re-select the ${side} temple so its rebooted image can be proven.`,
+      );
+      addLog(
+        `${side}: opening the chooser to prove the rebooted temple. A fresh pick refreshes Chrome's device cache; no firmware bytes will be sent.`,
+      );
+      const proof = await proveG2BleTempleByReselection(side, {
+        expectedName: readRememberedTempleNames()[side],
+        tokens: readObservedNameTokens(),
+        expectedFirmwareRevisions,
+        log: addLog,
+      });
+      rememberNameToken(proof.deviceName);
+      rememberTempleName(side, proof.deviceName);
+      setBleDevices((current) => ({ ...current, [side]: proof.device }));
+      if (proof.matchesExpected === false) {
+        throw new Error(
+          `${side}: the re-selected temple ${JSON.stringify(proof.deviceName)} answered GATT but reports firmware ${JSON.stringify(proof.firmwareRevision)} instead of the expected ${expectedFirmwareRevisions.map((value) => JSON.stringify(value)).join(" or ")}. The transfer's END was verified, so leave the temple powered and re-select it again once it finishes applying; do not replay firmware.`,
+        );
+      }
+      const routes = applyG2BleReselectionProof(bleResults.routes, side, proof);
+      const remaining = g2BleRoutesAwaitingCaseVerification(routes);
+      // A side that failed before transferring keeps the whole result partial;
+      // proving the other side records evidence for it without claiming success.
+      const allTransferred = ["left", "right"].every(
+        (each) => routes[each]?.skipped || routes[each]?.outcome === "success",
+      );
+      const finalized = {
+        ...bleResults,
+        routes,
+        outcome: remaining.length
+          ? allTransferred
+            ? "awaiting_case_verification"
+            : "failed_or_partial"
+          : allTransferred
+            ? "success"
+            : "failed_or_partial",
+      };
+      rememberProvenBleRoutes(bleResults.imageSha256, routes);
+      setBleResults(finalized);
+      setBleRouteProgress((current) => ({
+        ...current,
+        [side]: {
+          ...current[side],
+          fraction: 1,
+          percent: 100,
+          status: "verified",
+          detail: proof.firmwareRevision
+            ? `${side}: rebooted image proven over Bluetooth · reports ${proof.firmwareRevision}`
+            : `${side}: rebooted image answered a fresh GATT connection`,
+        },
+      }));
+      addLog(
+        proof.firmwareRevision
+          ? `${side}: fresh chooser re-selection reached the rebooted temple; Device Information reports firmware ${proof.firmwareRevision}${proof.hardwareRevision ? ` on hardware ${proof.hardwareRevision}` : ""}${proof.matchesExpected ? `, matching the flashed release (${expectedFirmwareRevisions.join(" / ")})` : ""}.`
+          : `${side}: fresh chooser re-selection reached the rebooted temple over GATT. It publishes no readable firmware revision, so the version is proven by the verified END only.`,
+        "success",
+      );
+      if (!allTransferred) {
+        const failedSides = ["left", "right"].filter(
+          (each) => !(routes[each]?.skipped || routes[each]?.outcome === "success"),
+        );
+        setBleStatus(
+          `${side} proven over Bluetooth and retained. Select ${failedSides.join(" + ")} again and press Update; only that side will be transferred.`,
+        );
+      } else if (remaining.length) {
+        setBleStatus(
+          `${side} proven over Bluetooth. Re-select ${remaining.join(" + ")} to finish, or obtain Case proof.`,
+        );
+      } else {
+        setUsbRecoveryRequested(false);
+        setBleStatus(
+          `Bluetooth update complete · both temples proven by fresh re-selection${expectedFirmwareRevision ? ` at reported G2 ${expectedFirmwareRevision}` : ""}.`,
+        );
+        addLog(
+          `Direct Bluetooth restore completed · both routes were re-selected after their reboot and answered fresh GATT connections; no Case proof was required.`,
+          "success",
+        );
+        addLog(
+          formatBluetoothRecoveryTranscript(finalized, {
+            phase: "bluetooth-smart-glasses-recovery-reselection-verified",
+            buildLabel: WEBFLASHER_BUILD_LABEL,
+          }),
+          "evidence",
+        );
+      }
+      setSessionProgress(
+        1,
+        remaining.length || !allTransferred
+          ? `${side} proven over Bluetooth`
+          : "Bluetooth update complete",
+      );
+    });
+  };
+
   const flashBleTempleFirmware = async ({ bypassReadyConfirmation = false } = {}) => {
     const release = selectedBleRelease;
     if (
@@ -3337,11 +3519,15 @@ function App() {
           bleResults?.imageSha256 === release.sha256
             ? { ...(bleResults.routes ?? {}) }
             : {};
+        // Visible to the failure path below, which records evidence after the
+        // try block's own bindings are gone.
+        let preparedForEvidence = null;
         try {
           setBleStatus("Loading and re-validating the pinned Bluetooth package…");
           const prepared = release.localOnly
             ? firmware
             : await fetchCatalogFirmware(release);
+          preparedForEvidence = prepared;
           if (!prepared || prepared.fileSha256 !== release.sha256) {
             throw new Error(
               "The selected local Bluetooth package no longer matches its compiled-in release pin. Reload and validate the exact file again.",
@@ -3393,6 +3579,56 @@ function App() {
           const routesToFlash = [];
           for (const side of ["left", "right"]) {
             const device = bleDevices[side];
+            if (G2_BLE_VALIDATION_SIDE && side !== G2_BLE_VALIDATION_SIDE) {
+              completedRoutes[side] = {
+                side,
+                deviceId: device.id,
+                deviceName: device.name,
+                imageSha256: prepared.fileSha256,
+                version: prepared.g2Version,
+                reportedVersion: targetReportedVersion,
+                components: [],
+                blockAcks: 0,
+                verifiedBy: "local-single-side-validation-control",
+                skipped: true,
+                outcome: "success",
+              };
+              setRouteProgress(
+                side,
+                1,
+                `${side}: deliberately retained as the unchanged validation control`,
+                "retained",
+              );
+              addLog(
+                `${side}: local single-side validation retained this temple unchanged while ${G2_BLE_VALIDATION_SIDE} receives the candidate firmware.`,
+                "info",
+              );
+              continue;
+            }
+            const priorProven =
+              provenBleRoutesRef.current.imageSha256 === prepared.fileSha256
+                ? provenBleRoutesRef.current.routes[side]
+                : null;
+            if (priorProven && priorProven.deviceId === device.id) {
+              completedRoutes[side] = {
+                ...priorProven,
+                skipped: true,
+                retainedFrom: "previous-bluetooth-session",
+                verifiedBy:
+                  priorProven.verifiedBy ?? "fresh-post-end-reconnect",
+              };
+              setRouteProgress(
+                side,
+                1,
+                `${side}: retained · this image was transferred and proven over Bluetooth in the previous session`,
+                "retained",
+              );
+              addLog(
+                `${side}: retaining the previous Bluetooth session's verified transfer of ${prepared.fileSha256.slice(0, 16)}… (${priorProven.verifiedBy ?? "post-END reconnect"}); the image is not sent to this temple again.`,
+                "info",
+              );
+              continue;
+            }
             if (
               g2BleTargetVersionProof(
                 pogoResults[side],
@@ -3461,12 +3697,12 @@ function App() {
             const simultaneous = routesToFlash.length === 2;
             setBleStatus(
               simultaneous
-                ? "Flashing Left + Right simultaneously over independent Bluetooth sessions · keep both temples powered nearby and this WebFlasher tab in front."
+                ? "Holding both authenticated Bluetooth links, then flashing Right, then Left · keep both temples powered nearby and this WebFlasher tab in front."
                 : `Flashing ${flashingSides[0]} over Bluetooth; the other side is already proven · keep this WebFlasher tab in front.`,
             );
             addLog(
               simultaneous
-                ? "left + right: starting simultaneous authenticated Bluetooth OTA sessions. Each side retains independent ACK, retry, reconnect, and completion evidence."
+                ? "left + right: authenticating both Bluetooth links before any transfer, then flashing right followed by left. The pair does not answer an authentication on one temple while the other is receiving OTA data, so the sessions are not run simultaneously. Each side retains independent ACK, retry, reconnect, and completion evidence."
                 : `${flashingSides[0]}: starting the only Bluetooth OTA session still required.`,
               "info",
             );
@@ -3490,11 +3726,20 @@ function App() {
               new RegExp(`^${side}:\\s*`),
               "",
             );
-          const routeOutcomes = await flashG2BleSessionsConcurrently(
+          const routeOutcomes = await flashG2BleSessionsSequentially(
             sessionEntries,
             prepared,
             {
               flashOptions: bleFlashOptions,
+              order: ["right", "left"],
+              onLinkHeld: ({ side }) => {
+                setRouteProgress(
+                  side,
+                  0,
+                  `${side}: authenticated link held; waiting for its turn`,
+                  "connecting",
+                );
+              },
               onSettled: ({ side, status, value, reason }) => {
                 if (status === "fulfilled") {
                   const postUpdate = value?.components?.at(-1)?.postUpdate;
@@ -3643,6 +3888,22 @@ function App() {
               );
               continue;
             }
+            if (g2BleSelectedHandleUnreachable(outcome.reason)) {
+              // Every bounded connect ended in "no longer in range": the saved
+              // Chrome handle is dead (the temple slept, rebooted, or rotated its
+              // address). A solo retry on the same handle cannot succeed; hand
+              // the side back to the chooser instead.
+              addLog(
+                `${side}: Chrome's saved handle for this temple can no longer reach it, so the bounded solo retry is skipped. Wake the ${side} temple (tap its touchpad or dock and undock it) and select it again from the chooser; the other side's result is retained.`,
+                "warn",
+              );
+              setBleDevices((current) => ({ ...current, [side]: null }));
+              setBleRecoveryHint({
+                side,
+                reason: "its saved Bluetooth handle no longer reaches the temple; reselect it from the chooser",
+              });
+              continue;
+            }
             addLog(
               `${side}: starting one bounded solo Bluetooth retry${
                 routeOutcomes.length === 2
@@ -3738,12 +3999,16 @@ function App() {
             const failureSummary = failedOutcomes
               .map(
                 ({ side, reason, soloRetry }) =>
-                  `${side}${soloRetry ? " (including one bounded solo retry)" : ""}: ${sideFailureDetail(side, reason)}`,
+                  `${side}${soloRetry ? " (including one bounded solo retry)" : ""}: ${sideFailureDetail(side, reason)}${
+                    g2BleSelectedHandleUnreachable(reason)
+                      ? ` Wake the ${side} temple and select it again; the completed side is retained.`
+                      : ""
+                  }`,
               )
               .join("; ");
             const sessionSummary =
               routeOutcomes.length === 2
-                ? "The simultaneous Bluetooth sessions finished"
+                ? "The paired Bluetooth sessions finished"
                 : "The Bluetooth session finished";
             throw new Error(
               `${sessionSummary} with ${failedOutcomes.length} failed side${failedOutcomes.length === 1 ? "" : "s"}. ${failureSummary}`,
@@ -3756,11 +4021,13 @@ function App() {
             imageSha256: prepared.fileSha256,
             version: prepared.g2Version,
             reportedVersion: targetReportedVersion,
+            expectedFirmwareRevisions: g2BleExpectedFirmwareRevisions(prepared),
             routes: completedRoutes,
             outcome: awaitingCaseVerification
               ? "awaiting_case_verification"
               : "success",
           };
+          rememberProvenBleRoutes(prepared.fileSha256, completedRoutes);
           setBleResults(result);
           setBleReady(false);
           const retainedSides = ["right", "left"].filter(
@@ -3771,7 +4038,7 @@ function App() {
           );
           const routeSummary = [
             retainedSides.length
-              ? `${retainedSides.join(" + ")} retained from fresh target-version proof`
+              ? `${retainedSides.join(" + ")} retained from ${retainedSides.map((side) => completedRoutes[side]?.retainedFrom === "previous-bluetooth-session" ? "the previous Bluetooth session's proof" : "fresh target-version proof").join(" / ")}`
               : null,
             transferredSides.length
               ? `${transferredSides.join(" + ")} verified the selected Bluetooth component set`
@@ -3786,24 +4053,39 @@ function App() {
               `Bluetooth transfer accepted; awaiting Case proof for ${awaitingCaseSides.join(" + ")}`,
             );
             setBleStatus(
-              `Bluetooth transfer accepted, but ${awaitingCaseSides.join(" + ")} did not complete a fresh reboot reconnect. Recovery is pending: re-seat both temples, select the Case, and run the no-flash recovery or Smart Glasses analysis.`,
+              `Bluetooth transfer accepted, but ${awaitingCaseSides.join(" + ")} did not answer a reconnect through Chrome's saved handle after rebooting. Re-select ${awaitingCaseSides.join(" and ")} from the chooser to prove the update over Bluetooth, or re-seat both temples in the Case and run the no-flash recovery.`,
             );
             addLog(
-              `Direct Bluetooth transfer is not yet a completed recovery · ${awaitingCaseSides.join(" + ")} exhausted the fresh post-END reconnect. Re-seat both temples and obtain checksum-valid Case proof of reported G2 ${targetReportedVersion}; firmware will not be replayed.`,
+              `Direct Bluetooth transfer is not yet a completed recovery · ${awaitingCaseSides.join(" + ")} exhausted the fresh post-END reconnect. Re-select the temple from the chooser (a fresh scan refreshes Chrome's device cache) or obtain checksum-valid Case proof of reported G2 ${targetReportedVersion}; firmware will not be replayed.`,
               "warn",
             );
           } else {
-            setSessionProgress(
-              1,
-              "Both temples proven at target by transfer or fresh Case version",
-            );
-            setBleStatus(
-              `Bluetooth update complete on right + left · ${routeSummary}. Both routes have post-reboot Application proof.`,
-            );
-            addLog(
-              `Direct Bluetooth restore completed · ${routeSummary}. Both routes have fresh post-reboot Application proof for package ${prepared.g2Version}.`,
-              "success",
-            );
+            if (G2_BLE_VALIDATION_SIDE) {
+              const controlSide = G2_BLE_VALIDATION_SIDE === "left" ? "right" : "left";
+              setSessionProgress(
+                1,
+                `${G2_BLE_VALIDATION_SIDE} candidate verified; ${controlSide} deliberately unchanged`,
+              );
+              setBleStatus(
+                `Bluetooth validation update complete on ${G2_BLE_VALIDATION_SIDE}; ${controlSide} remains deliberately unchanged as the control.`,
+              );
+              addLog(
+                `Local single-side Bluetooth validation completed · ${G2_BLE_VALIDATION_SIDE} verified package ${prepared.g2Version}; ${controlSide} was not rewritten.`,
+                "success",
+              );
+            } else {
+              setSessionProgress(
+                1,
+                "Both temples proven at target by transfer or fresh Case version",
+              );
+              setBleStatus(
+                `Bluetooth update complete on right + left · ${routeSummary}. Both routes have post-reboot Application proof.`,
+              );
+              addLog(
+                `Direct Bluetooth restore completed · ${routeSummary}. Both routes have fresh post-reboot Application proof for package ${prepared.g2Version}.`,
+                "success",
+              );
+            }
           }
           addLog(
             formatBluetoothRecoveryTranscript(result, {
@@ -3822,9 +4104,14 @@ function App() {
           });
           return result;
         } catch (caught) {
+          rememberProvenBleRoutes(release.sha256, completedRoutes);
           const failureResult = {
             imageSha256: release.sha256,
             version: release.version,
+            reportedVersion: g2BleTargetReportedVersion(release),
+            expectedFirmwareRevisions: g2BleExpectedFirmwareRevisions(
+              preparedForEvidence,
+            ),
             routes: { ...completedRoutes },
             outcome: "failed_or_partial",
             error: caught?.message || String(caught),
@@ -5092,6 +5379,10 @@ function App() {
     bleResults?.outcome === "failed_or_partial";
   const bluetoothUpdateAwaitingCase =
     bleResults?.outcome === "awaiting_case_verification";
+  const bluetoothAwaitingReselection =
+    bluetoothUpdateAwaitingCase || bluetoothUpdateFailed
+      ? g2BleRoutesAwaitingCaseVerification(bleResults.routes)
+      : [];
   const advancedUsbRecoveryVisible =
     !directBleSupported ||
     bluetoothUpdateFailed ||
@@ -5517,6 +5808,8 @@ function App() {
                 selectedRelease={selectedBleRelease}
                 bleResults={bleResults}
                 bleStatus={bleStatus}
+                awaitingReselection={bluetoothAwaitingReselection}
+                onProveTemple={proveBleTempleByReselection}
               />
             ) : null}
 
@@ -6765,6 +7058,8 @@ function App() {
             selectedRelease={selectedBleRelease}
             bleResults={bleResults}
             bleStatus={bleStatus}
+            awaitingReselection={bluetoothAwaitingReselection}
+            onProveTemple={proveBleTempleByReselection}
           />
           <div className="recovery-target-heading">
             <div>

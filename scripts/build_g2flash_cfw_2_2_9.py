@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Build SybilSight G2 CFW 2.2.9.29 from official 2.2.9.22.
+"""Build SybilSight G2 CFW 2.2.9.43 from official 2.2.9.22.
 
 The injected feature code is compiled from the pinned g2flash-amguru checkout after
 applying the reviewed 2.2.9 address profile in memory.  Every live-code edit is
-expected-byte gated, all package/runtime identities are advanced to 2.2.9.29,
+expected-byte gated, all package/runtime identities are advanced to 2.2.9.43,
 and the emitted JSON recipe reproduces the output from the stock CDN image.
 """
 
@@ -22,14 +22,14 @@ import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE_VERSION = "2.2.9.22"
-OUTPUT_VERSION = "2.2.9.29"
+OUTPUT_VERSION = "2.2.9.43"
 BASE_SHA256 = "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561"
-G2FLASH_COMMIT = "29a688666b7524e88833746040457029ac662c68"
-G2FLASH_PREVIOUS_CFW_COMMIT = "469d78e332040f6ed77e978df496d3e7d427b4f2"
+G2FLASH_COMMIT = "21adda0a044f7ff0e98408529b29478cf5e13cad"
+G2FLASH_PREVIOUS_CFW_COMMIT = "cd8fa9ade1fb332eb736f2d8fdded106c85139aa"
 G2FLASH_2_2_9_COMPAT_COMMIT = "7c6d3c15b0bac9ad7247163c12c53efeb101e503"
-G2FLASH_RECIPE_SHA256 = "d86051d274f75af73297fa3448811461bd513cdac522a6b1666a384d233ec2d7"
+G2FLASH_RECIPE_SHA256 = "1df1b86c54c8cf69db2393017aaa37199c31b0d50b6afae0f85ff3e2e5ff472e"
 CAPABILITY_MARKER = (
-    "EVENCFW/17 img576 img640 imgz rle wakelease directfb fbguard "
+    "EVENCFW/31 img576 img640 imgz rle wakelease directfb fbguard "
     "wearnotify compass10 cleanup11 texcache12 teximg13 texstr14 font15 "
     "diag7 multiseg8 rectcopy9 ringhold micctl micmc micraw"
 )
@@ -164,14 +164,21 @@ ADDRESS_PROFILE = {
 # a 2.2.9.22 stock function entry, identified independently from retained
 # strings, xrefs, neighboring function topology, and exact stock prologues.
 MIC_ADDRESS_PROFILE = {
-    "0x0058F69B": "0x005A8CA3",  # production_codec_mic_func_init
-    "0x0058F74B": "0x005A8D53",  # production_codec_mic_func_deinit
-    "0x0058F7B1": "0x005A8DB9",  # production_pdm_mic_func_init
-    "0x0058F807": "0x005A8E0F",  # production_pdm_mic_func_deinit
-    "0x0057AB79": "0x00593371",  # SVC_PcmAppRegister (ABI inferred upstream)
-    "0x0057ACD1": "0x005934C9",  # SVC_PcmAppUnregister (ABI inferred upstream)
-    "0x00591BFD": "0x005AB2F1",  # service_algo_process (ABI inferred upstream)
+    "0x0058F69B": "0x005A8CA3",  # production codec microphone init
+    "0x0058F74B": "0x005A8D53",  # production codec microphone deinit
+    "0x0058F7B1": "0x005A8DB9",  # production PDM microphone init
+    "0x0058F807": "0x005A8E0F",  # production PDM microphone deinit
+    "0x0058F4E5": "0x005A8AED",  # production stereo PCM callback
+    "0x0058F5E1": "0x005A8BE9",  # production single-channel PCM callback
+    "0x0057AB79": "0x00593371",  # SVC_PcmAppRegister (ABI disassembly-confirmed)
+    "0x0057ACD1": "0x005934C9",  # SVC_PcmAppUnregister (ABI disassembly-confirmed)
+    "0x0053CA11": "0x00553D39",  # codec microphone frontend control
+    "0x0053CA33": "0x00553D5B",  # PDM microphone frontend control
+    "0x00591BFD": "0x005AB2F1",  # service_algo_process (ABI disassembly-confirmed)
     "0x00475D79": "0x0047DA6D",  # streaming notify (ABI inferred upstream)
+    "0x0054F381": "0x005681A9",  # AUDM_appAcquire (ABI disassembly-confirmed)
+    "0x0054F50F": "0x00568337",  # AUDM_appRelease (ABI disassembly-confirmed)
+    "0x20074180": "0x20076380",  # stock audio-manager ownership table
 }
 ADDRESS_PROFILE = {**ADDRESS_PROFILE, **MIC_ADDRESS_PROFILE}
 
@@ -225,8 +232,16 @@ STOCK_RUNTIME_SIGNATURES = (
     (0x005A8E0E, "1cb50020aaf7a2ff012140f20b10eaf7", "PDM microphone deinit entry"),
     (0x00593370, "2de9f84384b004000d0090462800c0b2", "PCM application register entry"),
     (0x005934C8, "f8b584b007000c000c25dff8d8662000", "PCM application unregister entry"),
+    (0x00553D38, "1fb5694600220023002481e81c00", "codec microphone frontend control entry"),
+    (0x00553D5A, "1fb5694600220023002481e81c00", "PDM microphone frontend control entry"),
+    (0x00593924, "f8b588b004002000c0b2022858da", "PCM capture-mode start entry"),
+    (0x00593B0A, "70b504002000c0b2022818da0c25", "PCM capture-mode stop entry"),
+    (0x005A8AEC, "2de9f041", "production stereo callback entry"),
+    (0x005A8BE8, "f8b5e6b0", "production single callback entry"),
     (0x005AB2F0, "f8b504000d0016001f0029002000fff7", "service audio algorithm process entry"),
     (0x0047DA6C, "3eb504000d00cdf70ff900281ed0bff7", "streaming audio notify entry"),
+    (0x005681A8, "1fb50400f4f616ff022801d00020", "audio-manager acquire entry"),
+    (0x00568336, "1fb50400f4f64ffe022801d00020", "audio-manager release entry"),
 )
 
 CFW_RESERVED_BASE = 0x2029F4A8
@@ -237,6 +252,12 @@ def validate_microphone_address_profile() -> None:
     for old_text, new_text in MIC_ADDRESS_PROFILE.items():
         old = int(old_text, 16)
         new = int(new_text, 16)
+        if old >= 0x20000000 or new >= 0x20000000:
+            if old % 4 or new % 4:
+                raise BuildError(
+                    f"microphone data address {old_text}->{new_text} is not word aligned"
+                )
+            continue
         if (old & 1) != 1 or (new & 1) != 1:
             raise BuildError(
                 f"microphone call target {old_text}->{new_text} is not a Thumb pointer"
@@ -386,7 +407,7 @@ def build(checkout: Path) -> tuple[bytes, dict]:
     marker_bytes = CAPABILITY_MARKER.encode("ascii")
     if protobuf_varint(len(marker_bytes)) != b"\xb6\x01":
         raise BuildError(
-            "contract-17 marker no longer has its reviewed 182-byte protobuf length"
+            "capability marker no longer has its reviewed 182-byte protobuf length"
         )
     base = BASE.read_bytes()
     if sha256(base) != BASE_SHA256:
@@ -626,7 +647,18 @@ def build(checkout: Path) -> tuple[bytes, dict]:
                 "hardware_activation_default": "disarmed",
                 "abi_status": (
                     "call targets are statically rebased and stock-signature gated; "
-                    "upstream marks register/unregister/process/notify ABIs as inferred"
+                    "register/unregister/callback/process ABIs are confirmed from the "
+                    "recovered implementation and 2.2.9.22 disassembly; right codec "
+                    "capture and bilateral status are hardware-confirmed; the complete "
+                    "production initializers establish extraction state and contract 31 "
+                    "borrows the role-gated audio manager on live role 2 (left), while "
+                    "role 1 explicitly powers the selected rather than complementary "
+                    "source route; it also "
+                    "reports bounded enqueue diagnostics, packetizes complete raw "
+                    "callbacks losslessly inside the stock streaming envelope, and "
+                    "sizes settings-read status storage to the complete 32-byte body, "
+                    "and splits the left status diagnostics into a 15-byte MD "
+                    "continuation below that lens's 21-byte notify delivery ceiling"
                 ),
             },
             "g2flash_rebase_patch_sha256": rebase_patch_sha256,
@@ -635,10 +667,10 @@ def build(checkout: Path) -> tuple[bytes, dict]:
             "direct_framebuffer_commits": direct_framebuffer_commits,
             "vendor_base_sha256": BASE_SHA256,
             "address_profile": profile,
-            "hardware_validation": "not-yet-hardware-flashed",
+            "hardware_validation": "pending-live-validation",
             "downstream_contract": {
-                "version": 17,
-                "change": "Canonically encodes the 182-byte field-100 marker while advertising upstream microphone control, multichannel, and raw-frame capabilities plus modes 7, 8, and 9 and ring forwarding; microphone hardware remains explicitly gated and mode 5 remains unadvertised.",
+                "version": 31,
+                "change": "Corrects the recovered audio-manager owner to live role 2 (left) and explicitly powers the selected source on role 1 (right), eliminating the no-op manager call and complementary-route mismatch that armed without callbacks.",
                 "upstream_marker": UPSTREAM_CAPABILITY_MARKER,
             },
         },

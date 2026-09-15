@@ -22,7 +22,7 @@
   "patchSha256": null,
   "manifestFile": null,
   "manifestSha256": null,
-  "archivedAt": "2026-09-08T16:34:56.189Z",
+  "archivedAt": "2026-09-15T21:31:16.143Z",
   "mainFirmware": {
     "runBase": "0x00438000",
     "installedImageSize": 3713852,

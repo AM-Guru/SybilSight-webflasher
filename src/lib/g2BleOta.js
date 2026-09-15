@@ -74,6 +74,15 @@ export const G2_BLE_BEGIN_ATTEMPTS = 3;
 // post-update window at ~130 s: the 10 s settle plus 24 attempts × 5 s.
 export const G2_BLE_POST_UPDATE_RECONNECT_INTERVAL_MS = 5000;
 export const G2_BLE_POST_UPDATE_RECONNECT_ATTEMPTS = 24;
+// Chrome answers "Bluetooth Device is no longer in range." for a remembered
+// handle until a scan observes a fresh advertisement, and a page without
+// watchAdvertisements() cannot start that scan. A temple that rebooted into its
+// new image therefore looks unreachable through its saved handle no matter how
+// long the loop waits (every run to date exhausted all 24 attempts this way),
+// so after this many consecutive stale-cache refusals the post-update reconnect
+// stops and asks for a chooser re-selection, which is the one scan a page can
+// still trigger.
+export const G2_BLE_POST_UPDATE_STALE_HANDLE_ATTEMPTS = 4;
 export const G2_BLE_VISIBILITY_RESUME_SETTLE_MS = 250;
 // CoreBluetooth/Web Bluetooth resolves a write-without-response call before
 // the radio has necessarily drained the native transmit queue. Space the 232 B
@@ -268,6 +277,250 @@ export function isG2BleConnectionLoss(error, device = null) {
   }
   return false;
 }
+
+/// True when a side failed because Chrome's saved device handle can no longer
+/// reach the temple at all (every bounded connect attempt ended in a
+/// connection-loss class error such as "Bluetooth Device is no longer in
+/// range"). A temple in that state re-advertises under a new identity or after a
+/// wake, so only a fresh chooser selection can recover it; reusing the handle for
+/// a solo retry is wasted radio time.
+export function g2BleSelectedHandleUnreachable(error) {
+  const seen = new Set();
+  let current = error;
+  let sawConnectFailure = false;
+  while (current && typeof current === "object" && !seen.has(current)) {
+    seen.add(current);
+    if (
+      current.code === "INITIAL_CONNECT_FAILED" ||
+      current.code === "RECONNECT_FAILED"
+    ) {
+      sawConnectFailure = true;
+    }
+    if (
+      sawConnectFailure &&
+      (isG2BleConnectionLoss(current) ||
+        /unsupported device|no longer in range|not found/i.test(
+          current.message ?? "",
+        ))
+    ) {
+      return true;
+    }
+    current = current.cause;
+  }
+  return false;
+}
+
+// The raw Chrome message for a remembered handle whose device the browser has
+// not seen advertise since its cache expired. Unlike
+// g2BleSelectedHandleUnreachable this looks at one error, not a wrapped chain,
+// because the post-update loop sees connect() failures directly.
+export function isG2BleStaleHandleError(error) {
+  return /no longer in range|unsupported device/i.test(error?.message ?? "");
+}
+
+// Wait for the next advertisement from a remembered device, when the Chrome
+// build exposes watchAdvertisements(). Resolves true on an advertisement and
+// false on timeout or when the API is unavailable; never throws, because the
+// caller falls back to a plain timed reconnect attempt either way.
+export async function waitForG2Advertisement(
+  device,
+  { timeoutMs = G2_BLE_POST_UPDATE_RECONNECT_INTERVAL_MS } = {},
+) {
+  if (typeof device?.watchAdvertisements !== "function") return false;
+  const controller =
+    typeof AbortController === "function" ? new AbortController() : null;
+  return new Promise((resolve) => {
+    let settled = false;
+    let timer = null;
+    const finish = (seen) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      device.removeEventListener?.("advertisementreceived", onAdvertisement);
+      try {
+        controller?.abort();
+      } catch {
+        // Aborting a watch that already ended is not an error worth raising.
+      }
+      resolve(seen);
+    };
+    function onAdvertisement() {
+      finish(true);
+    }
+    device.addEventListener?.("advertisementreceived", onAdvertisement);
+    timer = setTimeout(() => finish(false), timeoutMs);
+    Promise.resolve(
+      device.watchAdvertisements(
+        controller ? { signal: controller.signal } : undefined,
+      ),
+    ).catch(() => finish(false));
+  });
+}
+
+// Prove a temple after its update through the one path a page can always
+// take: a fresh chooser pick. The chooser scan refreshes Chrome's device cache,
+// the connect proves the rebooted image answers GATT, and the standard
+// Firmware Revision string (not blocklisted, unlike the serial) reports what is
+// running. On hardware a reviewed CFW temple reports its stock BASE version
+// there (2.2.10.12 CFW answers "2.2.10.10"), so callers pass every string the
+// release may legitimately report; a match proves the base image booted, not
+// the patch set. The link is closed again before returning.
+export async function proveG2BleTempleByReselection(
+  side,
+  {
+    bluetooth = globalThis.navigator?.bluetooth,
+    expectedName = null,
+    tokens = G2_KNOWN_NAME_TOKENS,
+    expectedFirmwareRevisions = [],
+    log = () => {},
+  } = {},
+) {
+  const expected = [
+    ...new Set(
+      (Array.isArray(expectedFirmwareRevisions)
+        ? expectedFirmwareRevisions
+        : [expectedFirmwareRevisions]
+      ).filter(Boolean),
+    ),
+  ];
+  const device = await requestG2BleDevice(side, bluetooth, {
+    expectedName,
+    tokens,
+  });
+  let information = null;
+  try {
+    const server = await device.gatt.connect();
+    information = await readG2DeviceInformation(server, { side, log });
+  } finally {
+    try {
+      device.gatt?.disconnect?.();
+    } catch {
+      // The proof link may already be gone; nothing to undo.
+    }
+  }
+  const firmwareRevision = information?.firmwareRevision ?? null;
+  // Unknown when the temple publishes no revision: the fresh GATT connection
+  // is still the liveness proof the reconnect loop wanted.
+  const matchesExpected =
+    expected.length && firmwareRevision
+      ? expected.includes(firmwareRevision)
+      : null;
+  return {
+    side,
+    device,
+    deviceId: device.id ?? null,
+    deviceName: device.name ?? null,
+    firmwareRevision,
+    hardwareRevision: information?.hardwareRevision ?? null,
+    modelNumber: information?.modelNumber ?? null,
+    expectedFirmwareRevisions: expected,
+    matchesExpected,
+    provenAt: new Date().toISOString(),
+  };
+}
+
+// A route counts as proven over Bluetooth when its transfer succeeded and the
+// rebooted image answered a fresh connection, whether by the bounded post-END
+// reconnect or by a later chooser re-selection. Such a route can be retained
+// by a repeat Update instead of transferring the same image again.
+export function g2BleRouteProvenOverBluetooth(route) {
+  if (!route || route.outcome !== "success") return false;
+  if (route.skipped) return false;
+  const postUpdate = route.components?.at(-1)?.postUpdate;
+  return Boolean(postUpdate?.freshReconnectAttempted && postUpdate.reconnected);
+}
+
+// Fold a re-selection proof into the recorded routes so the same
+// g2BleRoutesAwaitingCaseVerification check that demanded Case proof now sees
+// the side as reconnected. Returns new objects; the input is not mutated.
+export function applyG2BleReselectionProof(routes, side, proof) {
+  const route = routes?.[side];
+  if (!route) return routes;
+  const components = [...(route.components ?? [])];
+  const last = components.at(-1);
+  if (last) {
+    components[components.length - 1] = {
+      ...last,
+      postUpdate: {
+        ...(last.postUpdate ?? {}),
+        freshReconnectAttempted: true,
+        reconnected: true,
+        reconnectedBy: "chooser-reselection",
+        reselectionProof: {
+          deviceId: proof?.deviceId ?? null,
+          deviceName: proof?.deviceName ?? null,
+          firmwareRevision: proof?.firmwareRevision ?? null,
+          hardwareRevision: proof?.hardwareRevision ?? null,
+          modelNumber: proof?.modelNumber ?? null,
+          expectedFirmwareRevisions: proof?.expectedFirmwareRevisions ?? [],
+          matchesExpected: proof?.matchesExpected ?? null,
+          provenAt: proof?.provenAt ?? null,
+        },
+      },
+    };
+  }
+  return {
+    ...routes,
+    [side]: {
+      ...route,
+      components,
+      verifiedBy: "fresh-chooser-reselection",
+      reselectionProvenAt: proof?.provenAt ?? null,
+    },
+  };
+}
+
+/// Attributes control-channel authentication replies by their echoed magic token
+/// across every session of one simultaneous run, not by the physical link they
+/// arrived on. The G2 pair answers requests addressed to the left temple over the
+/// right (authority) temple's link on the 2.2.7+ firmware family; a session that
+/// only listened to its own notify characteristic timed out eight times in a row
+/// while its reply sat, unmatched, in the other session's queue.
+export class G2BleAuthenticationRelay {
+  constructor() {
+    this.sessions = [];
+  }
+
+  attach(session) {
+    if (!this.sessions.includes(session)) this.sessions.push(session);
+    session.authenticationRelay = this;
+    // Distinct magic ranges per side so a relayed reply can never be claimed by
+    // the wrong session even when both authenticate in the same instant.
+    if (session.authMagicSeed === null) {
+      session.authMagicSeed = G2_BLE_AUTH_MAGIC_SEEDS[session.side] ?? 0x40;
+      session.authSequence = session.authMagicSeed;
+    }
+  }
+
+  /// Offer a reply the origin session could not match to its siblings. Returns
+  /// true when a sibling accepted it.
+  route(response, origin) {
+    for (const session of this.sessions) {
+      if (session === origin) continue;
+      if (session.acceptRelayedAuthentication(response, origin)) return true;
+    }
+    return false;
+  }
+
+  /// A reply may have been queued by a sibling before this session started
+  /// waiting for it.
+  takeQueued(magic, requester) {
+    for (const session of this.sessions) {
+      if (session === requester) continue;
+      const index = session.authenticationQueue.findIndex(
+        (response) => response.payload[3] === magic,
+      );
+      if (index >= 0) {
+        const [response] = session.authenticationQueue.splice(index, 1);
+        requester.noteRelayedAuthentication(session);
+        return response;
+      }
+    }
+    return null;
+  }
+}
+
+export const G2_BLE_AUTH_MAGIC_SEEDS = Object.freeze({ left: 0x20, right: 0xa0 });
 
 export function g2BleSupported(bluetooth = globalThis.navigator?.bluetooth) {
   return Boolean(bluetooth?.requestDevice);
@@ -502,6 +755,22 @@ export function g2BleTargetReportedVersion(firmware) {
   return firmware?.templeFlashTarget?.reportedVersion ?? firmware?.g2Version ?? null;
 }
 
+// Every string the temple's Device Information Firmware Revision may report
+// after this image is running: the stock base (a reviewed CFW temple reports
+// that — 2.2.10.12 answered "2.2.10.10" on hardware), the package version and
+// the Case-reported version. Used by the chooser re-selection proof.
+export function g2BleExpectedFirmwareRevisions(firmware) {
+  return [
+    ...new Set(
+      [
+        firmware?.templeFlashTarget?.baseVersion,
+        firmware?.g2Version,
+        g2BleTargetReportedVersion(firmware),
+      ].filter(Boolean),
+    ),
+  ];
+}
+
 // A verified final END proves that every package byte was accepted, but it
 // does not prove that the rebooted Application image is reachable. Keep that
 // distinction explicit so the UI cannot call a transfer "complete" while the
@@ -583,6 +852,10 @@ export async function requestG2BleDevice(
     optionalServices: [
       G2_BLE_DATA_SERVICE,
       G2_BLE_CONTROL_SERVICE,
+      // Permits the advisory Device Information read (firmware/hardware
+      // revision) on this handle; a firmware that lacks the service is logged
+      // and tolerated by the reader.
+      G2_BLE_DEVICE_INFO_SERVICE,
     ],
   });
   const observedSide = g2BleDeviceSide(device?.name);
@@ -1017,6 +1290,7 @@ export class G2BleOtaSession {
       beginAttempts = G2_BLE_BEGIN_ATTEMPTS,
       postUpdateReconnectIntervalMs = G2_BLE_POST_UPDATE_RECONNECT_INTERVAL_MS,
       postUpdateReconnectAttempts = G2_BLE_POST_UPDATE_RECONNECT_ATTEMPTS,
+      postUpdateStaleHandleAttempts = G2_BLE_POST_UPDATE_STALE_HANDLE_ATTEMPTS,
       initialConnectAttempts = G2_BLE_RECONNECT_ATTEMPTS,
       visibilityResumeSettleMs = G2_BLE_VISIBILITY_RESUME_SETTLE_MS,
       notificationSettleMs = 2500,
@@ -1042,6 +1316,7 @@ export class G2BleOtaSession {
     this.beginAttempts = beginAttempts;
     this.postUpdateReconnectIntervalMs = postUpdateReconnectIntervalMs;
     this.postUpdateReconnectAttempts = postUpdateReconnectAttempts;
+    this.postUpdateStaleHandleAttempts = postUpdateStaleHandleAttempts;
     this.initialConnectAttempts = initialConnectAttempts;
     this.visibilityResumeSettleMs = visibilityResumeSettleMs;
     this.notificationSettleMs = notificationSettleMs;
@@ -1053,6 +1328,13 @@ export class G2BleOtaSession {
     this.ackWaiters = [];
     this.authenticationQueue = [];
     this.authenticationWaiters = [];
+    this.authenticationRelay = null;
+    this.authMagicSeed = null;
+    this.authSequence = 0;
+    this.relayedAuthentications = 0;
+    // True while this session holds a GATT link it has already authenticated;
+    // a transfer started on such a link must not authenticate a second time.
+    this.linkAuthenticated = false;
     this.writeTail = Promise.resolve();
     this.connectionRecoveries = 0;
     this.selectedDeviceId = device?.id ?? null;
@@ -1092,10 +1374,53 @@ export class G2BleOtaSession {
         const [waiter] = this.authenticationWaiters.splice(waiterIndex, 1);
         clearTimeout(waiter.timer);
         waiter.resolve(response);
-      } else {
+      } else if (!this.authenticationRelay?.route(response, this)) {
         this.authenticationQueue.push(response);
       }
     };
+  }
+
+  /// A sibling session received an authentication reply on ITS link whose magic
+  /// token this session is waiting for (authority-relayed egress).
+  acceptRelayedAuthentication(response, origin) {
+    const magic = response.payload[3];
+    const waiterIndex = this.authenticationWaiters.findIndex(
+      (waiter) => waiter.magic === magic,
+    );
+    if (waiterIndex >= 0) {
+      const [waiter] = this.authenticationWaiters.splice(waiterIndex, 1);
+      clearTimeout(waiter.timer);
+      this.noteRelayedAuthentication(origin);
+      waiter.resolve(response);
+      return true;
+    }
+    if (this.ownsAuthenticationMagic(magic)) {
+      this.authenticationQueue.push(response);
+      this.noteRelayedAuthentication(origin);
+      return true;
+    }
+    return false;
+  }
+
+  ownsAuthenticationMagic(magic) {
+    if (this.authMagicSeed === null) return false;
+    const span = (magic - this.authMagicSeed) & 0xff;
+    return span > 0 && span <= 0x40;
+  }
+
+  noteRelayedAuthentication(origin) {
+    this.relayedAuthentications += 1;
+    this.log(
+      `${this.side}: authentication reply arrived over the ${origin?.side ?? "other"} temple's link (authority-relayed egress) and was attributed by its magic token.`,
+      "info",
+    );
+  }
+
+  nextAuthenticationMagic() {
+    if (this.authMagicSeed === null) return this.nextSequence();
+    this.authSequence = (this.authSequence + 1) & 0xff;
+    if (this.authSequence === 0) this.authSequence = 1;
+    return this.authSequence;
   }
 
   nextSequence() {
@@ -1190,6 +1515,8 @@ export class G2BleOtaSession {
       const [response] = this.authenticationQueue.splice(queuedIndex, 1);
       return Promise.resolve(response);
     }
+    const relayed = this.authenticationRelay?.takeQueued(magic, this);
+    if (relayed) return Promise.resolve(relayed);
     return new Promise((resolve, reject) => {
       const waiter = { magic, resolve, reject, timer: null };
       waiter.timer = setTimeout(() => {
@@ -1207,7 +1534,7 @@ export class G2BleOtaSession {
   }
 
   async authenticate() {
-    const magic = this.nextSequence();
+    const magic = this.nextAuthenticationMagic();
     this.drainAuthenticationResponses();
     await this.writeFrames(
       this.controlWrite,
@@ -1237,6 +1564,7 @@ export class G2BleOtaSession {
   }
 
   async connect() {
+    this.linkAuthenticated = false;
     this.assertSelectedDeviceIdentity();
     if (!this.device?.gatt) {
       throw new G2BleOtaError(`The selected ${this.side} temple has no GATT interface.`);
@@ -1283,13 +1611,30 @@ export class G2BleOtaSession {
     // authentication and OTA data. BEGIN therefore starts at OTA sequence 1.
     this.sequence = 0;
     this.drainAcks();
+    this.linkAuthenticated = true;
     this.log(
       `${this.side}: authenticated Bluetooth OTA services and notifications are ready.`,
       "success",
     );
   }
 
+  /// Establish and authenticate this side's link without transferring, so a
+  /// later `flashBundle` starts on a link the pair already accepted. The pair
+  /// does not answer a control-channel authentication on one temple while the
+  /// other temple is receiving OTA data, so both links must be held before the
+  /// first byte moves.
+  async holdLink() {
+    return this.connectForTransfer();
+  }
+
   async connectForTransfer() {
+    if (this.linkAuthenticated && this.server?.connected && this.device?.gatt?.connected !== false) {
+      this.log(
+        `${this.side}: reusing the held, already authenticated Bluetooth link.`,
+        "info",
+      );
+      return { attempts: 0, reused: true };
+    }
     let lastError = null;
     for (
       let attempt = 1;
@@ -1345,6 +1690,7 @@ export class G2BleOtaSession {
   }
 
   async disconnect() {
+    this.linkAuthenticated = false;
     for (const waiter of this.ackWaiters.splice(0)) {
       clearTimeout(waiter.timer);
       waiter.reject(
@@ -1582,6 +1928,10 @@ export class G2BleOtaSession {
     // post-END connection.
     await this.disconnect();
     let lastError = null;
+    let staleHandleStreak = 0;
+    let attemptsUsed = 0;
+    const canWatchAdvertisements =
+      typeof this.device?.watchAdvertisements === "function";
     this.writeTail = Promise.resolve();
     // END 8 (UPDATING) means the temple is now writing the staged image and
     // stays off the air until that apply finishes, so this loop uses the long
@@ -1591,10 +1941,21 @@ export class G2BleOtaSession {
       attempt <= this.postUpdateReconnectAttempts;
       attempt += 1
     ) {
+      attemptsUsed = attempt;
       if (attempt > 1) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, this.postUpdateReconnectIntervalMs),
-        );
+        // With watchAdvertisements the interval doubles as an advertisement
+        // wait: Chrome refreshes its cache from the scan, and the next connect
+        // starts the moment the rebooted temple is heard instead of on a timer.
+        const advertised = canWatchAdvertisements
+          ? await waitForG2Advertisement(this.device, {
+              timeoutMs: this.postUpdateReconnectIntervalMs,
+            })
+          : false;
+        if (!advertised && !canWatchAdvertisements) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, this.postUpdateReconnectIntervalMs),
+          );
+        }
       }
       try {
         this.assertSelectedDeviceIdentity();
@@ -1630,6 +1991,19 @@ export class G2BleOtaSession {
         } catch {
           // The failed attempt may already have closed the transient link.
         }
+        staleHandleStreak = isG2BleStaleHandleError(error)
+          ? staleHandleStreak + 1
+          : 0;
+        if (
+          !canWatchAdvertisements &&
+          staleHandleStreak >= this.postUpdateStaleHandleAttempts
+        ) {
+          this.log(
+            `${this.side}: Chrome has answered "${error?.message ?? String(error)}" for ${staleHandleStreak} consecutive post-END attempts on saved device ID ${this.selectedDeviceId ?? "unavailable"}. This browser cannot watch advertisements from a page, so its cache for the rebooted temple will not refresh on its own and the remaining ${this.postUpdateReconnectAttempts - attempt} attempts would fail the same way. Every block and the final END were verified; re-select the ${this.side} temple from the chooser to prove the rebooted image over Bluetooth.`,
+            "warn",
+          );
+          break;
+        }
         if (attempt < this.postUpdateReconnectAttempts) {
           this.log(
             `${this.side}: saved post-update device ID ${this.selectedDeviceId ?? "unavailable"} is not reachable yet (${error?.message ?? String(error)}); the temple is expected to stay unreachable while it applies the update · reconnect attempt ${attempt + 1}/${this.postUpdateReconnectAttempts} will follow.`,
@@ -1638,22 +2012,29 @@ export class G2BleOtaSession {
         }
       }
     }
+    const staleHandle =
+      !canWatchAdvertisements &&
+      staleHandleStreak >= this.postUpdateStaleHandleAttempts;
 
     // All payload blocks and the final END response are unambiguous. Replaying
     // the package here would be less safe than preserving that proof and using
     // the required Case reset/version interrogation as the authoritative boot
     // check after both temples have been transferred.
-    this.log(
-      `${this.side}: all final-image blocks and END ${endStatus} were verified, but the temple did not accept a fresh post-END GATT connection within ${this.postUpdateReconnectAttempts} bounded attempts across the ${Math.round((this.rebootSettleMs + (this.postUpdateReconnectAttempts - 1) * this.postUpdateReconnectIntervalMs) / 1000)}-second post-update window${lastError?.message ? ` (${lastError.message})` : ""}. No firmware will be replayed; deferring version authority to the final Case check.`,
-      "warn",
-    );
+    if (!staleHandle) {
+      this.log(
+        `${this.side}: all final-image blocks and END ${endStatus} were verified, but the temple did not accept a fresh post-END GATT connection within ${this.postUpdateReconnectAttempts} bounded attempts across the ${Math.round((this.rebootSettleMs + (this.postUpdateReconnectAttempts - 1) * this.postUpdateReconnectIntervalMs) / 1000)}-second post-update window${lastError?.message ? ` (${lastError.message})` : ""}. No firmware will be replayed; deferring version authority to a chooser re-selection or the final Case check.`,
+        "warn",
+      );
+    }
     return {
       expectedReboot: true,
       rebootObserved,
       freshReconnectAttempted: true,
       reconnected: false,
-      reconnectAttempts: this.postUpdateReconnectAttempts,
+      reconnectAttempts: attemptsUsed,
       reconnectError: lastError?.message ?? null,
+      staleHandle,
+      reselectionRequired: true,
     };
   }
 
@@ -1975,12 +2356,94 @@ export class G2BleOtaSession {
   }
 }
 
+/// Hold and authenticate every side's link first (in `order`), then transfer
+/// one side at a time in that order. Observed on the 2.2.10 pair: a temple that
+/// starts its session while the other temple is receiving OTA data never
+/// answers the control-channel authentication, and a handle left idle for the
+/// duration of the first transfer expires from Chrome's device cache
+/// ("no longer in range"). Holding both authenticated links up front avoids the
+/// first, and starting the second transfer the moment the first settles avoids
+/// the second. Outcomes keep the concurrent runner's shape.
+export async function flashG2BleSessionsSequentially(
+  entries,
+  firmware,
+  { onSettled = () => {}, flashOptions = {}, order = ["right", "left"], onLinkHeld = () => {} } = {},
+) {
+  const sessions = Array.isArray(entries) ? entries : [];
+  const rank = (side) => {
+    const index = order.indexOf(side);
+    return index < 0 ? order.length : index;
+  };
+  const ordered = [...sessions].sort((a, b) => rank(a.side) - rank(b.side));
+  const notifySettled = (outcome) => {
+    try {
+      onSettled(outcome);
+    } catch {
+      // Status presentation must never change a hardware outcome.
+    }
+    return outcome;
+  };
+  const holdErrors = new Map();
+  const outcomes = new Map();
+  for (const entry of ordered) {
+    if (typeof entry.session?.holdLink !== "function") continue;
+    try {
+      const held = await entry.session.holdLink();
+      try {
+        onLinkHeld({ side: entry.side, device: entry.device, held });
+      } catch {
+        // Presentation only.
+      }
+    } catch (error) {
+      // Settle a side that cannot even be held right away, before the other
+      // side's minutes-long transfer: the operator sees the failure while
+      // there is still time to wake the temple, and the transfer of the held
+      // side proceeds regardless.
+      holdErrors.set(entry.side, error);
+      outcomes.set(
+        entry.side,
+        notifySettled({ side: entry.side, device: entry.device, status: "rejected", reason: error }),
+      );
+      try {
+        await entry.session.disconnect();
+      } catch {
+        // The failed hold may already have closed the link.
+      }
+    }
+  }
+  for (const { side, device, session } of ordered) {
+    if (holdErrors.has(side)) continue;
+    try {
+      const value = await session.flashBundle(firmware, flashOptions);
+      outcomes.set(side, notifySettled({ side, device, status: "fulfilled", value }));
+    } catch (reason) {
+      outcomes.set(side, notifySettled({ side, device, status: "rejected", reason }));
+    } finally {
+      try {
+        await session.disconnect();
+      } catch {
+        // A successful OTA commonly reboots the temple before cleanup.
+      }
+    }
+  }
+  return sessions.map(({ side, device }) => outcomes.get(side) ?? { side, device, status: "rejected", reason: new G2BleOtaError(`${side}: no session outcome`) });
+}
+
 export async function flashG2BleSessionsConcurrently(
   entries,
   firmware,
-  { onSettled = () => {}, flashOptions = {} } = {},
+  { onSettled = () => {}, flashOptions = {}, startStaggerMs = 0 } = {},
 ) {
   const sessions = Array.isArray(entries) ? entries : [];
+  // Two live sessions share one pair whose replies may egress over either link.
+  if (sessions.length > 1) {
+    const relay = new G2BleAuthenticationRelay();
+    for (const { session } of sessions) {
+      if (typeof session?.acceptRelayedAuthentication === "function") {
+        relay.attach(session);
+      }
+    }
+  }
   const notifySettled = (outcome) => {
     try {
       onSettled(outcome);
@@ -1993,9 +2456,17 @@ export async function flashG2BleSessionsConcurrently(
   const startGate = new Promise((resolve) => {
     releaseStart = resolve;
   });
-  const tasks = sessions.map(({ side, device, session }) =>
+  const tasks = sessions.map(({ side, device, session }, index) =>
       (async () => {
         await startGate;
+        // Bringing up two GATT links and their subscriptions at the same
+        // instant is the dual run's most common way to lose a first reply;
+        // let the second side start once the first has a head start.
+        if (index > 0 && startStaggerMs > 0) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, startStaggerMs * index),
+          );
+        }
         try {
           return await session.flashBundle(firmware, flashOptions);
         } finally {

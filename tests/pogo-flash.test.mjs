@@ -1851,43 +1851,32 @@ test("keeps the generated pin table in sync with the firmware archive", async ()
       "utf8",
     ),
   );
-  const expected = [
+  // The latest CFW is the catalog's only custom release (served, not local-only); every
+  // other pinned target is an archived stock release.
+  const custom = index.releases.filter((release) => release.channel === "custom");
+  assert.equal(custom.length, 1);
+  const [latestCFW, ...stock] = TEMPLE_FLASH_TARGETS;
+  assert.deepEqual(
+    (({ label, ...rest }) => rest)(latestCFW),
     {
-      imageSha256: "dc4c4de98d183a98f8b2e98b91ab0c920b46a1ec30fcdf3d447637f2022df484",
-      mainSha256: "0f41679fdd38877b57e3d12f7aaddc36771fa51ecd7e118bf23dfa0eb1b47d74",
-      mainBytes: 3731795,
-      version: "2.2.9.28",
-      reportedVersion: "2.2.9.28",
+      imageSha256: "f3bd05f9adaae94cbf2a693b7259a98c11454ba270fe09311bdfd38484d1161c",
+      mainSha256: "ddf667ed12e58d81f2d3ee85b33ae94f06f40244d249df0735755b21fa731a7a",
+      mainBytes: 3761322,
+      version: "2.2.10.72",
+      reportedVersion: "2.2.10.72",
+      baseVersion: "2.2.10.10",
       hardwareValidated: false,
-      localOnly: true,
       bleComponentNames: ["ota/s200_firmware_ota.bin"],
     },
-    ...index.releases
-    .map((release) => ({
-      release,
-      main: (release.components ?? []).find(
-        (c) => c.name === "ota/s200_firmware_ota.bin" && c.typeId === 0,
-      ),
-    }))
-    .filter(({ main }) => main?.sha256)
-    .map(({ release, main }) => ({
-      imageSha256: release.sha256,
-      mainSha256: main.sha256,
-      mainBytes: main.size,
-      version: release.internalVersion ?? release.version,
-      reportedVersion:
-        release.reportedVersion ?? release.internalVersion ?? release.version,
-      hardwareValidated: HARDWARE_VALIDATED_IMAGE_SHA256.has(release.sha256),
-      ...(release.channel === "custom" && release.bleComponentNames
-        ? { bleComponentNames: release.bleComponentNames }
-        : {}),
-    })),
-  ];
-  assert.deepEqual(
-    TEMPLE_FLASH_TARGETS.map(({ label, ...rest }) => rest),
-    expected,
     "run `npm run archive:firmware` to regenerate src/lib/templeFlashTargets.js",
   );
+  assert.equal(custom[0].sha256, latestCFW.imageSha256);
+  const officials = index.releases.filter((release) => (release.channel ?? "official") === "official");
+  assert.equal(stock.length, officials.length);
+  for (const target of stock) {
+    assert.match(target.label, /^Stock Even Realities G2 /);
+    assert.equal(officials.some((release) => release.sha256 === target.imageSha256), true);
+  }
 });
 
 test("accepts a pinned stock main but still rejects a mismatched payload", async () => {

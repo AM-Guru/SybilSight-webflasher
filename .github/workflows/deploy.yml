@@ -79,7 +79,7 @@ jobs:
             }
             const catalog = JSON.parse(catalogBytes);
             const customReleases = catalog.releases.filter((entry) => entry.channel === "custom");
-            const permittedCustom = new Map([["g2-custom-2.2.9.29", "960b964f2dfdfb17edf222f0ec3c5c44ca9ee502fe2a9873919e951a6c158ac5"]]);
+            const permittedCustom = new Map([["g2-custom-2.2.10.72", "f3bd05f9adaae94cbf2a693b7259a98c11454ba270fe09311bdfd38484d1161c"]]);
             if (customReleases.length !== permittedCustom.size || customReleases.some((entry) => permittedCustom.get(entry.id) !== entry.sha256)) {
               throw new Error("Catalog contains an unexpected CFW release");
             }
@@ -853,7 +853,7 @@ jobs:
             }
             const catalog = JSON.parse(catalogBytes);
             const customReleases = catalog.releases.filter((entry) => entry.channel === "custom");
-            const permittedCustom = new Map([["g2-custom-2.2.9.29", "960b964f2dfdfb17edf222f0ec3c5c44ca9ee502fe2a9873919e951a6c158ac5"]]);
+            const permittedCustom = new Map([["g2-custom-2.2.10.72", "f3bd05f9adaae94cbf2a693b7259a98c11454ba270fe09311bdfd38484d1161c"]]);
             if (customReleases.length !== permittedCustom.size || customReleases.some((entry) => permittedCustom.get(entry.id) !== entry.sha256)) {
               throw new Error("Production catalog contains an unexpected CFW release");
             }

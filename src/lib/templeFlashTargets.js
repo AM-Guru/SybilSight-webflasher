@@ -12,14 +12,14 @@
 
 export const TEMPLE_FLASH_TARGETS = Object.freeze([
   Object.freeze({
-    imageSha256: "dc4c4de98d183a98f8b2e98b91ab0c920b46a1ec30fcdf3d447637f2022df484",
-    mainSha256: "0f41679fdd38877b57e3d12f7aaddc36771fa51ecd7e118bf23dfa0eb1b47d74",
-    mainBytes: 3731795,
-    version: "2.2.9.28",
-    reportedVersion: "2.2.9.28",
-    label: "SybilSight CFW 2.2.9.28 (latest-upstream recovery candidate)",
+    imageSha256: "f3bd05f9adaae94cbf2a693b7259a98c11454ba270fe09311bdfd38484d1161c",
+    mainSha256: "ddf667ed12e58d81f2d3ee85b33ae94f06f40244d249df0735755b21fa731a7a",
+    mainBytes: 3761322,
+    version: "2.2.10.72",
+    reportedVersion: "2.2.10.72",
+    baseVersion: "2.2.10.10",
+    label: "SybilSight CFW (2.2.10.72)",
     hardwareValidated: false,
-    localOnly: true,
     bleComponentNames: Object.freeze(["ota/s200_firmware_ota.bin"]),
   }),
   Object.freeze({
@@ -30,16 +30,6 @@ export const TEMPLE_FLASH_TARGETS = Object.freeze([
     reportedVersion: "2.2.10.10",
     label: "Stock Even Realities G2 2.2.10.10",
     hardwareValidated: false,
-  }),
-  Object.freeze({
-    imageSha256: "960b964f2dfdfb17edf222f0ec3c5c44ca9ee502fe2a9873919e951a6c158ac5",
-    mainSha256: "a7f170a7e3870cfc8ce642ac3b05e6bec7fb02b2ae75231afac244a093e6adf6",
-    mainBytes: 3736231,
-    version: "2.2.9.29",
-    reportedVersion: "2.2.9.29",
-    label: "SybilSight CFW (2.2.9.29)",
-    hardwareValidated: false,
-    bleComponentNames: Object.freeze(["ota/s200_firmware_ota.bin"]),
   }),
   Object.freeze({
     imageSha256: "a03fbea9f68a9de6bc271daabb9f3a41c59053d1086622c76a4e990f829cc561",

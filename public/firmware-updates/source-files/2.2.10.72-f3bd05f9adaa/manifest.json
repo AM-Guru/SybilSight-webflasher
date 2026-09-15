@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "format": "evenota-hardware-flash-manifest-v1",
+  "device": "Even Realities G2",
+  "release": {
+    "version": "2.2.10.72",
+    "archiveKey": "2.2.10.72-f3bd05f9adaa",
+    "internalVersion": "2.2.10.72",
+    "reportedVersion": "2.2.10.72",
+    "channel": "custom",
+    "trust": "reviewed-custom",
+    "baseVersion": "2.2.10.10",
+    "hardwareValidated": false
+  },
+  "package": {
+    "file": "g2-2.2.10.72.bin",
+    "size": 4540503,
+    "md5": "4fe44f3e74db8319b80a466e20617ed0",
+    "sha256": "f3bd05f9adaae94cbf2a693b7259a98c11454ba270fe09311bdfd38484d1161c",
+    "componentCount": 6
+  },
+  "patchRecipe": {
+    "file": "cfw_patches-2.2.10.72.json",
+    "sha256": "d0ccfded1eef36773ec6265cbdbe183060181fb8116058c247e01a649f47db34",
+    "baseVersion": "2.2.10.10",
+    "baseSha256": "927879057685a4147c6ba1fe33e5f3740d3cc48f87141a9039204d94516e65b8",
+    "operationCount": 48
+  },
+  "capabilityMarker": "Faceclaw/3",
+  "sourceProvenance": null,
+  "excludedFeature": null,
+  "firmwareFiles": [
+    {
+      "componentName": "firmware/codec.bin",
+      "archiveFile": "firmware_codec.bin",
+      "typeId": 4,
+      "size": 326092,
+      "crc32c": "bdcfeeac",
+      "sha256": "b06dfef7faa2f1e52d2aacd07958d4b96ffc36dca5077ac9149e48f19fc9c4d0",
+      "role": "device-component"
+    },
+    {
+      "componentName": "firmware/ble_em9305.bin",
+      "archiveFile": "firmware_ble_em9305.bin",
+      "typeId": 5,
+      "size": 211948,
+      "crc32c": "c074baf7",
+      "sha256": "91a38f7fc05555f86181ecb22b363e3239bfcaaa2ff6171e98524ae64821eca9",
+      "role": "device-component"
+    },
+    {
+      "componentName": "firmware/touch.bin",
+      "archiveFile": "firmware_touch.bin",
+      "typeId": 3,
+      "size": 34720,
+      "crc32c": "903ca49a",
+      "sha256": "c14456cd4d432815d79700b251c9a575f75c76a3710f4148c0df6ddba4cb7ba2",
+      "role": "device-component"
+    },
+    {
+      "componentName": "firmware/box.bin",
+      "archiveFile": "firmware_box.bin",
+      "typeId": 6,
+      "size": 55784,
+      "crc32c": "7d443be0",
+      "sha256": "36ca0c13558f252af286ae2b36b5e576d087d21d37b15d778e7da9f502a70374",
+      "role": "charging-case"
+    },
+    {
+      "componentName": "ota/s200_bootloader.bin",
+      "archiveFile": "ota_s200_bootloader.bin",
+      "typeId": 1,
+      "size": 149693,
+      "crc32c": "99852b7d",
+      "sha256": "423c23ce481f1690e4d0028126e495a319726efe26c36f9037105fed68791a93",
+      "role": "glasses-bootloader"
+    },
+    {
+      "componentName": "ota/s200_firmware_ota.bin",
+      "archiveFile": "ota_s200_firmware_ota.bin",
+      "typeId": 0,
+      "size": 3761322,
+      "crc32c": "6e30ba88",
+      "sha256": "ddf667ed12e58d81f2d3ee85b33ae94f06f40244d249df0735755b21fa731a7a",
+      "role": "glasses-application"
+    }
+  ],
+  "chargingCaseRawImage": {
+    "file": "firmware_box.raw.bin",
+    "size": 55752,
+    "sha256": "773b6d4cfdaf0a5a74a557e3babe8222a0ae813436b76a7437c1096d2c60d677"
+  },
+  "flashTargets": {
+    "completeBundle": "g2-2.2.10.72.bin",
+    "glassesApplication": "ota_s200_firmware_ota.bin",
+    "glassesBootloader": "ota_s200_bootloader.bin",
+    "chargingCaseWrapped": "firmware_box.bin",
+    "chargingCaseRaw": "firmware_box.raw.bin"
+  }
+}

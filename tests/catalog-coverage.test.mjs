@@ -41,6 +41,8 @@ const REVIEWED_CFW_2_2_9_25_SHA256 =
   "62c138ab9f998f4dd1affb0ebd491ae7c563e424ce6f579b5484c9995730e215";
 const REVIEWED_CFW_2_2_9_28_SHA256 =
   "dc4c4de98d183a98f8b2e98b91ab0c920b46a1ec30fcdf3d447637f2022df484";
+const REVIEWED_CFW_2_2_10_72_SHA256 =
+  "f3bd05f9adaae94cbf2a693b7259a98c11454ba270fe09311bdfd38484d1161c";
 const REVIEWED_CFW_2_2_9_29_SHA256 =
   "960b964f2dfdfb17edf222f0ec3c5c44ca9ee502fe2a9873919e951a6c158ac5";
 
@@ -78,8 +80,8 @@ test("flags a pinned image the served library is too old to offer", () => {
   assert.deepEqual(
     missing.map((target) => target.imageSha256),
     [
+      REVIEWED_CFW_2_2_10_72_SHA256,
       OFFICIAL_G2_2_2_10_10_SHA256,
-      REVIEWED_CFW_2_2_9_29_SHA256,
       OFFICIAL_G2_2_2_9_22_SHA256,
       OFFICIAL_G2_2_2_8_4_SHA256,
       OFFICIAL_G2_2_2_7_14_SHA256,
@@ -100,8 +102,8 @@ test("blocks firmware mutation when the served library is behind the build", () 
       assert.deepEqual(
         error.missingPinnedImages.map((target) => target.imageSha256),
         [
+          REVIEWED_CFW_2_2_10_72_SHA256,
           OFFICIAL_G2_2_2_10_10_SHA256,
-          REVIEWED_CFW_2_2_9_29_SHA256,
           OFFICIAL_G2_2_2_9_22_SHA256,
           OFFICIAL_G2_2_2_8_4_SHA256,
           OFFICIAL_G2_2_2_7_14_SHA256,
@@ -121,6 +123,8 @@ test("omits retired CFW releases from the catalog and writer allowlist", async (
     ),
   ).releases;
   const cfwDigests = [
+    REVIEWED_CFW_2_2_9_29_SHA256,
+    REVIEWED_CFW_2_2_9_28_SHA256,
     REVIEWED_CFW_2_2_9_25_SHA256,
     REVIEWED_CFW_2_2_9_24_SHA256,
     REVIEWED_CFW_2_2_8_11_SHA256,
@@ -129,33 +133,12 @@ test("omits retired CFW releases from the catalog and writer allowlist", async (
   ];
   assert.deepEqual(
     catalog.filter((release) => release.channel === "custom").map((release) => release.id),
-    ["g2-custom-2.2.9.29"],
+    ["g2-custom-2.2.10.72"],
   );
   for (const sha256 of cfwDigests) {
     assert.equal(catalog.some((release) => release.sha256 === sha256), false);
     assert.equal(TEMPLE_FLASH_TARGETS.some((target) => target.imageSha256 === sha256), false);
   }
-  assert.deepEqual(findUnservedPinnedImages({ catalog, targets: TEMPLE_FLASH_TARGETS }), []);
-});
-
-test("keeps the 2.2.9.28 recovery candidate local-only and hash-pinned", async () => {
-  const catalog = JSON.parse(
-    await readFile(
-      new URL("../public/firmware-updates/source-files/index.json", import.meta.url),
-      "utf8",
-    ),
-  ).releases;
-  const target = TEMPLE_FLASH_TARGETS.find(
-    (candidate) => candidate.imageSha256 === REVIEWED_CFW_2_2_9_28_SHA256,
-  );
-  assert.equal(
-    catalog.some((release) => release.sha256 === REVIEWED_CFW_2_2_9_28_SHA256),
-    false,
-  );
-  assert.equal(target?.version, "2.2.9.28");
-  assert.equal(target?.localOnly, true);
-  assert.deepEqual(target?.bleComponentNames, ["ota/s200_firmware_ota.bin"]);
-  assert.equal(target?.hardwareValidated, false);
   assert.deepEqual(findUnservedPinnedImages({ catalog, targets: TEMPLE_FLASH_TARGETS }), []);
 });
 
@@ -195,8 +178,8 @@ test("ships only the newly reviewed custom firmware release", async () => {
   ).releases;
   const custom = catalog.filter((release) => release.channel === "custom");
   assert.equal(custom.length, 1);
-  assert.equal(custom[0].id, "g2-custom-2.2.9.29");
-  assert.equal(custom[0].sha256, REVIEWED_CFW_2_2_9_29_SHA256);
+  assert.equal(custom[0].id, "g2-custom-2.2.10.72");
+  assert.equal(custom[0].sha256, REVIEWED_CFW_2_2_10_72_SHA256);
   assert.deepEqual(custom[0].bleComponentNames, ["ota/s200_firmware_ota.bin"]);
 });
 
@@ -205,8 +188,8 @@ test("deployment validation pins the only permitted custom firmware release", as
     new URL("../.github/workflows/deploy.yml", import.meta.url),
     "utf8",
   );
-  assert.match(deployWorkflow, /g2-custom-2\.2\.9\.29/);
-  assert.match(deployWorkflow, new RegExp(REVIEWED_CFW_2_2_9_29_SHA256));
+  assert.match(deployWorkflow, /g2-custom-2\.2\.10\.72/);
+  assert.match(deployWorkflow, new RegExp(REVIEWED_CFW_2_2_10_72_SHA256));
   assert.match(deployWorkflow, /unexpected CFW release/);
 });
 

@@ -9,11 +9,22 @@ import {
   G2_BLE_LOSS_RECONNECT_DELAY_MS,
   G2_BLE_POST_UPDATE_RECONNECT_ATTEMPTS,
   G2_BLE_POST_UPDATE_RECONNECT_INTERVAL_MS,
+  G2BleAuthenticationRelay,
   G2BleOtaError,
   G2BleOtaSession,
+  G2_BLE_AUTH_MAGIC_SEEDS,
+  g2BleSelectedHandleUnreachable,
+  G2_BLE_POST_UPDATE_STALE_HANDLE_ATTEMPTS,
+  applyG2BleReselectionProof,
+  g2BleRouteProvenOverBluetooth,
+  g2BleExpectedFirmwareRevisions,
+  isG2BleStaleHandleError,
+  proveG2BleTempleByReselection,
+  waitForG2Advertisement,
   assertPinnedG2BleBundle,
   crc16CcittFalse,
   flashG2BleSessionsConcurrently,
+  flashG2BleSessionsSequentially,
   findAuthorizedG2BleDevice,
   g2BleDeviceSide,
   g2BleRoutesAwaitingCaseVerification,
@@ -1192,13 +1203,15 @@ test("requires an explicit matching side marker after the chooser", async () => 
     options.filters.map((filter) => filter.namePrefix),
     ["Even G2_32_R_", "G2_32_R_"],
   );
-  // Serial verification was removed, so the chooser requests only the two
-  // services required by the OTA transport.
+  // The chooser requests the two services required by the OTA transport plus
+  // the standard Device Information service, which the post-update
+  // re-selection proof reads for the firmware revision.
   assert.deepEqual(
     options.optionalServices,
     [
       "00002760-08c2-11e1-9073-0e8ac72e1001",
       "00002760-08c2-11e1-9073-0e8ac72e5450",
+      "device_information",
     ],
   );
 });
@@ -1220,4 +1233,442 @@ test("accepts only the requested explicit side", async () => {
     }),
     /identifies the left temple.*right pairing accepts only/,
   );
+});
+
+
+function authReply(magic) {
+  return new DataView(Uint8Array.from([
+    0xaa, 0x12, 0x01, 0x08, 0x01, 0x01, 0x80, 0x00,
+    0x08, 0x04, 0x10, magic, 0x1a, 0x00, 0x00, 0x00,
+  ]).buffer);
+}
+
+test("a left authentication reply that egresses over the right link is attributed by its magic", async () => {
+  const logs = [];
+  const left = new G2BleOtaSession(
+    { name: "Even G2_32_L_ACD458" },
+    { side: "left", authTimeoutMs: 200, log: (m) => logs.push(m) },
+  );
+  const right = new G2BleOtaSession(
+    { name: "Even G2_32_R_8D6E3C" },
+    { side: "right", authTimeoutMs: 200, log: (m) => logs.push(m) },
+  );
+  const relay = new G2BleAuthenticationRelay();
+  relay.attach(left);
+  relay.attach(right);
+  assert.equal(left.authMagicSeed, G2_BLE_AUTH_MAGIC_SEEDS.left);
+  assert.equal(right.authMagicSeed, G2_BLE_AUTH_MAGIC_SEEDS.right);
+
+  const written = { left: [], right: [] };
+  // The pair answers the LEFT request on the RIGHT temple's control notify
+  // (2.2.7+ authority-relayed egress); the right answers on its own link.
+  left.controlWrite = {
+    async writeValueWithoutResponse(frame) {
+      written.left.push(frame.slice());
+      const magic = frame[11];
+      queueMicrotask(() => right.controlNotifyHandler({ target: { value: authReply(magic) } }));
+    },
+  };
+  right.controlWrite = {
+    async writeValueWithoutResponse(frame) {
+      written.right.push(frame.slice());
+      const magic = frame[11];
+      queueMicrotask(() => right.controlNotifyHandler({ target: { value: authReply(magic) } }));
+    },
+  };
+
+  await Promise.all([left.authenticate(), right.authenticate()]);
+  assert.equal(written.left[0][11], G2_BLE_AUTH_MAGIC_SEEDS.left + 1);
+  assert.equal(written.right[0][11], G2_BLE_AUTH_MAGIC_SEEDS.right + 1);
+  assert.equal(left.relayedAuthentications, 1);
+  assert.equal(right.relayedAuthentications, 0);
+  assert.ok(logs.some((m) => /left: authentication reply arrived over the right temple's link/.test(m)));
+  assert.deepEqual(right.authenticationQueue, []);
+});
+
+test("a relayed reply that lands before the waiter exists is still consumed", async () => {
+  const left = new G2BleOtaSession({ name: "Even G2_32_L_ACD458" }, { side: "left", authTimeoutMs: 100 });
+  const right = new G2BleOtaSession({ name: "Even G2_32_R_8D6E3C" }, { side: "right", authTimeoutMs: 100 });
+  const relay = new G2BleAuthenticationRelay();
+  relay.attach(left);
+  relay.attach(right);
+  // The right link delivers the left's reply synchronously inside the write,
+  // i.e. before waitForAuthentication has registered a waiter.
+  left.controlWrite = {
+    async writeValueWithoutResponse(frame) {
+      right.controlNotifyHandler({ target: { value: authReply(frame[11]) } });
+    },
+  };
+  await left.authenticate();
+  assert.equal(left.relayedAuthentications, 1);
+  assert.deepEqual(left.authenticationQueue, []);
+  assert.deepEqual(right.authenticationQueue, []);
+  // A reply nobody owns stays with the link that heard it.
+  right.controlNotifyHandler({ target: { value: authReply(0x05) } });
+  assert.equal(right.authenticationQueue.length, 1);
+  assert.equal(left.authenticationQueue.length, 0);
+});
+
+test("a single session without a relay keeps the historical sequence-based magic", async () => {
+  const session = new G2BleOtaSession({ name: "Even G2_32_L_ACD458" }, { side: "left", authTimeoutMs: 50 });
+  const written = [];
+  session.controlWrite = {
+    async writeValueWithoutResponse(frame) {
+      written.push(frame.slice());
+      queueMicrotask(() => session.controlNotifyHandler({ target: { value: authReply(frame[11]) } }));
+    },
+  };
+  await session.authenticate();
+  assert.equal(written[0][11], 1);
+  assert.equal(session.sequence, 1);
+});
+
+test("a saved handle that never comes back in range is reported for reselection", () => {
+  const dead = new G2BleOtaError("left: selected temple did not become reachable after 8 bounded Bluetooth connection attempts: Bluetooth Device is no longer in range.", {
+    code: "INITIAL_CONNECT_FAILED",
+    cause: Object.assign(new Error("Bluetooth Device is no longer in range."), { name: "NetworkError" }),
+  });
+  assert.equal(g2BleSelectedHandleUnreachable(dead), true);
+  const authTimeout = new G2BleOtaError("left: selected temple did not become reachable after 8 bounded Bluetooth connection attempts: left: no G2 authentication response arrived on the control channel.", {
+    code: "INITIAL_CONNECT_FAILED",
+    cause: new G2BleOtaError("left: no G2 authentication response arrived on the control channel.", { code: "AUTH_TIMEOUT" }),
+  });
+  assert.equal(g2BleSelectedHandleUnreachable(authTimeout), false, "an auth timeout on a live link is retryable");
+  assert.equal(g2BleSelectedHandleUnreachable(new Error("Bluetooth Device is no longer in range.")), false, "only a bounded connect failure qualifies");
+  assert.equal(g2BleSelectedHandleUnreachable(new G2BleOtaError("x", { code: "COMPONENT_FAILED" })), false);
+});
+
+test("the concurrent runner attaches one relay to real sessions and staggers the second start", async () => {
+  const left = new G2BleOtaSession({ id: "l", name: "Even G2_32_L_ACD458" }, { side: "left" });
+  const right = new G2BleOtaSession({ id: "r", name: "Even G2_32_R_8D6E3C" }, { side: "right" });
+  const starts = {};
+  for (const session of [left, right]) {
+    session.flashBundle = async () => { starts[session.side] = Date.now(); return { outcome: "success" }; };
+    session.disconnect = async () => {};
+  }
+  await flashG2BleSessionsConcurrently(
+    [{ side: "left", device: left.device, session: left }, { side: "right", device: right.device, session: right }],
+    {},
+    { startStaggerMs: 40 },
+  );
+  assert.ok(left.authenticationRelay && left.authenticationRelay === right.authenticationRelay);
+  assert.ok(left.ownsAuthenticationMagic(G2_BLE_AUTH_MAGIC_SEEDS.left + 3));
+  assert.equal(left.ownsAuthenticationMagic(G2_BLE_AUTH_MAGIC_SEEDS.right + 3), false);
+  assert.ok(starts.right - starts.left >= 35, `right started ${starts.right - starts.left} ms after left`);
+});
+
+
+test("the sequential runner holds both authenticated links first, then flashes right before left", async () => {
+  const events = [];
+  const makeSession = (side, { failHold = false } = {}) => ({
+    async holdLink() {
+      events.push(`hold:${side}`);
+      if (failHold) throw new G2BleOtaError(`${side}: selected temple did not become reachable after 8 bounded Bluetooth connection attempts: no longer in range`, { code: "INITIAL_CONNECT_FAILED" });
+      return { attempts: 1 };
+    },
+    async flashBundle(_firmware, options) {
+      events.push(`flash:${side}:${options.componentNames.join(",")}`);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      events.push(`done:${side}`);
+      return { side, outcome: "success" };
+    },
+    async disconnect() {
+      events.push(`disconnect:${side}`);
+    },
+  });
+  const held = [];
+  const settled = [];
+  const outcomes = await flashG2BleSessionsSequentially(
+    [
+      { side: "left", device: { id: "l" }, session: makeSession("left") },
+      { side: "right", device: { id: "r" }, session: makeSession("right") },
+    ],
+    {},
+    {
+      flashOptions: { componentNames: ["ota/s200_firmware_ota.bin"] },
+      onLinkHeld: ({ side }) => held.push(side),
+      onSettled: ({ side, status }) => settled.push(`${side}:${status}`),
+    },
+  );
+  assert.deepEqual(held, ["right", "left"]);
+  assert.deepEqual(events, [
+    "hold:right", "hold:left",
+    "flash:right:ota/s200_firmware_ota.bin", "done:right", "disconnect:right",
+    "flash:left:ota/s200_firmware_ota.bin", "done:left", "disconnect:left",
+  ]);
+  assert.deepEqual(settled, ["right:fulfilled", "left:fulfilled"]);
+  // Outcomes keep the caller's entry order and the concurrent runner's shape.
+  assert.deepEqual(outcomes.map((o) => [o.side, o.status, o.value.outcome]), [["left", "fulfilled", "success"], ["right", "fulfilled", "success"]]);
+});
+
+test("a side whose link cannot be held is reported without blocking the other side", async () => {
+  const events = [];
+  const good = { async holdLink() { events.push("hold:right"); return { attempts: 1 }; }, async flashBundle() { events.push("flash:right"); return { outcome: "success" }; }, async disconnect() { events.push("disconnect:right"); } };
+  const bad = { async holdLink() { events.push("hold:left"); throw new G2BleOtaError("left: selected temple did not become reachable after 8 bounded Bluetooth connection attempts: Bluetooth Device is no longer in range.", { code: "INITIAL_CONNECT_FAILED", cause: Object.assign(new Error("Bluetooth Device is no longer in range."), { name: "NetworkError" }) }); }, async flashBundle() { events.push("flash:left"); throw new Error("must not run"); }, async disconnect() { events.push("disconnect:left"); } };
+  const settled = [];
+  const outcomes = await flashG2BleSessionsSequentially(
+    [{ side: "left", device: { id: "l" }, session: bad }, { side: "right", device: { id: "r" }, session: good }],
+    {},
+    {
+      flashOptions: { componentNames: ["ota/s200_firmware_ota.bin"] },
+      onSettled: ({ side, status }) => settled.push(`${side}:${status}`),
+    },
+  );
+  // The failed hold is settled (and its link closed) before the other side's
+  // transfer starts, not after it — run 5 on hardware showed the left side
+  // sitting on "connecting" for the whole four-minute right transfer.
+  assert.deepEqual(events, ["hold:right", "hold:left", "disconnect:left", "flash:right", "disconnect:right"]);
+  assert.deepEqual(settled, ["left:rejected", "right:fulfilled"]);
+  assert.equal(outcomes[0].status, "rejected");
+  assert.equal(g2BleSelectedHandleUnreachable(outcomes[0].reason), true);
+  assert.equal(outcomes[1].status, "fulfilled");
+});
+
+test("a held, authenticated link is reused by the transfer without a second authentication", async () => {
+  let authentications = 0;
+  const gatt = { connected: true };
+  const device = { id: "l", name: "Even G2_32_L_ACD458", gatt };
+  const session = new G2BleOtaSession(device, { side: "left", notificationSettleMs: 0 });
+  const characteristic = () => ({ async startNotifications() {}, async stopNotifications() {}, addEventListener() {}, removeEventListener() {}, async writeValueWithoutResponse() {} });
+  gatt.connect = async () => gatt;
+  gatt.getPrimaryService = async () => ({ getCharacteristic: async () => characteristic() });
+  gatt.disconnect = () => { gatt.connected = false; };
+  session.authenticate = async () => { authentications += 1; };
+  await session.holdLink();
+  assert.equal(authentications, 1);
+  assert.equal(session.linkAuthenticated, true);
+  const reused = await session.connectForTransfer();
+  assert.deepEqual(reused, { attempts: 0, reused: true });
+  assert.equal(authentications, 1);
+  await session.disconnect();
+  assert.equal(session.linkAuthenticated, false);
+});
+
+// Every hardware run to date exhausted all 24 post-END attempts with Chrome's
+// stale-cache refusal ("no longer in range") while the rebooted temple was
+// advertising the whole time; without watchAdvertisements a page cannot make
+// Chrome look again, so the loop must stop early and ask for a re-selection.
+test("the post-END reconnect stops after consecutive stale-handle refusals when advertisements cannot be watched", async () => {
+  const logs = [];
+  let connectAttempts = 0;
+  const device = {
+    id: "right-paired-id",
+    name: "Even G2_32_R_TEST",
+    gatt: { connected: false, disconnect() {} },
+  };
+  const session = new G2BleOtaSession(device, {
+    side: "right",
+    rebootSettleMs: 0,
+    postUpdateReconnectIntervalMs: 0,
+    log: (message, tone) => logs.push({ message, tone }),
+  });
+  session.disconnect = async () => {};
+  session.connect = async () => {
+    connectAttempts += 1;
+    throw new Error("Bluetooth Device is no longer in range.");
+  };
+  assert.equal(G2_BLE_POST_UPDATE_STALE_HANDLE_ATTEMPTS, 4);
+  const postUpdate = await session.settleFinalUpdate(8);
+  assert.equal(connectAttempts, 4);
+  assert.equal(postUpdate.reconnected, false);
+  assert.equal(postUpdate.staleHandle, true);
+  assert.equal(postUpdate.reselectionRequired, true);
+  assert.equal(postUpdate.reconnectAttempts, 4);
+  assert.match(logs.at(-1).message, /re-select the right temple from the chooser/);
+  assert.ok(
+    !logs.some(({ message }) => /within 24 bounded attempts/.test(message)),
+  );
+  // The route is still flagged for proof: the early exit changes how long the
+  // operator waits, not what counts as verified.
+  const routes = {
+    right: {
+      outcome: "success",
+      components: [{ name: "ota/s200_firmware_ota.bin", postUpdate }],
+    },
+  };
+  assert.deepEqual(g2BleRoutesAwaitingCaseVerification(routes), ["right"]);
+  assert.equal(isG2BleStaleHandleError(new Error("Bluetooth Device is no longer in range.")), true);
+  assert.equal(isG2BleStaleHandleError(new Error("GATT operation failed")), false);
+});
+
+test("a non-stale post-END failure keeps the full bounded budget", async () => {
+  let connectAttempts = 0;
+  const session = new G2BleOtaSession(
+    { id: "left-id", name: "Even G2_32_L_TEST", gatt: { connected: false, disconnect() {} } },
+    {
+      side: "left",
+      rebootSettleMs: 0,
+      postUpdateReconnectIntervalMs: 0,
+      postUpdateReconnectAttempts: 6,
+    },
+  );
+  session.disconnect = async () => {};
+  session.connect = async () => {
+    connectAttempts += 1;
+    throw new Error("GATT Server is disconnected.");
+  };
+  const postUpdate = await session.settleFinalUpdate(8);
+  assert.equal(connectAttempts, 6);
+  assert.equal(postUpdate.staleHandle, false);
+  assert.equal(postUpdate.reconnectAttempts, 6);
+});
+
+test("with watchAdvertisements the post-END reconnect fires on the rebooted temple's advertisement", async () => {
+  const listeners = new Map();
+  let watches = 0;
+  let connectAttempts = 0;
+  const device = {
+    id: "right-paired-id",
+    name: "Even G2_32_R_TEST",
+    gatt: { connected: false, disconnect() {} },
+    addEventListener: (type, handler) => listeners.set(type, handler),
+    removeEventListener: (type) => listeners.delete(type),
+    watchAdvertisements: async () => {
+      watches += 1;
+      // The rebooted temple is heard on the second watch.
+      if (watches === 2) {
+        setTimeout(() => listeners.get("advertisementreceived")?.({}), 0);
+      }
+    },
+  };
+  const session = new G2BleOtaSession(device, {
+    side: "right",
+    rebootSettleMs: 0,
+    postUpdateReconnectIntervalMs: 50,
+  });
+  session.disconnect = async () => {};
+  session.connect = async () => {
+    connectAttempts += 1;
+    if (connectAttempts < 3) {
+      throw new Error("Bluetooth Device is no longer in range.");
+    }
+    device.gatt.connected = true;
+  };
+  const postUpdate = await session.settleFinalUpdate(8);
+  assert.equal(postUpdate.reconnected, true);
+  assert.equal(postUpdate.reconnectAttempts, 3);
+  assert.equal(watches, 2);
+  assert.equal(listeners.size, 0);
+  assert.equal(
+    await waitForG2Advertisement({ name: "no api" }, { timeoutMs: 1 }),
+    false,
+  );
+});
+
+// Measured on hardware 2026-09-13: a chooser re-pick reached a temple that had
+// just rebooted into reviewed CFW 2.2.10.12 in 4.4 s on the same device ID, and
+// its Device Information reported firmware "2.2.10.10" (the stock base), model
+// "S200". The proof therefore accepts the base version as well as the
+// package's reported version.
+test("a chooser re-selection proves the rebooted temple and clears the Case-proof requirement", async () => {
+  const logs = [];
+  let disconnects = 0;
+  const encode = (text) => new DataView(new TextEncoder().encode(text).buffer);
+  const characteristics = {
+    firmware_revision_string: encode("2.2.10.10"),
+    hardware_revision_string: encode("2.2.10.10"),
+    model_number_string: encode("S200"),
+  };
+  const server = {
+    getPrimaryService: async (uuid) => {
+      assert.equal(uuid, "device_information");
+      return {
+        getCharacteristic: async (uuid) => {
+          if (uuid === "serial_number_string") {
+            throw Object.assign(new Error("blocklisted"), { name: "SecurityError" });
+          }
+          if (!characteristics[uuid]) throw new Error(`no ${uuid}`);
+          return { readValue: async () => characteristics[uuid] };
+        },
+      };
+    },
+  };
+  const device = {
+    id: "JPQyNH7efUgUIX7xWKJvbg==",
+    name: "Even G2_32_R_8D6E3C",
+    gatt: {
+      connected: false,
+      connect: async () => server,
+      disconnect: () => {
+        disconnects += 1;
+      },
+    },
+  };
+  const requests = [];
+  const bluetooth = {
+    requestDevice: async (options) => {
+      requests.push(options);
+      return device;
+    },
+  };
+  const proof = await proveG2BleTempleByReselection("right", {
+    bluetooth,
+    expectedFirmwareRevisions: ["2.2.10.10", "2.2.10.12"],
+    log: (message, tone) => logs.push({ message, tone }),
+  });
+  assert.equal(requests.length, 1);
+  assert.ok(requests[0].optionalServices.includes("device_information"));
+  assert.equal(proof.firmwareRevision, "2.2.10.10");
+  assert.equal(proof.modelNumber, "S200");
+  assert.equal(proof.matchesExpected, true);
+  assert.equal(proof.deviceId, "JPQyNH7efUgUIX7xWKJvbg==");
+  assert.equal(disconnects, 1);
+
+  const routes = {
+    left: {
+      outcome: "success",
+      components: [{ name: "ota/s200_firmware_ota.bin", postUpdate: { freshReconnectAttempted: true, reconnected: false, staleHandle: true } }],
+    },
+    right: {
+      outcome: "success",
+      components: [{ name: "ota/s200_firmware_ota.bin", postUpdate: { freshReconnectAttempted: true, reconnected: false, staleHandle: true } }],
+    },
+  };
+  assert.deepEqual(g2BleRoutesAwaitingCaseVerification(routes), ["left", "right"]);
+  const proven = applyG2BleReselectionProof(routes, "right", proof);
+  assert.deepEqual(g2BleRoutesAwaitingCaseVerification(proven), ["left"]);
+  assert.equal(proven.right.verifiedBy, "fresh-chooser-reselection");
+  assert.equal(g2BleRouteProvenOverBluetooth(proven.right), true);
+  assert.equal(g2BleRouteProvenOverBluetooth(routes.right), false);
+  assert.equal(g2BleRouteProvenOverBluetooth({ ...proven.right, skipped: true }), false);
+  assert.equal(g2BleRouteProvenOverBluetooth({ outcome: "failed_before_transfer", components: [] }), false);
+  assert.equal(proven.right.components[0].postUpdate.reconnectedBy, "chooser-reselection");
+  assert.equal(proven.right.components[0].postUpdate.reselectionProof.firmwareRevision, "2.2.10.10");
+  // The input is not mutated and the untouched side is shared as-is.
+  assert.equal(routes.right.components[0].postUpdate.reconnected, false);
+  assert.equal(proven.left, routes.left);
+
+  const mismatch = await proveG2BleTempleByReselection("right", {
+    bluetooth,
+    expectedFirmwareRevisions: ["2.2.9.22"],
+  });
+  assert.equal(mismatch.matchesExpected, false);
+  const wrongSide = { ...device, name: "Even G2_32_L_ACD458" };
+  await assert.rejects(
+    proveG2BleTempleByReselection("right", {
+      bluetooth: { requestDevice: async () => wrongSide },
+    }),
+    /Select the right temple/,
+  );
+});
+
+// Run 6 on hardware: the left proof read "2.2.10.10" and was rejected because
+// the expected list held only the package version. The base version belongs
+// in the list, deduplicated, and a stock image yields just its own version.
+test("the expected firmware revisions include the CFW's stock base", () => {
+  assert.deepEqual(
+    g2BleExpectedFirmwareRevisions({
+      g2Version: "2.2.10.12",
+      templeFlashTarget: { reportedVersion: "2.2.10.12", baseVersion: "2.2.10.10" },
+    }),
+    ["2.2.10.10", "2.2.10.12"],
+  );
+  assert.deepEqual(
+    g2BleExpectedFirmwareRevisions({
+      g2Version: "2.2.10.10",
+      templeFlashTarget: { reportedVersion: "2.2.10.10" },
+    }),
+    ["2.2.10.10"],
+  );
+  assert.deepEqual(g2BleExpectedFirmwareRevisions(null), []);
 });

@@ -1460,6 +1460,19 @@ npm run archive:firmware -- --output ./firmware-archive/source-files
 Use `--r1-only` to refresh just the R1 packages and `ringReleases` while
 preserving the existing G2 catalog and compiled temple-flash targets.
 
+To pin a release Even has published since the last archive, query the vendor
+check with the headers of a signed-in Even app session (the endpoints answer
+`code 403 "Your device went wrong"` anonymously), download and verify the CDN
+objects, and print the `RELEASES` / `R1_RELEASES` entries to paste in:
+
+```bash
+node scripts/even-firmware-check.mjs --header 'Authorization: Bearer …'
+```
+
+The served catalog carries exactly one custom release — the latest reviewed CFW
+(`g2-custom-2.2.10.72`) — and the writer allowlist mirrors it; earlier CFW
+candidates are no longer offered.
+
 Each version directory contains the original bundle, every extracted
 component, a raw case image, `metadata.json`, and `SHA256SUMS`. The current CFW
 directory also contains `manifest.json`, which identifies every hardware-flash
