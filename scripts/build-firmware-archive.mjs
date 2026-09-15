@@ -64,6 +64,17 @@ function r1Release({
 
 const R1_RELEASES = [
   r1Release({
+    version: "2.3.0.0005",
+    minAppVersion: "2.3.0",
+    notes: "1. Improved Bluetooth pairing, reconnection, and firmware update reliability.\n2. Bug fixes.",
+    size: 663387,
+    md5: "88d963d3e8527b6a65fe35cb367b7b2b",
+    sha256: "c5e57b338f526dc8634769da722c144e63fcc69807eeb392887aa9b72600eee7",
+    binSize: 662756,
+    binSha256: "d00de08e22b02072825c1a1679609d12f3302627eca35d043624fba6577ba92b",
+    datSha256: "481f1004c9294560f17bf53c1dd435d28c58fc1fd230bf8602a9635e2b11ba25",
+  }),
+  r1Release({
     version: "2.2.9.0003",
     minAppVersion: "2.2.9",
     notes: "Bug fixes.",
@@ -216,6 +227,13 @@ const HARDWARE_VALIDATED_TEMPLE_IMAGES = new Set([
 const LOCAL_REVIEWED_TEMPLE_TARGETS = Object.freeze([
 ]);
 const RELEASES = [
+  {
+    version: "2.3.0.24",
+    hash: "1dbdf37b03a1169c384945e94d671371",
+    sha256: "187ccf2bcc5c17a212106e8a376745511e8289c4232b634a7ea94b9bf25a0979",
+    size: 4537963,
+    notes: "1. Terminal Mode can now run alongside other features, with access from the App Home screen.\n2. Added real-time session sync with the Agent for Terminal on both phone and glasses.\n3. Improved Even Hub plug-in startup, exit, and audio reliability.\n4. Improved Bluetooth pairing, reconnection, and firmware update reliability.",
+  },
   {
     version: "2.0.1.14",
     hash: "09fe9c0df7b14385c023bc35a364b3a9",

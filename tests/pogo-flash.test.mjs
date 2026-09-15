@@ -1855,7 +1855,8 @@ test("keeps the generated pin table in sync with the firmware archive", async ()
   // other pinned target is an archived stock release.
   const custom = index.releases.filter((release) => release.channel === "custom");
   assert.equal(custom.length, 1);
-  const [latestCFW, ...stock] = TEMPLE_FLASH_TARGETS;
+  const latestCFW = TEMPLE_FLASH_TARGETS.find((target) => target.imageSha256 === custom[0].sha256);
+  const stock = TEMPLE_FLASH_TARGETS.filter((target) => target !== latestCFW);
   assert.deepEqual(
     (({ label, ...rest }) => rest)(latestCFW),
     {

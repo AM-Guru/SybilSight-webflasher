@@ -1,0 +1,130 @@
+{
+  "checkedAt": "2026-09-15",
+  "source": "https://api2.evenreal.co",
+  "checks": [
+    {
+      "endpoint": "check_firmware",
+      "query": "is_ring=false",
+      "response": {
+        "code": 0,
+        "msg": "Success",
+        "data": {
+          "id": 166,
+          "createdAt": "2026-09-15T12:01:31.015+08:00",
+          "updatedAt": "2026-09-15T12:02:28.461+08:00",
+          "title": "G2 2.3.0.24",
+          "message": "1. Terminal Mode can now run alongside other features, with access from the App Home screen.\n2. Added real-time session sync with the Agent for Terminal on both phone and glasses.\n3. Improved Even Hub plug-in startup, exit, and audio reliability.\n4. Improved Bluetooth pairing, reconnection, and firmware update reliability.",
+          "mode": 1,
+          "name": "ALL",
+          "type": 1,
+          "minAppVer": "2.3.0",
+          "maxAppVer": null,
+          "region": "ALL",
+          "fileId": 4365,
+          "subPath": "/firmware/1dbdf37b03a1169c384945e94d671371.bin",
+          "version": "2.3.0.24",
+          "directFrom": "",
+          "enable": true,
+          "fileSign": "1dbdf37b03a1169c384945e94d671371",
+          "uid": 0,
+          "sn": "",
+          "model": "G2",
+          "fileSize": 4537963
+        }
+      }
+    },
+    {
+      "endpoint": "check_latest_firmware",
+      "query": "is_ring=false",
+      "response": {
+        "code": 0,
+        "msg": "Success",
+        "data": {
+          "id": 166,
+          "createdAt": "2026-09-15T12:01:31.015+08:00",
+          "updatedAt": "2026-09-15T12:02:28.461+08:00",
+          "title": "G2 2.3.0.24",
+          "message": "1. Terminal Mode can now run alongside other features, with access from the App Home screen.\n2. Added real-time session sync with the Agent for Terminal on both phone and glasses.\n3. Improved Even Hub plug-in startup, exit, and audio reliability.\n4. Improved Bluetooth pairing, reconnection, and firmware update reliability.",
+          "mode": 1,
+          "name": "ALL",
+          "type": 1,
+          "minAppVer": "2.3.0",
+          "maxAppVer": null,
+          "region": "ALL",
+          "fileId": 4365,
+          "subPath": "/firmware/1dbdf37b03a1169c384945e94d671371.bin",
+          "version": "2.3.0.24",
+          "directFrom": "",
+          "enable": true,
+          "fileSign": "1dbdf37b03a1169c384945e94d671371",
+          "uid": 0,
+          "sn": "",
+          "model": "G2",
+          "fileSize": 4537963
+        }
+      }
+    },
+    {
+      "endpoint": "check_firmware",
+      "query": "is_ring=true",
+      "response": {
+        "code": 0,
+        "msg": "Success",
+        "data": {
+          "id": 167,
+          "createdAt": "2026-09-15T12:03:18.382+08:00",
+          "updatedAt": "2026-09-15T14:49:06.941+08:00",
+          "title": "R1 2.3.0.0005",
+          "message": "1. Improved Bluetooth pairing, reconnection, and firmware update reliability.\n2. Bug fixes.",
+          "mode": 1,
+          "name": "ALL",
+          "type": 1,
+          "minAppVer": "2.3.0",
+          "maxAppVer": null,
+          "region": "ALL",
+          "fileId": 4369,
+          "subPath": "/firmware/88d963d3e8527b6a65fe35cb367b7b2b.zip",
+          "version": "2.3.0.0005",
+          "directFrom": "",
+          "enable": true,
+          "fileSign": "88d963d3e8527b6a65fe35cb367b7b2b",
+          "uid": 0,
+          "sn": "",
+          "model": "R1",
+          "fileSize": 663387
+        }
+      }
+    },
+    {
+      "endpoint": "check_latest_firmware",
+      "query": "is_ring=true",
+      "response": {
+        "code": 0,
+        "msg": "Success",
+        "data": {
+          "id": 167,
+          "createdAt": "2026-09-15T12:03:18.382+08:00",
+          "updatedAt": "2026-09-15T14:49:06.941+08:00",
+          "title": "R1 2.3.0.0005",
+          "message": "1. Improved Bluetooth pairing, reconnection, and firmware update reliability.\n2. Bug fixes.",
+          "mode": 1,
+          "name": "ALL",
+          "type": 1,
+          "minAppVer": "2.3.0",
+          "maxAppVer": null,
+          "region": "ALL",
+          "fileId": 4369,
+          "subPath": "/firmware/88d963d3e8527b6a65fe35cb367b7b2b.zip",
+          "version": "2.3.0.0005",
+          "directFrom": "",
+          "enable": true,
+          "fileSign": "88d963d3e8527b6a65fe35cb367b7b2b",
+          "uid": 0,
+          "sn": "",
+          "model": "R1",
+          "fileSize": 663387
+        }
+      }
+    }
+  ]
+}
