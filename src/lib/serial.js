@@ -67,6 +67,7 @@ import {
 } from "./pogoFlashBridge.js";
 import { buildBundleDifferencePlan } from "./differential.js";
 import { encodeRemoteBytes } from "./remoteSerial.js";
+import { explainG2CaseSelectionError } from "./casePortSelectionError.js";
 import {
   YHM_PROFILE_OBSERVED_33,
   YHM_PROFILE_OBSERVED_45,
@@ -222,19 +223,17 @@ export function isExplicitTempleDataRejection(error) {
   return error instanceof TempleRejectedError;
 }
 
-// In-place DATA record recovery. Every audited case-bridge failure shares one
-// signature: hostChunkOffset 1009 (the full record left the host), zero host
-// and temple UART error counters, and acceptedSize frozen at exactly
-// expectedSequence × 1000 — the record vanished between the Case's pogo TX
-// and the temple's OTA parser without so much as a framing error, during a
-// charge-management window in which the route is silent (the same silence the
-// post-reset ladder documents at status 6). The record was therefore never
-// accepted, and resending the identical bytes with the identical sequence
-// byte is protocol-correct: the temple's own sequence guard accepts the
-// record it is waiting for, rejects a duplicate of one it already committed
-// with status 1, and rejects anything desynchronized. Recovery is bounded per
-// record and per component attempt, and a transient never touches pacing
-// memory (it is not evidence the temple was overrun).
+// In-place DATA recovery is limited to a checksum-valid Case bridge reply
+// reporting status 6 with zero UART errors, after the bridge consumed the
+// complete host request. Audited silent windows also showed frozen temple
+// acceptedSize, but the host cannot read that evidence during a live record.
+// The temple's sequence guard accepts the identical record if it was missed
+// and rejects a duplicate with status 1 if the ACK was lost. Host transport,
+// flow-control, and bridge-safety failures do not establish this boundary and
+// must never trigger an in-place resend. Recovery is bounded per record and
+// component; silence is not evidence that the temple was overrun.
+export class SilentTempleReplyError extends RetryablePogoFlashError {}
+
 export const POGO_DATA_INPLACE_RESEND_LIMIT = 3;
 export const POGO_DATA_INPLACE_RECOVERY_BUDGET = 12;
 export const POGO_DATA_INPLACE_SETTLE_MS = Object.freeze([
@@ -263,6 +262,9 @@ export function classifyInPlaceDataRecovery(
     if (resendsForRecord > 0 && error.status === 1) {
       return { action: "advance" };
     }
+    return { action: "abort" };
+  }
+  if (!(error instanceof SilentTempleReplyError)) {
     return { action: "abort" };
   }
   if (
@@ -586,6 +588,24 @@ export function templeDataPacingMultiplierForRestart(restartCount) {
 // state is observable from script, and it is the one that matters here.
 export function defaultPacingThrottleProbe() {
   return typeof document !== "undefined" && document.visibilityState === "hidden";
+}
+
+// The final B0 reset restarts both seated lenses even for a one-route repair.
+// Require a checksum-valid version reply from each, but require the target
+// version only on routes this operation actually wrote. The Case cannot prove
+// installed-image identity on an untouched lens from a version string alone.
+export function templePostResetLivenessVerified(
+  versions,
+  writtenRoutes,
+  targetVersion,
+) {
+  return ["right", "left"].every((route) => {
+    const observed = versions?.[route];
+    return typeof observed?.firmware === "string" &&
+      observed.firmware.length > 0 &&
+      observed.hardware === 5 &&
+      (!writtenRoutes.includes(route) || observed.firmware === targetVersion);
+  });
 }
 
 export class TempleDataPacingController {
@@ -2449,7 +2469,7 @@ class CasePogoFlashTransport {
         );
       }
       if (response.status === 6) {
-        throw new RetryablePogoFlashError(
+        throw new SilentTempleReplyError(
           "No complete temple response arrived through the Case bridge.",
         );
       }
@@ -4880,11 +4900,10 @@ export class G2CaseSession {
         ),
         finalDualTempleResetVerified:
           audit.finalResetAndLiveness?.resetConfirmed === true,
-        postResetLivenessVerified: livenessRoutes.every(
-          (route) =>
-            audit.finalResetAndLiveness?.versions?.[route]?.firmware ===
-              targetReportedVersion &&
-            audit.finalResetAndLiveness?.versions?.[route]?.hardware === 5,
+        postResetLivenessVerified: templePostResetLivenessVerified(
+          audit.finalResetAndLiveness?.versions,
+          routes,
+          targetReportedVersion,
         ),
         installedByteReadbackAvailable: false,
         installedByteReadbackBoundary:
@@ -5111,9 +5130,13 @@ export async function requestG2CasePort({ transport = "auto" } = {}) {
   if (grantedCases.length === 1) {
     return grantedCases[0];
   }
-  return navigator.serial.requestPort({
-    filters: [{ usbVendorId: 0x1a86, usbProductId: 0x7523 }],
-  });
+  try {
+    return await navigator.serial.requestPort({
+      filters: [{ usbVendorId: 0x1a86, usbProductId: 0x7523 }],
+    });
+  } catch (error) {
+    throw explainG2CaseSelectionError(error, "Web Serial");
+  }
 }
 
 export function isG2CaseUsbConnectionEvent(event) {

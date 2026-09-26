@@ -193,7 +193,7 @@ export function buildG2SystemBackupArtifact({
     scope: {
       chargingCase: "byte-for-byte installed flash and option bytes",
       smartGlasses:
-        "live left/right identity snapshots plus matching official recovery firmware",
+        "live left/right identity snapshots plus archived recovery firmware matched by reported version",
       smartGlassesInstalledMemoryReadback: false,
     },
     chargingCase: {
@@ -215,7 +215,7 @@ export function buildG2SystemBackupArtifact({
       backupType: "per-route-recovery-bundles-with-live-temple-snapshots",
       installedMemoryReadback: false,
       limitation:
-        "The G2 wired protocol cannot read installed Apollo MRAM, bootloader, pairing keys, calibration, or INFO0/INFOC. Each embedded bundle is a validated archived recovery image matching that route's reported firmware version, not a dump of installed temple memory.",
+        "The G2 wired protocol cannot read installed Apollo MRAM, bootloader, pairing keys, calibration, or INFO0/INFOC. Each embedded bundle is a validated archived recovery image matched by the route's reported firmware version, not a dump of installed temple memory. Stock and CFW may report the same version; this snapshot does not prove which image is installed.",
       pairMatched: resolution.pairMatched,
       left,
       right,

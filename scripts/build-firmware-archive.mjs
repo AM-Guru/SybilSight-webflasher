@@ -8,6 +8,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { unzipSync } from "fflate";
 import { parseEvenOTA } from "../src/lib/firmware.js";
+import { TEMPLE_FLASH_TARGETS } from "../src/lib/templeFlashTargets.js";
 
 const CDN_BASE = "https://cdn.evenreal.co/firmware";
 const HARDWARE_VALIDATED_G2_2_2_6_10_SHA256 =
@@ -225,6 +226,171 @@ const HARDWARE_VALIDATED_TEMPLE_IMAGES = new Set([
   HARDWARE_VALIDATED_G2_2_2_6_10_SHA256,
 ]);
 const LOCAL_REVIEWED_TEMPLE_TARGETS = Object.freeze([
+  // SybilSight/230.26 is published through RELEASES (g2-custom-2.3.0.24-230.26).
+  Object.freeze({
+    imageSha256: "f5562b636a77c260e950da4f872d1e94224159841b9cb6b9c47faab2818aded4",
+    mainSha256: "c3dee6cd7ebb06c9142c19314842d7ce8c2e800bfc140630356a2d0684b7f6b7",
+    mainBytes: 3838184,
+    version: "2.3.0.24",
+    reportedVersion: "2.3.0.24",
+    baseVersion: "2.3.0.24",
+    label: "Local diagnostic SybilSight/230.25",
+    hardwareValidated: false,
+    localOnly: true,
+    requiredCfwMarker: "SybilSight/230.25",
+  }),
+  Object.freeze({
+    imageSha256: "5449127b711fe90902582dd48e113d915420cf6ada3ead7daa75cfa2361ce2a7",
+    mainSha256: "74c0e3eaca22f3b336bf144ffd3c1ddcb3cdce6cb1e0ee764f997d86277b60a2",
+    mainBytes: 3838048,
+    version: "2.3.0.24",
+    reportedVersion: "2.3.0.24",
+    baseVersion: "2.3.0.24",
+    label: "Local diagnostic SybilSight/230.24",
+    hardwareValidated: false,
+    localOnly: true,
+    requiredCfwMarker: "SybilSight/230.24",
+  }),
+  Object.freeze({
+    imageSha256: "df0358e5111ab509072e195d40c3cbd6e011928613fb8b6aaff85c6ef03ae316",
+    mainSha256: "d15ae1739269f1d6d1c9f6e8b4027dc0a743319db1bb7f9a27293ac2ad3919e6",
+    mainBytes: 3837928,
+    version: "2.3.0.24",
+    reportedVersion: "2.3.0.24",
+    baseVersion: "2.3.0.24",
+    label: "Local diagnostic SybilSight/230.23",
+    hardwareValidated: false,
+    localOnly: true,
+    requiredCfwMarker: "SybilSight/230.23",
+  }),
+  Object.freeze({
+    imageSha256: "10f047dab6fe551e29cfe885bf279da5e564331bcd8205a000a376f84bfc79b8",
+    mainSha256: "22f7e357690582787975178f78965d8c48f54eabc57cd5c81e8cc85458415894",
+    mainBytes: 3837680,
+    version: "2.3.0.24",
+    reportedVersion: "2.3.0.24",
+    baseVersion: "2.3.0.24",
+    label: "Local diagnostic SybilSight/230.22",
+    hardwareValidated: false,
+    localOnly: true,
+    requiredCfwMarker: "SybilSight/230.22",
+  }),
+  Object.freeze({
+    imageSha256: "c6ecd1cfc3acb72099cf2faf794d6fa895d5f0c1d70d37df2c2579fd925b927d",
+    mainSha256: "94a78d4f28a90796c5ab6257735042974eb54cef8dc4b422ca794937cd4f4967",
+    mainBytes: 3837516,
+    version: "2.3.0.24",
+    reportedVersion: "2.3.0.24",
+    baseVersion: "2.3.0.24",
+    label: "Local diagnostic SybilSight/230.21",
+    hardwareValidated: false,
+    localOnly: true,
+    requiredCfwMarker: "SybilSight/230.21",
+  }),
+  Object.freeze({
+    imageSha256: "0073690b9a73c26d9297ed1fb790ad37c1554cf8dca757308e26448e292e860c",
+    mainSha256: "9277c9a52bbb381fdd0944400ccb4de276954bcb6a9ba57d449b7f957beb6302",
+    mainBytes: 3840540,
+    version: "2.3.0.24",
+    reportedVersion: "2.3.0.24",
+    baseVersion: "2.3.0.24",
+    label: "Local diagnostic SybilSight/230.19",
+    hardwareValidated: false,
+    localOnly: true,
+    requiredCfwMarker: "SybilSight/230.19",
+  }),
+  Object.freeze({
+    imageSha256: "01d5e44cdf0802cf4d87639c079ddb05280d2b82f44d48dc3c1374e15f60a7ab",
+    mainSha256: "cc8f4453f5642925e3841f12fc48c4f1c49cec02891756f0f7955f0ef54f6bc6",
+    mainBytes: 3840292,
+    version: "2.3.0.24",
+    reportedVersion: "2.3.0.24",
+    baseVersion: "2.3.0.24",
+    label: "Local experimental SybilSight/230.18",
+    hardwareValidated: false,
+    localOnly: true,
+    requiredCfwMarker: "SybilSight/230.18",
+  }),
+  Object.freeze({
+    imageSha256: "1e0dfdb6d012947ea3efa6b0742c2ea5e8093a313e4bebe8b82b7077bc6d8561",
+    mainSha256: "7ac1aa03ac54d89698344160a73512672d018069dd6e13bee559e3bff3dd4417",
+    mainBytes: 3819500,
+    version: "2.3.0.24",
+    reportedVersion: "2.3.0.24",
+    baseVersion: "2.3.0.24",
+    label: "Local experimental SybilSight/230.17",
+    hardwareValidated: false,
+    localOnly: true,
+    requiredCfwMarker: "SybilSight/230.17",
+  }),
+  Object.freeze({
+    imageSha256: "1d45f689eb7d39e5e4fec733bd30966a2659b00e906fc2814d6e22061fcc2c75",
+    mainSha256: "217756cc297ff677156a6ca04aa1e964bdf26c20df3ae298e988b29e7d4582af",
+    mainBytes: 3813992,
+    version: "2.3.0.24",
+    reportedVersion: "2.3.0.24",
+    baseVersion: "2.3.0.24",
+    label: "Local experimental SybilSight/230.14",
+    hardwareValidated: false,
+    localOnly: true,
+    requiredCfwMarker: "SybilSight/230.14",
+  }),
+  Object.freeze({
+    imageSha256: "527336e6c91158148f1c44be498895abcdf66ed8604de896e576e04f9517fbf9",
+    mainSha256: "170d2c33acdb550f881572b1eed68c503fc7aff9f558c996b5fb41c0239e8afa",
+    mainBytes: 3813772,
+    version: "2.3.0.24",
+    reportedVersion: "2.3.0.24",
+    baseVersion: "2.3.0.24",
+    label: "Local experimental SybilSight/230.13",
+    requiredCfwMarker: "SybilSight/230.13",
+    // This diagnostic image has no hardware transfer qualification. This flag
+    // requires a completed Case-USB transfer of this exact main payload.
+    hardwareValidated: false,
+    localOnly: true,
+  }),
+  Object.freeze({
+    imageSha256: "e7fe637d7ee5ce889976ee4f82a1bb9c67a50bd3a33ce98be7c373a8cc546553",
+    mainSha256: "0bce60ecbdd906e66d16a5afd069f491c6baacb64dec0ea54c3d149f578e9e35",
+    mainBytes: 3813316,
+    version: "2.3.0.24",
+    reportedVersion: "2.3.0.24",
+    baseVersion: "2.3.0.24",
+    label: "Local experimental SybilSight/230.12",
+    requiredCfwMarker: "SybilSight/230.12",
+    // Native BLE installation is recorded separately. This flag specifically
+    // requires a completed Case-USB transfer of this exact main payload.
+    hardwareValidated: false,
+    localOnly: true,
+  }),
+  Object.freeze({
+    imageSha256: "6349192de1744319ee78a7b85f77664f6cf80f4df9664fa01dd9f59746178da6",
+    mainSha256: "30a68208eb89e09621c3b85e55f601c00f4667da95349cb3c98c6ee27082ee87",
+    mainBytes: 3813232,
+    version: "2.3.0.24",
+    reportedVersion: "2.3.0.24",
+    baseVersion: "2.3.0.24",
+    label: "Local experimental SybilSight/230.11",
+    requiredCfwMarker: "SybilSight/230.11",
+    // Bilateral full-main Case USB transfer, FINISH, route restoration and B0
+    // passed 2026-09-23. This records transfer evidence only; microphone and
+    // whole-firmware qualification remain experimental. Evidence is retained in
+    // SybilSight/artifacts/g2-hardware-230-20260922/webusb-2311-full-main-final-audit.json.
+    hardwareValidated: true,
+    localOnly: true,
+  }),
+  Object.freeze({
+    imageSha256: "bbb334bad754826f8d4397505adc23f9177931f46ed7d6192a680a7f59637c48",
+    mainSha256: "506796e5acc22a0b6b773ce73243655f1e20c15c4536dd81a36da20f49dab1c9",
+    mainBytes: 3813168,
+    version: "2.3.0.24",
+    reportedVersion: "2.3.0.24",
+    baseVersion: "2.3.0.24",
+    label: "Local experimental SybilSight/230.10",
+    requiredCfwMarker: "SybilSight/230.10",
+    hardwareValidated: false,
+    localOnly: true,
+  }),
 ]);
 const RELEASES = [
   {
@@ -363,6 +529,46 @@ const RELEASES = [
     ],
     notes:
       "Built from stock 2.2.10.10 and g2flash d968c2c (Faceclaw firmware revision 3) with the reviewed 2.2.10.72 overlays; every ROM/RAM seam is stock-signature gated by the 2.2.10.10 address profile. Exercised on hardware over Bluetooth OTA (both temples, 2026-09-15); not yet case-USB validated.",
+  },
+  {
+    // Keeps the stock 2.3.0.24 version metadata, so the reported version can
+    // never prove this image: requiredCfwMarker demands the nonce-bound
+    // per-lens FI/v1 identity reply after transfer.
+    id: "g2-custom-2.3.0.24-230.26",
+    displayName: "SybilSight CFW 230.26 (2.3.0.24)",
+    version: "2.3.0.24",
+    internalVersion: "2.3.0.24",
+    reportedVersion: "2.3.0.24",
+    baseVersion: "2.3.0.24",
+    baseSha256: "187ccf2bcc5c17a212106e8a376745511e8289c4232b634a7ea94b9bf25a0979",
+    channel: "custom",
+    trust: "reviewed-custom",
+    hash: "3ae841ccff3507f5fa7078e9448f8ae5",
+    sha256: "8784efd8892a027dd2a0b7eee4dae1b1679cfa1b8008aa1b296103cfe674b0ba",
+    size: 4617615,
+    fileName: "g2-2.3.0.24-sybilsight-230.26.bin",
+    preferLocalEvidence: true,
+    fallbacks: [[
+      "webflasher",
+      "work/cfw-2.3.0/candidate-230.26/g2-2.3.0.24-sybilsight-230.26.bin",
+    ]],
+    patchFallbackRoot: "webflasher",
+    patchFallback: "work/cfw-2.3.0/candidate-230.26/cfw_patches-230.26.json",
+    patchFileName: "cfw_patches-230.26.json",
+    patchCount: 49,
+    manifestFileName: "manifest.json",
+    capabilityMarker: "SybilSight/230.26",
+    requiredCfwMarker: "SybilSight/230.26",
+    g2flashCommit: "e13842d5b851d1c4d451d59f370da122bd26e70f",
+    capabilities: [
+      "Faceclaw revision-29 display ABI: retained root, CLEAR, full-root draw and animated RECT_COPY, with an aligned memset full-frame clear",
+      "Revision-27 retained display, compressed image transports, texture cache and atomic drawing",
+      "Direct per-lens identity: MC/v1 op 5 returns a nonce-bound FI/v1 marker from each temple before any microphone context is allocated",
+      "Four-microphone array and PCM diagnostics stay behind an explicit opt-in; the stock microphone path is unchanged by default",
+      "Changes only the Apollo application payload; all five other component payloads match stock 2.3.0.24",
+    ],
+    notes:
+      "Built from stock 2.3.0.24 and g2flash e13842d (Faceclaw revision 29) with the SybilSight 230.x overlays; the recipe replays against the pinned stock image byte-for-byte. Offline source, sanitizer and emitted-code tests pass. Not yet hardware-validated, and the four-microphone array is not acoustically qualified.",
   },
   {
     version: "2.2.9.22",
@@ -767,6 +973,9 @@ async function saveRelease(root, release, fallbackRoots) {
     ...(release.bleComponentNames
       ? { bleComponentNames: release.bleComponentNames }
       : {}),
+    ...(release.requiredCfwMarker
+      ? { requiredCfwMarker: release.requiredCfwMarker }
+      : {}),
     caseVersion: parsed.chargingCase.version,
     sourceUrl,
     archivedFrom,
@@ -832,6 +1041,9 @@ async function saveRelease(root, release, fallbackRoots) {
     capabilities: release.capabilities ?? [],
     ...(release.bleComponentNames
       ? { bleComponentNames: release.bleComponentNames }
+      : {}),
+    ...(release.requiredCfwMarker
+      ? { requiredCfwMarker: release.requiredCfwMarker }
       : {}),
     recoveryTarget: release.channel === "custom" ? "glasses" : "case-and-glasses-bundle",
     caseRecoveryEligible: release.channel !== "custom",
@@ -989,6 +1201,9 @@ async function writeTempleFlashTargets(releases) {
       ...(custom && release.bleComponentNames
         ? { bleComponentNames: release.bleComponentNames }
         : {}),
+      ...(custom && release.requiredCfwMarker
+        ? { requiredCfwMarker: release.requiredCfwMarker }
+        : {}),
     });
   }
   const entries = targets
@@ -1006,6 +1221,7 @@ async function writeTempleFlashTargets(releases) {
         `    label: ${JSON.stringify(target.label)},\n` +
         `    hardwareValidated: ${target.hardwareValidated},\n` +
         (target.localOnly ? `    localOnly: true,\n` : "") +
+        (target.requiredCfwMarker ? `    requiredCfwMarker: ${JSON.stringify(target.requiredCfwMarker)},\n` : "") +
         (target.bleComponentNames
           ? `    bleComponentNames: Object.freeze(${JSON.stringify(target.bleComponentNames)}),\n`
           : "") +
@@ -1046,6 +1262,22 @@ async function main() {
   );
   const output = path.resolve(argument("--output", defaultOutput));
   const r1Only = process.argv.includes("--r1-only");
+  // Regenerate compiled pins from the already archived local catalog without
+  // downloading firmware, changing catalog publication, or touching binaries.
+  if (process.argv.includes("--targets-only")) {
+    const index = JSON.parse(await readFile(path.join(output, "index.json"), "utf8"));
+    if (!Array.isArray(index.releases) || !index.releases.length) throw new Error("Archived G2 catalog is missing.");
+    for (const target of TEMPLE_FLASH_TARGETS.filter((entry) => !entry.localOnly)) {
+      const archived = index.releases.find((release) => release.sha256 === target.imageSha256);
+      const main = archived?.components?.find((component) => component.name === "ota/s200_firmware_ota.bin" && component.typeId === 0);
+      if (main?.sha256 !== target.mainSha256 || main?.size !== target.mainBytes) {
+        throw new Error(`Archived catalog is stale for ${target.version}; refresh it before regenerating pins.`);
+      }
+    }
+    const count = await writeTempleFlashTargets(index.releases);
+    process.stdout.write(`Regenerated ${count} local compiled temple targets; catalog unchanged.\n`);
+    return;
+  }
   const requestedG2Release = argument("--release", null);
   if (r1Only && requestedG2Release) {
     throw new Error("--r1-only and --release cannot be combined");

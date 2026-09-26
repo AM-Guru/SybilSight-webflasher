@@ -1,6 +1,7 @@
 import { equalBytes, hexBytes, readU32LE, sha256Hex } from "./firmware.js";
 import {
   YHM_PROFILE_OBSERVED_33,
+  YHM_PROFILE_OBSERVED_33_ENTRY1,
   YHM_PROFILE_OBSERVED_45,
   YHM_PROFILE_REVIEWED_22,
   requireYhmProfile,
@@ -15,15 +16,19 @@ export const POGO_BRIDGE_SHA256 =
   "e30e143d522e5a5d0b10a92a15610badcc6aef014333716a94eae183b14dc258";
 export const POGO_BRIDGE_OBSERVED_33_SHA256 =
   "3ca8ed1d8d37b2edef62dcb6915b5ec4b1d439160da0a89e93aa74901d760ef6";
+export const POGO_BRIDGE_OBSERVED_33_ENTRY1_SHA256 =
+  "bc523f26152be688634be62b06a9dc11fd31870d63b5fd28af0c6cacd3c5d6aa";
 export const POGO_BRIDGE_OBSERVED_45_SHA256 =
   "1a4cde093bc804e1b7e176229b0af346b0423c3a1d85fc5c908f1e38233ed45c";
 // Regression pins for register-8 values already exercised end-to-end. Any
 // other observed profile is verified by construction instead: the reviewed
 // payload's pin is checked first, and the derivation touches only the four
-// baseline-table register-8 offsets.
+// baseline-table register-8 offsets. The exact entry-1 variant has a fifth
+// offset and its own digest pin.
 export const POGO_BRIDGE_PROFILE_SHA256 = Object.freeze({
   [YHM_PROFILE_REVIEWED_22]: POGO_BRIDGE_SHA256,
   [YHM_PROFILE_OBSERVED_33]: POGO_BRIDGE_OBSERVED_33_SHA256,
+  [YHM_PROFILE_OBSERVED_33_ENTRY1]: POGO_BRIDGE_OBSERVED_33_ENTRY1_SHA256,
   [YHM_PROFILE_OBSERVED_45]: POGO_BRIDGE_OBSERVED_45_SHA256,
 });
 export const POGO_BRIDGE_BANNER = new TextEncoder().encode("G2_POGO_BRIDGE_V1\n");
@@ -99,7 +104,10 @@ export async function getVerifiedPogoBridgePayload(
   if (profile === YHM_PROFILE_REVIEWED_22) return reviewedPayload;
 
   const payload = reviewedPayload.slice();
-  for (const offset of POGO_BRIDGE_PROFILE_PATCH_OFFSETS) {
+  const patchOffsets = profile === YHM_PROFILE_OBSERVED_33_ENTRY1
+    ? [1660, ...POGO_BRIDGE_PROFILE_PATCH_OFFSETS]
+    : POGO_BRIDGE_PROFILE_PATCH_OFFSETS;
+  for (const offset of patchOffsets) {
     if (payload[offset] !== 0x22) {
       throw new Error(
         "The pinned pogo bridge YHM profile table differs from the reviewed layout.",

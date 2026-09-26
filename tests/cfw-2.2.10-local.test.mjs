@@ -5,7 +5,7 @@ import { classifyG2Firmware, REVIEWED_CFW_2_2_10_72 } from "../src/lib/firmware.
 import { findTempleFlashTarget } from "../src/lib/templeFlashTargets.js";
 
 for (const release of [REVIEWED_CFW_2_2_10_72]) {
-test(`${release.version} CFW is pinned and served as the catalog's only custom release`, async () => {
+test(`${release.version} CFW is pinned and served in the catalog`, async () => {
   const trust = classifyG2Firmware(release.sha256);
   assert.equal(trust.baseVersion, "2.2.10.10");
   assert.equal(trust.version, release.version);
@@ -19,6 +19,6 @@ test(`${release.version} CFW is pinned and served as the catalog's only custom r
     new URL("../public/firmware-updates/source-files/index.json", import.meta.url), "utf8",
   ));
   const custom = catalog.releases.filter((r) => r.channel === "custom");
-  assert.deepEqual(custom.map((r) => r.sha256), [release.sha256]);
+  assert.equal(custom.filter((r) => r.sha256 === release.sha256).length, 1);
 });
 }

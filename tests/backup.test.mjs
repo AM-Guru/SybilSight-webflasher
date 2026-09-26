@@ -166,6 +166,7 @@ test("builds one recovery artifact with case bytes and both glasses", () => {
   assert.equal(artifact.smartGlasses.left.firmwareVersion, "2.2.6.10");
   assert.equal(artifact.smartGlasses.right.hardwareRevision, 5);
   assert.equal(artifact.smartGlasses.installedMemoryReadback, false);
+  assert.match(artifact.smartGlasses.limitation, /Stock and CFW may report the same version/);
   assert.equal(artifact.smartGlasses.pairMatched, true);
   assert.equal(artifact.smartGlasses.recoveryBundles.length, 1);
   const [bundle] = artifact.smartGlasses.recoveryBundles;

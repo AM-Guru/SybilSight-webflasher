@@ -28,6 +28,7 @@ import {
   validateGlassesRecoveryBundle,
 } from "./lib/backup.js";
 import { buildG2DeviceAnalytics } from "./lib/analytics.js";
+import { releaseSelectedLocalCasePort } from "./lib/casePortLifecycle.js";
 import {
   consoleTranscriptStorageKey,
   formatBluetoothRecoveryTranscript,
@@ -92,6 +93,7 @@ import {
   templeVersionObservationsFromFlashAudit,
   verifyAutomaticCaseReadiness,
 } from "./lib/automaticRecovery.js";
+import { g2VersionCanIdentifyTarget } from "./lib/g2VersionIdentity.js";
 import { REVIEWED_CASE_VERSION } from "./lib/pogoFlashBridge.js";
 import {
   WEBFLASHER_BUILD_LABEL,
@@ -109,6 +111,7 @@ import {
   assertPinnedG2BleBundle,
   findAuthorizedG2BleDevice,
   g2BleSelectedHandleUnreachable,
+  g2BleUnsupportedEndpoint,
   applyG2BleReselectionProof,
   g2BleRouteProvenOverBluetooth,
   proveG2BleTempleByReselection,
@@ -128,9 +131,11 @@ import {
   assertPinnedR1Release,
   enterR1DfuMode,
   flashR1SecureDfu,
+  listAuthorizedR1ApplicationDevices,
   prepareR1DfuPackage,
   requestR1ApplicationDevice,
   requestR1DfuDevice,
+  waitForR1ApplicationMode,
 } from "./lib/r1Dfu.js";
 import {
   R1_UNLOCK_APPLICATION_VERSION,
@@ -242,13 +247,14 @@ const OPERATION_LABELS = Object.freeze({
   pogo: "Query temple",
   recheck: "Reset and recheck",
   "temple-flash": "Restore Smart Glasses",
-  "ble-temple-flash": "Restore Smart Glasses over Bluetooth",
+  "ble-temple-flash": "Update Smart Glasses over Bluetooth",
   "ble-temple-proof": "Prove a rebooted temple over Bluetooth",
   "bluetooth-probe": "Check Bluetooth Application mode",
   "automatic-apply": "Recover Smart Glasses over USB",
   "automatic-plan": "Preview Smart Glasses USB transfer",
   "automatic-recovery": "Diagnose and recover without flashing",
   "ring-dfu-enter": "Restart R1 in update mode",
+  "ring-application-probe": "Check R1 application mode",
   "ring-dfu": "Update R1 Ring",
   "ring-unlock": "Unlock R1 Bootloader",
   stage: "Stage Case bank",
@@ -951,6 +957,7 @@ function BluetoothRecoveryCard({
   bleReady,
   onReadyChange,
   bleFlashReady,
+  onProbe,
   onFlash,
   selectedRelease,
   bleResults,
@@ -992,12 +999,12 @@ function BluetoothRecoveryCard({
         <p>
           {primary
             ? "Select the clearly labeled left and right temples. SybilSight updates them together and verifies each side independently—no Case cable required."
-            : "Chrome transfers the selected hash-pinned component set to both temples simultaneously, using independent per-block acknowledgements and component verification for each side. No Case USB connection is required."}
+            : "Chrome connects to both temples, then transfers the selected hash-pinned components to Right followed by Left. Each side has independent block acknowledgements and component verification. No Case USB connection is required."}
         </p>
         <details className="ble-instructions" open={advanced}>
           <summary>Before you begin</summary>
           <ol>
-            <li>Remove both temples from the Case and keep them powered nearby.</li>
+            <li>Keep both temples powered and nearby. They may remain seated in the open, powered Charging Case when Bluetooth is available.</li>
             <li>
               Disconnect the paired phone, then select the explicitly labeled
               Left and Right devices below.
@@ -1043,12 +1050,25 @@ function BluetoothRecoveryCard({
               }
             />
             <span>
-              Both advertised names explicitly match their assigned physical
+              Both selected device names explicitly match their assigned physical
               sides; the phone is disconnected and the temples will stay powered
               and nearby; this WebFlasher tab will stay in front.
             </span>
           </label>
         ) : null}
+        <Button
+          tone="secondary"
+          onClick={onProbe}
+          busy={operation === "bluetooth-probe"}
+          disabled={
+            !directBleSupported ||
+            !bleDevices.left ||
+            !bleDevices.right ||
+            Boolean(operation)
+          }
+        >
+          Check both connections · no firmware write
+        </Button>
         <Button
           className="ble-recovery-start"
           onClick={() => onFlash({ bypassReadyConfirmation: primary })}
@@ -1576,6 +1596,23 @@ function readStoredConsoleTranscript() {
   return recovered;
 }
 
+function CaseChooserWaitHelp() {
+  return (
+    <div className="case-chooser-wait" role="status">
+      <strong>Still waiting for the USB device picker.</strong>
+      <p>
+        If no picker appeared, this browser may expose WebUSB without a working
+        device picker. Open WebFlasher in desktop Chrome or use Web Serial after
+        restarting this page. No Case command has been sent while selection is
+        pending.
+      </p>
+      <Button tone="secondary" onClick={() => window.location.reload()}>
+        Cancel selection and restart page
+      </Button>
+    </div>
+  );
+}
+
 function App() {
   const browserCapabilities = webFlasherBrowserCapabilities();
   const linkedSupportCode =
@@ -1594,7 +1631,13 @@ function App() {
   const [ringCatalog, setRingCatalog] = useState([]);
   const [selectedRingReleaseId, setSelectedRingReleaseId] = useState("");
   const [ringApplicationDevice, setRingApplicationDevice] = useState(null);
+  const [ringApplicationReady, setRingApplicationReady] = useState(false);
+  const [authorizedRingApplications, setAuthorizedRingApplications] = useState([]);
+  const ringApplicationBeforeDfuRef = useRef(null);
+  const ringDfuRestartedFromApplicationRef = useRef(false);
+  const ringApplicationSelectionEpochRef = useRef(0);
   const [ringDfuDevice, setRingDfuDevice] = useState(null);
+  const ringDfuSelectionEpochRef = useRef(0);
   const [ringReady, setRingReady] = useState(false);
   const [ringStatus, setRingStatus] = useState(
     "Select your connected R1, restart it into update mode, then select the R1 DFU device.",
@@ -1608,6 +1651,8 @@ function App() {
   const [staged, setStaged] = useState(null);
   const [progress, setProgress] = useState(EMPTY_PROGRESS);
   const [operation, setOperation] = useState(null);
+  const [caseChooserPending, setCaseChooserPending] = useState(false);
+  const [caseChooserSlow, setCaseChooserSlow] = useState(false);
   const [wakeLockStatus, setWakeLockStatus] = useState(
     IDLE_WAKE_LOCK_STATUS,
   );
@@ -1703,6 +1748,9 @@ function App() {
     };
   };
   const [bleRecoveryHint, setBleRecoveryHint] = useState(null);
+  // The visible recovery hint describes one route, but both endpoints can fail.
+  // Preserve each route's need for fresh discovery when the other is selected.
+  const bleReselectionSidesRef = useRef(new Set());
   const [bleRouteProgress, setBleRouteProgress] = useState(
     EMPTY_BLE_ROUTE_PROGRESS,
   );
@@ -1729,6 +1777,13 @@ function App() {
   const remoteOperatorPortRef = useRef(null);
   const remoteTaskExecutorRef = useRef(null);
   const remoteTaskQueueRef = useRef(Promise.resolve());
+
+  const releaseLocalCasePort = useCallback(
+    () => releaseSelectedLocalCasePort({
+      portRef, sessionRef, remotePortRef: remoteOperatorPortRef,
+    }),
+    [],
+  );
 
   const writeTranscriptNow = useCallback(() => {
     if (transcriptPersistTimerRef.current) {
@@ -1898,6 +1953,8 @@ function App() {
   // vanished temple has not yet been proven healthy.
   useEffect(() => {
     if (bleResults?.outcome !== "awaiting_case_verification") return;
+    // Case version bytes cannot identify patches sharing the stock donor version.
+    if (Object.values(bleResults.routes ?? {}).some((route) => route.requiredCfwMarker)) return;
     const targetReportedVersion = bleResults.reportedVersion;
     if (
       !["left", "right"].every((side) =>
@@ -2433,6 +2490,15 @@ function App() {
   );
 
   useEffect(() => {
+    if (!caseChooserPending) {
+      setCaseChooserSlow(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setCaseChooserSlow(true), 12_000);
+    return () => clearTimeout(timer);
+  }, [caseChooserPending]);
+
+  useEffect(() => {
     const handleError = (event) => {
       addLog(`Browser error: ${event.message || "unknown script error"}`, "error");
     };
@@ -2582,15 +2648,35 @@ function App() {
       window.removeEventListener("beforeunload", preventOperationUnload);
   }, [operation]);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    const releaseOnExit = () => {
+      // pagehide also covers BFCache navigation, where relying on renderer
+      // destruction can leave Chrome owning the CH340 interface.
+      void releaseLocalCasePort().catch(() => {});
+    };
+    const clearRestoredCaseState = (event) => {
+      if (!event.persisted) return;
+      // The page can return from BFCache after its USB handle was released.
+      // Keep the report from appearing to authorize recovery on a closed port.
+      setReport(null);
+      setRecheckReport(null);
+      setBackup(null);
+      setStaged(null);
+      setPogoResults({});
+      setTempleFlashAudit(null);
+    };
+    window.addEventListener("pagehide", releaseOnExit);
+    window.addEventListener("pageshow", clearRestoredCaseState);
+    return () => {
+      window.removeEventListener("pagehide", releaseOnExit);
+      window.removeEventListener("pageshow", clearRestoredCaseState);
+      releaseOnExit();
       void mutationWakeLockRef.current?.stop();
       void remoteOperatorPortRef.current?.dispose();
       void remoteDeviceBridgeRef.current?.close();
       supportConnectionRef.current?.close();
-    },
-    [],
-  );
+    };
+  }, [releaseLocalCasePort]);
 
   const run = useCallback(async (name, task, { total = null } = {}) => {
     let mutationWakeLock = null;
@@ -2863,6 +2949,19 @@ function App() {
     const transport =
       typeof transportOrEvent === "string" ? transportOrEvent : "auto";
     await run("analyze", async () => {
+      if (portRef.current === remoteOperatorPortRef.current && portRef.current) {
+        throw new Error("End the remote Case session before selecting a local Case.");
+      }
+      if (portRef.current) {
+        await releaseLocalCasePort();
+        setReport(null);
+        setRecheckReport(null);
+        setBackup(null);
+        setStaged(null);
+        setPogoResults({});
+        setTempleFlashAudit(null);
+        addLog("Released the previous Case USB interface before opening a new picker.");
+      }
       const preferredTransport =
         transport === "auto"
           ? browserCapabilities.webUsb
@@ -2874,7 +2973,13 @@ function App() {
       addLog(
         `Waiting for a G2 Case ${preferredTransport} selection.`,
       );
-      const port = await requestG2CasePort({ transport });
+      setCaseChooserPending(true);
+      let port;
+      try {
+        port = await requestG2CasePort({ transport });
+      } finally {
+        setCaseChooserPending(false);
+      }
       portRef.current = port;
       sessionRef.current = null;
       addLog(`G2 Case ${g2CaseTransportLabel(port)} interface selected.`);
@@ -2931,6 +3036,23 @@ function App() {
         bluetoothFlashAuditSnapshot: null,
       });
     });
+  };
+
+  const disconnectLocalCase = async () => {
+    if (!portRef.current || portRef.current === remoteOperatorPortRef.current) return;
+    try {
+      await releaseLocalCasePort();
+      addLog("Case USB interface released. Your downloaded backup file remains on this computer.", "success");
+    } catch (caught) {
+      addLog(`Case USB close reported: ${caught.message}. The stale local session was cleared.`, "warn");
+    } finally {
+      setReport(null);
+      setRecheckReport(null);
+      setBackup(null);
+      setStaged(null);
+      setPogoResults({});
+      setTempleFlashAudit(null);
+    }
   };
 
   const openRemoteSupportCase = async () => {
@@ -3276,6 +3398,13 @@ function App() {
         ? null
         : await findAuthorizedG2BleDevice(side, {
             expectedName: rememberedName,
+            // Deliberate reselection or a rejected endpoint needs a fresh scan,
+            // not the same unreachable handle from getDevices().
+            forceChooser: Boolean(
+              bleDevices[side] ||
+              bleRecoveryHint?.side === side ||
+              bleReselectionSidesRef.current.has(side)
+            ),
           });
       if (device) {
         setBleStatus(
@@ -3287,10 +3416,10 @@ function App() {
         );
       } else {
         setBleStatus(
-          `Waiting for Chrome's Bluetooth chooser · it will list Even G2 devices whose name contains ${marker}.`,
+          `Waiting for the browser's Bluetooth chooser · it will list Even G2 devices whose name contains ${marker}.`,
         );
         addLog(
-          `Waiting for the ${side} G2 temple in Chrome's Bluetooth chooser · restricted to names containing ${marker}.`,
+          `Waiting for the ${side} G2 temple in the browser's Bluetooth chooser · restricted to names containing ${marker}.`,
         );
         device = await requestG2BleDevice(side, undefined, {
           // This side's own remembered name, never the other arm's.
@@ -3310,6 +3439,7 @@ function App() {
         );
       }
       const observedSide = g2BleDeviceSide(device.name);
+      bleReselectionSidesRef.current.delete(side);
       setBleDevices((current) => ({
         ...current,
         [side]: device,
@@ -3319,26 +3449,35 @@ function App() {
       );
       setBleResults(null);
       setBleStatus(
-        `${side} selected · ${device.name} · advertised ${observedSide} marker verified. Select the other temple before updating.`,
+        `${side} selected · ${device.name} · ${observedSide} name marker verified. ${bleDevices[otherSide] ? "Both temples selected; live connections are checked before firmware transfer." : "Select the other temple before updating."}`,
       );
       addLog(
-        `${side}: selected Bluetooth device ${JSON.stringify(device.name)} · advertised side=${observedSide}. No firmware bytes were sent.`,
+        `${side}: selected Bluetooth device ${JSON.stringify(device.name)} · name side=${observedSide}. A live GATT connection has not been proven; no firmware bytes were sent.`,
         "success",
       );
     } catch (caught) {
       const requestedSideUnavailable =
         caught?.name === "NotFoundError" ||
+        caught?.code === "G2_CHOOSER_TIMEOUT" ||
         caught?.code === "WRONG_G2_SIDE" ||
         caught?.code === "AMBIGUOUS_G2_SIDE";
       const message =
         caught?.name === "NotFoundError"
-          ? `The ${side} Bluetooth chooser closed without a selection. Chrome uses the same result when no matching advertisement is visible; wake and remove that temple from the Case, disconnect it from the Even app or phone, then retry.`
+          ? `The ${side} Bluetooth chooser closed without a selection. Keep this WebFlasher tab in front while choosing a device. Chrome uses the same result when no matching advertisement is visible; wake and remove that temple from the Case, disconnect it from the Even app or phone, then retry.`
           : caught?.message || String(caught);
       if (requestedSideUnavailable) {
+        bleReselectionSidesRef.current.add(side);
+        // A failed fresh chooser invalidates this side's saved handle. Keeping
+        // it selected would leave Update enabled even though Chrome just failed
+        // to find that temple again.
+        setBleDevices((current) => ({ ...current, [side]: null }));
+        setBleReady(false);
         setBleRecoveryHint({
           side,
           reason:
-            caught?.name === "NotFoundError"
+            caught?.code === "G2_CHOOSER_TIMEOUT"
+              ? "the browser picker did not return a result"
+              : caught?.name === "NotFoundError"
               ? "no matching advertisement was selectable"
               : caught?.code === "WRONG_G2_SIDE"
                 ? `Chrome returned the ${caught.observedSide} temple instead`
@@ -3347,16 +3486,17 @@ function App() {
           observedName: caught?.deviceName ?? null,
           observedAt: new Date().toISOString(),
         });
-        setUsbRecoveryRequested(true);
         setBleStatus(
-          `${message} The Case recovery panel is open: select the Case and run “Diagnose & recover without flashing” before considering a firmware rewrite.`,
+          caught?.code === "G2_CHOOSER_TIMEOUT"
+            ? message
+            : `${message} Retry the ${side} Bluetooth chooser after waking that temple. If it still cannot advertise after a physical power cycle, open USB recovery for a no-flash diagnosis.`,
         );
       } else {
         setBleStatus(message);
       }
       if (caught?.name === "NotFoundError") {
         addLog(
-          `${message} Opening the Case no-flash recovery path for one bounded reset and bilateral Application proof.`,
+          `${message} No firmware bytes were sent. Bluetooth reselection remains available; use Case no-flash diagnosis only if the temple stays unreachable after a physical power cycle.`,
           "warn",
         );
       } else {
@@ -3368,7 +3508,7 @@ function App() {
         setError(message);
         addLog(
           requestedSideUnavailable
-            ? `${message} The requested ${side} side remains unproven over Bluetooth; opening the Case no-flash recovery path before any firmware rewrite.`
+            ? `${message} The requested ${side} side remains unproven over Bluetooth. Retry its chooser before opening the optional Case no-flash recovery path.`
             : message,
           "error",
         );
@@ -3415,6 +3555,7 @@ function App() {
         expectedName: readRememberedTempleNames()[side],
         tokens: readObservedNameTokens(),
         expectedFirmwareRevisions,
+        requiredCfwMarker: bleResults.routes?.[side]?.requiredCfwMarker ?? null,
         log: addLog,
       });
       rememberNameToken(proof.deviceName);
@@ -3534,6 +3675,11 @@ function App() {
             );
           }
           assertPinnedG2BleBundle(prepared);
+          if (prepared.templeFlashTarget?.requiredCfwMarker &&
+              bleResults?.imageSha256 === prepared.fileSha256 &&
+              g2BleRoutesAwaitingCaseVerification(bleResults.routes).length) {
+            throw new Error("This CFW was already transferred. Re-select the pending lenses to verify their exact firmware without sending the image again.");
+          }
           acceptPreparedFirmware(prepared);
           const targetReportedVersion =
             g2BleTargetReportedVersion(prepared);
@@ -3630,6 +3776,7 @@ function App() {
               continue;
             }
             if (
+              g2VersionCanIdentifyTarget(prepared, targetReportedVersion) &&
               g2BleTargetVersionProof(
                 pogoResults[side],
                 targetReportedVersion,
@@ -3744,13 +3891,12 @@ function App() {
                 if (status === "fulfilled") {
                   const postUpdate = value?.components?.at(-1)?.postUpdate;
                   if (
-                    postUpdate?.freshReconnectAttempted &&
-                    !postUpdate.reconnected
+                    g2BleRoutesAwaitingCaseVerification({ [side]: value }).length > 0
                   ) {
                     setRouteProgress(
                       side,
                       1,
-                      `${side}: transfer verified; reboot reconnect exhausted, awaiting final Case version proof`,
+                      `${side}: transfer verified; awaiting fresh firmware identity or liveness proof`,
                       "awaiting verification",
                     );
                     return;
@@ -3794,13 +3940,12 @@ function App() {
                 deviceId: device.id,
               };
               if (
-                postUpdate?.freshReconnectAttempted &&
-                !postUpdate.reconnected
+                g2BleRoutesAwaitingCaseVerification({ [side]: outcome.value }).length > 0
               ) {
                 setRouteProgress(
                   side,
                   1,
-                  `${side}: selected component ENDs verified; awaiting final Case version proof`,
+                  `${side}: selected component ENDs verified; awaiting fresh firmware identity or liveness proof`,
                   "awaiting verification",
                 );
               } else {
@@ -3889,18 +4034,24 @@ function App() {
               continue;
             }
             if (g2BleSelectedHandleUnreachable(outcome.reason)) {
+              const unsupported = g2BleUnsupportedEndpoint(outcome.reason);
               // Every bounded connect ended in "no longer in range": the saved
               // Chrome handle is dead (the temple slept, rebooted, or rotated its
               // address). A solo retry on the same handle cannot succeed; hand
               // the side back to the chooser instead.
               addLog(
-                `${side}: Chrome's saved handle for this temple can no longer reach it, so the bounded solo retry is skipped. Wake the ${side} temple (tap its touchpad or dock and undock it) and select it again from the chooser; the other side's result is retained.`,
+                unsupported
+                  ? `${side}: the selected endpoint cannot provide GATT; automatic retry is skipped. Select ${side} again and choose another matching entry if duplicate names appear. The other side's result is retained.`
+                  : `${side}: Chrome's saved handle for this temple can no longer reach it, so the bounded solo retry is skipped. Wake the ${side} temple (tap its touchpad or dock and undock it) and select it again from the chooser; the other side's result is retained.`,
                 "warn",
               );
               setBleDevices((current) => ({ ...current, [side]: null }));
+              bleReselectionSidesRef.current.add(side);
               setBleRecoveryHint({
                 side,
-                reason: "its saved Bluetooth handle no longer reaches the temple; reselect it from the chooser",
+                reason: unsupported
+                  ? "the selected endpoint cannot provide GATT; select another matching endpoint"
+                  : "its saved Bluetooth handle no longer reaches the temple; reselect it from the chooser",
               });
               continue;
             }
@@ -4050,15 +4201,20 @@ function App() {
             setUsbRecoveryRequested(true);
             setSessionProgress(
               1,
-              `Bluetooth transfer accepted; awaiting Case proof for ${awaitingCaseSides.join(" + ")}`,
+              `Bluetooth transfer accepted; awaiting ${prepared.templeFlashTarget?.requiredCfwMarker ? "direct CFW identity" : "Case"} proof for ${awaitingCaseSides.join(" + ")}`,
             );
-            setBleStatus(
-              `Bluetooth transfer accepted, but ${awaitingCaseSides.join(" + ")} did not answer a reconnect through Chrome's saved handle after rebooting. Re-select ${awaitingCaseSides.join(" and ")} from the chooser to prove the update over Bluetooth, or re-seat both temples in the Case and run the no-flash recovery.`,
-            );
-            addLog(
-              `Direct Bluetooth transfer is not yet a completed recovery · ${awaitingCaseSides.join(" + ")} exhausted the fresh post-END reconnect. Re-select the temple from the chooser (a fresh scan refreshes Chrome's device cache) or obtain checksum-valid Case proof of reported G2 ${targetReportedVersion}; firmware will not be replayed.`,
-              "warn",
-            );
+            if (prepared.templeFlashTarget?.requiredCfwMarker) {
+              setBleStatus(`Firmware transferred; re-select ${awaitingCaseSides.join(" and ")} to verify ${prepared.templeFlashTarget.requiredCfwMarker} directly. The stock version reported by the Case cannot prove this CFW.`);
+              addLog("CFW postflight is pending a fresh nonce reply from each lens. Use re-selection verification; do not repeat the update.", "warn");
+            } else {
+              setBleStatus(
+                `Bluetooth transfer accepted, but ${awaitingCaseSides.join(" + ")} did not answer a reconnect through Chrome's saved handle after rebooting. Re-select ${awaitingCaseSides.join(" and ")} from the chooser to prove the update over Bluetooth, or re-seat both temples in the Case and run the no-flash recovery.`,
+              );
+              addLog(
+                `Direct Bluetooth transfer is not yet a completed recovery · ${awaitingCaseSides.join(" + ")} exhausted the fresh post-END reconnect. Re-select the temple from the chooser (a fresh scan refreshes Chrome's device cache) or obtain checksum-valid Case proof of reported G2 ${targetReportedVersion}; firmware will not be replayed.`,
+                "warn",
+              );
+            }
           } else {
             if (G2_BLE_VALIDATION_SIDE) {
               const controlSide = G2_BLE_VALIDATION_SIDE === "left" ? "right" : "left";
@@ -4185,8 +4341,9 @@ function App() {
 
   const restartAndRecheck = async () => {
     await run("recheck", async () => {
+      setRecheckReport(null);
       const result = await getSession().restartAndVerifyBothTemples();
-      setRecheckReport(result);
+      setRecheckReport({ ...result, checkedAt: new Date().toISOString() });
       if (report) {
         setReport({
           ...report,
@@ -5092,16 +5249,23 @@ function App() {
     run("bluetooth-probe", async () => {
       setSessionProgress(0.1, "Checking previously authorized G2 Bluetooth handles");
       const result = await probeAuthorizedG2BleDevices({ devices: bleDevices });
+      const failedLinks = ["left", "right"]
+        .filter((side) => result.results[side] && !result.results[side].reachable)
+        .map((side) => `${side}: ${(result.results[side].error || "Application service unavailable").replace(/\.+$/, "")}`);
+      const failureDetail = failedLinks.length ? ` · ${failedLinks.join("; ")}` : "";
+      const recoveryStep = failedLinks.some((item) => /Unsupported device/i.test(item))
+        ? "Chrome may be holding a stale handle. Re-select each unavailable temple from its Bluetooth chooser; wake it first if it is missing."
+        : "Wake or remove an unavailable temple from the Case and retry.";
       setSessionProgress(1, "Bluetooth Application-service check complete");
       setBleStatus(
         result.bothApplicationsReachable
           ? "Bluetooth check passed · both G2 Application services are reachable from this computer."
           : result.chooserRequired
             ? "Bluetooth check needs the person at the glasses to select both temples once. Remote browser commands cannot open Chrome's protected device chooser."
-            : `Bluetooth check reached ${result.reachableSides.join(" + ") || "neither side"}; wake or remove the unavailable temple from the Case and retry.`,
+            : `Bluetooth check reached ${result.reachableSides.join(" + ") || "neither side"}${failureDetail}. ${recoveryStep}`,
       );
       addLog(
-        `Bluetooth Application-mode check · authorized ${result.authorizedSides.join(" + ") || "none"} · reachable ${result.reachableSides.join(" + ") || "none"}.`,
+        `Bluetooth Application-mode check · authorized ${result.authorizedSides.join(" + ") || "none"} · reachable ${result.reachableSides.join(" + ") || "none"}${failureDetail}.`,
         result.bothApplicationsReachable ? "success" : "warn",
       );
       return result;
@@ -5258,38 +5422,143 @@ function App() {
   const selectedRingRelease = ringCatalog.find(
     (item) => item.id === selectedRingReleaseId,
   );
-  const selectRingApplication = async () => {
+  const acceptRingApplication = (device, selectionEpoch, source = "chooser") => {
+    if (selectionEpoch !== ringApplicationSelectionEpochRef.current) return;
     setError("");
+    setAuthorizedRingApplications([]);
+    setRingApplicationDevice(device);
+    setRingApplicationReady(false);
+    ringApplicationBeforeDfuRef.current = device;
+    ringDfuRestartedFromApplicationRef.current = false;
+    // A DFU handle from an earlier ring/session must never stay armed when
+    // the application identity changes. Direct DFU recovery remains available
+    // through a fresh explicit bootloader selection below.
+    ringDfuSelectionEpochRef.current += 1;
+    setRingDfuDevice(null);
+    setRingReady(false);
+    const sourceLabel = source === "saved" ? " from this browser's prior authorization"
+      : source === "late" ? " after the browser delay" : "";
+    setRingStatus(
+      `${device.name ?? "R1"} selected${sourceLabel}. Check its normal-mode connection before entering update mode.`,
+    );
+    addLog(`Selected R1 application device ${device.name ?? device.id}${sourceLabel}.`, "success");
+  };
+  const selectRingApplication = async () => {
+    const selectionEpoch = ++ringApplicationSelectionEpochRef.current;
+    setError("");
+    setAuthorizedRingApplications([]);
     try {
-      const device = await requestR1ApplicationDevice();
-      setRingApplicationDevice(device);
-      setRingReady(false);
-      setRingStatus(`${device.name ?? "R1"} selected and ready to enter update mode.`);
-      addLog(`Selected R1 application device ${device.name ?? device.id}.`, "success");
+      const device = await requestR1ApplicationDevice(undefined, {
+        onLateDevice: (lateDevice) => acceptRingApplication(lateDevice, selectionEpoch, "late"),
+      });
+      acceptRingApplication(device, selectionEpoch);
     } catch (caught) {
+      if (selectionEpoch !== ringApplicationSelectionEpochRef.current) return;
       if (caught?.name === "NotFoundError") return;
+      setError(caught?.message ?? String(caught));
+    }
+  };
+  const reuseAuthorizedRingApplication = async () => {
+    const selectionEpoch = ++ringApplicationSelectionEpochRef.current;
+    setError("");
+    setAuthorizedRingApplications([]);
+    try {
+      const devices = await listAuthorizedR1ApplicationDevices();
+      if (selectionEpoch !== ringApplicationSelectionEpochRef.current) return;
+      if (devices.length === 1) {
+        acceptRingApplication(devices[0], selectionEpoch, "saved");
+      } else if (devices.length > 1) {
+        setAuthorizedRingApplications(devices);
+        setRingStatus("Choose the previously authorized R1 you want to check. No Bluetooth connection has been opened yet.");
+      } else {
+        setRingStatus("This browser has no previously authorized R1. Select the connected ring in the Bluetooth picker.");
+      }
+    } catch (caught) {
+      if (selectionEpoch !== ringApplicationSelectionEpochRef.current) return;
       setError(caught?.message ?? String(caught));
     }
   };
   const restartRingForDfu = () =>
     run("ring-dfu-enter", async () => {
       assertPinnedR1Release(selectedRingRelease);
+      if (!ringApplicationReady) {
+        throw new Error("Check the selected R1 normal-mode connection before restarting it into update mode.");
+      }
+      ringApplicationSelectionEpochRef.current += 1;
+      ringDfuSelectionEpochRef.current += 1;
+      setRingDfuDevice(null);
+      setRingReady(false);
+      setRingApplicationReady(false);
+      ringApplicationBeforeDfuRef.current = ringApplicationDevice;
       await enterR1DfuMode(ringApplicationDevice);
       setRingApplicationDevice(null);
+      ringDfuRestartedFromApplicationRef.current = true;
       setRingStatus(
         "R1 update mode is advertising. Select the R1 DFU device in the next chooser.",
       );
       addLog("R1 restarted into its signed Nordic Secure DFU bootloader.", "success");
     });
+  const checkRingApplication = () =>
+    run("ring-application-probe", async () => {
+      setRingApplicationReady(false);
+      let failure = null;
+      const ready = await waitForR1ApplicationMode(
+        ringApplicationDevice,
+        { timeoutMs: 12_000, onFailure: (detail) => { failure = detail; } },
+      );
+      if (!ready) {
+        const staleIdentity = /unsupported device/i.test(failure?.message ?? "");
+        const guidance = staleIdentity
+          ? "Chrome's saved R1 Bluetooth identity is unavailable."
+          : failure?.stage === "service"
+          ? "The ring connected, but its normal-mode update service was unavailable."
+          : failure?.stage === "characteristic"
+            ? "The ring connected, but its buttonless update control was unavailable."
+            : "The browser could not connect to the selected ring.";
+        const nextStep = staleIdentity
+          ? "Select the ring again when it advertises."
+          : "Release any other R1 Bluetooth connection and reselect it before starting an update.";
+        const message = `${guidance} ${nextStep} No firmware bytes were sent.`;
+        setRingStatus(message);
+        if (failure) {
+          addLog(
+            `R1 read-only probe failed at ${failure.stage} after ${failure.attempts} attempt(s): ${failure.name}: ${failure.message}. No firmware bytes were sent.`,
+            "warning",
+          );
+        }
+        throw new Error(message);
+      }
+      setRingStatus(
+        "The selected R1 answered in normal application mode. You can restart it into update mode when ready.",
+      );
+      setRingApplicationReady(true);
+      addLog("R1 application service responded to a read-only connection check.", "success");
+    });
   const selectRingBootloader = async () => {
+    const selectionEpoch = ++ringDfuSelectionEpochRef.current;
     setError("");
-    try {
-      const device = await requestR1DfuDevice();
+    const accept = (device, late = false) => {
+      if (selectionEpoch !== ringDfuSelectionEpochRef.current) return;
+      setError("");
+      // Direct recovery can select a DFU device without an application-side
+      // restart. In that path, an older R1 handle is not a valid handback proof.
+      if (!ringDfuRestartedFromApplicationRef.current) {
+        ringApplicationBeforeDfuRef.current = null;
+        setRingApplicationDevice(null);
+        setRingApplicationReady(false);
+      }
       setRingDfuDevice(device);
       setRingReady(false);
-      setRingStatus(`${device.name ?? "R1 DFU"} selected. Confirm the safety check to update.`);
-      addLog(`Selected R1 DFU device ${device.name ?? device.id}.`, "success");
+      setRingStatus(`${device.name ?? "R1 DFU"} selected${late ? " after the browser delay" : ""}. Confirm the safety check to update.`);
+      addLog(`Selected R1 DFU device ${device.name ?? device.id}${late ? " after the chooser timeout" : ""}.`, "success");
+    };
+    try {
+      const device = await requestR1DfuDevice(undefined, {
+        onLateDevice: (lateDevice) => accept(lateDevice, true),
+      });
+      accept(device);
     } catch (caught) {
+      if (selectionEpoch !== ringDfuSelectionEpochRef.current) return;
       if (caught?.name === "NotFoundError") return;
       setError(caught?.message ?? String(caught));
     }
@@ -5297,6 +5566,9 @@ function App() {
   const flashRingFirmware = () =>
     run("ring-dfu", async () => {
       const release = assertPinnedR1Release(selectedRingRelease);
+      const applicationDevice = ringDfuRestartedFromApplicationRef.current
+        ? ringApplicationBeforeDfuRef.current : null;
+      ringDfuRestartedFromApplicationRef.current = false;
       setSessionProgress(0.01, "Downloading and verifying the reviewed R1 package");
       const response = await fetchCatalogRelease(release, "R1 firmware archive");
       const prepared = await prepareR1DfuPackage(
@@ -5312,10 +5584,22 @@ function App() {
           setSessionProgress(0.02 + fraction * 0.98, detail);
         },
       });
+      if (ringDfuDevice?.gatt?.connected) ringDfuDevice.gatt.disconnect();
       setRingReady(false);
-      setRingStatus(
-        `R1 ${release.version} transferred successfully. Its authorized DFU identity is retained for guarded recovery; reselect the application after it restarts.`,
-      );
+      setSessionProgress(1, "R1 update transferred; checking normal application mode");
+      const applicationModeReady = await waitForR1ApplicationMode(applicationDevice);
+      if (applicationModeReady) {
+        setRingApplicationDevice(applicationDevice);
+        setRingStatus(
+          `R1 ${release.version} transferred. The previously selected ring responded in normal mode. Check its identity and firmware version in Device Info before another update.`,
+        );
+        addLog("Previously selected R1 application identity responded; DFU pairing and exact version still require Device Info.", "success");
+      } else {
+        setRingStatus(
+          `R1 ${release.version} transferred, but normal application mode could not be confirmed from the saved Bluetooth identity. Reselect the application after it restarts. No firmware was replayed.`,
+        );
+        addLog("R1 transfer finished; normal-mode reconnect needs a fresh application selection.", "warning");
+      }
     });
   const unlockRingBootloader = () =>
     run("ring-unlock", async () => {
@@ -5361,6 +5645,9 @@ function App() {
       );
     });
   const directBleSupported = browserCapabilities.webBluetooth;
+  const blePairConnected = Boolean(
+    bleDevices.left?.gatt?.connected && bleDevices.right?.gatt?.connected,
+  );
   const ringFlashReady = Boolean(
     selectedRingRelease && ringDfuDevice && ringReady && !operation,
   );
@@ -5414,9 +5701,10 @@ function App() {
       : directWebSerialSupported
         ? "Web Serial"
         : "Unavailable";
-  const footerTransportLabel =
-    interfaceMode === "easy" && easyUsesBluetooth
-      ? "Bluetooth"
+  const footerTransportLabel = portRef.current
+    ? selectedTransport
+    : directBleSupported
+      ? "Bluetooth primary"
       : selectedTransport;
   const deviceAnalytics = useMemo(
     () =>
@@ -5521,7 +5809,7 @@ function App() {
           <span
             className={cx(
               "support-dot",
-              (interfaceMode === "easy" ? directBleSupported : serialSupported) &&
+              (directBleSupported || serialSupported) &&
                 "is-supported",
             )}
           />
@@ -5530,9 +5818,15 @@ function App() {
               ? directBleSupported
                 ? "Chrome Bluetooth ready"
                 : "USB recovery available"
-              : serialSupported
-                ? `${selectedTransport} ready`
-                : "Chromium USB access required"}
+              : portRef.current
+                ? `${selectedTransport} Case connected`
+                : directBleSupported
+                  ? serialSupported
+                    ? "Bluetooth primary · USB recovery available"
+                    : "Bluetooth primary"
+                  : serialSupported
+                    ? `${selectedTransport} API available`
+                    : "Chromium Bluetooth or USB access required"}
           </span>
         </div>
       </aside>
@@ -5553,7 +5847,7 @@ function App() {
                 "connection-dot",
                 (interfaceMode === "easy"
                   ? easyUsesBluetooth
-                    ? bleDevices.left && bleDevices.right
+                    ? blePairConnected
                     : report
                   : report) && "is-connected",
               )}
@@ -5562,8 +5856,14 @@ function App() {
               {interfaceMode === "easy"
                 ? easyUsesBluetooth
                   ? bleDevices.left && bleDevices.right
-                    ? "Left + Right paired"
-                    : "Bluetooth temples not paired"
+                    ? blePairConnected
+                      ? "Left + Right connected"
+                      : "Left + Right selected"
+                    : bleDevices.left
+                      ? "Left selected · Right needed"
+                      : bleDevices.right
+                        ? "Right selected · Left needed"
+                        : "Bluetooth temples not selected"
                   : report
                     ? "G2 Case connected"
                     : "No G2 Case connected"
@@ -5689,8 +5989,7 @@ function App() {
                     easyUsesBluetooth
                       ? !directBleSupported || bluetoothUpdateAwaitingCase
                         ? "warm"
-                        : bluetoothUpdateComplete ||
-                              (bleDevices.left && bleDevices.right)
+                        : bluetoothUpdateComplete || blePairConnected
                           ? "success"
                           : "quiet"
                       : !serialSupported
@@ -5708,8 +6007,14 @@ function App() {
                         : bluetoothUpdateComplete
                           ? "Bluetooth update complete"
                           : bleDevices.left && bleDevices.right
-                            ? "Left + Right paired"
-                            : "Ready to pair"
+                            ? blePairConnected
+                              ? "Left + Right connected"
+                              : "Left + Right selected"
+                            : bleDevices.left
+                              ? "Left selected · choose Right"
+                              : bleDevices.right
+                                ? "Right selected · choose Left"
+                                : "Ready to pair"
                     : !serialSupported
                       ? "USB access unavailable"
                       : report
@@ -5804,6 +6109,7 @@ function App() {
                 bleReady={bleReady}
                 onReadyChange={setBleReady}
                 bleFlashReady={bleFlashReady}
+                onProbe={probeBluetoothApplications}
                 onFlash={flashBleTempleFirmware}
                 selectedRelease={selectedBleRelease}
                 bleResults={bleResults}
@@ -5822,7 +6128,9 @@ function App() {
                     <small>
                       Use only when Bluetooth failed, is unavailable, or a
                       temple cannot be reached wirelessly. WebUSB is preferred
-                      over the host CH340 serial driver.
+                      over the host CH340 serial driver. In Chrome, select the
+                      device labeled “USB Serial” in the picker, then Connect;
+                      SybilSight verifies its Case identity before analysis.
                     </small>
                   </div>
                 </div>
@@ -5844,7 +6152,19 @@ function App() {
                       Use Web Serial fallback
                     </Button>
                   ) : null}
+                  {report && portRef.current && portRef.current !== remoteOperatorPortRef.current ? (
+                    <Button
+                      tone="secondary"
+                      onClick={disconnectLocalCase}
+                      disabled={Boolean(operation)}
+                    >
+                      Disconnect Case USB
+                    </Button>
+                  ) : null}
                 </div>
+                {caseChooserSlow && operation === "analyze" ? (
+                  <CaseChooserWaitHelp />
+                ) : null}
                 <div className={cx("easy-case-result", report && "is-ready")}>
                   <span>{report ? caseDisplayIdentity : "No Case selected"}</span>
                   <strong>
@@ -6076,9 +6396,24 @@ function App() {
                 </Button>
                 <Button
                   tone="secondary"
+                  onClick={reuseAuthorizedRingApplication}
+                  disabled={!navigator.bluetooth?.getDevices || Boolean(operation)}
+                >
+                  Use previously authorized R1
+                </Button>
+                <Button
+                  tone="secondary"
+                  onClick={checkRingApplication}
+                  busy={operation === "ring-application-probe"}
+                  disabled={!ringApplicationDevice || Boolean(operation)}
+                >
+                  Check selected R1 · no firmware write
+                </Button>
+                <Button
+                  tone="secondary"
                   onClick={restartRingForDfu}
                   busy={operation === "ring-dfu-enter"}
-                  disabled={!ringApplicationDevice || !selectedRingRelease || Boolean(operation)}
+                  disabled={!ringApplicationDevice || !ringApplicationReady || !selectedRingRelease || Boolean(operation)}
                 >
                   2. Restart in update mode
                 </Button>
@@ -6092,6 +6427,24 @@ function App() {
                     : "3. Select R1 DFU device"}
                 </Button>
               </div>
+              {authorizedRingApplications.length > 1 && (
+                <div className="ring-device-actions" aria-label="Previously authorized R1 devices">
+                  {authorizedRingApplications.map((device, index) => (
+                    <Button
+                      key={device.id ?? index}
+                      tone="secondary"
+                      onClick={() => acceptRingApplication(
+                        device,
+                        ++ringApplicationSelectionEpochRef.current,
+                        "saved",
+                      )}
+                      disabled={Boolean(operation)}
+                    >
+                      {device.name ?? "R1"} · saved {index + 1}
+                    </Button>
+                  ))}
+                </div>
+              )}
               <label className="ble-ready-confirm">
                 <input
                   type="checkbox"
@@ -6112,6 +6465,10 @@ function App() {
               >
                 Update R1 to {selectedRingRelease?.version ?? "reviewed firmware"}
               </Button>
+              <p className="ring-recovery-note">
+                If the ring is already in recovery mode, select its DFU device directly.
+                A normal-mode check afterward needs a separately selected R1 application.
+              </p>
               <div className="automatic-status" role="status" aria-live="polite">
                 <span className={cx("tiny-dot", ringDfuDevice && "tiny-dot-success")} />
                 <span>{ringStatus}</span>
@@ -6223,7 +6580,26 @@ function App() {
                   Refresh analysis
                 </Button>
               ) : null}
+              {report && portRef.current && portRef.current !== remoteOperatorPortRef.current ? (
+                <Button
+                  tone="secondary"
+                  onClick={disconnectLocalCase}
+                  disabled={Boolean(operation)}
+                >
+                  Disconnect Case USB
+                </Button>
+              ) : null}
             </div>
+            {caseChooserSlow && operation === "analyze" ? (
+              <CaseChooserWaitHelp />
+            ) : null}
+            {serialSupported ? (
+              <p className="browser-note">
+                In Chrome, choose the device labeled “USB Serial” in the native
+                picker, then Connect. SybilSight verifies the Case identity
+                before analysis.
+              </p>
+            ) : null}
             {!serialSupported ? (
               <p className="browser-note">
                 This browser exposes neither Web Serial nor WebUSB. Open this page
@@ -6670,10 +7046,11 @@ function App() {
                 <h3>Complete G2 recovery set</h3>
                 <p>
                   The Case is preserved byte-for-byte. Each running temple contributes
-                  a checksum-validated version snapshot, and the matching official
-                  Glasses firmware is embedded for recovery. Installed Apollo memory
-                  cannot be read through the Case, so the Glasses portion is not an
-                  MRAM, key, pairing, or calibration dump.
+                  a checksum-validated version snapshot, and archived Glasses
+                  firmware matching that reported version is embedded for recovery.
+                  Stock and CFW can report the same version, so this does not identify
+                  the installed image. Apollo memory cannot be read through the Case;
+                  the Glasses portion is not an MRAM, key, pairing, or calibration dump.
                 </p>
                 <Button
                   onClick={createBackup}
@@ -6694,7 +7071,7 @@ function App() {
             <div className="backup-checklist">
               <div><Icon name="check" /><span><strong>Exact Case acquisition</strong>512 KiB flash + 128-byte options</span></div>
               <div><Icon name="check" /><span><strong>Both temples captured</strong>Version, hardware, raw frame + route proof</span></div>
-              <div><Icon name="check" /><span><strong>Glasses recovery image</strong>Matching official bundle, size + SHA-256 validated</span></div>
+              <div><Icon name="check" /><span><strong>Glasses recovery image</strong>Version-matched archived bundle, size + SHA-256 validated</span></div>
               <div><Icon name="check" /><span><strong>Application restored</strong>Normal Case console after every read</span></div>
               {backup ? (
                 <div className="backup-digest">
@@ -7054,6 +7431,7 @@ function App() {
             bleReady={bleReady}
             onReadyChange={setBleReady}
             bleFlashReady={bleFlashReady}
+            onProbe={probeBluetoothApplications}
             onFlash={flashBleTempleFirmware}
             selectedRelease={selectedBleRelease}
             bleResults={bleResults}
@@ -7183,6 +7561,9 @@ function App() {
                   plus contact and version-liveness checks. If START reaches the
                   terminal no-frame boundary, the audit stops wired retries
                   instead of cycling a device whose state is uncertain.
+                  Keep this Chrome tab selected until the final liveness check;
+                  background tabs throttle transfer timing and suspend the
+                  browser's computer sleep lock.
                 </p>
               </div>
               <StatusPill tone={firmware?.templeFlashEligible ? "success" : "quiet"}>
@@ -7192,22 +7573,17 @@ function App() {
               </StatusPill>
             </div>
             <div className="smart-glasses-recovery-gate">
-              <div className={report?.console?.caseVersion === "1.2.57" ? "done" : ""}>
-                <Icon name="check" />
-                <span>Case 1.2.57 analyzed</span>
-              </div>
-              <div className={flashRoutesPresent ? "done" : ""}>
-                <Icon name="check" />
-                <span>Selected temple route seated</span>
-              </div>
-              <div className={firmware?.templeFlashEligible ? "done" : ""}>
-                <Icon name="check" />
-                <span>Pinned Glasses image loaded</span>
-              </div>
-              <div className={fullGlassesAnalysisComplete ? "done" : ""}>
-                <Icon name="check" />
-                <span>Version + status evidence captured</span>
-              </div>
+              {[
+                [report?.console?.caseVersion === "1.2.57", "Case 1.2.57 analysis"],
+                [flashRoutesPresent, "Selected temple contacts"],
+                [firmware?.templeFlashEligible, "Pinned Glasses image"],
+                [fullGlassesAnalysisComplete, "Version + status evidence"],
+              ].map(([ready, label]) => (
+                <div key={label} className={ready ? "done" : ""}>
+                  <span className="icon" aria-hidden="true">{ready ? "✓" : "○"}</span>
+                  <span>{ready ? "Ready" : "Pending"} · {label}</span>
+                </div>
+              ))}
             </div>
             <div className="smart-glasses-recovery-grid">
               <div className="smart-glasses-recovery-controls">
@@ -7326,7 +7702,8 @@ function App() {
                   />
                   <span>
                     The selected route{templeFlashRoute === "both" ? "s are" : " is"}
-                    {" "}seated; I will not move the Glasses, Case, or USB cable.
+                    {" "}seated; I will not move the Glasses, Case, or USB cable,
+                    and I will keep this tab selected through the final checks.
                   </span>
                 </label>
                 <label className="pogo-confirm">
@@ -7390,22 +7767,18 @@ function App() {
                 <div>
                   <span>SELECTED PINNED MAIN</span>
                   <strong>
-                    {(firmware?.templeFlashTarget?.mainBytes ??
-                      POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulTransfers.right
-                        .payloadBytes
-                    ).toLocaleString()}
-                    {" B · "}
-                    {Math.ceil(
-                      (firmware?.templeFlashTarget?.mainBytes ??
-                        POGO_TRANSFER_RESEARCH.caseUsbBridge.successfulTransfers.right
-                          .payloadBytes) / 1000,
-                    ).toLocaleString()}
-                    {" records"}
+                    {firmware?.templeFlashTarget
+                      ? `${firmware.templeFlashTarget.mainBytes.toLocaleString()} B · ${Math.ceil(firmware.templeFlashTarget.mainBytes / 1000).toLocaleString()} records`
+                      : "No pinned image selected"}
                   </strong>
                 </div>
                 <div>
-                  <span>RECOVERY ENVELOPE</span>
-                  <strong>Case 1.2.57 · G2 2.2.6.10 · HW 5</strong>
+                  <span>SELECTED RECOVERY BASE</span>
+                  <strong>
+                    {firmware?.templeFlashTarget
+                      ? `Case 1.2.57 · G2 ${firmware.templeFlashTarget.baseVersion ?? firmware.templeFlashTarget.version} · HW 5`
+                      : "Select a pinned Glasses image"}
+                  </strong>
                 </div>
                 <div>
                   <span>FINAL RECOVERY PHASE</span>
@@ -7413,7 +7786,7 @@ function App() {
                 </div>
                 <div>
                   <span>PROVEN FALLBACK FROM WIRED</span>
-                  <strong>Fresh BLE · all 6 stock components · 1,053 ACKs</strong>
+                  <strong>G2 2.2.6.10 · fresh BLE · all 6 stock components · 1,053 ACKs</strong>
                 </div>
                 <div>
                   <span>EXCLUDED</span>
@@ -7531,10 +7904,12 @@ function App() {
               Reset both temples & recheck
             </Button>
           </div>
-          {recheckReport ? (
+          {recheckReport?.resetConfirmed ? (
             <div className="recheck-result">
               <Icon name="check" />
-              B0 reset confirmed · L {recheckReport.telemetry?.leftPresent ? "present" : "absent"} · R{" "}
+              Last B0 reset confirmed{recheckReport.checkedAt
+                ? ` at ${new Date(recheckReport.checkedAt).toLocaleString()}`
+                : ""} · L {recheckReport.telemetry?.leftPresent ? "present" : "absent"} · R{" "}
               {recheckReport.telemetry?.rightPresent ? "present" : "absent"} ·{" "}
               {recheckReport.applicationLivenessVerified
                 ? "both applications verified"
@@ -7730,8 +8105,13 @@ function App() {
               accepted 2,733,000 left-temple bytes before an explicit 0x54 status-1
               rejection; all ten route registers and Case firmware 1.2.57 were restored.
               That historical host retried the exact record because a rejection did not
-              advance the expected sequence. Current V7 policy replays no DATA record;
-              it requires exact cleanup, bilateral reset/liveness, and a fresh complete
+              advance the expected sequence. The current writer never resends an
+              explicitly rejected DATA record. Only a checksum-valid Case
+              bridge status-6 reply with zero UART errors permits a retry. The
+              writer waits through a bounded response window, then may resend the identical record and
+              sequence up to three times; the temple sequence guard distinguishes a
+              lost acknowledgement from an unaccepted record. An unresolved attempt
+              requires exact cleanup, bilateral reset/liveness, and a fresh complete
               component START. Attempt 9 subsequently completed
               the left transfer with all 3,540 records, zero retries, finish and
               postflight confirmation, full route restoration, and Case-app return. This

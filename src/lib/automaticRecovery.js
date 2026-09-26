@@ -1,5 +1,6 @@
 import { decodeOptionBytes } from "./firmware.js";
 import { describeByteDifferences } from "./differential.js";
+import { g2VersionCanIdentifyTarget } from "./g2VersionIdentity.js";
 
 export const DEFAULT_INTERFACE_MODE = "easy";
 export const DEFAULT_AUTOMATIC_INSTALL_MODE = "update";
@@ -1240,7 +1241,8 @@ export function resolveAutomaticApplyPlan({
     };
   }
 
-  const liveTargetRoutes = targetVersion
+  const versionIdentifiesTarget = g2VersionCanIdentifyTarget(targetFirmware, targetVersion);
+  const liveTargetRoutes = versionIdentifiesTarget
     ? ROUTES.filter(
         (route) =>
           observedIdentities[route].firmwareVersion === targetVersion &&
@@ -1250,6 +1252,8 @@ export function resolveAutomaticApplyPlan({
   const auditedTargetRoutes = ROUTES.filter((route) => {
     const observed = observedIdentities[route];
     return Boolean(
+      // A saved audit cannot resolve a fresh same-version Stock/CFW ambiguity.
+      (versionIdentifiesTarget || !targetVersion) &&
       installedProvenance?.[route]?.imageSha256?.toLowerCase() ===
         targetSha256 &&
         !(
@@ -1287,7 +1291,9 @@ export function resolveAutomaticApplyPlan({
   ) {
     return completeAutomaticUpdatePlan(
       targetSha256,
-      `Fresh Smart Glasses identity contradicts the saved target audit${targetVersion ? ` for ${targetVersion}` : ""}; write the complete pinned target Apollo main on both temples.`,
+      versionIdentifiesTarget
+        ? `Fresh Smart Glasses identity contradicts the saved target audit${targetVersion ? ` for ${targetVersion}` : ""}; write the complete pinned target Apollo main on both temples.`
+        : `Reported version ${targetVersion} cannot distinguish Stock from CFW. The saved audit does not prove the currently running image; write the complete pinned target Apollo main on both temples.`,
     );
   }
   // A fresh checksum-valid target version is sufficient to skip mutation in

@@ -47,6 +47,7 @@ import {
   canRestartFailedTempleComponent,
   canRunFinalResetAfterFailure,
   expectedTempleVersionsForComponentRestart,
+  templePostResetLivenessVerified,
   classifyExhaustedYhmSetupBoundary,
   classifyMaximumPacingTempleDataRejection,
   classifyPersistentTempleDataRejection,
@@ -75,6 +76,7 @@ import {
   POGO_DATA_INPLACE_RESEND_LIMIT,
   POGO_DATA_INPLACE_RECOVERY_BUDGET,
   POGO_DATA_INPLACE_SETTLE_MS,
+  SilentTempleReplyError,
   classifyInPlaceDataRecovery,
   readPogoFlashResponseFrame,
   readPogoFlashResponseHeader,
@@ -89,9 +91,11 @@ import {
 } from "../src/lib/serial.js";
 import {
   YHM_PROFILE_OBSERVED_33,
+  YHM_PROFILE_OBSERVED_33_ENTRY1,
   YHM_PROFILE_OBSERVED_45,
   YHM_PROFILE_REVIEWED_22,
   identifyYhmBaselineProfile,
+  isYhmBaselineAllowed,
 } from "../src/lib/yhmProfiles.js";
 import { getVerifiedPogoBridgePayload } from "../src/lib/pogoBridge.js";
 
@@ -829,6 +833,44 @@ test("switches to the exact observed-33 bridge only from retained zero-write pro
     identifyYhmBaselineProfile("811104afaf03812022ff"),
     YHM_PROFILE_REVIEWED_22,
   );
+});
+
+test("selects the separately pinned first-entry 0x8d/0x33 profile only from retained zero-write proof", async () => {
+  const profiles = [];
+  const session = new G2CaseSession(null, { wait: async () => {}, log: () => {} });
+  session.probeRunningTempleOnce = async (_operation, _route, options) => {
+    profiles.push(options.yhmProfile);
+    if (profiles.length === 1) {
+      const error = new Error("The pogo bridge stopped safely: YHM baseline was not an allowlisted seated-idle state.");
+      error.pogoBridgeEvidence = {
+        baselineHex: "811104afaf038d2033ff",
+        transmitted: 0,
+        zeroWriteBaselineStopVerified: true,
+      };
+      throw error;
+    }
+    return { route: "left", operation: "version", yhmProfile: options.yhmProfile };
+  };
+  session.readTempleFlashPreflight = async () => ({ caseVersion: "1.2.57" });
+  const result = await session.probeRunningTemple("version", "left");
+  assert.deepEqual(profiles, [YHM_PROFILE_REVIEWED_22, YHM_PROFILE_OBSERVED_33_ENTRY1]);
+  assert.equal(result.yhmProfile, YHM_PROFILE_OBSERVED_33_ENTRY1);
+  assert.equal(identifyYhmBaselineProfile("811104afaf038d2033ff"), YHM_PROFILE_OBSERVED_33_ENTRY1);
+  assert.equal(identifyYhmBaselineProfile("811104afaf038d2045ff"), null);
+  assert.equal(isYhmBaselineAllowed(YHM_PROFILE_OBSERVED_33_ENTRY1, "811104afaf038d2033ff"), true);
+  assert.equal(isYhmBaselineAllowed(YHM_PROFILE_OBSERVED_33, "811104afaf038d2033ff"), false);
+  assert.equal(isYhmBaselineAllowed(YHM_PROFILE_OBSERVED_33_ENTRY1, "811104afaf038d2022ff"), false);
+
+  const readBase = await getVerifiedPogoBridgePayload(YHM_PROFILE_OBSERVED_33);
+  const readEntry1 = await getVerifiedPogoBridgePayload(YHM_PROFILE_OBSERVED_33_ENTRY1);
+  const flashBase = await getVerifiedPogoFlashBridgePayload(YHM_PROFILE_OBSERVED_33);
+  const flashEntry1 = await getVerifiedPogoFlashBridgePayload(YHM_PROFILE_OBSERVED_33_ENTRY1);
+  for (const [base, variant, offset] of [[readBase, readEntry1, 1660], [flashBase, flashEntry1, 2816]]) {
+    assert.deepEqual(
+      [...variant].flatMap((value, index) => value === base[index] ? [] : [[index, base[index], value]]),
+      [[offset, 0x22, 0x33]],
+    );
+  }
 });
 
 test("switches to the exact observed-45 bridge only from retained zero-write proof", async () => {
@@ -1584,6 +1626,24 @@ test("proves the observed 33ff baseline stopped before route selection or OTA by
   );
 });
 
+test("writer setup accepts only the exact retained zero-write first-entry 0x33 stop", () => {
+  const result = new Uint8Array(POGO_FLASH_RESULT_LENGTH);
+  writeU32LE(result, 0, 0x57463247);
+  writeU32LE(result, 4, 3);
+  writeU32LE(result, 8, 0);
+  writeU32LE(result, 12, 0x42);
+  writeU32LE(result, 16, 3);
+  writeU32LE(result, 20, 0x3ff);
+  result.set(Uint8Array.from([0x81, 0x11, 0x04, 0xaf, 0xaf, 0x03, 0x8d, 0x20, 0x33, 0xff]), 64);
+  const stop = verifyPogoFlashZeroWriteSetupStop(result, POGO_FLASH_PROOF, "left", YHM_PROFILE_OBSERVED_33_ENTRY1);
+  assert.equal(stop?.baselineProfile, YHM_PROFILE_OBSERVED_33_ENTRY1);
+  assert.equal(stop?.baselineAllowlisted, true);
+  assert.equal(stop?.acceptedSize, 0);
+  assert.equal(verifyPogoFlashZeroWriteSetupStop(result, POGO_FLASH_PROOF, "left", YHM_PROFILE_OBSERVED_33)?.baselineAllowlisted, false);
+  result[32] = 1; // First byte of write-mask word: any route write invalidates proof.
+  assert.equal(verifyPogoFlashZeroWriteSetupStop(result, POGO_FLASH_PROOF, "left", YHM_PROFILE_OBSERVED_33_ENTRY1), null);
+});
+
 test("accepts an exact retained restoration after a host-only response timeout", () => {
   const result = new Uint8Array(POGO_FLASH_RESULT_LENGTH);
   for (const [offset, value] of [
@@ -1836,8 +1896,8 @@ test("pins every temple-flash target to a distinct image and main digest", () =>
   const validated = TEMPLE_FLASH_TARGETS.filter((t) => t.hardwareValidated);
   assert.deepEqual(
     validated.map((t) => t.imageSha256),
-    [REVIEWED_STOCK_IMAGE_SHA256],
-    "only offered targets may retain hardware-validation status",
+    ["6349192de1744319ee78a7b85f77664f6cf80f4df9664fa01dd9f59746178da6", REVIEWED_STOCK_IMAGE_SHA256],
+    "only images with completed hardware transfers may retain transfer-validation status",
   );
 });
 
@@ -1851,12 +1911,17 @@ test("keeps the generated pin table in sync with the firmware archive", async ()
       "utf8",
     ),
   );
-  // The latest CFW is the catalog's only custom release (served, not local-only); every
-  // other pinned target is an archived stock release.
+  // Local qualification pins stay separate from the catalog's published CFW.
   const custom = index.releases.filter((release) => release.channel === "custom");
-  assert.equal(custom.length, 1);
-  const latestCFW = TEMPLE_FLASH_TARGETS.find((target) => target.imageSha256 === custom[0].sha256);
-  const stock = TEMPLE_FLASH_TARGETS.filter((target) => target !== latestCFW);
+  assert.equal(custom.length, 2);
+  const customTargets = custom.map((release) =>
+    TEMPLE_FLASH_TARGETS.find((target) => target.imageSha256 === release.sha256));
+  const [cfw23026, latestCFW] = customTargets;
+  const stock = TEMPLE_FLASH_TARGETS.filter((target) => !customTargets.includes(target) && !target.localOnly);
+  for (const target of TEMPLE_FLASH_TARGETS.filter((target) => target.localOnly)) {
+    assert.equal(index.releases.some((release) => release.sha256 === target.imageSha256), false);
+    assert.equal(target.hardwareValidated, target.requiredCfwMarker === "SybilSight/230.11");
+  }
   assert.deepEqual(
     (({ label, ...rest }) => rest)(latestCFW),
     {
@@ -1871,7 +1936,21 @@ test("keeps the generated pin table in sync with the firmware archive", async ()
     },
     "run `npm run archive:firmware` to regenerate src/lib/templeFlashTargets.js",
   );
-  assert.equal(custom[0].sha256, latestCFW.imageSha256);
+  assert.deepEqual(
+    (({ label, ...rest }) => rest)(cfw23026),
+    {
+      imageSha256: "8784efd8892a027dd2a0b7eee4dae1b1679cfa1b8008aa1b296103cfe674b0ba",
+      mainSha256: "3d4be332f7686658ddacb707e443c04b756be0642b7d07d0a7721e75529773fd",
+      mainBytes: 3838372,
+      version: "2.3.0.24",
+      reportedVersion: "2.3.0.24",
+      baseVersion: "2.3.0.24",
+      hardwareValidated: false,
+      requiredCfwMarker: "SybilSight/230.26",
+    },
+    "run `npm run archive:firmware` to regenerate src/lib/templeFlashTargets.js",
+  );
+  assert.equal(custom[1].sha256, latestCFW.imageSha256);
   const officials = index.releases.filter((release) => (release.channel ?? "official") === "official");
   assert.equal(stock.length, officials.length);
   for (const target of stock) {
@@ -2312,6 +2391,33 @@ test("component restart does not impose one split-pair source version on an unto
   );
 });
 
+test("one-route restore verifies both lenses are live without imposing the target on the untouched lens", () => {
+  const splitPair = {
+    right: { firmware: "2.3.0.24", hardware: 5 },
+    left: { firmware: "2.2.6.10", hardware: 5 },
+  };
+  assert.equal(
+    templePostResetLivenessVerified(splitPair, ["right"], "2.3.0.24"),
+    true,
+  );
+  assert.equal(
+    templePostResetLivenessVerified(splitPair, ["right", "left"], "2.3.0.24"),
+    false,
+  );
+  assert.equal(
+    templePostResetLivenessVerified({ ...splitPair, right: { firmware: "2.2.6.10", hardware: 5 } }, ["right"], "2.3.0.24"),
+    false,
+  );
+  assert.equal(
+    templePostResetLivenessVerified({ ...splitPair, left: { firmware: "2.2.6.10", hardware: 4 } }, ["right"], "2.3.0.24"),
+    false,
+  );
+  assert.equal(
+    templePostResetLivenessVerified({ right: splitPair.right }, ["right"], "2.3.0.24"),
+    false,
+  );
+});
+
 test("stops a third full component after repeated restored DATA rejections in one image region", () => {
   const failure = (record, acceptedBytes) => ({
     route: "right",
@@ -2668,7 +2774,7 @@ test("a silent DATA record is resent in place instead of ending the attempt", ()
   // frozen at expectedSequence × 1000 — a route-silent window swallowed the
   // record. That is transient evidence, so the record is resent in place with
   // an escalating settle, bounded per record and per attempt.
-  const silent = new RetryablePogoFlashError(
+  const silent = new SilentTempleReplyError(
     "No complete temple response arrived through the Case bridge.",
   );
   assert.deepEqual(
@@ -2771,6 +2877,27 @@ test("a status-1 rejection of a resend advances past the lost-ACK record", () =>
       assert.ok(classify < guard && guard < commit);
     },
   );
+});
+
+test("DATA never resends after a host or bridge failure without a valid silent reply", () => {
+  const unrelatedFailures = [
+    new RetryablePogoFlashError("Timed out reading transaction flow-control token at 992."),
+    new RetryablePogoFlashError("The pogo UART reported error mask 0x1."),
+    new RetryablePogoFlashError("The remote exchange batch failed: USB device disconnected."),
+    new RetryablePogoFlashError("Timed out reading the Case bridge response."),
+    new PogoFlashSafetyError("The Case bridge stopped safely: temple UART transmit failed."),
+    new Error("Unexpected host transport failure."),
+  ];
+  for (const error of unrelatedFailures) {
+    assert.deepEqual(
+      classifyInPlaceDataRecovery(error, {
+        resendsForRecord: 0,
+        recoveriesThisAttempt: 0,
+      }),
+      { action: "abort" },
+      error.message,
+    );
+  }
 });
 
 test("the flash transport reports whether records are batched over a relay", () => {

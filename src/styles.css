@@ -458,6 +458,22 @@ code {
   font-size: 10px !important;
 }
 
+.case-chooser-wait {
+  max-width: 610px;
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid rgba(255, 179, 74, 0.45);
+  border-radius: 8px;
+  background: rgba(255, 179, 74, 0.08);
+  color: var(--ink);
+}
+
+.case-chooser-wait p {
+  margin: 8px 0 14px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
 .button {
   display: inline-flex;
   min-height: 48px;
@@ -3328,6 +3344,13 @@ code {
 .ring-update-start {
   width: 100%;
   min-height: 44px;
+}
+
+.ring-recovery-note {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .ring-unlock-panel {
@@ -6470,9 +6493,12 @@ body {
 .easy-hero-status .status-pill {
   min-height: 36px;
   padding: 0 14px;
+  border-radius: 7px;
+}
+
+.easy-hero-status .status-pill-success {
   color: #06130d;
   border-color: var(--accent);
-  border-radius: 7px;
   background: var(--accent);
   box-shadow: 0 0 24px rgba(0, 255, 136, 0.13);
 }

@@ -1,0 +1,1331 @@
+{
+ "schemaVersion": 1,
+ "status": "DRAFT-UNVALIDATED",
+ "oldVersion": "2.2.10.10",
+ "newVersion": "2.3.0.24",
+ "newBundleSha256": "187ccf2bcc5c17a212106e8a376745511e8289c4232b634a7ea94b9bf25a0979",
+ "g2flashCommit": "d968c2ccbafb85a91d1dc4683eee77accfad3142",
+ "capabilityMarker": "Faceclaw/3",
+ "method": "window-match + bl-callee-mapping + content-match + cb-consistency; every accepted entry verifies its 2.3.0 stock bytes and, for bl sites, bl-target consistency. NOT ABI-validated; NOT hardware-tested; NOT flashable.",
+ "resolvedHooks": {
+  "PRIMARY_TLSF_SIZE_SITE": {
+   "old": "0x48d680",
+   "new": "0x48dae8",
+   "newBytes": "5ff43432",
+   "via": "unique-window"
+  },
+  "LOADBMP_BL_SITE": {
+   "old": "0x4a5736",
+   "new": "0x4a4a46",
+   "newBytes": "4df06cfc",
+   "via": "unique-window"
+  },
+  "SNAPSHOT_BL_SITE": {
+   "old": "0x4ee982",
+   "new": "0x4effba",
+   "newBytes": "75f7c7fe",
+   "via": "unique-window"
+  },
+  "IMAGE_ACK_SUCCESS_SITE": {
+   "old": "0x4ee9a2",
+   "new": "0x4effda",
+   "newBytes": "30d0",
+   "via": "unique-window"
+  },
+  "SETTINGS_BL_SITE": {
+   "old": "0x4aa418",
+   "new": "0x4aa8dc",
+   "newBytes": "d4f712fb",
+   "via": "unique-window"
+  },
+  "SETTINGS_DECODE_BL_SITE": {
+   "old": "0x4a9b18",
+   "new": "0x4a9fdc",
+   "newBytes": "f5f7e2f8",
+   "via": "unique-window"
+  },
+  "DISPLAY_START_BL_SITES": {
+   "old": "0x45f586",
+   "new": "0x467e28",
+   "newBytes": "02f023fc",
+   "via": "unique-window"
+  },
+  "GESTURE_PRESS_SITE": {
+   "old": "0x444ab8",
+   "new": "0x444996",
+   "newBytes": "19f0a3fa",
+   "via": "seam-resolver"
+  },
+  "GESTURE_RELEASE_SITE": {
+   "old": "0x444f46",
+   "new": "0x444da2",
+   "newBytes": "19f09df8",
+   "via": "seam-resolver"
+  },
+  "EVENAI_ENTRY_SITE": {
+   "old": "0x4f79fa",
+   "new": "0x4f9196",
+   "newBytes": "7fb50600",
+   "via": "unique-window"
+  },
+  "DISPLAY_COPY_BL_SITES": {
+   "old": "0x47acc2",
+   "new": "0x47a8ca",
+   "newBytes": "f6f7e9f8",
+   "via": "unique-window"
+  },
+  "WEAR_NOTIFY_BL_SITES": {
+   "old": "0x4ad782",
+   "new": "0x4adef6",
+   "newBytes": "d9f79efd",
+   "via": "unique-window"
+  },
+  "BLE_2M_SITE": {
+   "old": "0x4c8c5c",
+   "new": "0x4c9b3c",
+   "newBytes": "7c205070",
+   "via": "unique-window"
+  },
+  "BLE_FAST_INTERVAL_SITE": {
+   "old": "0x7b2870",
+   "new": "0x7bcba0",
+   "newBytes": "0c0018000000580205000000",
+   "via": "seam-resolver"
+  },
+  "BLE_FORCE_FAST_SITE": {
+   "old": "0x47c0ec",
+   "new": "0x47bdb6",
+   "newBytes": "0f00f9f722fb",
+   "via": "seam-resolver"
+  },
+  "HEADUP_GATE_BL_SITE": {
+   "old": "0x45f386",
+   "new": "0x467cf4",
+   "newBytes": "07f085fb",
+   "via": "unique-window"
+  },
+  "COMPASS_DECODE_BL_SITE": {
+   "old": "0x4b8806",
+   "new": "0x4b96d2",
+   "newBytes": "67f02dff",
+   "via": "unique-window"
+  },
+  "COMPASS_REPORT_BL_SITE": {
+   "old": "0x4b8212",
+   "new": "0x4b90ce",
+   "newBytes": "fff7c9fb",
+   "via": "seam-resolver"
+  },
+  "AUDM_PEER_SYNC_TABLE_SITE": {
+   "old": "0x6c12a4",
+   "new": "0x6c626c",
+   "newBytes": "ebe65600",
+   "via": "seam-resolver"
+  },
+  "GESTURE_SHORT_LONG_SITE": {
+   "old": "0x444ac0",
+   "new": "0x44499c",
+   "newBytes": "11f043fe",
+   "via": "structural-match (PRESS+6; b.w->b shrank 2B)"
+  }
+ },
+ "unresolvedHooks": {
+  "IDLE_INPUT_GATE_SITE": {
+   "old": "0x45f39a",
+   "reason": "SEMANTIC BLOCKER: the hooked bl #0x45ea68 was INLINED in 2.3.0 (ldr r0,[r1,#8]; ldr r1,[r0,#4]; cmp r1,#1) \u2014 no call to redirect. Needs a redesigned hook or the idle-gate feature dropped."
+  }
+ },
+ "resolvedAddresses": {
+  "0x5ab8cb": {
+   "new": "0x5aef33",
+   "kind": "rom-call",
+   "sources": [
+    "mic_control.c"
+   ]
+  },
+  "0x5ab97b": {
+   "new": "0x5aefe3",
+   "kind": "rom-call",
+   "sources": [
+    "mic_control.c"
+   ]
+  },
+  "0x5ab9e1": {
+   "new": "0x5af049",
+   "kind": "rom-call",
+   "sources": [
+    "mic_control.c"
+   ]
+  },
+  "0x5aba37": {
+   "new": "0x5af09f",
+   "kind": "rom-call",
+   "sources": [
+    "mic_control.c"
+   ]
+  },
+  "0x595f75": {
+   "new": "0x599501",
+   "kind": "rom-call",
+   "sources": [
+    "mic_control.c"
+   ]
+  },
+  "0x5960cd": {
+   "new": "0x599659",
+   "kind": "rom-call",
+   "sources": [
+    "mic_control.c"
+   ]
+  },
+  "0x5adf19": {
+   "new": "0x5b1581",
+   "kind": "rom-call",
+   "sources": [
+    "mic_control.c"
+   ]
+  },
+  "0x47ed09": {
+   "new": "0x47f17d",
+   "kind": "rom-call",
+   "sources": [
+    "mic_control.c"
+   ]
+  },
+  "0x45d35d": {
+   "new": "0x465d4d",
+   "kind": "rom-call",
+   "sources": [
+    "als_sensor.c",
+    "mic_control.c",
+    "settings_ext.c",
+    "zlib_glue.c"
+   ]
+  },
+  "0x458703": {
+   "new": "0x45855f",
+   "kind": "rom-call",
+   "sources": [
+    "malloc.h"
+   ]
+  },
+  "0x458747": {
+   "new": "0x4585a3",
+   "kind": "rom-call",
+   "sources": [
+    "malloc.h"
+   ]
+  },
+  "0x48d519": {
+   "new": "0x48d981",
+   "kind": "rom-call",
+   "sources": [
+    "malloc.h"
+   ]
+  },
+  "0x48d637": {
+   "new": "0x48da9f",
+   "kind": "rom-call",
+   "sources": [
+    "malloc.h"
+   ]
+  },
+  "0x5d8e57": {
+   "new": "0x5dbfd7",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x5d8f25": {
+   "new": "0x5dc0a5",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x5d8e1b": {
+   "new": "0x5dbf9b",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x4f0c4f": {
+   "new": "0x4f2323",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x47e09f": {
+   "new": "0x47e317",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x4a73f5": {
+   "new": "0x4a66b5",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x440d9b": {
+   "new": "0x440d9b",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x5197bb": {
+   "new": "0x51bccf",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x519859": {
+   "new": "0x51bd6d",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x519725": {
+   "new": "0x51bc39",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x5198e9": {
+   "new": "0x51bdfd",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x442c4d": {
+   "new": "0x442c4d",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x442b65": {
+   "new": "0x442b65",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x442c8d": {
+   "new": "0x442c8d",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x442cf3": {
+   "new": "0x442cf3",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x46a983": {
+   "new": "0x46a673",
+   "kind": "rom-call",
+   "sources": [
+    "settings_ext.c",
+    "zlib_glue.c"
+   ]
+  },
+  "0x4f660b": {
+   "new": "0x4f7cdf",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x4f661f": {
+   "new": "0x4f7cf3",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x4ee59d": {
+   "new": "0x4efbd1",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x47a717": {
+   "new": "0x47a31f",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x47a763": {
+   "new": "0x47a36b",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x47b017": {
+   "new": "0x47ac1f",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x470eb5": {
+   "new": "0x470aa1",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x55fd7f": {
+   "new": "0x56311b",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x55fe07": {
+   "new": "0x5631a3",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x46266d": {
+   "new": "0x45dee1",
+   "kind": "rom-call",
+   "sources": [
+    "gesture_fwd.c",
+    "zlib_glue.c"
+   ]
+  },
+  "0x5a2081": {
+   "new": "0x5a56e1",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x7bb6f8": {
+   "new": "0x7c5ee4",
+   "kind": "rom-data",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x462657": {
+   "new": "0x45decb",
+   "kind": "rom-call",
+   "sources": [
+    "gesture_fwd.c"
+   ]
+  },
+  "0x4ee367": {
+   "new": "0x4ef959",
+   "kind": "rom-call",
+   "sources": [
+    "gesture_fwd.c"
+   ]
+  },
+  "0x4c1367": {
+   "new": "0x4c23a3",
+   "kind": "rom-call",
+   "sources": [
+    "als_sensor.c"
+   ]
+  },
+  "0x4c0cd1": {
+   "new": "0x4c1d0d",
+   "kind": "rom-call",
+   "sources": [
+    "als_sensor.c"
+   ]
+  },
+  "0x4c0e2f": {
+   "new": "0x4c1e6b",
+   "kind": "rom-call",
+   "sources": [
+    "als_sensor.c"
+   ]
+  },
+  "0x4c105b": {
+   "new": "0x4c2097",
+   "kind": "rom-call",
+   "sources": [
+    "als_sensor.c"
+   ]
+  },
+  "0x4b9a0d": {
+   "new": "0x4ba8e9",
+   "kind": "rom-call",
+   "sources": [
+    "als_sensor.c"
+   ]
+  },
+  "0x4b9fd3": {
+   "new": "0x4baf07",
+   "kind": "rom-call",
+   "sources": [
+    "als_sensor.c"
+   ]
+  },
+  "0x4ba045": {
+   "new": "0x4baf81",
+   "kind": "rom-call",
+   "sources": [
+    "als_sensor.c"
+   ]
+  },
+  "0x4e8d91": {
+   "new": "0x4ea369",
+   "kind": "rom-call",
+   "sources": [
+    "texture_cache.c"
+   ]
+  },
+  "0x4e8ce3": {
+   "new": "0x4ea2bb",
+   "kind": "rom-call",
+   "sources": [
+    "texture_cache.c"
+   ]
+  },
+  "0x4e8d35": {
+   "new": "0x4ea30d",
+   "kind": "rom-call",
+   "sources": [
+    "texture_cache.c"
+   ]
+  },
+  "0x47ebab": {
+   "new": "0x47ee7d",
+   "kind": "rom-call",
+   "sources": [
+    "settings_ext.c"
+   ]
+  },
+  "0x49ed3d": {
+   "new": "0x49f1a5",
+   "kind": "rom-call",
+   "sources": [
+    "settings_ext.c"
+   ]
+  },
+  "0x4ad667": {
+   "new": "0x4adddb",
+   "kind": "rom-call",
+   "sources": [
+    "settings_ext.c"
+   ]
+  },
+  "0x48d680": {
+   "new": "0x48dae8",
+   "kind": "hook",
+   "sources": [
+    "PRIMARY_TLSF_SIZE_SITE"
+   ]
+  },
+  "0x4a5736": {
+   "new": "0x4a4a46",
+   "kind": "hook",
+   "sources": [
+    "LOADBMP_BL_SITE"
+   ]
+  },
+  "0x4ee982": {
+   "new": "0x4effba",
+   "kind": "hook",
+   "sources": [
+    "SNAPSHOT_BL_SITE"
+   ]
+  },
+  "0x4ee9a2": {
+   "new": "0x4effda",
+   "kind": "hook",
+   "sources": [
+    "IMAGE_ACK_SUCCESS_SITE"
+   ]
+  },
+  "0x4aa418": {
+   "new": "0x4aa8dc",
+   "kind": "hook",
+   "sources": [
+    "SETTINGS_BL_SITE"
+   ]
+  },
+  "0x4a9b18": {
+   "new": "0x4a9fdc",
+   "kind": "hook",
+   "sources": [
+    "SETTINGS_DECODE_BL_SITE"
+   ]
+  },
+  "0x45f4c6": {
+   "new": "0x467d68",
+   "kind": "hook",
+   "sources": [
+    "DISPLAY_START_BL_SITES"
+   ]
+  },
+  "0x45f586": {
+   "new": "0x467e28",
+   "kind": "hook",
+   "sources": [
+    "DISPLAY_START_BL_SITES"
+   ]
+  },
+  "0x4f79fa": {
+   "new": "0x4f9196",
+   "kind": "hook",
+   "sources": [
+    "EVENAI_ENTRY_SITE"
+   ]
+  },
+  "0x47ab86": {
+   "new": "0x47a78e",
+   "kind": "hook",
+   "sources": [
+    "DISPLAY_COPY_BL_SITES"
+   ]
+  },
+  "0x47acc2": {
+   "new": "0x47a8ca",
+   "kind": "hook",
+   "sources": [
+    "DISPLAY_COPY_BL_SITES"
+   ]
+  },
+  "0x4ad71e": {
+   "new": "0x4ade92",
+   "kind": "hook",
+   "sources": [
+    "WEAR_NOTIFY_BL_SITES"
+   ]
+  },
+  "0x4ad782": {
+   "new": "0x4adef6",
+   "kind": "hook",
+   "sources": [
+    "WEAR_NOTIFY_BL_SITES"
+   ]
+  },
+  "0x4450ac": {
+   "new": "0x444f08",
+   "kind": "hook",
+   "sources": [
+    "COMPASS_EVENT_BL_SITE"
+   ]
+  },
+  "0x4f0666": {
+   "new": "0x4f1d3a",
+   "kind": "hook",
+   "sources": [
+    "inline-hook-or-trampoline"
+   ]
+  },
+  "0x4f072e": {
+   "new": "0x4f1e02",
+   "kind": "hook",
+   "sources": [
+    "inline-hook-or-trampoline"
+   ]
+  },
+  "0x4f0732": {
+   "new": "0x4f1e06",
+   "kind": "hook",
+   "sources": [
+    "inline-hook-or-trampoline"
+   ]
+  },
+  "0x46900a": {
+   "new": "0x464826",
+   "kind": "hook",
+   "sources": [
+    "inline-hook-or-trampoline"
+   ]
+  },
+  "0x4f79fe": {
+   "new": "0x4f919a",
+   "kind": "hook",
+   "sources": [
+    "inline-hook-or-trampoline"
+   ]
+  },
+  "0x4ee9de": {
+   "new": "0x4f0016",
+   "kind": "supporting-code",
+   "sources": [
+    "ABI and branch review"
+   ]
+  },
+  "0x4eea06": {
+   "new": "0x4f003e",
+   "kind": "supporting-code",
+   "sources": [
+    "ABI and branch review"
+   ]
+  },
+  "0x48d67e": {
+   "new": "0x48dae6",
+   "kind": "supporting-code",
+   "sources": [
+    "ABI and branch review"
+   ]
+  },
+  "0x4875cf": {
+   "new": "0x487a37",
+   "kind": "supporting-code",
+   "sources": [
+    "stock wear-hook callee"
+   ]
+  },
+  "0x4c8c5c": {
+   "new": "0x4c9b3c",
+   "kind": "in-place-bytes",
+   "sources": [
+    "BLE_2M_SITE"
+   ]
+  },
+  "0x7b2870": {
+   "new": "0x7bcba0",
+   "kind": "rodata-table",
+   "sources": [
+    "BLE_FAST_INTERVAL_SITE"
+   ]
+  },
+  "0x45f386": {
+   "new": "0x467cf4",
+   "kind": "hook-site",
+   "sources": [
+    "HEADUP_GATE_BL_SITE"
+   ]
+  },
+  "0x4b8806": {
+   "new": "0x4b96d2",
+   "kind": "hook-site",
+   "sources": [
+    "COMPASS_DECODE_BL_SITE"
+   ]
+  },
+  "0x4b8212": {
+   "new": "0x4c2a24",
+   "kind": "hook-site",
+   "sources": [
+    "COMPASS_REPORT_BL_SITE"
+   ]
+  },
+  "0x444909": {
+   "new": "0x4447e9",
+   "kind": "rom-call",
+   "sources": [
+    "gesture_fwd.c"
+   ]
+  },
+  "0x45e8a1": {
+   "new": "0x467291",
+   "kind": "rom-call",
+   "sources": [
+    "gesture_fwd.c"
+   ]
+  },
+  "0x46f71b": {
+   "new": "0x46f403",
+   "kind": "rom-call",
+   "sources": [
+    "gesture_fwd.c:asm"
+   ]
+  },
+  "0x480261": {
+   "new": "0x4806c9",
+   "kind": "rom-call",
+   "sources": [
+    "ring_battery.c"
+   ]
+  },
+  "0x48016a": {
+   "new": "0x4805d2",
+   "kind": "rom-call",
+   "sources": [
+    "validate_ring_battery_stock"
+   ]
+  },
+  "0x480260": {
+   "new": "0x4806c8",
+   "kind": "rom-call",
+   "sources": [
+    "validate_ring_battery_stock"
+   ]
+  },
+  "0x4aaf16": {
+   "new": "0x4ab556",
+   "kind": "rom-call",
+   "sources": [
+    "validate_ring_battery_stock"
+   ]
+  },
+  "0x515634": {
+   "new": "0x517b48",
+   "kind": "rom-call",
+   "sources": [
+    "validate_ring_battery_stock"
+   ]
+  },
+  "0x4b7ac9": {
+   "new": "0x4b8865",
+   "kind": "rom-call",
+   "sources": [
+    "compass.c"
+   ]
+  },
+  "0x51ed29": {
+   "new": "0x521531",
+   "kind": "rom-call",
+   "sources": [
+    "compass.c"
+   ]
+  },
+  "0x475815": {
+   "new": "0x475401",
+   "kind": "rom-call",
+   "sources": [
+    "BLE_FORCE_FAST_SITE callee"
+   ]
+  },
+  "0x4b4ea5": {
+   "new": "0x4b58bd",
+   "kind": "rom-call",
+   "sources": [
+    "ring predicate callee"
+   ]
+  },
+  "0x515653": {
+   "new": "0x517b67",
+   "kind": "rom-call",
+   "sources": [
+    "ring dash getter callee"
+   ]
+  },
+  "0x480177": {
+   "new": "0x4805df",
+   "kind": "rom-call",
+   "sources": [
+    "ring predicate callee"
+   ]
+  },
+  "0x5565e1": {
+   "new": "0x5599cd",
+   "kind": "rom-call",
+   "sources": [
+    "mic_control.c"
+   ]
+  },
+  "0x556603": {
+   "new": "0x5599ef",
+   "kind": "rom-call",
+   "sources": [
+    "mic_control.c"
+   ]
+  },
+  "0x5959b9": {
+   "new": "0x598f45",
+   "kind": "rom-call",
+   "sources": [
+    "mic_control.c"
+   ]
+  },
+  "0x595905": {
+   "new": "0x598e91",
+   "kind": "rom-call",
+   "sources": [
+    "mic_control.c"
+   ]
+  },
+  "0x5200b9": {
+   "new": "0x5228c1",
+   "kind": "rom-call",
+   "sources": [
+    "mic_control.c"
+   ]
+  },
+  "0x56ac65": {
+   "new": "0x56e155",
+   "kind": "rom-call",
+   "sources": [
+    "mic_control.c"
+   ]
+  },
+  "0x56adf3": {
+   "new": "0x56e2e7",
+   "kind": "rom-call",
+   "sources": [
+    "mic_control.c"
+   ]
+  },
+  "0x4ddb05": {
+   "new": "0x4df155",
+   "kind": "rom-call",
+   "sources": [
+    "mic_control.c"
+   ]
+  },
+  "0x56b1f7": {
+   "new": "0x56e6eb",
+   "kind": "rom-call",
+   "sources": [
+    "mic_control.c"
+   ]
+  },
+  "0x46b0ad": {
+   "new": "0x46ad9d",
+   "kind": "rom-call",
+   "sources": [
+    "mic_control.c"
+   ]
+  },
+  "0x595d3d": {
+   "new": "0x5992c9",
+   "kind": "rom-call",
+   "sources": [
+    "mic_control.c"
+   ]
+  },
+  "0x5d8ddb": {
+   "new": "0x5dbf5b",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x442389": {
+   "new": "0x442389",
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x543997": {
+   "new": "0x546f53",
+   "kind": "rom-call",
+   "sources": [
+    "mic_control.c"
+   ]
+  },
+  "0x4cca83": {
+   "new": "0x4cd9a7",
+   "kind": "rom-call",
+   "sources": [
+    "mic_control.c"
+   ]
+  }
+ },
+ "unresolvedAddresses": {
+  "0x4ba0b7": {
+   "kind": "rom-call",
+   "sources": [
+    "zlib_glue.c"
+   ],
+   "reason": "indirect-called (blx/fn-ptr); needs blx-site or adjacent-offset mapping"
+  },
+  "0x47eaa5": {
+   "kind": "rom-call",
+   "sources": [
+    "als_sensor.c",
+    "settings_ext.c"
+   ],
+   "reason": "indirect-called (blx/fn-ptr); needs blx-site or adjacent-offset mapping"
+  },
+  "0x47d429": {
+   "kind": "rom-call",
+   "sources": [
+    "mic_control.c"
+   ],
+   "reason": "indirect-called (blx/fn-ptr); needs blx-site or adjacent-offset mapping"
+  }
+ },
+ "resolvedRam": {
+  "0x20076de0": {
+   "new": "0x20077e4c",
+   "kind": "ram",
+   "sources": [
+    "cfw_context.h"
+   ]
+  },
+  "0x20000358": {
+   "new": "0x20000358",
+   "kind": "ram",
+   "sources": [
+    "debug.c",
+    "malloc.h"
+   ]
+  },
+  "0x200008b4": {
+   "new": "0x200008b8",
+   "kind": "ram",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x200767ec": {
+   "new": "0x20077834",
+   "kind": "ram",
+   "sources": [
+    "zlib_glue.c"
+   ]
+  },
+  "0x200767b4": {
+   "new": "0x200777fc",
+   "kind": "ram",
+   "sources": [
+    "gesture_fwd.c"
+   ]
+  },
+  "0x200764a4": {
+   "new": "0x200774e0",
+   "kind": "ram",
+   "sources": [
+    "debug.c"
+   ]
+  },
+  "0x201350a8": {
+   "new": "0x2013519c",
+   "kind": "ram",
+   "sources": [
+    "debug.c"
+   ]
+  },
+  "0x20076e68": {
+   "new": "0x20077ed0",
+   "kind": "ram",
+   "sources": [
+    "debug.c"
+   ]
+  },
+  "0x202020a8": {
+   "new": "0x2020219c",
+   "kind": "ram",
+   "sources": [
+    "debug.c"
+   ]
+  },
+  "0x2000033c": {
+   "new": "0x2000033c",
+   "kind": "ram",
+   "sources": [
+    "debug.c"
+   ]
+  },
+  "0x202728a8": {
+   "new": "0x2027299c",
+   "kind": "ram",
+   "sources": [
+    "debug.c"
+   ]
+  },
+  "0x20003d08": {
+   "new": "0x20004eb0",
+   "kind": "ram",
+   "sources": [
+    "als_sensor.c"
+   ]
+  },
+  "0x2007640c": {
+   "new": "0x20077448",
+   "kind": "ram",
+   "sources": [
+    "als_sensor.c"
+   ]
+  },
+  "0x20076410": {
+   "new": "0x2007744c",
+   "kind": "ram",
+   "sources": [
+    "als_sensor.c"
+   ]
+  },
+  "0x20076428": {
+   "new": "0x20077464",
+   "kind": "ram",
+   "sources": [
+    "als_sensor.c"
+   ]
+  },
+  "0x2007642c": {
+   "new": "0x20077468",
+   "kind": "ram",
+   "sources": [
+    "als_sensor.c"
+   ]
+  },
+  "0x20076430": {
+   "new": "0x2007746c",
+   "kind": "ram",
+   "sources": [
+    "als_sensor.c"
+   ]
+  },
+  "0x20076438": {
+   "new": "0x20077474",
+   "kind": "ram",
+   "sources": [
+    "als_sensor.c"
+   ]
+  },
+  "0x20000068": {
+   "new": "0x20000068",
+   "kind": "ram",
+   "sources": [
+    "als_sensor.c"
+   ]
+  },
+  "0x20074c90": {
+   "new": "0x20075e08",
+   "kind": "ram",
+   "sources": [
+    "als_sensor.c"
+   ]
+  },
+  "0x20076a04": {
+   "new": "0x20077a54",
+   "kind": "ram",
+   "sources": [
+    "texture_cache.c"
+   ]
+  },
+  "0x200652e0": {
+   "new": "0x20066650",
+   "kind": "ram",
+   "sources": [
+    "compass.c"
+   ]
+  },
+  "0x200773fe": {
+   "new": "0x20078473",
+   "kind": "ram",
+   "sources": [
+    "compass.c"
+   ]
+  },
+  "0x20077400": {
+   "new": "0x20078475",
+   "kind": "ram",
+   "sources": [
+    "compass.c"
+   ]
+  },
+  "0x200773ff": {
+   "new": "0x20078474",
+   "kind": "ram",
+   "sources": [
+    "compass.c"
+   ]
+  },
+  "0x20077314": {
+   "new": "0x2007837e",
+   "kind": "ram",
+   "sources": [
+    "ring_battery.c"
+   ]
+  },
+  "0x20077489": {
+   "new": "0x20078504",
+   "kind": "ram",
+   "sources": [
+    "validate_ring_battery_stock"
+   ]
+  },
+  "0x2029f4a8": {
+   "new": "0x2029f59c",
+   "kind": "reserved-heap-tail",
+   "via": "arena 0x2027299c + CFW_LEN 0x2cc00"
+  },
+  "0x2029f4ac": {
+   "new": "0x2029f5a0",
+   "kind": "reserved-heap-tail",
+   "via": "arena-derived +4"
+  },
+  "0x20000000": {
+   "new": "0x20000000",
+   "kind": "address-space-boundary",
+   "via": "RAM-base constant (bounds check), not relocated"
+  },
+  "0x20077470": {
+   "new": "0x200784e6",
+   "kind": "ram",
+   "sources": [
+    "mic_control.c"
+   ],
+   "via": "base literal-load mapping"
+  },
+  "0x20076e48": {
+   "new": "0x20077eac",
+   "kind": "ram",
+   "sources": [
+    "mic_control.c"
+   ],
+   "via": "base literal-load mapping"
+  },
+  "0x200773d7": {
+   "new": "0x20078446",
+   "kind": "ram",
+   "sources": [
+    "mic_control.c"
+   ],
+   "via": "base literal-load mapping"
+  },
+  "0x200773d6": {
+   "new": "0x20078445",
+   "kind": "ram",
+   "sources": [
+    "mic_control.c"
+   ],
+   "via": "base literal-load mapping"
+  },
+  "0x20077451": {
+   "new": "0x20078486",
+   "kind": "ram",
+   "sources": [
+    "mic_control.c"
+   ],
+   "via": "base literal-load mapping"
+  },
+  "0x200763b8": {
+   "new": "0x200773f8",
+   "kind": "ram",
+   "sources": [
+    "mic_control.c"
+   ],
+   "via": "base literal-load mapping"
+  },
+  "0x200765b8": {
+   "new": "0x200775f8",
+   "kind": "ram",
+   "sources": [
+    "mic_control.c"
+   ],
+   "via": "base literal-load mapping"
+  },
+  "0x200773a5": {
+   "new": "0x20078411",
+   "kind": "ram",
+   "sources": [
+    "mic_control.c"
+   ],
+   "via": "base literal-load mapping"
+  },
+  "0x20004d7f": {
+   "new": "0x2000550b",
+   "kind": "ram",
+   "sources": [
+    "mic_control.c"
+   ],
+   "via": "base literal-load mapping"
+  },
+  "0x20004d80": {
+   "new": "0x2000550c",
+   "kind": "ram",
+   "sources": [
+    "mic_control.c"
+   ],
+   "via": "base literal-load mapping"
+  },
+  "0x20004d82": {
+   "new": "0x2000550e",
+   "kind": "ram",
+   "sources": [
+    "mic_control.c"
+   ],
+   "via": "base literal-load mapping"
+  },
+  "0x20004d83": {
+   "new": "0x2000550f",
+   "kind": "ram",
+   "sources": [
+    "mic_control.c"
+   ],
+   "via": "base literal-load mapping"
+  },
+  "0x200773a4": {
+   "new": "0x20078410",
+   "kind": "ram",
+   "sources": [
+    "mic_control.c"
+   ],
+   "via": "base literal-load mapping"
+  },
+  "0x200773a7": {
+   "new": "0x20078413",
+   "kind": "ram",
+   "sources": [
+    "mic_control.c"
+   ],
+   "via": "base literal-load mapping"
+  },
+  "0x200765c4": {
+   "new": "0x200775fc",
+   "kind": "ram",
+   "sources": [
+    "mic_control.c"
+   ],
+   "via": "base literal-load mapping"
+  },
+  "0x20076594": {
+   "new": "0x200775d4",
+   "kind": "ram",
+   "sources": [
+    "mic_control.c"
+   ],
+   "via": "base literal-load mapping"
+  },
+  "0x200769e4": {
+   "new": "0x20077a34",
+   "kind": "ram",
+   "sources": [
+    "zlib_glue.c"
+   ],
+   "via": "base literal-load mapping"
+  },
+  "0x20004780": {
+   "new": "0x20004f14",
+   "kind": "ram",
+   "sources": [
+    "mic_control.c"
+   ],
+   "via": "base literal-load mapping"
+  }
+ },
+ "unresolvedRam": [],
+ "summary": {
+  "resolvedHooks": 20,
+  "unresolvedHooks": [
+   "IDLE_INPUT_GATE_SITE"
+  ],
+  "resolvedRam": 48,
+  "unresolvedRam": [],
+  "unresolvedRomCalls": [
+   "0x4ba0b7",
+   "0x47eaa5",
+   "0x47d429"
+  ],
+  "gates": [
+   "IDLE_INPUT_GATE semantic redesign-or-drop (decision)",
+   "ABI/register-contract review of relocated hooks",
+   "on-device boot/OTA hardware test"
+  ],
+  "cfwBuildAllowed": false
+ }
+}

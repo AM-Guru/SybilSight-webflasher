@@ -24,6 +24,7 @@ import {
   REVIEWED_CFW_2_2_9_28,
   REVIEWED_CFW_2_2_9_29,
   REVIEWED_CFW_2_2_10_72,
+  REVIEWED_CFW_230_26,
   additiveBigEndianWordSum,
   classifyG2Firmware,
   crc32,
@@ -889,7 +890,7 @@ test("INFOC and INFO0 dumps never authorize a firmware write by themselves", () 
   assert.match(report.decision.interpretation, /not write authorization/i);
 });
 
-test("ships the complete official catalog plus the pinned 2.2.10.72 CFW", async () => {
+test("ships the complete official catalog plus the pinned 230.26 and 2.2.10.72 CFW", async () => {
   const catalog = JSON.parse(
     await readFile(
       new URL("../public/firmware-updates/source-files/index.json", import.meta.url),
@@ -908,10 +909,14 @@ test("ships the complete official catalog plus the pinned 2.2.10.72 CFW", async 
   assert.equal(latestOfficial.sha256, OFFICIAL_G2_SHA256["2.3.0.24"]);
   assert.equal(latestOfficial.caseVersion, "1.2.57");
   const custom = catalog.releases.filter((release) => release.channel === "custom");
-  assert.equal(custom.length, 1);
-  assert.equal(custom[0].id, "g2-custom-2.2.10.72");
-  assert.equal(custom[0].sha256, REVIEWED_CFW_2_2_10_72.sha256);
-  assert.deepEqual(custom[0].bleComponentNames, ["ota/s200_firmware_ota.bin"]);
+  assert.deepEqual(custom.map((release) => release.id), [
+    "g2-custom-2.3.0.24-230.26",
+    "g2-custom-2.2.10.72",
+  ]);
+  assert.equal(custom[0].sha256, REVIEWED_CFW_230_26.sha256);
+  assert.equal(custom[0].requiredCfwMarker, REVIEWED_CFW_230_26.capabilityMarker);
+  assert.equal(custom[1].sha256, REVIEWED_CFW_2_2_10_72.sha256);
+  assert.deepEqual(custom[1].bleComponentNames, ["ota/s200_firmware_ota.bin"]);
 });
 
 test("ships the exact official G2 2.2.9.22 bundle and six components", async () => {

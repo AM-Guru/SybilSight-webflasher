@@ -1,3 +1,5 @@
+import { explainG2CaseSelectionError } from "./casePortSelectionError.js";
+
 const G2_CASE_VENDOR_ID = 0x1a86;
 const G2_CASE_PRODUCT_ID = 0x7523;
 
@@ -514,8 +516,9 @@ export async function requestG2CaseUsbPort() {
   const grantedDevices = (await navigator.usb.getDevices()).filter(
     isG2CaseUsbDevice,
   );
-  const device =
-    grantedDevices.length === 1
+  let device;
+  try {
+    device = grantedDevices.length === 1
       ? grantedDevices[0]
       : await navigator.usb.requestDevice({
           filters: [
@@ -525,5 +528,8 @@ export async function requestG2CaseUsbPort() {
             },
           ],
         });
+  } catch (error) {
+    throw explainG2CaseSelectionError(error, "WebUSB");
+  }
   return new G2CaseWebUsbPort(device);
 }

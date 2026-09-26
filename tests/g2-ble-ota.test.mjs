@@ -103,6 +103,19 @@ test("reuses an exact previously authorized side handle before opening a chooser
   );
 });
 
+test("explicit reselection bypasses even a matching saved Bluetooth handle", async () => {
+  let enumerations = 0;
+  const bluetooth = { async getDevices() {
+    enumerations++;
+    return [{ name: "Even G2_32_L_ACD458", id: "unreachable-left" }];
+  } };
+  assert.equal(await findAuthorizedG2BleDevice("left", {
+    bluetooth, expectedName: "Even G2_32_L_ACD458", forceChooser: true,
+  }), null);
+  assert.equal(enumerations, 0, "Fresh selection cannot reuse a rejected saved endpoint");
+  assert.equal((await findAuthorizedG2BleDevice("left", { bluetooth }))?.id, "unreachable-left");
+});
+
 test("keeps the selected component set on the bounded solo retry", async () => {
   const appSource = await readFile(
     new URL("../src/App.jsx", import.meta.url),
@@ -749,6 +762,31 @@ test("an initially unreachable selected temple gets bounded reconnect attempts",
   assert.match(logs.at(-1).message, /became reachable again/);
 });
 
+test("an unsupported GATT endpoint stops after one connect and requires reselection", async () => {
+  let attempts = 0, disconnects = 0, writes = 0;
+  const session = new G2BleOtaSession({
+    name: "Even G2_32_L_ACD458",
+    gatt: {
+      async connect() {
+        attempts++;
+        throw Object.assign(new Error("Unsupported device."), { name: "NetworkError" });
+      },
+      disconnect() { disconnects++; },
+    },
+  }, { side: "left", initialConnectAttempts: 8, reconnectIntervalMs: 0 });
+  session.writeFrames = async () => { writes++; };
+  await assert.rejects(session.connectForTransfer(), (error) => {
+    assert.equal(error.code, "UNSUPPORTED_GATT_ENDPOINT");
+    assert.equal(error.attempts, 1);
+    assert.equal(g2BleSelectedHandleUnreachable(error), true);
+    assert.match(error.message, /choose another matching entry/);
+    return true;
+  });
+  assert.equal(attempts, 1);
+  assert.equal(disconnects, 1);
+  assert.equal(writes, 0);
+});
+
 test("the post-update reconnect budget outlasts the temple's firmware apply", () => {
   const session = new G2BleOtaSession(
     { name: "Even G2_32_R_693CCB", gatt: {} },
@@ -1112,6 +1150,18 @@ test("the chooser rejects a temple from the wrong side", async () => {
   assert.equal(disconnected, true);
 });
 
+test("a browser chooser that never returns times out without selecting a temple", async () => {
+  const bluetooth = {
+    requestDevice: () => new Promise(() => {}),
+  };
+  await assert.rejects(
+    requestG2BleDevice("left", bluetooth, { chooserTimeoutMs: 5 }),
+    (error) =>
+      error.code === "G2_CHOOSER_TIMEOUT" &&
+      /desktop Chrome or Edge.*No firmware bytes were sent/.test(error.message),
+  );
+});
+
 test("recognizes relaxed Chrome/CoreBluetooth G2 side-name variants", () => {
   assert.equal(g2BleDeviceSide("Even G2_32_L_693CCB"), "left");
   assert.equal(g2BleDeviceSide("Even G2 32 Right 693CCB"), "right");
@@ -1211,6 +1261,7 @@ test("requires an explicit matching side marker after the chooser", async () => 
     [
       "00002760-08c2-11e1-9073-0e8ac72e1001",
       "00002760-08c2-11e1-9073-0e8ac72e5450",
+      "00002760-08c2-11e1-9073-0e8ac72e6450",
       "device_information",
     ],
   );

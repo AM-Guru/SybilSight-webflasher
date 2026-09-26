@@ -2,6 +2,7 @@ import { equalBytes, readU32LE, sha256Hex } from "./firmware.js";
 import { findTempleFlashTarget } from "./templeFlashTargets.js";
 import {
   YHM_PROFILE_OBSERVED_33,
+  YHM_PROFILE_OBSERVED_33_ENTRY1,
   YHM_PROFILE_OBSERVED_45,
   YHM_PROFILE_REVIEWED_22,
   identifyYhmBaselineProfile,
@@ -18,14 +19,18 @@ export const POGO_FLASH_BRIDGE_SHA256 =
   "eba56380f04bf00ad9d87dffbc40c3292ec5b3cee458d3607c8cffd0dcbe335b";
 export const POGO_FLASH_BRIDGE_OBSERVED_33_SHA256 =
   "b341adc44630ffe87b572523ace82b2581785892fff6d7de4e3cf1b0c87861d2";
+export const POGO_FLASH_BRIDGE_OBSERVED_33_ENTRY1_SHA256 =
+  "ff87eeb73c4848e6f5d89baa783bd9e841cc0ec3b32421e0899d97d21912b301";
 export const POGO_FLASH_BRIDGE_OBSERVED_45_SHA256 =
   "12746a8c540cde92e893dced10b4c1ef5079410a59b18eef95cea10754b1a431";
 // Regression pins for register-8 values already exercised end-to-end; other
 // observed profiles verify by construction from the reviewed pin plus the
-// bounded four-offset patch.
+// bounded four-offset patch. The exact entry-1 variant has a fifth offset
+// and its own digest pin.
 export const POGO_FLASH_BRIDGE_PROFILE_SHA256 = Object.freeze({
   [YHM_PROFILE_REVIEWED_22]: POGO_FLASH_BRIDGE_SHA256,
   [YHM_PROFILE_OBSERVED_33]: POGO_FLASH_BRIDGE_OBSERVED_33_SHA256,
+  [YHM_PROFILE_OBSERVED_33_ENTRY1]: POGO_FLASH_BRIDGE_OBSERVED_33_ENTRY1_SHA256,
   [YHM_PROFILE_OBSERVED_45]: POGO_FLASH_BRIDGE_OBSERVED_45_SHA256,
 });
 export const POGO_FLASH_BRIDGE_BANNER = new TextEncoder().encode(
@@ -169,7 +174,10 @@ export async function getVerifiedPogoFlashBridgePayload(
   let payload = reviewedPayload;
   if (profile !== YHM_PROFILE_REVIEWED_22) {
     payload = reviewedPayload.slice();
-    for (const offset of POGO_FLASH_BRIDGE_PROFILE_PATCH_OFFSETS) {
+    const patchOffsets = profile === YHM_PROFILE_OBSERVED_33_ENTRY1
+      ? [2816, ...POGO_FLASH_BRIDGE_PROFILE_PATCH_OFFSETS]
+      : POGO_FLASH_BRIDGE_PROFILE_PATCH_OFFSETS;
+    for (const offset of patchOffsets) {
       if (payload[offset] !== 0x22) {
         throw new PogoFlashSafetyError(
           "The volatile flash bridge YHM profile table differs from the reviewed layout.",

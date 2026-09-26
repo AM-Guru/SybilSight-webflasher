@@ -1926,6 +1926,25 @@ export const REVIEWED_CFW_2_2_10_67 = Object.freeze({
     "Pending manual hardware testing; unavailable in the public firmware catalog.",
   ],
 });
+// Published as g2-custom-2.3.0.24-230.26. It keeps stock 2.3.0.24 version
+// metadata; only the direct per-lens FI/v1 marker distinguishes it.
+export const REVIEWED_CFW_230_26 = Object.freeze({
+  version: "2.3.0.24",
+  reportedVersion: "2.3.0.24",
+  baseVersion: "2.3.0.24",
+  baseSha256: "187ccf2bcc5c17a212106e8a376745511e8289c4232b634a7ea94b9bf25a0979",
+  sha256: "8784efd8892a027dd2a0b7eee4dae1b1679cfa1b8008aa1b296103cfe674b0ba",
+  mainPayloadBytes: 3838372,
+  mainPayloadSha256: "3d4be332f7686658ddacb707e443c04b756be0642b7d07d0a7721e75529773fd",
+  capabilityMarker: "SybilSight/230.26",
+  capabilities: [
+    "Faceclaw revision-29 display ABI: retained root, CLEAR, full-root draw and animated RECT_COPY, with an aligned memset full-frame clear.",
+    "Direct per-lens identity: each temple answers a nonce-bound FI/v1 query with its exact marker before any microphone context is allocated.",
+    "Four-microphone array and PCM diagnostics stay behind an explicit opt-in; the stock microphone path is unchanged by default.",
+    "Changes only the Apollo application payload; all five other component payloads match stock 2.3.0.24.",
+    "Offline tests pass; hardware validation is pending.",
+  ],
+});
 export const REVIEWED_CFW_2_2_10_72 = Object.freeze({
   version: "2.2.10.72",
   reportedVersion: "2.2.10.72",
@@ -2466,6 +2485,22 @@ export const POGO_TRANSFER_RESEARCH = Object.freeze({
       policy:
         "Select the exact observed-33 profile only from immutable retained zero-write/zero-transmission proof. Use separately SHA-256-pinned read-only and writer bridges whose only four byte changes are the four observed baseline-table register-8 values 0x22 to 0x33; retain fail-closed behavior for every unobserved baseline.",
     }),
+    observed33Entry1YhmProfile: Object.freeze({
+      observedAt: "2026-09-23",
+      caseFirmware: "1.2.57",
+      baseline: "811104afaf038d2033ff",
+      selectionEvidence: "retained full-baseline, zero-write and zero-temple-transmission status-3 proof",
+      readOnlyBridgeSha256:
+        "bc523f26152be688634be62b06a9dc11fd31870d63b5fd28af0c6cacd3c5d6aa",
+      writerBridgeSha256:
+        "ff87eeb73c4848e6f5d89baa783bd9e841cc0ec3b32421e0899d97d21912b301",
+      readOnlyHardwareValidation:
+        "Both routes returned checksum-valid G2 2.3.0.24/hardware-5 version frames with zero USART errors, exact YHM restoration and Case 1.2.57 return through the pinned USB-serial read bridge.",
+      writerHardwareValidated: false,
+      browserTransportHardwareValidated: false,
+      browserTransportLimit:
+        "The local Chrome WebUSB and Web Serial pickers listed no compatible Case despite macOS exposing USB 1A86:7523; no browser route probe started.",
+    }),
     observed45YhmProfile: Object.freeze({
       observedAt: "2026-07-28",
       transport: "remote-support relay",
@@ -2762,7 +2797,7 @@ export function describePogoOtaComponent(typeId, payloadSize) {
     return {
       ...transfer,
       disposition: "capture-gated-main",
-      safetyLabel: "MAIN ONLY · BOTH CASE ROUTES VALIDATED",
+      safetyLabel: "MAIN ONLY · RUNNING TEMPLES",
       commitBoundary:
         "The complete image is staged in LittleFS before its CRC, update flag, and reset.",
       acknowledgement:
@@ -2963,6 +2998,18 @@ export function parseMainOTAPreamble(payload) {
 
 export function classifyG2Firmware(fileSha256) {
   const digest = fileSha256.toLowerCase();
+  const localTarget = findTempleFlashTarget(digest);
+  if (localTarget?.localOnly && localTarget.requiredCfwMarker) {
+    return {
+      channel: "custom",
+      trust: "experimental-local",
+      label: localTarget.label,
+      version: localTarget.version,
+      baseVersion: localTarget.baseVersion,
+      capabilityMarker: localTarget.requiredCfwMarker,
+      capabilities: ["Pinned local hardware test candidate; not a published or fully validated release."],
+    };
+  }
   const reviewed = [
     REVIEWED_CFW_2_2_10_12,
     REVIEWED_CFW_2_2_10_13,
@@ -3005,6 +3052,7 @@ export function classifyG2Firmware(fileSha256) {
     REVIEWED_CFW_2_2_10_59,
     REVIEWED_CFW_2_2_10_60,
     REVIEWED_CFW_2_2_10_61,
+    REVIEWED_CFW_230_26,
     REVIEWED_CFW_2_2_10_72,
     // Older 2.2.10 candidates are no longer recognized: only the latest CFW is offered.
     // Earlier-generation pins stay recognizable for trust classification of an uploaded

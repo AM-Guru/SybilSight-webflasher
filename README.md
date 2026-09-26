@@ -270,7 +270,10 @@ and their exact main payloads.
 
 The shared fail-closed host validates the complete bundle, permits only the
 Apollo main component, never blindly replays `0x52` start or `0x53` header,
-and never replays `0x54` DATA after any failure. Hardware returned explicit,
+and never replays an explicitly rejected `0x54` DATA record or an ambiguous
+transport failure. Only the separately audited, checksum-valid Case status-6
+silence with zero UART errors may trigger a bounded same-record resend, as
+described below. Hardware returned explicit,
 unadvanced DATA rejections at records 349, 753, 874, and 1,663; same-record
 retries after 15, 30, and 60 seconds all produced no complete frame. The Case
 path now ends that component attempt, proves Case/YHM cleanup, issues the
@@ -623,10 +626,15 @@ CRC-16/CCITT-FALSE over each `0x54` data payload, a modulo-256 sequence, and
 6,000-byte deferred batches. The expected sequence starts at zero. An explicit
 rejection proves that the current sequence did not advance, but Case-path
 hardware showed that the receiver does not recover reliably from an
-in-session retry. The current host therefore replays no DATA record: after
-exact cleanup and reset/liveness proof, it restarts the complete component
-from START. Missing or malformed replies remain ambiguous and also abort the
-component without replay. Start and header are not treated as replay-safe.
+in-session retry of an explicitly rejected record. The current host never
+resends an explicitly rejected DATA record. Only a checksum-valid Case bridge
+status-6 reply with zero UART errors permits an in-place retry: the host first
+waits through a bounded roughly 70-second reply window, then may settle and
+resend the identical record and sequence up to three times, subject to a
+twelve-recovery per-component budget. A status-1 duplicate rejection on a resend advances to
+the next sequence; a rejection on that next record stops the attempt. An
+unresolved component still requires exact cleanup and reset/liveness proof
+before a fresh complete START. Start and header are not replay-safe.
 Offline calculation never contacts a temple. During a real
 transfer, each acknowledgement is
 parser acceptance rather than independent proof of a durable write. The final
@@ -738,6 +746,12 @@ inspects both 256 KiB flash banks.
 After the browser grants access to exactly one matching `1A86:7523` Case, later
 analysis and recovery operations reuse that authorized port. A chooser remains
 mandatory when no matching Case is authorized or more than one is available.
+When selecting another Case, WebFlasher closes its prior local WebUSB or Web
+Serial port before opening the next picker. It also starts port teardown when
+the page is hidden for navigation or closed, and clears stale analysis state
+if restored from the back-forward cache. A browser-held USB interface may
+still require physical reconnection or a browser restart if Chrome does not
+release it after the page is gone.
 
 CH340 reads can end after one 32-byte USB packet even though the STM32 already
 returned to command mode. That packet contains the one-byte ROM ACK followed by
@@ -1105,6 +1119,13 @@ The bare application URL opens in **Easy Mode**. **Advanced Mode** preserves
 the original Connect, Analyze, Preserve, Choose image, and Recovery Console
 panes.
 
+After analyzing a local Case, **Disconnect Case USB** closes the selected
+WebUSB or Web Serial port and clears the in-page analysis and recovery state.
+Previously downloaded backup files remain on the computer. Use this control
+before handing the Case to another browser tab or desktop tool; the page also
+attempts to release its local port on exit. Remote-support sessions retain
+their separate ownership and must be ended through remote support.
+
 1. Choose official Stock or reviewed CFW.
 2. Remove both temples from the Case, keep them powered nearby, and disconnect
    the Even app or paired phone.
@@ -1140,6 +1161,12 @@ Chrome's native chooser can display both sides because Web Bluetooth cannot
 filter on a middle-of-name side token. SybilSight therefore combines the G2
 name filter with a mandatory post-selection side check and disconnects any
 device that does not unambiguously match the requested side.
+
+If an embedded browser exposes Web Bluetooth but never returns a chooser
+result, selection stops waiting after two minutes and reports that no firmware
+bytes were sent. This timeout does not classify the temple as failed or make
+USB recovery mandatory. Open the same WebFlasher in desktop Chrome or Edge,
+wake the requested temple, and retry its side-specific Bluetooth selection.
 
 If Bluetooth is unavailable, the Bluetooth update fails, or either device is
 generally non-working or inaccessible over Bluetooth, click **Open USB
@@ -1426,26 +1453,55 @@ and both routes receive read-only liveness verification.
 
 ## Firmware archive
 
-The archive builder offers all 16 official G2 releases evidenced by the
-SybilSight research plus reviewed CFW 2.2.6.11, 2.2.7.16, 2.2.8.11, and 2.2.9.23.
-Historical withdrawn CFW evidence remains in immutable versioned directories
-but is not emitted in the WebFlasher catalog or writer pin table. The builder
-also verifies and archives every R1 Secure DFU package
-exposed by the authenticated compatibility API, with exact CDN size, MD5,
-SHA-256, application, and signed init-packet pins:
+The current published catalog offers 17 official G2 releases and reviewed
+SybilSight CFW 2.2.10.72. Historical withdrawn CFW evidence remains in
+immutable versioned directories but is not emitted in the WebFlasher catalog
+or writer pin table. The archive builder also verifies and archives every R1
+Secure DFU package exposed by the authenticated compatibility API, with exact
+CDN size, MD5, SHA-256, application, and signed init-packet pins:
 
 ```text
-2.0.1.14  2.0.3.20  2.0.5.12  2.0.6.14
-2.0.7.16  2.0.8.20  2.0.9.20  2.1.1.8
-2.1.1.12  2.2.0.24  2.2.4.34  2.2.6.10
-2.2.7.14  2.2.7.16  2.2.8.4  2.2.8.11  2.2.9.22  2.2.9.23
+G2 official: 2.0.1.14  2.0.3.20  2.0.5.12  2.0.6.14
+             2.0.7.16  2.0.8.20  2.0.9.20  2.1.1.8
+             2.1.1.12  2.2.0.24  2.2.4.34  2.2.6.10
+             2.2.7.14  2.2.8.4  2.2.9.22  2.2.10.10
+             2.3.0.24
+G2 custom:   2.2.10.72
 ```
 
 ```text
 R1: 2.0.3.0013  2.0.5.0004  2.0.6.0005  2.0.7.0004
     2.0.8.0012  2.2.0.0014  2.2.4.0003  2.2.5.0005
     2.2.6.0009  2.2.7.0005  2.2.8.0002  2.2.9.0003
+    2.3.0.0005
 ```
+
+After an R1 Secure DFU transfer, the page reuses the already-authorized
+application Bluetooth identity for a bounded, read-only normal-mode service
+check. It disconnects both DFU and probe GATT sessions when finished. A normal
+application response is separate from firmware-version proof: use SybilSight
+Device Info to confirm the exact installed version. If Chromium's saved handle
+is stale or the ring does not respond, reselect the application; the page does
+not replay the firmware merely because this check is inconclusive.
+Both R1 Bluetooth pickers report a two-minute timeout. Chrome can keep a picker
+open after that timeout because Web Bluetooth has no picker-cancel API. If the
+person chooses the device later, the page accepts that explicit selection;
+a late result from an older picker cannot replace a newer choice. The
+**Check selected R1 · no firmware write** button checks normal-mode GATT before
+starting an update. The **Use previously authorized R1** button can restore
+an R1 handle this browser was already granted after a page reload, even when
+the chooser has no fresh advertisement; it does not connect until Check is
+pressed. If more than one R1 was authorized, the page asks which saved handle
+to use. A failed Check reports whether connection, service discovery, or the
+buttonless characteristic failed. Restart into update mode stays disabled
+until that read-only Check succeeds. A saved Chrome handle can still become
+stale; an `Unsupported device` result requires fresh device selection when
+the ring advertises again.
+Selecting a new R1 application or restarting it into DFU clears any previously
+selected DFU handle and the update confirmation; the next transfer requires a
+fresh bootloader selection. A ring already in recovery mode can still be
+selected directly through the DFU picker. Direct DFU selection does not reuse
+an unrelated old application handle as post-transfer reconnection evidence.
 
 It retrieves each original bundle from the Even Realities CDN. If a known CDN
 object is unavailable, it checks the preserved evidence paths under

@@ -1,3 +1,4 @@
+import { G2_CFW_IDENTITY_SERVICE, probeG2CfwIdentity } from "./g2CfwIdentity.js";
 import {
   EXPECTED_COMPONENTS,
   EXPECTED_COMPONENT_TYPES,
@@ -285,6 +286,7 @@ export function isG2BleConnectionLoss(error, device = null) {
 /// wake, so only a fresh chooser selection can recover it; reusing the handle for
 /// a solo retry is wasted radio time.
 export function g2BleSelectedHandleUnreachable(error) {
+  if (g2BleUnsupportedEndpoint(error)) return true;
   const seen = new Set();
   let current = error;
   let sawConnectFailure = false;
@@ -306,6 +308,16 @@ export function g2BleSelectedHandleUnreachable(error) {
       return true;
     }
     current = current.cause;
+  }
+  return false;
+}
+
+export function g2BleUnsupportedEndpoint(error) {
+  const seen = new Set();
+  for (let current = error; current && typeof current === "object" && !seen.has(current); current = current.cause) {
+    seen.add(current);
+    if (current.code === "UNSUPPORTED_GATT_ENDPOINT" ||
+        /^Unsupported device\.?$/i.test(current.message ?? "")) return true;
   }
   return false;
 }
@@ -372,6 +384,7 @@ export async function proveG2BleTempleByReselection(
     expectedName = null,
     tokens = G2_KNOWN_NAME_TOKENS,
     expectedFirmwareRevisions = [],
+    requiredCfwMarker = null,
     log = () => {},
   } = {},
 ) {
@@ -388,10 +401,18 @@ export async function proveG2BleTempleByReselection(
     tokens,
   });
   let information = null;
+  let cfwIdentity = null;
+  let identitySession = null;
   try {
     const server = await device.gatt.connect();
     information = await readG2DeviceInformation(server, { side, log });
+    if (requiredCfwMarker) {
+      identitySession = new G2BleOtaSession(device, { side, log });
+      await identitySession.connect();
+      cfwIdentity = await identitySession.verifyCFWIdentity(requiredCfwMarker);
+    }
   } finally {
+    if (identitySession) await identitySession.disconnect();
     try {
       device.gatt?.disconnect?.();
     } catch {
@@ -414,6 +435,7 @@ export async function proveG2BleTempleByReselection(
     hardwareRevision: information?.hardwareRevision ?? null,
     modelNumber: information?.modelNumber ?? null,
     expectedFirmwareRevisions: expected,
+    cfwIdentity,
     matchesExpected,
     provenAt: new Date().toISOString(),
   };
@@ -427,7 +449,8 @@ export function g2BleRouteProvenOverBluetooth(route) {
   if (!route || route.outcome !== "success") return false;
   if (route.skipped) return false;
   const postUpdate = route.components?.at(-1)?.postUpdate;
-  return Boolean(postUpdate?.freshReconnectAttempted && postUpdate.reconnected);
+  return Boolean(postUpdate?.freshReconnectAttempted && postUpdate.reconnected &&
+    (!route.requiredCfwMarker || postUpdate.cfwIdentity?.marker === route.requiredCfwMarker));
 }
 
 // Fold a re-selection proof into the recorded routes so the same
@@ -436,6 +459,7 @@ export function g2BleRouteProvenOverBluetooth(route) {
 export function applyG2BleReselectionProof(routes, side, proof) {
   const route = routes?.[side];
   if (!route) return routes;
+  if (route.requiredCfwMarker && proof?.cfwIdentity?.marker !== route.requiredCfwMarker) return routes;
   const components = [...(route.components ?? [])];
   const last = components.at(-1);
   if (last) {
@@ -446,6 +470,7 @@ export function applyG2BleReselectionProof(routes, side, proof) {
         freshReconnectAttempted: true,
         reconnected: true,
         reconnectedBy: "chooser-reselection",
+        cfwIdentity: proof?.cfwIdentity ?? null,
         reselectionProof: {
           deviceId: proof?.deviceId ?? null,
           deviceName: proof?.deviceName ?? null,
@@ -709,9 +734,11 @@ export async function findAuthorizedG2BleDevice(
   {
     bluetooth = globalThis.navigator?.bluetooth,
     expectedName = null,
+    forceChooser = false,
   } = {},
 ) {
   if (
+    forceChooser ||
     !["left", "right"].includes(side) ||
     typeof bluetooth?.getDevices !== "function"
   ) {
@@ -783,7 +810,8 @@ export function g2BleRoutesAwaitingCaseVerification(routes) {
     if (!route || route.skipped || route.outcome !== "success") return false;
     const postUpdate = route.components?.at(-1)?.postUpdate;
     return Boolean(
-      postUpdate?.freshReconnectAttempted && !postUpdate.reconnected,
+      (postUpdate?.freshReconnectAttempted && !postUpdate.reconnected) ||
+      (route.requiredCfwMarker && postUpdate?.cfwIdentity?.marker !== route.requiredCfwMarker),
     );
   });
 }
@@ -826,6 +854,7 @@ export async function requestG2BleDevice(
     expectedSerial = null,
     expectedName = null,
     tokens = G2_KNOWN_NAME_TOKENS,
+    chooserTimeoutMs = 120_000,
   } = {},
 ) {
   if (!["left", "right"].includes(side)) {
@@ -836,7 +865,7 @@ export async function requestG2BleDevice(
       "Web Bluetooth is unavailable. Open the WebFlasher in current Chrome.",
     );
   }
-  const device = await bluetooth.requestDevice({
+  const request = bluetooth.requestDevice({
     // Side-specific by construction: the LEFT button offers only `_L_` names
     // and the RIGHT button only `_R_` names. See buildG2ChooserFilters for how
     // a mid-string marker is expressed in a grammar that has only prefixes.
@@ -852,12 +881,29 @@ export async function requestG2BleDevice(
     optionalServices: [
       G2_BLE_DATA_SERVICE,
       G2_BLE_CONTROL_SERVICE,
+      G2_CFW_IDENTITY_SERVICE,
       // Permits the advisory Device Information read (firmware/hardware
       // revision) on this handle; a firmware that lacks the service is logged
       // and tolerated by the reader.
       G2_BLE_DEVICE_INFO_SERVICE,
     ],
   });
+  // Some embedded Chromium surfaces expose navigator.bluetooth but never
+  // return a chooser result. Keep the page usable without treating a stalled
+  // browser picker as evidence that the physical temple cannot advertise.
+  let chooserTimer;
+  const device = await Promise.race([
+    request,
+    new Promise((_, reject) => {
+      chooserTimer = setTimeout(() => {
+        const error = new Error(
+          `The browser did not return a ${side} Bluetooth chooser result within two minutes. If no picker appeared, open this WebFlasher in desktop Chrome or Edge and try again. No firmware bytes were sent.`,
+        );
+        error.code = "G2_CHOOSER_TIMEOUT";
+        reject(error);
+      }, chooserTimeoutMs);
+    }),
+  ]).finally(() => clearTimeout(chooserTimer));
   const observedSide = g2BleDeviceSide(device?.name);
   if (observedSide !== side) {
     device?.gatt?.disconnect();
@@ -1671,6 +1717,14 @@ export class G2BleOtaSession {
           // The failed connection attempt may already have closed the link.
         }
         this.writeTail = Promise.resolve();
+        // Chromium's macOS Classic endpoint returns CONNECT_UNSUPPORTED_DEVICE
+        // for GATT. Waiting for another advertisement cannot change its type.
+        if (g2BleUnsupportedEndpoint(error)) {
+          throw new G2BleOtaError(
+            `${this.side}: this Bluetooth endpoint cannot provide GATT (Unsupported device). Select this side again and choose another matching entry if Chrome shows duplicate names.`,
+            { code: "UNSUPPORTED_GATT_ENDPOINT", attempts: attempt, cause: error },
+          );
+        }
         if (attempt < this.initialConnectAttempts) {
           this.log(
             `${this.side}: selected temple is not reachable yet (${error?.message ?? String(error)}). Waiting for it to advertise · initial Bluetooth reconnect ${attempt + 1}/${this.initialConnectAttempts}.`,
@@ -1687,6 +1741,18 @@ export class G2BleOtaSession {
         cause: lastError,
       },
     );
+  }
+
+  async verifyCFWIdentity(marker) {
+    if (!this.linkAuthenticated) throw new Error("Authenticate before CFW identity verification.");
+    const identity = await probeG2CfwIdentity({
+      server: this.server, side: this.side, marker,
+      writeQuery: (query) => this.writeFrames(this.controlWrite,
+        makeBleEnvelopeFrames(9, concatBytes([8, 1, 16, 0, 0xba, 6, query.length], query),
+          { sequence: this.nextSequence(), flag: 0x20 })),
+    });
+    this.log(`${this.side}: fresh direct ${identity.marker} nonce reply verified.`, "success");
+    return identity;
   }
 
   async disconnect() {
@@ -2225,6 +2291,7 @@ export class G2BleOtaSession {
     { progressBase = 0, progressSpan = 1, componentNames = null } = {},
   ) {
     assertPinnedG2BleBundle(firmware);
+    const requiredCfwMarker = firmware.templeFlashTarget.requiredCfwMarker ?? null;
     const requestedNames = Array.isArray(componentNames)
       ? [...new Set(componentNames)]
       : null;
@@ -2287,12 +2354,23 @@ export class G2BleOtaSession {
           (result.endStatus === 8 || result.endStatus === 9)
         ) {
           result.postUpdate = await this.settleFinalUpdate(result.endStatus);
+          if (requiredCfwMarker && result.postUpdate.reconnected) {
+            try {
+              result.postUpdate.cfwIdentity = await this.verifyCFWIdentity(requiredCfwMarker);
+            } catch (error) {
+              // Bytes already transferred: retain that evidence and request a
+              // read-only re-selection. Never replay OTA to fix missing proof.
+              result.postUpdate.cfwIdentityError = error?.message ?? String(error);
+              this.log(`${this.side}: transfer accepted; CFW identity remains unproven. Re-select this lens to verify without reflashing.`, "warn");
+            }
+          }
         }
       }
     } catch (error) {
       const failureCause = error?.cause;
       const partialResult = {
         side: this.side,
+        requiredCfwMarker,
         deviceName: this.device.name,
         imageSha256: firmware.fileSha256,
         version: firmware.g2Version,
@@ -2340,6 +2418,7 @@ export class G2BleOtaSession {
     );
     return {
       side: this.side,
+      requiredCfwMarker,
       deviceName: this.device.name,
       imageSha256: firmware.fileSha256,
       version: firmware.g2Version,

@@ -6,12 +6,218 @@ import {
   R1_PINNED_RELEASES,
   R1_DFU_OBJECT_ATTEMPTS,
   R1_DFU_PACKET_RECEIPT_INTERVAL,
+  R1_DFU_SERVICE_UUID,
+  R1_BUTTONLESS_DFU_UUID,
   R1SecureDfuSession,
   assertPinnedR1Release,
   crc32,
+  listAuthorizedR1ApplicationDevices,
   parseDfuResponse,
   prepareR1DfuPackage,
+  requestR1ApplicationDevice,
+  requestR1DfuDevice,
+  waitForR1ApplicationMode,
 } from "../src/lib/r1Dfu.js";
+
+test("R1 application chooser requests the buttonless DFU service and checks the selected name", async () => {
+  let requested;
+  const bluetooth = {
+    async requestDevice(options) {
+      requested = options;
+      return { name: "EVEN R1_TEST" };
+    },
+  };
+  assert.equal((await requestR1ApplicationDevice(bluetooth)).name, "EVEN R1_TEST");
+  assert.deepEqual(requested.optionalServices, [R1_DFU_SERVICE_UUID]);
+  await assert.rejects(
+    requestR1ApplicationDevice({ requestDevice: async () => ({ name: "G2_L" }) }),
+    /not an R1 ring/,
+  );
+});
+
+test("saved R1 selection lists only previously authorized application handles without connecting", async () => {
+  const ring = { id: "ring", name: "EVEN R1_TEST", gatt: { connect() { throw new Error("must not connect"); } } };
+  const devices = await listAuthorizedR1ApplicationDevices({
+    getDevices: async () => [
+      { id: "glasses", name: "Even G2_L", gatt: {} },
+      ring,
+      { id: "dfu", name: "DfuTarg", gatt: {} },
+      { id: "not-connectable", name: "EVEN R1_OTHER" },
+    ],
+  });
+  assert.deepEqual(devices, [ring]);
+  await assert.rejects(
+    listAuthorizedR1ApplicationDevices({}),
+    /cannot recall previously authorized/,
+  );
+});
+
+test("both R1 choosers bound a picker that never returns", async () => {
+  const bluetooth = { requestDevice: () => new Promise(() => {}) };
+  for (const request of [requestR1ApplicationDevice, requestR1DfuDevice]) {
+    await assert.rejects(
+      request(bluetooth, { chooserTimeoutMs: 5 }),
+      (error) => error.code === "R1_CHOOSER_TIMEOUT"
+        && error.message.includes("No firmware bytes were sent"),
+    );
+  }
+});
+
+test("a valid R1 choice made after the timeout is returned to the page", async () => {
+  let choose;
+  let lateDevice;
+  const bluetooth = {
+    requestDevice: () => new Promise((resolve) => { choose = resolve; }),
+  };
+  await assert.rejects(
+    requestR1ApplicationDevice(bluetooth, {
+      chooserTimeoutMs: 5,
+      onLateDevice: (device) => { lateDevice = device; },
+    }),
+    (error) => error.code === "R1_CHOOSER_TIMEOUT",
+  );
+  choose({ name: "EVEN R1_TEST" });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(lateDevice?.name, "EVEN R1_TEST");
+});
+
+test("an invalid application choice after timeout is not accepted", async () => {
+  let choose;
+  let lateDevice;
+  const bluetooth = {
+    requestDevice: () => new Promise((resolve) => { choose = resolve; }),
+  };
+  await assert.rejects(
+    requestR1ApplicationDevice(bluetooth, {
+      chooserTimeoutMs: 5,
+      onLateDevice: (device) => { lateDevice = device; },
+    }),
+    (error) => error.code === "R1_CHOOSER_TIMEOUT",
+  );
+  choose({ name: "G2_L" });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(lateDevice, undefined);
+});
+
+test("R1 post-DFU probe confirms only the normal application service and releases GATT", async () => {
+  const calls = [];
+  const gatt = {
+    connected: false,
+    async connect() {
+      calls.push("connect");
+      this.connected = true;
+      return this;
+    },
+    async getPrimaryService(uuid) {
+      calls.push(["service", uuid]);
+      return {
+        async getCharacteristic(characteristic) {
+          calls.push(["characteristic", characteristic]);
+          return {};
+        },
+      };
+    },
+    disconnect() {
+      calls.push("disconnect");
+      this.connected = false;
+    },
+  };
+  assert.equal(await waitForR1ApplicationMode({ gatt }, { timeoutMs: 50 }), true);
+  assert.deepEqual(calls, [
+    "connect",
+    ["service", R1_DFU_SERVICE_UUID],
+    ["characteristic", R1_BUTTONLESS_DFU_UUID],
+    "disconnect",
+  ]);
+});
+
+test("R1 post-DFU probe retries a temporary reconnect failure without writing", async () => {
+  let attempts = 0;
+  const gatt = {
+    connected: false,
+    async connect() {
+      attempts += 1;
+      if (attempts === 1) throw new Error("temporarily unavailable");
+      this.connected = true;
+      return this;
+    },
+    async getPrimaryService() {
+      return { async getCharacteristic() { return {}; } };
+    },
+    disconnect() { this.connected = false; },
+  };
+  assert.equal(await waitForR1ApplicationMode(
+    { gatt }, { timeoutMs: 100, retryDelayMs: 1 },
+  ), true);
+  assert.equal(attempts, 2);
+});
+
+test("R1 post-DFU probe stops on Chromium's stale unsupported identity", async () => {
+  let attempts = 0;
+  let failure;
+  const gatt = {
+    connected: false,
+    async connect() {
+      attempts += 1;
+      throw new Error("Unsupported device");
+    },
+    disconnect() {},
+  };
+  assert.equal(await waitForR1ApplicationMode(
+    { gatt }, { timeoutMs: 100, onFailure: (detail) => { failure = detail; } },
+  ), false);
+  assert.equal(attempts, 1);
+  assert.equal(failure.stage, "connect");
+  assert.equal(failure.attempts, 1);
+  assert.match(failure.message, /Unsupported device/);
+});
+
+test("R1 read-only probe identifies which normal-mode GATT step failed", async () => {
+  for (const failedStage of ["service", "characteristic"]) {
+    let failure;
+    let disconnections = 0;
+    const gatt = {
+      connected: false,
+      async connect() { this.connected = true; return this; },
+      async getPrimaryService() {
+        if (failedStage === "service") throw new Error("Unsupported device");
+        return {
+          async getCharacteristic() { throw new Error("Unsupported device"); },
+        };
+      },
+      disconnect() { this.connected = false; disconnections += 1; },
+    };
+    assert.equal(await waitForR1ApplicationMode(
+      { gatt }, { timeoutMs: 100, onFailure: (detail) => { failure = detail; } },
+    ), false);
+    assert.equal(failure.stage, failedStage);
+    assert.equal(failure.attempts, 1);
+    assert.equal(disconnections, 1);
+  }
+});
+
+test("R1 post-DFU probe disconnects a GATT connect that resolves after timeout", async () => {
+  let resolveConnect;
+  let disconnections = 0;
+  const gatt = {
+    connected: false,
+    connect() {
+      return new Promise((resolve) => { resolveConnect = resolve; });
+    },
+    disconnect() {
+      disconnections += 1;
+      this.connected = false;
+    },
+  };
+  assert.equal(await waitForR1ApplicationMode(
+    { gatt }, { timeoutMs: 5, attemptTimeoutMs: 5 },
+  ), false);
+  gatt.connected = true;
+  resolveConnect(gatt);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(disconnections, 1);
+  assert.equal(gatt.connected, false);
+});
 
 function checksumResponse(offset, checksum) {
   const bytes = new Uint8Array(11);

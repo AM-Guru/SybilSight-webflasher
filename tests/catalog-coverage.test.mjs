@@ -45,6 +45,8 @@ const REVIEWED_CFW_2_2_9_28_SHA256 =
   "dc4c4de98d183a98f8b2e98b91ab0c920b46a1ec30fcdf3d447637f2022df484";
 const REVIEWED_CFW_2_2_10_72_SHA256 =
   "f3bd05f9adaae94cbf2a693b7259a98c11454ba270fe09311bdfd38484d1161c";
+const REVIEWED_CFW_230_26_SHA256 =
+  "8784efd8892a027dd2a0b7eee4dae1b1679cfa1b8008aa1b296103cfe674b0ba";
 const REVIEWED_CFW_2_2_9_29_SHA256 =
   "960b964f2dfdfb17edf222f0ec3c5c44ca9ee502fe2a9873919e951a6c158ac5";
 
@@ -82,6 +84,7 @@ test("flags a pinned image the served library is too old to offer", () => {
   assert.deepEqual(
     missing.map((target) => target.imageSha256),
     [
+      REVIEWED_CFW_230_26_SHA256,
       OFFICIAL_G2_2_3_0_24_SHA256,
       REVIEWED_CFW_2_2_10_72_SHA256,
       OFFICIAL_G2_2_2_10_10_SHA256,
@@ -105,6 +108,7 @@ test("blocks firmware mutation when the served library is behind the build", () 
       assert.deepEqual(
         error.missingPinnedImages.map((target) => target.imageSha256),
         [
+          REVIEWED_CFW_230_26_SHA256,
           OFFICIAL_G2_2_3_0_24_SHA256,
           REVIEWED_CFW_2_2_10_72_SHA256,
           OFFICIAL_G2_2_2_10_10_SHA256,
@@ -137,7 +141,7 @@ test("omits retired CFW releases from the catalog and writer allowlist", async (
   ];
   assert.deepEqual(
     catalog.filter((release) => release.channel === "custom").map((release) => release.id),
-    ["g2-custom-2.2.10.72"],
+    ["g2-custom-2.3.0.24-230.26", "g2-custom-2.2.10.72"],
   );
   for (const sha256 of cfwDigests) {
     assert.equal(catalog.some((release) => release.sha256 === sha256), false);
@@ -173,7 +177,7 @@ test("excludes advertisement-patched CFW releases from both mutation paths", asy
   }
 });
 
-test("ships only the newly reviewed custom firmware release", async () => {
+test("ships exactly the two reviewed custom firmware releases", async () => {
   const catalog = JSON.parse(
     await readFile(
       new URL("../public/firmware-updates/source-files/index.json", import.meta.url),
@@ -181,17 +185,25 @@ test("ships only the newly reviewed custom firmware release", async () => {
     ),
   ).releases;
   const custom = catalog.filter((release) => release.channel === "custom");
-  assert.equal(custom.length, 1);
-  assert.equal(custom[0].id, "g2-custom-2.2.10.72");
-  assert.equal(custom[0].sha256, REVIEWED_CFW_2_2_10_72_SHA256);
-  assert.deepEqual(custom[0].bleComponentNames, ["ota/s200_firmware_ota.bin"]);
+  assert.equal(custom.length, 2);
+  assert.equal(custom[0].id, "g2-custom-2.3.0.24-230.26");
+  assert.equal(custom[0].sha256, REVIEWED_CFW_230_26_SHA256);
+  // The stock version string cannot prove this image; only the direct marker can.
+  assert.equal(custom[0].requiredCfwMarker, "SybilSight/230.26");
+  assert.equal(custom[0].hardwareValidated, false);
+  assert.equal(custom[0].caseRecoveryEligible, false);
+  assert.equal(custom[1].id, "g2-custom-2.2.10.72");
+  assert.equal(custom[1].sha256, REVIEWED_CFW_2_2_10_72_SHA256);
+  assert.deepEqual(custom[1].bleComponentNames, ["ota/s200_firmware_ota.bin"]);
 });
 
-test("deployment validation pins the only permitted custom firmware release", async () => {
+test("deployment validation pins the permitted custom firmware releases", async () => {
   const deployWorkflow = await readFile(
     new URL("../.github/workflows/deploy.yml", import.meta.url),
     "utf8",
   );
+  assert.match(deployWorkflow, /g2-custom-2\.3\.0\.24-230\.26/);
+  assert.match(deployWorkflow, new RegExp(REVIEWED_CFW_230_26_SHA256));
   assert.match(deployWorkflow, /g2-custom-2\.2\.10\.72/);
   assert.match(deployWorkflow, new RegExp(REVIEWED_CFW_2_2_10_72_SHA256));
   assert.match(deployWorkflow, /unexpected CFW release/);

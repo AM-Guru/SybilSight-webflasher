@@ -1,5 +1,6 @@
 export const YHM_PROFILE_REVIEWED_22 = "reviewed-22";
 export const YHM_PROFILE_OBSERVED_33 = "observed-33";
+export const YHM_PROFILE_OBSERVED_33_ENTRY1 = "observed-33-entry1";
 export const YHM_PROFILE_OBSERVED_45 = "observed-45";
 
 export const YHM_REVIEWED_REGISTER_8 = 0x22;
@@ -14,8 +15,9 @@ const REVIEWED_22_BASELINES = Object.freeze([
 
 // This list mirrors the five-slot baseline table baked into the pinned SRAM
 // bridges byte-for-byte. An observed profile is derived from the reviewed
-// build by patching the register-8 byte of entries 2-5 (the 0x8d entry 1 is
-// never patched), so every derived table keeps entry 1 verbatim.
+// build by patching the register-8 byte of entries 2-5. The separately pinned
+// observed-33-entry1 profile also patches entry 1 after an exact retained
+// zero-write proof of its 0x8d/0x33 baseline on 2026-09-23.
 //
 // Register 8 is a per-Case persistent YHM2510 identity byte, not a protocol
 // byte: unrelated Cases have shipped 0x22, 0x33 (case 00240024514250032037384b,
@@ -45,6 +47,7 @@ export function yhmObservedProfile(register8) {
 
 export function yhmProfileRegister8(profile) {
   if (profile === YHM_PROFILE_REVIEWED_22) return YHM_REVIEWED_REGISTER_8;
+  if (profile === YHM_PROFILE_OBSERVED_33_ENTRY1) return 0x33;
   const match = OBSERVED_PROFILE_PATTERN.exec(String(profile ?? ""));
   if (!match) {
     throw new Error(`Unsupported YHM baseline profile ${profile ?? "unknown"}.`);
@@ -68,7 +71,9 @@ export function yhmProfileBaselines(profile) {
   if (register8 === YHM_REVIEWED_REGISTER_8) return REVIEWED_22_BASELINES;
   const suffix = `${register8.toString(16).padStart(2, "0")}ff`;
   return Object.freeze([
-    REVIEWED_22_BASELINES[0],
+    profile === YHM_PROFILE_OBSERVED_33_ENTRY1
+      ? `${REVIEWED_22_BASELINES[0].slice(0, -4)}${suffix}`
+      : REVIEWED_22_BASELINES[0],
     ...REVIEWED_22_BASELINES.slice(1).map(
       (baseline) => `${baseline.slice(0, -4)}${suffix}`,
     ),
@@ -78,20 +83,21 @@ export function yhmProfileBaselines(profile) {
 export const YHM_PROFILE_BASELINES = Object.freeze({
   [YHM_PROFILE_REVIEWED_22]: REVIEWED_22_BASELINES,
   [YHM_PROFILE_OBSERVED_33]: yhmProfileBaselines(YHM_PROFILE_OBSERVED_33),
+  [YHM_PROFILE_OBSERVED_33_ENTRY1]: yhmProfileBaselines(YHM_PROFILE_OBSERVED_33_ENTRY1),
   [YHM_PROFILE_OBSERVED_45]: yhmProfileBaselines(YHM_PROFILE_OBSERVED_45),
 });
 
 export function identifyYhmBaselineProfile(baselineHex) {
   const normalized = String(baselineHex ?? "").toLowerCase();
   if (REVIEWED_22_BASELINES.includes(normalized)) return YHM_PROFILE_REVIEWED_22;
+  if (normalized === "811104afaf038d2033ff") return YHM_PROFILE_OBSERVED_33_ENTRY1;
   if (!/^[0-9a-f]{20}$/.test(normalized)) return null;
   if (!normalized.endsWith("ff")) return null;
   const register8 = Number.parseInt(normalized.slice(-4, -2), 16);
   if (register8 === YHM_REVIEWED_REGISTER_8) return null;
   const structural = `${normalized.slice(0, -4)}22ff`;
-  // Entry 1 (the 0x8d variant) is never patched in the derived bridge tables,
-  // so only register-8 variants of entries 2-5 can be served by a derived
-  // bridge; everything else stays fail-closed.
+  // Entry 1 has one exact, separately pinned 0x33 variant above. All other
+  // observed profiles patch only entries 2-5; structural deviations stop.
   if (!REVIEWED_22_BASELINES.slice(1).includes(structural)) return null;
   return yhmObservedProfile(register8);
 }

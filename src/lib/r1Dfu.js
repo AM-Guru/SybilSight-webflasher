@@ -309,29 +309,82 @@ export async function prepareR1DfuPackage(archive, release) {
   return { application, initPacket };
 }
 
-function requireWebBluetooth() {
-  if (!navigator.bluetooth) {
+function requireWebBluetooth(bluetooth) {
+  if (!bluetooth?.requestDevice) {
     throw new Error("R1 updates require Web Bluetooth in desktop Chrome or Edge.");
   }
 }
 
-export async function requestR1ApplicationDevice() {
-  requireWebBluetooth();
-  const device = await navigator.bluetooth.requestDevice({
-    filters: [{ namePrefix: "EVEN R1" }, { namePrefix: "BCL60" }],
-    optionalServices: [R1_DFU_SERVICE_UUID],
-  });
-  if (!/^(EVEN R1|BCL60)/i.test(device.name ?? "")) {
-    throw new Error("The selected Bluetooth device is not an R1 ring.");
-  }
+async function requestR1Device(bluetooth, options, label, chooserTimeoutMs, onLateDevice) {
+  requireWebBluetooth(bluetooth);
+  let chooserTimer;
+  let timedOut = false;
+  // Web Bluetooth does not offer a way to cancel requestDevice. A user may
+  // foreground Chrome and choose a device after our UI timeout has fired.
+  // Preserve that explicit selection instead of silently discarding it.
+  const chooser = bluetooth.requestDevice(options);
+  chooser.then((device) => {
+    if (timedOut) {
+      try { onLateDevice?.(device); } catch { /* Keep a late UI callback from rejecting the chooser. */ }
+    }
+  }, () => {});
+  const device = await Promise.race([
+    chooser,
+    new Promise((_, reject) => {
+      chooserTimer = setTimeout(() => {
+        timedOut = true;
+        const error = new Error(
+          `The browser did not return an R1 ${label} Bluetooth chooser result within two minutes. If no picker appeared, use desktop Chrome or Edge and try again. No firmware bytes were sent.`,
+        );
+        error.code = "R1_CHOOSER_TIMEOUT";
+        reject(error);
+      }, chooserTimeoutMs);
+    }),
+  ]).finally(() => clearTimeout(chooserTimer));
   return device;
 }
 
-export async function requestR1DfuDevice() {
-  requireWebBluetooth();
-  return navigator.bluetooth.requestDevice({
-    filters: [{ services: [R1_DFU_SERVICE_UUID] }],
+export async function requestR1ApplicationDevice(
+  bluetooth = globalThis.navigator?.bluetooth,
+  { chooserTimeoutMs = 120_000, onLateDevice } = {},
+) {
+  const validate = (device) => {
+    if (!/^(EVEN R1|BCL60)/i.test(device.name ?? "")) {
+      throw new Error("The selected Bluetooth device is not an R1 ring.");
+    }
+    return device;
+  };
+  const device = await requestR1Device(bluetooth, {
+    filters: [{ namePrefix: "EVEN R1" }, { namePrefix: "BCL60" }],
+    optionalServices: [R1_DFU_SERVICE_UUID],
+  }, "application", chooserTimeoutMs, (lateDevice) => {
+    try { onLateDevice?.(validate(lateDevice)); } catch { /* Ignore invalid late choices. */ }
   });
+  return validate(device);
+}
+
+// Chrome can return an explicitly authorized R1 after a page reload even when
+// its advertisement is temporarily absent from a fresh device chooser. This
+// only enumerates this origin's existing permissions; it does not connect.
+export async function listAuthorizedR1ApplicationDevices(
+  bluetooth = globalThis.navigator?.bluetooth,
+) {
+  if (typeof bluetooth?.getDevices !== "function") {
+    throw new Error("This browser cannot recall previously authorized Bluetooth devices. Use the R1 device picker instead.");
+  }
+  const devices = await bluetooth.getDevices();
+  return devices.filter((device) =>
+    /^(EVEN R1|BCL60)/i.test(device.name ?? "") && device.gatt,
+  );
+}
+
+export async function requestR1DfuDevice(
+  bluetooth = globalThis.navigator?.bluetooth,
+  { chooserTimeoutMs = 120_000, onLateDevice } = {},
+) {
+  return requestR1Device(bluetooth, {
+    filters: [{ services: [R1_DFU_SERVICE_UUID] }],
+  }, "DFU", chooserTimeoutMs, onLateDevice);
 }
 
 function waitForDisconnect(device, timeoutMs = 15000) {
@@ -358,6 +411,97 @@ export async function enterR1DfuMode(device) {
   const disconnected = waitForDisconnect(device);
   await buttonless.writeValueWithResponse(new Uint8Array([0x01]));
   await disconnected;
+}
+
+// Reuse the already-authorized application identity after DFU. Finding its
+// buttonless updater characteristic proves that normal application GATT is
+// back; it does not prove the application's version. No characteristic is
+// read, subscribed to, or written here.
+export async function waitForR1ApplicationMode(
+  device,
+  {
+    timeoutMs = 60_000,
+    attemptTimeoutMs = 8_000,
+    retryDelayMs = 1_500,
+    onFailure,
+  } = {},
+) {
+  if (!device?.gatt) {
+    onFailure?.({ stage: "selection", attempts: 0, name: "MissingDevice", message: "No R1 Bluetooth handle was selected." });
+    return false;
+  }
+  const deadline = Date.now() + Math.max(1, timeoutMs);
+  let attempts = 0;
+  let lastFailure = null;
+  const bounded = (operation, ms) => {
+    let expired = false;
+    let timer;
+    const work = Promise.resolve().then(operation).then((value) => {
+      if (expired) {
+        device.gatt.disconnect();
+        throw new Error("The R1 application probe completed after its deadline.");
+      }
+      return value;
+    });
+    return Promise.race([
+      work,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          expired = true;
+          reject(new Error("The R1 application probe timed out."));
+        }, ms);
+      }),
+    ]).finally(() => clearTimeout(timer));
+  };
+
+  while (Date.now() < deadline) {
+    let stage = "connect";
+    attempts += 1;
+    try {
+      const remaining = Math.max(1, deadline - Date.now());
+      const stepTimeout = Math.min(attemptTimeoutMs, remaining);
+      const server = device.gatt.connected
+        ? device.gatt
+        : await bounded(() => device.gatt.connect(), stepTimeout);
+      stage = "service";
+      const service = await bounded(
+        () => server.getPrimaryService(R1_DFU_SERVICE_UUID),
+        stepTimeout,
+      );
+      stage = "characteristic";
+      await bounded(
+        () => service.getCharacteristic(R1_BUTTONLESS_DFU_UUID),
+        stepTimeout,
+      );
+      return true;
+    } catch (error) {
+      lastFailure = {
+        stage,
+        attempts,
+        name: error?.name ?? "Error",
+        message: error?.message ?? String(error),
+      };
+      // Chromium cannot always refresh a saved Bluetooth identity after a
+      // reboot. A new chooser selection is the useful next step then.
+      if (/unsupported device/i.test(error?.message ?? "")) {
+        onFailure?.(lastFailure);
+        return false;
+      }
+    } finally {
+      if (device.gatt.connected) device.gatt.disconnect();
+    }
+    const remaining = deadline - Date.now();
+    if (remaining > 0) {
+      await new Promise((resolve) => setTimeout(resolve, Math.min(retryDelayMs, remaining)));
+    }
+  }
+  onFailure?.(lastFailure ?? {
+    stage: "connect",
+    attempts,
+    name: "TimeoutError",
+    message: "The R1 application probe reached its deadline before connecting.",
+  });
+  return false;
 }
 
 export function parseDfuResponse(value, expectedOperation) {
