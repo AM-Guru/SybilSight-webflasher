@@ -224,9 +224,9 @@ jobs:
           set -euo pipefail
           archive="${RUNNER_TEMP}/webflasher-release/webflasher-remote-support-addon.tar.gz"
           activate_script="${RUNNER_TEMP}/webflasher-release/activate-homeassistant-app.sh"
-          remote_stage="/addons/.sybilsight-remote-support-deploy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          remote_target="/addons/sybilsight-remote-support"
-          remote_backup="/addons/.sybilsight-remote-support-previous"
+          remote_stage="/local_apps/.sybilsight-remote-support-deploy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          remote_target="/local_apps/sybilsight-remote-support"
+          remote_backup="/local_apps/.sybilsight-remote-support-previous"
           ssh_options=(
             -o BatchMode=yes
             -o ConnectTimeout=15
@@ -239,7 +239,7 @@ jobs:
           set -eu
           stage="$1"
           case "${stage}" in
-            /addons/.sybilsight-remote-support-deploy-*) ;;
+            /local_apps/.sybilsight-remote-support-deploy-*) ;;
             *) exit 1 ;;
           esac
           if [ -e "${stage}" ]; then
@@ -253,7 +253,7 @@ jobs:
           set -eu
           stage="$1"
           case "${stage}" in
-            /addons/.sybilsight-remote-support-deploy-*) ;;
+            /local_apps/.sybilsight-remote-support-deploy-*) ;;
             *) exit 1 ;;
           esac
           if [ -e "${stage}" ]; then
@@ -272,11 +272,11 @@ jobs:
           target="$2"
           backup="$3"
           case "${stage}" in
-            /addons/.sybilsight-remote-support-deploy-*) ;;
+            /local_apps/.sybilsight-remote-support-deploy-*) ;;
             *) exit 1 ;;
           esac
-          [ "${target}" = /addons/sybilsight-remote-support ]
-          [ "${backup}" = /addons/.sybilsight-remote-support-previous ]
+          [ "${target}" = /local_apps/sybilsight-remote-support ]
+          [ "${backup}" = /local_apps/.sybilsight-remote-support-previous ]
           for required in Dockerfile config.yaml DOCS.md package.json package-lock.json server.mjs; do
             [ -s "${stage}/${required}" ]
             [ ! -L "${stage}/${required}" ]
@@ -310,9 +310,9 @@ jobs:
           set -eu
           target="$1"
           backup="$2"
-          [ "${target}" = /addons/sybilsight-remote-support ]
-          [ "${backup}" = /addons/.sybilsight-remote-support-previous ]
-          failed="/addons/.sybilsight-remote-support-failed"
+          [ "${target}" = /local_apps/sybilsight-remote-support ]
+          [ "${backup}" = /local_apps/.sybilsight-remote-support-previous ]
+          failed="/local_apps/.sybilsight-remote-support-failed"
           rm -rf -- "${failed}"
           mv "${target}" "${failed}"
           mv "${backup}" "${target}"
@@ -334,9 +334,9 @@ jobs:
           release_dir="${RUNNER_TEMP}/webflasher-release"
           active_caddyfile="${RUNNER_TEMP}/active-Caddyfile"
           candidate_caddyfile="${RUNNER_TEMP}/candidate-Caddyfile"
-          remote_caddyfile="/addon_configs/c80c7555_caddy-2/Caddyfile"
-          remote_incoming="/addon_configs/c80c7555_caddy-2/.Caddyfile.webflasher-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          remote_backup="/addon_configs/c80c7555_caddy-2/.Caddyfile.webflasher-backup-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          remote_caddyfile="/app_configs/c80c7555_caddy-2/Caddyfile"
+          remote_incoming="/app_configs/c80c7555_caddy-2/.Caddyfile.webflasher-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          remote_backup="/app_configs/c80c7555_caddy-2/.Caddyfile.webflasher-backup-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           ssh_options=(
             -o BatchMode=yes
             -o ConnectTimeout=15
@@ -360,14 +360,14 @@ jobs:
           active="$2"
           backup="$3"
           case "${incoming}" in
-            /addon_configs/c80c7555_caddy-2/.Caddyfile.webflasher-*) ;;
+            /app_configs/c80c7555_caddy-2/.Caddyfile.webflasher-*) ;;
             *) exit 1 ;;
           esac
           case "${backup}" in
-            /addon_configs/c80c7555_caddy-2/.Caddyfile.webflasher-backup-*) ;;
+            /app_configs/c80c7555_caddy-2/.Caddyfile.webflasher-backup-*) ;;
             *) exit 1 ;;
           esac
-          [ "${active}" = /addon_configs/c80c7555_caddy-2/Caddyfile ]
+          [ "${active}" = /app_configs/c80c7555_caddy-2/Caddyfile ]
           [ -f "${active}" ] && [ ! -L "${active}" ]
           [ -f "${incoming}" ] && [ ! -L "${incoming}" ]
           [ ! -e "${backup}" ] && [ ! -L "${backup}" ]
@@ -408,9 +408,9 @@ jobs:
           set -eu
           active="$1"
           backup="$2"
-          [ "${active}" = /addon_configs/c80c7555_caddy-2/Caddyfile ]
+          [ "${active}" = /app_configs/c80c7555_caddy-2/Caddyfile ]
           case "${backup}" in
-            /addon_configs/c80c7555_caddy-2/.Caddyfile.webflasher-backup-*) ;;
+            /app_configs/c80c7555_caddy-2/.Caddyfile.webflasher-backup-*) ;;
             *) exit 1 ;;
           esac
           [ -f "${backup}" ] && [ ! -L "${backup}" ]

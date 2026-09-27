@@ -1690,7 +1690,10 @@ website tree swap to erase their history. The deploy validates the public ledger
 before reporting production healthy.
 The same release artifact atomically updates and rebuilds the local Remote
 Support app, then proves its advertised protocol and requester-side task list
-through the public health endpoint before the deployment can pass.
+through the public health endpoint before the deployment can pass. The SSH app
+exposes local app sources at `/local_apps/sybilsight-remote-support` and the
+Caddy configuration at `/app_configs/c80c7555_caddy-2/Caddyfile`; these paths
+must match the mounts exposed by the installed Terminal & SSH app.
 The previous release is retained at `/root/share/.webflasher-previous`. Every
 build emits `release.json` with its full Git commit identity and the SHA-256 of
 the catalog shipped with that build. The same atomic web-root swap publishes

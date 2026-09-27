@@ -17,7 +17,7 @@ case "${app_slug}" in
     ;;
 esac
 
-expected_source_directory="${EXPECTED_HOME_ASSISTANT_APP_SOURCE:-/addons/sybilsight-remote-support}"
+expected_source_directory="${EXPECTED_HOME_ASSISTANT_APP_SOURCE:-/local_apps/sybilsight-remote-support}"
 if [ "${source_directory}" != "${expected_source_directory}" ] || \
   [ ! -d "${source_directory}" ] || [ -L "${source_directory}" ]; then
   echo "Refusing unexpected Home Assistant app source: ${source_directory}" >&2
