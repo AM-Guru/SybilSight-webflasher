@@ -44,6 +44,42 @@ test("real 230.26 bundle retains six exact components without USB qualification"
   assert.equal(firmware.templeFlashTarget.requiredCfwMarker, "SybilSight/230.26");
   assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
 });
+test("experimental 230.27 revision-35 display CFW is pinned, never reviewed, and requires bilateral identity", async () => {
+  const digest = "36cc6222227275d0fd07f134c765737e508b5e205e6d6aa1122a4b2cf1996bfa";
+  const target = findTempleFlashTarget(digest);
+  assert.equal(target?.requiredCfwMarker, "SybilSight/230.27");
+  assert.equal(target.mainSha256, "088d94f31c1d08d4f84dd119b4bb833ee28dbad1f66a535e7ab9c3dee621fdc8");
+  assert.equal(target.mainBytes, 3_844_932);
+  assert.equal(target.hardwareValidated, false);
+  const provenance = classifyG2Firmware(digest);
+  assert.equal(provenance.trust, "experimental-local");
+  assert.equal(provenance.capabilityMarker, "SybilSight/230.27");
+  assert.match(provenance.label, /hardware unvalidated/);
+  for (const [side, code] of [["left", 2], ["right", 1]]) {
+    const markerBytes = new TextEncoder().encode(target.requiredCfwMarker);
+    const wire = Uint8Array.from([0x46, 0x49, 1, code, 7, 0, 0, 0, markerBytes.length,
+      ...markerBytes]);
+    assert.deepEqual(parseG2CfwIdentity(wire, {
+      side, nonce: 7, marker: target.requiredCfwMarker,
+    }), { side, nonce: 7, marker: target.requiredCfwMarker });
+    // A 230.26 identity can never satisfy the 230.27 transfer, nor the reverse.
+    assert.equal(parseG2CfwIdentity(wire, {
+      side, nonce: 7, marker: "SybilSight/230.26",
+    }), null);
+  }
+});
+test("real 230.27 bundle retains six exact components", {
+  skip: !process.env.G2_CFW_2327_FIXTURE,
+}, async () => {
+  const firmware = await parseFirmwareInput(new Uint8Array(await readFile(process.env.G2_CFW_2327_FIXTURE)));
+  assert.equal(firmware.fileSha256, "36cc6222227275d0fd07f134c765737e508b5e205e6d6aa1122a4b2cf1996bfa");
+  assertPinnedG2BleBundle(firmware);
+  assert.equal(firmware.componentImages.length, 6);
+  assert.equal(firmware.caseRecoveryEligible, false);
+  assert.equal(firmware.templeFlashTarget.requiredCfwMarker, "SybilSight/230.27");
+  assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
+  assert.equal(firmware.provenance.trust, "experimental-local");
+});
 test("230.25 PCM registry diagnostic stays local-only and requires bilateral identity", async () => {
   const digest = "f5562b636a77c260e950da4f872d1e94224159841b9cb6b9c47faab2818aded4";
   const target = findTempleFlashTarget(digest);

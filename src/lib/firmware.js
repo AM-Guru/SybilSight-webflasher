@@ -1945,6 +1945,28 @@ export const REVIEWED_CFW_230_26 = Object.freeze({
     "Offline tests pass; hardware validation is pending.",
   ],
 });
+// Staged as g2-custom-2.3.0.24-230.27 with trust "experimental-local": never a
+// default, and never classified as reviewed. Stock 2.3.0.24 version metadata;
+// only the direct per-lens FI/v1 marker distinguishes it.
+export const EXPERIMENTAL_CFW_230_27 = Object.freeze({
+  version: "2.3.0.24",
+  reportedVersion: "2.3.0.24",
+  baseVersion: "2.3.0.24",
+  baseSha256: "187ccf2bcc5c17a212106e8a376745511e8289c4232b634a7ea94b9bf25a0979",
+  sha256: "36cc6222227275d0fd07f134c765737e508b5e205e6d6aa1122a4b2cf1996bfa",
+  mainPayloadBytes: 3844932,
+  mainPayloadSha256: "088d94f31c1d08d4f84dd119b4bb833ee28dbad1f66a535e7ab9c3dee621fdc8",
+  capabilityMarker: "SybilSight/230.27",
+  g2flashCommit: "9079f994760d7b8f91eab1a0e8c4a8ebca9fd753",
+  capabilities: [
+    "Faceclaw revision-35 display ABI on top of 230.26: firmware brightness control with fade in/out, dithered darken, and clip rectangles on draw calls.",
+    "The dashboard phone-link line is drawn at one shared position on both lenses, without an L/R tag.",
+    "Direct per-lens identity: each temple answers a nonce-bound FI/v1 query with its exact marker before any microphone context is allocated.",
+    "Four-microphone array and PCM diagnostics stay behind an explicit opt-in; the stock microphone path is unchanged by default.",
+    "Changes only the Apollo application payload; all five other component payloads match stock 2.3.0.24.",
+    "Experimental: offline tests pass; hardware validation is pending.",
+  ],
+});
 export const REVIEWED_CFW_2_2_10_72 = Object.freeze({
   version: "2.2.10.72",
   reportedVersion: "2.2.10.72",
@@ -3008,6 +3030,17 @@ export function classifyG2Firmware(fileSha256) {
       baseVersion: localTarget.baseVersion,
       capabilityMarker: localTarget.requiredCfwMarker,
       capabilities: ["Pinned local hardware test candidate; not a published or fully validated release."],
+    };
+  }
+  if (digest === EXPERIMENTAL_CFW_230_27.sha256) {
+    return {
+      channel: "custom",
+      trust: "experimental-local",
+      label: `Experimental CFW · stock ${EXPERIMENTAL_CFW_230_27.baseVersion} base · hardware unvalidated`,
+      version: EXPERIMENTAL_CFW_230_27.version,
+      baseVersion: EXPERIMENTAL_CFW_230_27.baseVersion,
+      capabilityMarker: EXPERIMENTAL_CFW_230_27.capabilityMarker,
+      capabilities: EXPERIMENTAL_CFW_230_27.capabilities,
     };
   }
   const reviewed = [

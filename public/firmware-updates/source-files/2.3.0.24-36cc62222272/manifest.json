@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "format": "evenota-hardware-flash-manifest-v1",
+  "device": "Even Realities G2",
+  "release": {
+    "version": "2.3.0.24",
+    "archiveKey": "2.3.0.24-36cc62222272",
+    "internalVersion": "2.3.0.24",
+    "reportedVersion": "2.3.0.24",
+    "channel": "custom",
+    "trust": "experimental-local",
+    "baseVersion": "2.3.0.24",
+    "hardwareValidated": false
+  },
+  "package": {
+    "file": "g2-2.3.0.24-sybilsight-230.27.bin",
+    "size": 4624175,
+    "md5": "e96594ca8675cbee252a29f4150079cf",
+    "sha256": "36cc6222227275d0fd07f134c765737e508b5e205e6d6aa1122a4b2cf1996bfa",
+    "componentCount": 6
+  },
+  "patchRecipe": {
+    "file": "cfw_patches-230.27.json",
+    "sha256": "c089f2a4b1412f9e693a2e5f27fce70a352203592174945bc08d46894232b09f",
+    "baseVersion": "2.3.0.24",
+    "baseSha256": "187ccf2bcc5c17a212106e8a376745511e8289c4232b634a7ea94b9bf25a0979",
+    "operationCount": 49
+  },
+  "capabilityMarker": "SybilSight/230.27",
+  "sourceProvenance": {
+    "builder": "SybilSight firmware/cfw/g2-2.3.0.24/build_revision35_display.py",
+    "g2flash_upstream_commit": "9079f994760d7b8f91eab1a0e8c4a8ebca9fd753",
+    "parent_upstream_commit": "e13842d5b851d1c4d451d59f370da122bd26e70f",
+    "parent_marker": "SybilSight/230.26",
+    "parent_image_sha256": "8784efd8892a027dd2a0b7eee4dae1b1679cfa1b8008aa1b296103cfe674b0ba",
+    "build_recipe_sha256": "cb28b35a9b5ad2227285d174dc9934098e019ddfb823b6cd0a2fb05f2ecda237",
+    "display_list_contract": 35,
+    "context_magic": "0xc0ffee83",
+    "context_bytes": 1456,
+    "diagnostic": "230.26 plus g2flash Faceclaw/32-35: message-30 brightness/fade, dithered REMAP_COLORS, brightness flicker fix, draw-call clip rects and expression IMAGE/TEXT coordinates; shared untagged dashboard lane",
+    "build_status": "offline-tests-passed-hardware-unvalidated"
+  },
+  "excludedFeature": null,
+  "firmwareFiles": [
+    {
+      "componentName": "firmware/codec.bin",
+      "archiveFile": "firmware_codec.bin",
+      "typeId": 4,
+      "size": 326092,
+      "crc32c": "bdcfeeac",
+      "sha256": "b06dfef7faa2f1e52d2aacd07958d4b96ffc36dca5077ac9149e48f19fc9c4d0",
+      "role": "device-component"
+    },
+    {
+      "componentName": "firmware/ble_em9305.bin",
+      "archiveFile": "firmware_ble_em9305.bin",
+      "typeId": 5,
+      "size": 211948,
+      "crc32c": "c074baf7",
+      "sha256": "91a38f7fc05555f86181ecb22b363e3239bfcaaa2ff6171e98524ae64821eca9",
+      "role": "device-component"
+    },
+    {
+      "componentName": "firmware/touch.bin",
+      "archiveFile": "firmware_touch.bin",
+      "typeId": 3,
+      "size": 34720,
+      "crc32c": "903ca49a",
+      "sha256": "c14456cd4d432815d79700b251c9a575f75c76a3710f4148c0df6ddba4cb7ba2",
+      "role": "device-component"
+    },
+    {
+      "componentName": "firmware/box.bin",
+      "archiveFile": "firmware_box.bin",
+      "typeId": 6,
+      "size": 55784,
+      "crc32c": "7d443be0",
+      "sha256": "36ca0c13558f252af286ae2b36b5e576d087d21d37b15d778e7da9f502a70374",
+      "role": "charging-case"
+    },
+    {
+      "componentName": "ota/s200_bootloader.bin",
+      "archiveFile": "ota_s200_bootloader.bin",
+      "typeId": 1,
+      "size": 149755,
+      "crc32c": "04b60910",
+      "sha256": "52ed1c4d043f278f9011d2f2e6555b668ef2ff1e312695f5c28fa7986523b75b",
+      "role": "glasses-bootloader"
+    },
+    {
+      "componentName": "ota/s200_firmware_ota.bin",
+      "archiveFile": "ota_s200_firmware_ota.bin",
+      "typeId": 0,
+      "size": 3844932,
+      "crc32c": "14782e55",
+      "sha256": "088d94f31c1d08d4f84dd119b4bb833ee28dbad1f66a535e7ab9c3dee621fdc8",
+      "role": "glasses-application"
+    }
+  ],
+  "chargingCaseRawImage": {
+    "file": "firmware_box.raw.bin",
+    "size": 55752,
+    "sha256": "773b6d4cfdaf0a5a74a557e3babe8222a0ae813436b76a7437c1096d2c60d677"
+  },
+  "flashTargets": {
+    "completeBundle": "g2-2.3.0.24-sybilsight-230.27.bin",
+    "glassesApplication": "ota_s200_firmware_ota.bin",
+    "glassesBootloader": "ota_s200_bootloader.bin",
+    "chargingCaseWrapped": "firmware_box.bin",
+    "chargingCaseRaw": "firmware_box.raw.bin"
+  }
+}

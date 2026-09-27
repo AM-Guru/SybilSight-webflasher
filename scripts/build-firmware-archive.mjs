@@ -226,7 +226,8 @@ const HARDWARE_VALIDATED_TEMPLE_IMAGES = new Set([
   HARDWARE_VALIDATED_G2_2_2_6_10_SHA256,
 ]);
 const LOCAL_REVIEWED_TEMPLE_TARGETS = Object.freeze([
-  // SybilSight/230.26 is published through RELEASES (g2-custom-2.3.0.24-230.26).
+  // SybilSight/230.26 is published through RELEASES (g2-custom-2.3.0.24-230.26);
+  // experimental 230.27 is staged there too, with trust "experimental-local".
   Object.freeze({
     imageSha256: "f5562b636a77c260e950da4f872d1e94224159841b9cb6b9c47faab2818aded4",
     mainSha256: "c3dee6cd7ebb06c9142c19314842d7ce8c2e800bfc140630356a2d0684b7f6b7",
@@ -569,6 +570,51 @@ const RELEASES = [
     ],
     notes:
       "Built from stock 2.3.0.24 and g2flash e13842d (Faceclaw revision 29) with the SybilSight 230.x overlays; the recipe replays against the pinned stock image byte-for-byte. Offline source, sanitizer and emitted-code tests pass. Not yet hardware-validated, and the four-microphone array is not acoustically qualified.",
+  },
+  {
+    // Staged for local testing, never a default: trust "experimental-local" (the
+    // local-candidate trust used by classifyG2Firmware and the iOS Debug importer)
+    // keeps it out of findLatestReviewedCustomRelease and out of the iOS app's
+    // newest-reviewed-custom default, and G2FirmwareRelease.isTrusted refuses it
+    // for in-app installation. Offline-built; hardware qualification is pending.
+    // Like 230.26 it keeps stock 2.3.0.24 version metadata: requiredCfwMarker
+    // demands the nonce-bound per-lens FI/v1 identity reply after transfer.
+    id: "g2-custom-2.3.0.24-230.27",
+    displayName: "SybilSight CFW 230.27 (2.3.0.24, experimental, hardware unvalidated)",
+    version: "2.3.0.24",
+    internalVersion: "2.3.0.24",
+    reportedVersion: "2.3.0.24",
+    baseVersion: "2.3.0.24",
+    baseSha256: "187ccf2bcc5c17a212106e8a376745511e8289c4232b634a7ea94b9bf25a0979",
+    channel: "custom",
+    trust: "experimental-local",
+    hash: "e96594ca8675cbee252a29f4150079cf",
+    sha256: "36cc6222227275d0fd07f134c765737e508b5e205e6d6aa1122a4b2cf1996bfa",
+    size: 4624175,
+    fileName: "g2-2.3.0.24-sybilsight-230.27.bin",
+    preferLocalEvidence: true,
+    fallbacks: [[
+      "webflasher",
+      "work/cfw-2.3.0/candidate-230.27/g2-2.3.0.24-sybilsight-230.27.bin",
+    ]],
+    patchFallbackRoot: "webflasher",
+    patchFallback: "work/cfw-2.3.0/candidate-230.27/cfw_patches-230.27.json",
+    patchFileName: "cfw_patches-230.27.json",
+    patchCount: 49,
+    manifestFileName: "manifest.json",
+    capabilityMarker: "SybilSight/230.27",
+    requiredCfwMarker: "SybilSight/230.27",
+    g2flashCommit: "9079f994760d7b8f91eab1a0e8c4a8ebca9fd753",
+    capabilities: [
+      "Faceclaw revision-35 display ABI on top of 230.26: firmware-side brightness control with smooth fade in/out, dithered darken, and clip rectangles on every draw call",
+      "Brightness is written only when the level changes, avoiding the stock panel's brief blank on repeated writes",
+      "The dashboard phone-link line is drawn at one shared position on both lenses, without an L/R tag",
+      "Direct per-lens identity: MC/v1 op 5 returns a nonce-bound FI/v1 marker from each temple before any microphone context is allocated",
+      "Four-microphone array and PCM diagnostics stay behind an explicit opt-in; the stock microphone path is unchanged by default",
+      "Changes only the Apollo application payload; all five other component payloads match stock 2.3.0.24",
+    ],
+    notes:
+      "Experimental. Built from the exact SybilSight 230.26 source and g2flash 9079f99 (Faceclaw revision 35); the recipe replays against the pinned stock image byte-for-byte. Offline source, sanitizer and emitted-patch audits pass. Not hardware-validated, not a default release, and the four-microphone array is not acoustically qualified.",
   },
   {
     version: "2.2.9.22",
@@ -1339,7 +1385,10 @@ async function main() {
             !catalog.some(
               (updated) =>
                 updated.id === existing.id ||
-                (updated.version === existing.version &&
+                // Several custom builds can share one stock version (230.26 and
+                // 230.27 both keep 2.3.0.24); their explicit ids identify them.
+                (updated.channel !== "custom" &&
+                  updated.version === existing.version &&
                   updated.channel === existing.channel),
             ),
         ),
@@ -1358,7 +1407,10 @@ async function main() {
             numeric: true,
           });
           if (versionOrder !== 0) return versionOrder;
-          return left.channel === "custom" ? -1 : 1;
+          if (left.channel !== right.channel) return left.channel === "custom" ? -1 : 1;
+          // Same stock version and channel: reviewed builds before experimental ones.
+          const experimental = (release) => (release.trust === "experimental-local" ? 1 : 0);
+          return experimental(left) - experimental(right) || left.id.localeCompare(right.id);
         }),
     ringReleases: ringCatalog.sort((left, right) =>
       right.version.localeCompare(left.version, undefined, { numeric: true }),

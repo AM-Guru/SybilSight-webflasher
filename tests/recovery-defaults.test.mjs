@@ -101,3 +101,21 @@ test("selects the newest Case firmware before using glasses version as a tie-bre
     "older-glasses-newer-case",
   );
 });
+
+test("an experimental custom build sharing the stock version is never the reviewed default", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const catalog = JSON.parse(
+    await readFile(
+      new URL("../public/firmware-updates/source-files/index.json", import.meta.url),
+      "utf8",
+    ),
+  ).releases;
+  const experimental = catalog.find((release) => release.id === "g2-custom-2.3.0.24-230.27");
+  assert.equal(experimental?.trust, "experimental-local");
+  // Whatever the catalog order, 230.27 is never picked as the reviewed custom
+  // build, and the firmware selector still defaults to official Stock.
+  for (const releases of [catalog, [...catalog].reverse()]) {
+    assert.equal(findLatestReviewedCustomRelease(releases)?.id, "g2-custom-2.3.0.24-230.26");
+    assert.equal(findDefaultFirmwareRelease(releases)?.channel, "official");
+  }
+});

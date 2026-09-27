@@ -1913,10 +1913,25 @@ test("keeps the generated pin table in sync with the firmware archive", async ()
   );
   // Local qualification pins stay separate from the catalog's published CFW.
   const custom = index.releases.filter((release) => release.channel === "custom");
-  assert.equal(custom.length, 2);
+  assert.equal(custom.length, 3);
   const customTargets = custom.map((release) =>
     TEMPLE_FLASH_TARGETS.find((target) => target.imageSha256 === release.sha256));
-  const [cfw23026, latestCFW] = customTargets;
+  const [cfw23026, cfw23027, latestCFW] = customTargets;
+  // The experimental 230.27 is pinned like 230.26 but never hardware-validated.
+  assert.deepEqual(
+    (({ label, ...rest }) => rest)(cfw23027),
+    {
+      imageSha256: "36cc6222227275d0fd07f134c765737e508b5e205e6d6aa1122a4b2cf1996bfa",
+      mainSha256: "088d94f31c1d08d4f84dd119b4bb833ee28dbad1f66a535e7ab9c3dee621fdc8",
+      mainBytes: 3844932,
+      version: "2.3.0.24",
+      reportedVersion: "2.3.0.24",
+      baseVersion: "2.3.0.24",
+      hardwareValidated: false,
+      requiredCfwMarker: "SybilSight/230.27",
+    },
+    "run `npm run archive:firmware` to regenerate src/lib/templeFlashTargets.js",
+  );
   const stock = TEMPLE_FLASH_TARGETS.filter((target) => !customTargets.includes(target) && !target.localOnly);
   for (const target of TEMPLE_FLASH_TARGETS.filter((target) => target.localOnly)) {
     assert.equal(index.releases.some((release) => release.sha256 === target.imageSha256), false);
@@ -1950,7 +1965,7 @@ test("keeps the generated pin table in sync with the firmware archive", async ()
     },
     "run `npm run archive:firmware` to regenerate src/lib/templeFlashTargets.js",
   );
-  assert.equal(custom[1].sha256, latestCFW.imageSha256);
+  assert.equal(custom[2].sha256, latestCFW.imageSha256);
   const officials = index.releases.filter((release) => (release.channel ?? "official") === "official");
   assert.equal(stock.length, officials.length);
   for (const target of stock) {
