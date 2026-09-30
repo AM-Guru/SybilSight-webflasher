@@ -179,6 +179,17 @@ export const TEMPLE_FLASH_TARGETS = Object.freeze([
     requiredCfwMarker: "SybilSight/230.26",
   }),
   Object.freeze({
+    imageSha256: "afa6c1da6bc1ba6b0904a438b6acb7f6e628b4fd53c82e1c58d71ba4a431f68b",
+    mainSha256: "4424b357bf3e9fa1fe8f82136e950c9338addbb50b57863ae0fd258640230fa7",
+    mainBytes: 3880452,
+    version: "2.3.0.24",
+    reportedVersion: "2.3.0.24",
+    baseVersion: "2.3.0.24",
+    label: "SybilSight CFW 230.84 (2.3.0.24, dual-link microphone array)",
+    hardwareValidated: false,
+    requiredCfwMarker: "SybilSight/230.84",
+  }),
+  Object.freeze({
     imageSha256: "36cc6222227275d0fd07f134c765737e508b5e205e6d6aa1122a4b2cf1996bfa",
     mainSha256: "088d94f31c1d08d4f84dd119b4bb833ee28dbad1f66a535e7ab9c3dee621fdc8",
     mainBytes: 3844932,

@@ -49,6 +49,8 @@ const REVIEWED_CFW_230_26_SHA256 =
   "8784efd8892a027dd2a0b7eee4dae1b1679cfa1b8008aa1b296103cfe674b0ba";
 const EXPERIMENTAL_CFW_230_27_SHA256 =
   "36cc6222227275d0fd07f134c765737e508b5e205e6d6aa1122a4b2cf1996bfa";
+const REVIEWED_CFW_230_84_SHA256 =
+  "afa6c1da6bc1ba6b0904a438b6acb7f6e628b4fd53c82e1c58d71ba4a431f68b";
 const REVIEWED_CFW_2_2_9_29_SHA256 =
   "960b964f2dfdfb17edf222f0ec3c5c44ca9ee502fe2a9873919e951a6c158ac5";
 
@@ -87,6 +89,7 @@ test("flags a pinned image the served library is too old to offer", () => {
     missing.map((target) => target.imageSha256),
     [
       REVIEWED_CFW_230_26_SHA256,
+      REVIEWED_CFW_230_84_SHA256,
       EXPERIMENTAL_CFW_230_27_SHA256,
       OFFICIAL_G2_2_3_0_24_SHA256,
       REVIEWED_CFW_2_2_10_72_SHA256,
@@ -112,6 +115,7 @@ test("blocks firmware mutation when the served library is behind the build", () 
         error.missingPinnedImages.map((target) => target.imageSha256),
         [
           REVIEWED_CFW_230_26_SHA256,
+          REVIEWED_CFW_230_84_SHA256,
           EXPERIMENTAL_CFW_230_27_SHA256,
           OFFICIAL_G2_2_3_0_24_SHA256,
           REVIEWED_CFW_2_2_10_72_SHA256,
@@ -145,7 +149,7 @@ test("omits retired CFW releases from the catalog and writer allowlist", async (
   ];
   assert.deepEqual(
     catalog.filter((release) => release.channel === "custom").map((release) => release.id),
-    ["g2-custom-2.3.0.24-230.26", "g2-custom-2.3.0.24-230.27", "g2-custom-2.2.10.72"],
+    ["g2-custom-2.3.0.24-230.26", "g2-custom-2.3.0.24-230.84", "g2-custom-2.3.0.24-230.27", "g2-custom-2.2.10.72"],
   );
   for (const sha256 of cfwDigests) {
     assert.equal(catalog.some((release) => release.sha256 === sha256), false);
@@ -181,7 +185,7 @@ test("excludes advertisement-patched CFW releases from both mutation paths", asy
   }
 });
 
-test("ships the two reviewed custom releases plus the experimental 230.27", async () => {
+test("ships the three reviewed custom releases plus the experimental 230.27", async () => {
   const catalog = JSON.parse(
     await readFile(
       new URL("../public/firmware-updates/source-files/index.json", import.meta.url),
@@ -189,11 +193,22 @@ test("ships the two reviewed custom releases plus the experimental 230.27", asyn
     ),
   ).releases;
   const custom = catalog.filter((release) => release.channel === "custom");
-  assert.equal(custom.length, 3);
+  assert.equal(custom.length, 4);
   assert.deepEqual(
     custom.filter((release) => release.trust === "reviewed-custom").map((release) => release.id),
-    ["g2-custom-2.3.0.24-230.26", "g2-custom-2.2.10.72"],
+    ["g2-custom-2.3.0.24-230.26", "g2-custom-2.3.0.24-230.84", "g2-custom-2.2.10.72"],
   );
+  // 230.84 (2026-09-30): the bench-validated dual-link microphone array; it changes the codec
+  // payload as well as the Apollo application, and its marker alone proves the install.
+  const dualLink = custom[1];
+  assert.equal(dualLink.id, "g2-custom-2.3.0.24-230.84");
+  assert.equal(dualLink.sha256, REVIEWED_CFW_230_84_SHA256);
+  assert.equal(dualLink.trust, "reviewed-custom");
+  assert.equal(dualLink.requiredCfwMarker, "SybilSight/230.84");
+  // Validated over BLE in the SybilSight app; the case-USB temple transfer has not been
+  // exercised with this image, which is what this flag records.
+  assert.equal(dualLink.hardwareValidated, false);
+  assert.equal(dualLink.caseRecoveryEligible, false);
   assert.equal(custom[0].id, "g2-custom-2.3.0.24-230.26");
   assert.equal(custom[0].sha256, REVIEWED_CFW_230_26_SHA256);
   // The stock version string cannot prove this image; only the direct marker can.
@@ -201,16 +216,16 @@ test("ships the two reviewed custom releases plus the experimental 230.27", asyn
   assert.equal(custom[0].hardwareValidated, false);
   assert.equal(custom[0].caseRecoveryEligible, false);
   // Staged, never reviewed or default: same stock version as 230.26.
-  assert.equal(custom[1].id, "g2-custom-2.3.0.24-230.27");
-  assert.equal(custom[1].sha256, EXPERIMENTAL_CFW_230_27_SHA256);
-  assert.equal(custom[1].trust, "experimental-local");
-  assert.equal(custom[1].requiredCfwMarker, "SybilSight/230.27");
-  assert.equal(custom[1].hardwareValidated, false);
-  assert.equal(custom[1].caseRecoveryEligible, false);
-  assert.match(custom[1].displayName, /experimental, hardware unvalidated/);
-  assert.equal(custom[2].id, "g2-custom-2.2.10.72");
-  assert.equal(custom[2].sha256, REVIEWED_CFW_2_2_10_72_SHA256);
-  assert.deepEqual(custom[2].bleComponentNames, ["ota/s200_firmware_ota.bin"]);
+  assert.equal(custom[2].id, "g2-custom-2.3.0.24-230.27");
+  assert.equal(custom[2].sha256, EXPERIMENTAL_CFW_230_27_SHA256);
+  assert.equal(custom[2].trust, "experimental-local");
+  assert.equal(custom[2].requiredCfwMarker, "SybilSight/230.27");
+  assert.equal(custom[2].hardwareValidated, false);
+  assert.equal(custom[2].caseRecoveryEligible, false);
+  assert.match(custom[2].displayName, /experimental, hardware unvalidated/);
+  assert.equal(custom[3].id, "g2-custom-2.2.10.72");
+  assert.equal(custom[3].sha256, REVIEWED_CFW_2_2_10_72_SHA256);
+  assert.deepEqual(custom[3].bleComponentNames, ["ota/s200_firmware_ota.bin"]);
 });
 
 test("deployment validation pins the permitted custom firmware releases", async () => {

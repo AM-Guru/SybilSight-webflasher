@@ -1913,10 +1913,26 @@ test("keeps the generated pin table in sync with the firmware archive", async ()
   );
   // Local qualification pins stay separate from the catalog's published CFW.
   const custom = index.releases.filter((release) => release.channel === "custom");
-  assert.equal(custom.length, 3);
+  assert.equal(custom.length, 4);
   const customTargets = custom.map((release) =>
     TEMPLE_FLASH_TARGETS.find((target) => target.imageSha256 === release.sha256));
-  const [cfw23026, cfw23027, latestCFW] = customTargets;
+  const [cfw23026, cfw23084, cfw23027, latestCFW] = customTargets;
+  // 230.84 (2026-09-30): the dual-link microphone array, bench-validated over BLE in the
+  // app; its case-USB temple transfer is not yet exercised, so the pin stays unvalidated.
+  assert.deepEqual(
+    (({ label, ...rest }) => rest)(cfw23084),
+    {
+      imageSha256: "afa6c1da6bc1ba6b0904a438b6acb7f6e628b4fd53c82e1c58d71ba4a431f68b",
+      mainSha256: "4424b357bf3e9fa1fe8f82136e950c9338addbb50b57863ae0fd258640230fa7",
+      mainBytes: 3880452,
+      version: "2.3.0.24",
+      reportedVersion: "2.3.0.24",
+      baseVersion: "2.3.0.24",
+      hardwareValidated: false,
+      requiredCfwMarker: "SybilSight/230.84",
+    },
+    "run `npm run archive:firmware` to regenerate src/lib/templeFlashTargets.js",
+  );
   // The experimental 230.27 is pinned like 230.26 but never hardware-validated.
   assert.deepEqual(
     (({ label, ...rest }) => rest)(cfw23027),
@@ -1965,7 +1981,7 @@ test("keeps the generated pin table in sync with the firmware archive", async ()
     },
     "run `npm run archive:firmware` to regenerate src/lib/templeFlashTargets.js",
   );
-  assert.equal(custom[2].sha256, latestCFW.imageSha256);
+  assert.equal(custom[3].sha256, latestCFW.imageSha256);
   const officials = index.releases.filter((release) => (release.channel ?? "official") === "official");
   assert.equal(stock.length, officials.length);
   for (const target of stock) {

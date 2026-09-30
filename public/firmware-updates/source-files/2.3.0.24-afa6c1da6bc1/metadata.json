@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 2,
+  "device": "Even Realities G2",
+  "version": "2.3.0.24",
+  "archiveKey": "2.3.0.24-afa6c1da6bc1",
+  "internalVersion": "2.3.0.24",
+  "reportedVersion": "2.3.0.24",
+  "channel": "custom",
+  "trust": "reviewed-custom",
+  "hardwareValidated": false,
+  "baseVersion": "2.3.0.24",
+  "notes": "Built from stock 2.3.0.24 and g2flash 9079f99 (Faceclaw revision 35) with the SybilSight 230.x overlays through 230.84; the recipe replays against the pinned stock image byte-for-byte. Bench-validated on hardware 2026-09-29/30 (clean transport at 32 and 72 kbps, integrity guard healthy, worn rotation sweeps 0.106–0.107 m).",
+  "capabilities": [
+    "Dual-link microphone array: each temple streams its own timestamped stereo LC3 pair (16–72 kbps per channel, 16 kHz) with a sub-millisecond sample index; the SybilSight app beamforms the lateral capsule pair and calibrates it in Sonic Radar",
+    "Faceclaw revision-35 display ABI (230.27) with the revision-27 retained display, compressed image transports, texture cache and atomic drawing",
+    "Direct per-lens identity: MC/v1 op 5 returns a nonce-bound FI/v1 marker from each temple before any microphone context is allocated",
+    "Stock 15–30 ms connection-parameter request restored; PDM0 probe hooks are inert unless the PDM source is selected",
+    "Changes the Apollo application payload and the GX8002 codec payload (0.0.2.16, nonce clock); the other four component payloads match stock 2.3.0.24"
+  ],
+  "requiredCfwMarker": "SybilSight/230.84",
+  "caseVersion": "1.2.57",
+  "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.3.0.24-afa6c1da6bc1/g2-2.3.0.24-sybilsight-230.84.bin",
+  "archivedFrom": "WebFlasher local evidence",
+  "sourceFile": "g2-2.3.0.24-sybilsight-230.84.bin",
+  "sourceMd5": "353b38444d0d87575064260bc16dae65",
+  "sourceSha256": "afa6c1da6bc1ba6b0904a438b6acb7f6e628b4fd53c82e1c58d71ba4a431f68b",
+  "sourceSize": 4659695,
+  "patchUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.3.0.24-afa6c1da6bc1/cfw_patches-230.84.json",
+  "patchFile": "cfw_patches-230.84.json",
+  "patchSha256": "61e1610f7c506ea08b70b54b86663c11960d661f5c31b362b429c4b5ea1a794a",
+  "manifestFile": "manifest.json",
+  "manifestSha256": "beb62b5d044ca4cfbe6e66061bb55064940e5b4cd9695700c37bf9274e285a56",
+  "archivedAt": "2026-09-30T02:25:42.200Z",
+  "mainFirmware": {
+    "runBase": "0x00438000",
+    "installedImageSize": 3880420,
+    "installedImageEnd": "0x007eb5e4",
+    "crc32": "d11c264e"
+  },
+  "components": [
+    {
+      "name": "firmware/codec.bin",
+      "typeId": 4,
+      "size": 326092,
+      "crc32c": "1b367e2a",
+      "sha256": "bde41d708e17f379ccb309717a8eaa1caa73b0cdf8ca0787e884aee5d457dfa6"
+    },
+    {
+      "name": "firmware/ble_em9305.bin",
+      "typeId": 5,
+      "size": 211948,
+      "crc32c": "c074baf7",
+      "sha256": "91a38f7fc05555f86181ecb22b363e3239bfcaaa2ff6171e98524ae64821eca9"
+    },
+    {
+      "name": "firmware/touch.bin",
+      "typeId": 3,
+      "size": 34720,
+      "crc32c": "903ca49a",
+      "sha256": "c14456cd4d432815d79700b251c9a575f75c76a3710f4148c0df6ddba4cb7ba2"
+    },
+    {
+      "name": "firmware/box.bin",
+      "typeId": 6,
+      "size": 55784,
+      "crc32c": "7d443be0",
+      "sha256": "36ca0c13558f252af286ae2b36b5e576d087d21d37b15d778e7da9f502a70374"
+    },
+    {
+      "name": "ota/s200_bootloader.bin",
+      "typeId": 1,
+      "size": 149755,
+      "crc32c": "04b60910",
+      "sha256": "52ed1c4d043f278f9011d2f2e6555b668ef2ff1e312695f5c28fa7986523b75b"
+    },
+    {
+      "name": "ota/s200_firmware_ota.bin",
+      "typeId": 0,
+      "size": 3880452,
+      "crc32c": "bc31a1a5",
+      "sha256": "4424b357bf3e9fa1fe8f82136e950c9338addbb50b57863ae0fd258640230fa7"
+    }
+  ],
+  "files": [
+    {
+      "name": "g2-2.3.0.24-sybilsight-230.84.bin",
+      "size": 4659695,
+      "sha256": "afa6c1da6bc1ba6b0904a438b6acb7f6e628b4fd53c82e1c58d71ba4a431f68b"
+    },
+    {
+      "name": "cfw_patches-230.84.json",
+      "size": 266779,
+      "sha256": "61e1610f7c506ea08b70b54b86663c11960d661f5c31b362b429c4b5ea1a794a"
+    },
+    {
+      "name": "firmware_codec.bin",
+      "size": 326092,
+      "sha256": "bde41d708e17f379ccb309717a8eaa1caa73b0cdf8ca0787e884aee5d457dfa6"
+    },
+    {
+      "name": "firmware_ble_em9305.bin",
+      "size": 211948,
+      "sha256": "91a38f7fc05555f86181ecb22b363e3239bfcaaa2ff6171e98524ae64821eca9"
+    },
+    {
+      "name": "firmware_touch.bin",
+      "size": 34720,
+      "sha256": "c14456cd4d432815d79700b251c9a575f75c76a3710f4148c0df6ddba4cb7ba2"
+    },
+    {
+      "name": "firmware_box.bin",
+      "size": 55784,
+      "sha256": "36ca0c13558f252af286ae2b36b5e576d087d21d37b15d778e7da9f502a70374"
+    },
+    {
+      "name": "firmware_box.raw.bin",
+      "size": 55752,
+      "sha256": "773b6d4cfdaf0a5a74a557e3babe8222a0ae813436b76a7437c1096d2c60d677"
+    },
+    {
+      "name": "ota_s200_bootloader.bin",
+      "size": 149755,
+      "sha256": "52ed1c4d043f278f9011d2f2e6555b668ef2ff1e312695f5c28fa7986523b75b"
+    },
+    {
+      "name": "ota_s200_firmware_ota.bin",
+      "size": 3880452,
+      "sha256": "4424b357bf3e9fa1fe8f82136e950c9338addbb50b57863ae0fd258640230fa7"
+    },
+    {
+      "name": "manifest.json",
+      "size": 4526,
+      "sha256": "beb62b5d044ca4cfbe6e66061bb55064940e5b4cd9695700c37bf9274e285a56"
+    }
+  ]
+}

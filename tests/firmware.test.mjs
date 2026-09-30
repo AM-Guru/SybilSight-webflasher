@@ -25,6 +25,7 @@ import {
   REVIEWED_CFW_2_2_9_29,
   REVIEWED_CFW_2_2_10_72,
   REVIEWED_CFW_230_26,
+  REVIEWED_CFW_230_84,
   EXPERIMENTAL_CFW_230_27,
   additiveBigEndianWordSum,
   classifyG2Firmware,
@@ -891,7 +892,7 @@ test("INFOC and INFO0 dumps never authorize a firmware write by themselves", () 
   assert.match(report.decision.interpretation, /not write authorization/i);
 });
 
-test("ships the complete official catalog plus the pinned 230.26, experimental 230.27 and 2.2.10.72 CFW", async () => {
+test("ships the complete official catalog plus the pinned 230.26, 230.84, experimental 230.27 and 2.2.10.72 CFW", async () => {
   const catalog = JSON.parse(
     await readFile(
       new URL("../public/firmware-updates/source-files/index.json", import.meta.url),
@@ -912,19 +913,26 @@ test("ships the complete official catalog plus the pinned 230.26, experimental 2
   const custom = catalog.releases.filter((release) => release.channel === "custom");
   assert.deepEqual(custom.map((release) => release.id), [
     "g2-custom-2.3.0.24-230.26",
+    "g2-custom-2.3.0.24-230.84",
     "g2-custom-2.3.0.24-230.27",
     "g2-custom-2.2.10.72",
   ]);
   assert.equal(custom[0].sha256, REVIEWED_CFW_230_26.sha256);
   assert.equal(custom[0].requiredCfwMarker, REVIEWED_CFW_230_26.capabilityMarker);
-  assert.equal(custom[1].sha256, EXPERIMENTAL_CFW_230_27.sha256);
-  assert.equal(custom[1].trust, "experimental-local");
-  assert.equal(custom[1].requiredCfwMarker, EXPERIMENTAL_CFW_230_27.capabilityMarker);
-  const main = custom[1].components.find((component) => component.typeId === 0);
+  assert.equal(custom[1].sha256, REVIEWED_CFW_230_84.sha256);
+  assert.equal(custom[1].trust, "reviewed-custom");
+  assert.equal(custom[1].requiredCfwMarker, REVIEWED_CFW_230_84.capabilityMarker);
+  const dualLinkMain = custom[1].components.find((component) => component.typeId === 0);
+  assert.equal(dualLinkMain.sha256, REVIEWED_CFW_230_84.mainPayloadSha256);
+  assert.equal(dualLinkMain.size, REVIEWED_CFW_230_84.mainPayloadBytes);
+  assert.equal(custom[2].sha256, EXPERIMENTAL_CFW_230_27.sha256);
+  assert.equal(custom[2].trust, "experimental-local");
+  assert.equal(custom[2].requiredCfwMarker, EXPERIMENTAL_CFW_230_27.capabilityMarker);
+  const main = custom[2].components.find((component) => component.typeId === 0);
   assert.equal(main.sha256, EXPERIMENTAL_CFW_230_27.mainPayloadSha256);
   assert.equal(main.size, EXPERIMENTAL_CFW_230_27.mainPayloadBytes);
-  assert.equal(custom[2].sha256, REVIEWED_CFW_2_2_10_72.sha256);
-  assert.deepEqual(custom[2].bleComponentNames, ["ota/s200_firmware_ota.bin"]);
+  assert.equal(custom[3].sha256, REVIEWED_CFW_2_2_10_72.sha256);
+  assert.deepEqual(custom[3].bleComponentNames, ["ota/s200_firmware_ota.bin"]);
 });
 
 test("ships the exact official G2 2.2.9.22 bundle and six components", async () => {

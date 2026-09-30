@@ -572,6 +572,49 @@ const RELEASES = [
       "Built from stock 2.3.0.24 and g2flash e13842d (Faceclaw revision 29) with the SybilSight 230.x overlays; the recipe replays against the pinned stock image byte-for-byte. Offline source, sanitizer and emitted-code tests pass. Not yet hardware-validated, and the four-microphone array is not acoustically qualified.",
   },
   {
+    // Published as g2-custom-2.3.0.24-230.84: the 230.73 dual-link microphone
+    // array on the revision-35 display ABI, bench-validated 2026-09-29/30 and
+    // qualified for automatic array selection in the iOS app. Changes the Apollo
+    // application payload AND the GX8002 codec payload; the other four
+    // components match stock 2.3.0.24. Stock 2.3.0.24 version metadata; the
+    // nonce-bound per-lens FI/v1 identity reply proves the install.
+    id: "g2-custom-2.3.0.24-230.84",
+    displayName: "SybilSight CFW 230.84 (2.3.0.24, dual-link microphone array)",
+    version: "2.3.0.24",
+    internalVersion: "2.3.0.24",
+    reportedVersion: "2.3.0.24",
+    baseVersion: "2.3.0.24",
+    baseSha256: "187ccf2bcc5c17a212106e8a376745511e8289c4232b634a7ea94b9bf25a0979",
+    channel: "custom",
+    trust: "reviewed-custom",
+    hash: "353b38444d0d87575064260bc16dae65",
+    sha256: "afa6c1da6bc1ba6b0904a438b6acb7f6e628b4fd53c82e1c58d71ba4a431f68b",
+    size: 4659695,
+    fileName: "g2-2.3.0.24-sybilsight-230.84.bin",
+    preferLocalEvidence: true,
+    fallbacks: [[
+      "webflasher",
+      "work/cfw-2.3.0/candidate-230.84/g2-2.3.0.24-sybilsight-230.84.bin",
+    ]],
+    patchFallbackRoot: "webflasher",
+    patchFallback: "work/cfw-2.3.0/candidate-230.84/cfw_patches-230.84.json",
+    patchFileName: "cfw_patches-230.84.json",
+    patchCount: 79,
+    manifestFileName: "manifest.json",
+    capabilityMarker: "SybilSight/230.84",
+    requiredCfwMarker: "SybilSight/230.84",
+    g2flashCommit: "9079f994760d7b8f91eab1a0e8c4a8ebca9fd753",
+    capabilities: [
+      "Dual-link microphone array: each temple streams its own timestamped stereo LC3 pair (16–72 kbps per channel, 16 kHz) with a sub-millisecond sample index; the SybilSight app beamforms the lateral capsule pair and calibrates it in Sonic Radar",
+      "Faceclaw revision-35 display ABI (230.27) with the revision-27 retained display, compressed image transports, texture cache and atomic drawing",
+      "Direct per-lens identity: MC/v1 op 5 returns a nonce-bound FI/v1 marker from each temple before any microphone context is allocated",
+      "Stock 15–30 ms connection-parameter request restored; PDM0 probe hooks are inert unless the PDM source is selected",
+      "Changes the Apollo application payload and the GX8002 codec payload (0.0.2.16, nonce clock); the other four component payloads match stock 2.3.0.24",
+    ],
+    notes:
+      "Built from stock 2.3.0.24 and g2flash 9079f99 (Faceclaw revision 35) with the SybilSight 230.x overlays through 230.84; the recipe replays against the pinned stock image byte-for-byte. Bench-validated on hardware 2026-09-29/30 (clean transport at 32 and 72 kbps, integrity guard healthy, worn rotation sweeps 0.106–0.107 m).",
+  },
+  {
     // Staged for local testing, never a default: trust "experimental-local" (the
     // local-candidate trust used by classifyG2Firmware and the iOS Debug importer)
     // keeps it out of findLatestReviewedCustomRelease and out of the iOS app's

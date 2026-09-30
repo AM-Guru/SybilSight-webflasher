@@ -31,6 +31,26 @@ export function findLatestOfficialStockRelease(releases) {
     )[0] ?? null;
 }
 
+// SybilSight 230.x builds all keep the stock 2.3.0.24 version, so equal versions are
+// ordered by the CFW marker revision ("SybilSight/230.84" beats "SybilSight/230.26");
+// a release without a marker sorts after any with one.
+function markerRevisionParts(release) {
+  const marker = release?.requiredCfwMarker ?? release?.capabilityMarker ?? "";
+  const match = /\/(\d+)\.(\d+)$/.exec(String(marker));
+  return match ? [Number(match[1]), Number(match[2])] : [];
+}
+
+function compareMarkersDescending(left, right) {
+  const leftParts = markerRevisionParts(left);
+  const rightParts = markerRevisionParts(right);
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = (rightParts[index] ?? -1) - (leftParts[index] ?? -1);
+    if (difference) return difference;
+  }
+  return 0;
+}
+
 export function findLatestReviewedCustomRelease(releases) {
   return [...(Array.isArray(releases) ? releases : [])]
     .filter(
@@ -40,7 +60,8 @@ export function findLatestReviewedCustomRelease(releases) {
         release?.caseRecoveryEligible === false,
     )
     .sort((left, right) =>
-      compareVersionsDescending(left?.version, right?.version),
+      compareVersionsDescending(left?.version, right?.version) ||
+      compareMarkersDescending(left, right),
     )[0] ?? null;
 }
 

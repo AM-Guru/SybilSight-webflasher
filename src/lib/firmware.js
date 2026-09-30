@@ -1945,6 +1945,27 @@ export const REVIEWED_CFW_230_26 = Object.freeze({
     "Offline tests pass; hardware validation is pending.",
   ],
 });
+// Published as g2-custom-2.3.0.24-230.84: the 230.73 dual-link microphone array
+// on the revision-35 display ABI, bench-validated 2026-09-29/30. Stock 2.3.0.24
+// version metadata; only the direct per-lens FI/v1 marker distinguishes it. It
+// changes the codec payload as well as the Apollo application payload.
+export const REVIEWED_CFW_230_84 = Object.freeze({
+  version: "2.3.0.24",
+  reportedVersion: "2.3.0.24",
+  baseVersion: "2.3.0.24",
+  baseSha256: "187ccf2bcc5c17a212106e8a376745511e8289c4232b634a7ea94b9bf25a0979",
+  sha256: "afa6c1da6bc1ba6b0904a438b6acb7f6e628b4fd53c82e1c58d71ba4a431f68b",
+  mainPayloadBytes: 3880452,
+  mainPayloadSha256: "4424b357bf3e9fa1fe8f82136e950c9338addbb50b57863ae0fd258640230fa7",
+  capabilityMarker: "SybilSight/230.84",
+  capabilities: [
+    "Dual-link microphone array: each temple streams its own timestamped stereo LC3 pair (16–72 kbps per channel, 16 kHz); the app beamforms and calibrates the lateral capsule pair.",
+    "Faceclaw revision-35 display ABI with the revision-27 retained display, compressed image transports, texture cache and atomic drawing.",
+    "Direct per-lens identity: each temple answers a nonce-bound FI/v1 query with its exact marker before any microphone context is allocated.",
+    "Changes the Apollo application payload and the GX8002 codec payload (0.0.2.16); the other four component payloads match stock 2.3.0.24.",
+    "Bench-validated on hardware 2026-09-29/30.",
+  ],
+});
 // Staged as g2-custom-2.3.0.24-230.27 with trust "experimental-local": never a
 // default, and never classified as reviewed. Stock 2.3.0.24 version metadata;
 // only the direct per-lens FI/v1 marker distinguishes it.
@@ -3086,6 +3107,7 @@ export function classifyG2Firmware(fileSha256) {
     REVIEWED_CFW_2_2_10_60,
     REVIEWED_CFW_2_2_10_61,
     REVIEWED_CFW_230_26,
+    REVIEWED_CFW_230_84,
     REVIEWED_CFW_2_2_10_72,
     // Older 2.2.10 candidates are no longer recognized: only the latest CFW is offered.
     // Earlier-generation pins stay recognizable for trust classification of an uploaded
