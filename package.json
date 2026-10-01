@@ -18,7 +18,8 @@
     "check": "npm run test && npm run build",
     "build:cfw-2.2.9": "python3 scripts/build_g2flash_cfw_2_2_9.py",
     "build:cfw-2.2.10": "python3 scripts/build_g2flash_cfw_2_2_10.py",
-    "archive:firmware": "node scripts/build-firmware-archive.mjs"
+    "archive:firmware": "node scripts/build-firmware-archive.mjs",
+    "build:cfw-2.3.0": "python3 firmware/cfw/g2-2.3.0.24/package_current.py --output work/cfw-2.3.0/candidate-230.85"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

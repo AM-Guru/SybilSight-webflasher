@@ -26,6 +26,7 @@ import {
   REVIEWED_CFW_2_2_10_72,
   REVIEWED_CFW_230_26,
   REVIEWED_CFW_230_84,
+  REVIEWED_CFW_230_85,
   EXPERIMENTAL_CFW_230_27,
   additiveBigEndianWordSum,
   classifyG2Firmware,
@@ -892,47 +893,26 @@ test("INFOC and INFO0 dumps never authorize a firmware write by themselves", () 
   assert.match(report.decision.interpretation, /not write authorization/i);
 });
 
-test("ships the complete official catalog plus the pinned 230.26, 230.84, experimental 230.27 and 2.2.10.72 CFW", async () => {
-  const catalog = JSON.parse(
-    await readFile(
-      new URL("../public/firmware-updates/source-files/index.json", import.meta.url),
-      "utf8",
-    ),
-  );
+test("ships the complete official catalog and only the pinned 230.85 CFW", async () => {
+  const catalog = JSON.parse(await readFile(new URL(
+    "../public/firmware-updates/source-files/index.json", import.meta.url), "utf8"));
   assert.equal(catalog.schemaVersion, 2);
-  assert.equal(
-    catalog.releases.filter((release) => (release.channel ?? "official") === "official")
-      .length,
-    17,
-  );
-  const latestOfficial = catalog.releases.find(
-    (release) => release.id === "g2-official-2.3.0.24",
-  );
+  assert.equal(catalog.releases.filter((release) => release.channel === "official").length, 17);
+  const latestOfficial = catalog.releases.find((release) => release.id === "g2-official-2.3.0.24");
   assert.equal(latestOfficial.sha256, OFFICIAL_G2_SHA256["2.3.0.24"]);
   assert.equal(latestOfficial.caseVersion, "1.2.57");
   const custom = catalog.releases.filter((release) => release.channel === "custom");
-  assert.deepEqual(custom.map((release) => release.id), [
-    "g2-custom-2.3.0.24-230.26",
-    "g2-custom-2.3.0.24-230.84",
-    "g2-custom-2.3.0.24-230.27",
-    "g2-custom-2.2.10.72",
-  ]);
-  assert.equal(custom[0].sha256, REVIEWED_CFW_230_26.sha256);
-  assert.equal(custom[0].requiredCfwMarker, REVIEWED_CFW_230_26.capabilityMarker);
-  assert.equal(custom[1].sha256, REVIEWED_CFW_230_84.sha256);
-  assert.equal(custom[1].trust, "reviewed-custom");
-  assert.equal(custom[1].requiredCfwMarker, REVIEWED_CFW_230_84.capabilityMarker);
-  const dualLinkMain = custom[1].components.find((component) => component.typeId === 0);
-  assert.equal(dualLinkMain.sha256, REVIEWED_CFW_230_84.mainPayloadSha256);
-  assert.equal(dualLinkMain.size, REVIEWED_CFW_230_84.mainPayloadBytes);
-  assert.equal(custom[2].sha256, EXPERIMENTAL_CFW_230_27.sha256);
-  assert.equal(custom[2].trust, "experimental-local");
-  assert.equal(custom[2].requiredCfwMarker, EXPERIMENTAL_CFW_230_27.capabilityMarker);
-  const main = custom[2].components.find((component) => component.typeId === 0);
-  assert.equal(main.sha256, EXPERIMENTAL_CFW_230_27.mainPayloadSha256);
-  assert.equal(main.size, EXPERIMENTAL_CFW_230_27.mainPayloadBytes);
-  assert.equal(custom[3].sha256, REVIEWED_CFW_2_2_10_72.sha256);
-  assert.deepEqual(custom[3].bleComponentNames, ["ota/s200_firmware_ota.bin"]);
+  assert.deepEqual(custom.map((release) => release.id), ["g2-custom-2.3.0.24-230.85"]);
+  const release = custom[0];
+  assert.equal(release.sha256, REVIEWED_CFW_230_85.sha256);
+  const firmware = await parseFirmwareInput(await readFile(new URL("../public" + release.url, import.meta.url)), release.fileName);
+  assert.equal(firmware.provenance.trust, "reviewed-custom");
+  assert.equal(firmware.provenance.capabilityMarker, "SybilSight/230.85");
+  assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
+  assert.equal(firmware.componentImages.length, 6);
+  const main = release.components.find((component) => component.typeId === 0);
+  assert.equal(main.sha256, REVIEWED_CFW_230_85.mainPayloadSha256);
+  assert.equal(main.size, REVIEWED_CFW_230_85.mainPayloadBytes);
 });
 
 test("ships the exact official G2 2.2.9.22 bundle and six components", async () => {
@@ -968,12 +948,16 @@ test("ships the exact official G2 2.2.7.14 bundle and six components", async () 
   assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
 });
 
-test("does not ship CFW artifact directories", async () => {
+test("does not ship retired CFW artifact directories", async () => {
   const entries = await readdir(
     new URL("../public/firmware-updates/source-files/", import.meta.url),
     { withFileTypes: true },
   );
   const forbidden = new Set([
+    "2.2.10.72-f3bd05f9adaa",
+    "2.3.0.24-8784efd8892a",
+    "2.3.0.24-afa6c1da6bc1",
+    "2.3.0.24-36cc62222272",
     "2.2.6.11-105032302d02",
     "2.2.7.16-6c0fdfed0eab",
     "2.2.8.9",

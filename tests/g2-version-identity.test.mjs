@@ -27,7 +27,7 @@ test("same donor version cannot skip Stock or CFW installation, even with a save
 });
 
 test("a unique public version retains the no-write update optimization", () => {
-  const target = TEMPLE_FLASH_TARGETS.find((entry) => entry.version === "2.2.10.72");
+  const target = TEMPLE_FLASH_TARGETS.find((entry) => entry.version === "2.2.10.10");
   assert.ok(target);
   assert.equal(g2VersionCanIdentifyTarget({ templeFlashTarget: target }, target.reportedVersion), true);
   assert.equal(g2VersionCanIdentifyTarget({}, null), false);

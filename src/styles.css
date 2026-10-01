@@ -3409,6 +3409,18 @@ code {
   font-size: 11px;
 }
 
+.easy-release-summary a {
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.easy-release-summary p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .easy-case-result.is-ready {
   border-color: rgba(0, 255, 136, 0.28);
 }

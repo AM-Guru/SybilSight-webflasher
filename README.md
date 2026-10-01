@@ -40,8 +40,9 @@ Production deployment:
   explicit omission while the live snapshots are still captured.
 - Accepts official five- or six-component `EVENOTA` bundles, wrapped
   `firmware_box.bin` components, and validated raw case images.
-- Recognizes and offers all 16 archived official G2 SHA-256 values. CFW images
-  are not shipped, cataloged, or included in either flash allowlist.
+- Offers 17 archived official G2 releases and one current SybilSight CFW:
+  **230.85**, based on stock **2.3.0.24**, with keyboard relay restored.
+  The bundle is hash-pinned and offline-reviewed; hardware validation is pending.
 - Validates the Apollo main application's independent preamble, CRC-32, target
   region, installed-image boundary, and vector.
 - Stages case firmware in the inactive bank and verifies a byte-for-byte
@@ -61,10 +62,10 @@ Production deployment:
   bridge trust pins, explicit risk confirmations, exact per-record replies,
   postflight liveness, retained route-restoration proof, volatile-data
   cleanup, and normal case 1.2.57 return.
-- Keeps **Flash differences** unavailable because no CFW target is shipped or
-  allowlisted; official version changes use complete pinned payloads.
+- Uses complete pinned components for revision 85. **Flash differences** remains
+  unavailable for this release because its codec also differs from Stock.
 - Opens in **Easy Mode** at the site root with direct Web Bluetooth as the
-  primary Smart Glasses update: choose official Stock, select the explicitly
+  primary Smart Glasses update: choose Stock or current CFW, select the explicitly
   labeled Left and Right temples, confirm the assignments, and update both
   sides with the complete pinned package. The Case USB workflow stays hidden
   unless Bluetooth is unavailable, a Bluetooth update fails, or the operator
@@ -173,41 +174,20 @@ control:
 - The case selects the left or right path through its YHM2510 front end and
   time-separates TX-only and RX-only operation.
 
-The offered CFW 2.2.6.11 is an exact, machine-described transformation of
-official 2.2.6.10 using the pinned `jimrandomh/g2flash` main-branch patch set:
+The current SybilSight CFW is **230.85** on stock **2.3.0.24**. It adds the
+keyboard relay from pinned upstream revision 39 to the exact revision-84 parent,
+while preserving the other five component payloads. The stock version remains
+2.3.0.24; a nonce-bound `SybilSight/230.85` identity reply from each temple proves
+which firmware is installed.
 
-- stock SHA-256:
-  `f4dfb0b49ad3de3c2daf17f8a27a157c3dc98411d6a0d3ab2cfd0918f41b9afa`
-- CFW SHA-256:
-  `105032302d02ccf943b785070cf15877a918c120b7ca1332bb6261f70eb6d683`
-- patch-manifest SHA-256:
-  `2745edbe1e97cc4f3ee49dd27786ab41cab82c3861a26e9531ca934e32e73281`
-- 28 expected-byte-gated operations: the complete 25-operation upstream
-  g2flash patch set, three same-width package/runtime identity updates, with
-  the affected Apollo checksum operations regenerated for the final image
+The seven offline firmware checks pass, including emitted ARM hooks, inherited
+payload preservation, sanitizers, and malformed-input handling. Keyboard pairing,
+real key delivery, and simultaneous capture/display behavior still require
+physical-glasses qualification. The listing and flash manifest retain
+`hardwareValidated: false`.
 
-The bundle and both running temples identify as `2.2.6.11` while retaining the
-official `2.2.6.10` Stock base. It advertises
-`EVENCFW/8 img576 img640 imgz rle wakelease directfb fbguard wearnotify compass10`,
-matching g2flash commit `877c8d9`. The guarded Faceclaw trampoline resumes the
-stock Even AI path when no wake lease is active.
-
-Run `python3 scripts/build_g2flash_cfw.py` to reproduce the bundle and its
-stock-replay recipe from `~/Repo/g2flash`. This exact build is hash-pinned but
-not yet hardware-validated. The catalog also offers reviewed CFW 2.2.7.16 and
-BLE-safe CFW 2.2.8.11; both are pinned to their complete bundles and Apollo
-mains. CFW 2.2.8.9 and 2.2.8.10 remain diagnostic evidence only because they
-contain the withdrawn Bluetooth-advertising modification.
-
-CFW 2.2.9.23 rebases that same pinned g2flash main commit onto official G2
-2.2.9.22. Run `npm run build:cfw-2.2.9` to reproduce its bundle and 39-operation
-stock-replay recipe. The recipe expected-byte-gates every hook and records the
-reviewed adaptations for 2.2.9's tap-then-long-press and image-completion paths.
-Its complete bundle SHA-256 is
-`e5f629c6fd06ac84121022e0ecd8ef65cfebbf0c8956a0f202278451b53a0ed5`;
-physical-glasses validation is still pending. The experimental advertised-name
-patch is deliberately omitted because it is not on the pinned g2flash main
-branch and has prior hardware-failure evidence.
+Bundle SHA-256:
+`32d7304ce85304ba9f6e1c8f65d2812913e556ef5506582b016ea78c3f37c860`.
 
 ### Application-alive pogo OTA
 
@@ -1226,12 +1206,12 @@ selected target skips that temple; if both temples match, Update sends zero
 firmware bytes and performs only reset/liveness verification. Restore remains
 available when an exact pinned-image reinstall is intentional.
 
-The component-difference optimization remains fail-closed with no CFW target
-in the shipped allowlist. Official version changes transfer the complete
+The component-difference optimization remains fail-closed for revision 85.
+Its main and codec components differ from Stock. Official version changes transfer the complete
 CRC-gated Apollo main; the receiver has no safe sparse-write offset, so Update
 never transmits arbitrary changed byte ranges inside that component.
 
-CFW images are not selectable or shipped by the WebFlasher. Installed Apollo
+The current CFW is selectable and downloadable. Installed Apollo
 MRAM readback remains unavailable, and saved recovery audits remain
 browser-origin-local rather than portable from a localhost hardware test to
 the hosted site.
@@ -1453,10 +1433,11 @@ and both routes receive read-only liveness verification.
 
 ## Firmware archive
 
-The current published catalog offers 17 official G2 releases and reviewed
-SybilSight CFW 2.2.10.72. Historical withdrawn CFW evidence remains in
-immutable versioned directories but is not emitted in the WebFlasher catalog
-or writer pin table. The archive builder also verifies and archives every R1
+The current published catalog offers 17 official G2 releases and one
+SybilSight CFW: 230.85 on 2.3.0.24. All prior CFW entries, their public manifests,
+and their site-package assets have been removed. Existing immutable historical
+server archives and Git history preserve reproducibility, without appearing in
+the active listings or the published writer pins. The archive builder also verifies and archives every R1
 Secure DFU package exposed by the authenticated compatibility API, with exact
 CDN size, MD5, SHA-256, application, and signed init-packet pins:
 
@@ -1466,7 +1447,7 @@ G2 official: 2.0.1.14  2.0.3.20  2.0.5.12  2.0.6.14
              2.1.1.12  2.2.0.24  2.2.4.34  2.2.6.10
              2.2.7.14  2.2.8.4  2.2.9.22  2.2.10.10
              2.3.0.24
-G2 custom:   2.2.10.72
+G2 custom:   2.3.0.24 · SybilSight/230.85
 ```
 
 ```text
@@ -1513,8 +1494,27 @@ Run it with:
 npm run archive:firmware -- --output ./firmware-archive/source-files
 ```
 
+Revision 85's keyboard source, pinned upstream source/license, build process,
+and seven offline checks are in `firmware/cfw/g2-2.3.0.24`. To rebuild, use
+Python with `unicorn` and `capstone`, plus clang with ARM support. Restore the
+hash-pinned revision-84 build inputs from Git history into an ignored directory:
+
+```bash
+mkdir -p work/retired-cfw/2.3.0.24-afa6c1da6bc1
+git show ebc9a520ffef881ae8aead799758d1710e9dc1c8:public/firmware-updates/source-files/2.3.0.24-afa6c1da6bc1/g2-2.3.0.24-sybilsight-230.84.bin > work/retired-cfw/2.3.0.24-afa6c1da6bc1/g2-2.3.0.24-sybilsight-230.84.bin
+git show ebc9a520ffef881ae8aead799758d1710e9dc1c8:public/firmware-updates/source-files/2.3.0.24-afa6c1da6bc1/cfw_patches-230.84.json > work/retired-cfw/2.3.0.24-afa6c1da6bc1/cfw_patches-230.84.json
+npm run build:cfw-2.3.0
+```
+
+The builder rejects changed parent, recipe, donor, source, or stock ABI bytes.
+It produces a separate local artifact and performs no hardware writes or
+publication. Clang changes may produce a new digest; a new digest must be
+reviewed and explicitly pinned before publication. The current published
+94-operation recipe also replays directly against stock without building C.
+
 Use `--r1-only` to refresh just the R1 packages and `ringReleases` while
-preserving the existing G2 catalog and compiled temple-flash targets.
+preserving current G2 entries. Partial refreshes prune retired custom releases
+instead of restoring them from an older index.
 
 To pin a release Even has published since the last archive, query the vendor
 check with the headers of a signed-in Even app session (the endpoints answer
@@ -1526,7 +1526,7 @@ node scripts/even-firmware-check.mjs --header 'Authorization: Bearer …'
 ```
 
 The served catalog carries exactly one custom release — the latest reviewed CFW
-(`g2-custom-2.2.10.72`) — and the writer allowlist mirrors it; earlier CFW
+(`g2-custom-2.3.0.24-230.85`) — and the writer allowlist mirrors it; earlier CFW
 candidates are no longer offered.
 
 Each version directory contains the original bundle, every extracted
@@ -1570,9 +1570,9 @@ source-files/
     ota_s200_firmware_ota.bin
     metadata.json
     SHA256SUMS
-  2.2.6.11-105032302d02/
-    g2-2.2.6.11.bin
-    cfw_patches-2.2.6.11.json
+  2.3.0.24-32d7304ce853/
+    g2-2.3.0.24-sybilsight-230.85.bin
+    cfw_patches-230.85.json
     manifest.json
     firmware_codec.bin
     firmware_ble_em9305.bin
@@ -1582,29 +1582,6 @@ source-files/
     ota_s200_bootloader.bin
     ota_s200_firmware_ota.bin
     metadata.json
-    SHA256SUMS
-  2.2.7.16-6c0fdfed0eab/
-    g2-2.2.7.16.bin
-    cfw_patches-2.2.7.16.json
-    manifest.json
-    ...
-  2.2.8.11-be3922f3695e/
-    g2-2.2.8.11.bin
-    cfw_patches-2.2.8.11.json
-    manifest.json
-    firmware_codec.bin
-    firmware_ble_em9305.bin
-    firmware_touch.bin
-    firmware_box.bin
-    firmware_box.raw.bin
-    ota_s200_bootloader.bin
-    ota_s200_firmware_ota.bin
-    metadata.json
-  2.2.9.23-e5f629c6fd06/
-    g2-2.2.9.23.bin
-    cfw_patches-2.2.9.23.json
-    manifest.json
-    ...
     SHA256SUMS
 ```
 
@@ -1612,7 +1589,8 @@ The CFW entry is accepted only when its full digest, the patch recipe's
 stock/output digests, and all reviewed operations match the pinned trust
 boundary.
 
-The archive itself is intentionally excluded from Git.
+The published `public/firmware-updates/source-files` package is tracked in Git.
+Scratch archives and retired local backups under `work/` are ignored.
 
 ## Local development
 

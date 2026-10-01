@@ -1,7 +1,10 @@
 // 230.10's read-only identity operation runs before microphone context allocation.
 // Standard GATT firmware revision identifies the stock donor, not this patch set.
+import { TEMPLE_FLASH_TARGETS } from "./templeFlashTargets.js";
+
 export const G2_CFW_IDENTITY_MARKER = "SybilSight/230.10";
-const reviewedMarkers = new Set([G2_CFW_IDENTITY_MARKER, "SybilSight/230.11", "SybilSight/230.12", "SybilSight/230.13", "SybilSight/230.14", "SybilSight/230.17", "SybilSight/230.18", "SybilSight/230.19", "SybilSight/230.21", "SybilSight/230.22", "SybilSight/230.23", "SybilSight/230.24", "SybilSight/230.25", "SybilSight/230.26", "SybilSight/230.27", "SybilSight/230.84"]);
+const reviewedMarkers = new Set(TEMPLE_FLASH_TARGETS
+  .map((target) => target.requiredCfwMarker).filter(Boolean));
 export const G2_CFW_IDENTITY_SERVICE = "00002760-08c2-11e1-9073-0e8ac72e6450";
 export const G2_CFW_IDENTITY_NOTIFY = "00002760-08c2-11e1-9073-0e8ac72e6402";
 

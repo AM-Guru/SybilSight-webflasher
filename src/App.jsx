@@ -5980,7 +5980,7 @@ function App() {
                 Zero compromise.
               </h1>
               <p>
-                Verified official firmware updates for Even G2, plus signed R1
+                Verified Stock and SybilSight firmware for Even G2, plus signed R1
                 recovery—handled locally in your browser.
               </p>
               <div className="easy-hero-status">
@@ -6052,8 +6052,8 @@ function App() {
             </div>
             <p>
               {easyUsesBluetooth
-                ? "Choose verified official firmware, pair left and right, then keep this tab visible while SybilSight verifies every component."
-                : "Choose verified official firmware, connect the G2 Case with both temples seated, then let SybilSight recover and verify both sides."}
+                ? "Choose Stock or SybilSight CFW, pair left and right, then keep this tab visible while SybilSight verifies every component."
+                : "Choose Stock or SybilSight CFW, connect the G2 Case with both temples seated, then let SybilSight recover and verify both sides."}
             </p>
           </div>
 
@@ -6095,6 +6095,10 @@ function App() {
                   </strong>
                   <span>{formatBytes(selectedRelease.size)}</span>
                   <code>{selectedRelease.sha256.slice(0, 16)}…</code>
+                  <a href={selectedRelease.url} download>Download firmware bundle</a>
+                  {selectedRelease.channel === "custom" ? (
+                    <p>{selectedRelease.notes}</p>
+                  ) : null}
                 </div>
               ) : null}
             </article>
@@ -7107,7 +7111,7 @@ function App() {
           <SectionHeading
             eyebrow="04 · Choose image"
             title="The SybilSight verified library, or your own file"
-            copy="Every entry in the library is an official, hash-pinned image that is re-validated locally before any write is enabled. You can also supply your own file for structural inspection."
+            copy="The library includes official Stock and the current SybilSight CFW, each hash-pinned and re-validated locally before a write is enabled. You can also supply your own file for structural inspection."
             action={
               catalogState === "ready" ? (
                 <StatusPill tone="quiet">

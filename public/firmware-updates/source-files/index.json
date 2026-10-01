@@ -1,132 +1,47 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-30T02:25:42.204Z",
+  "generatedAt": "2026-10-01T16:29:23.850Z",
   "source": "Even Realities G2/R1 CDN plus SybilSight release evidence",
   "releases": [
     {
-      "id": "g2-custom-2.3.0.24-230.26",
-      "displayName": "SybilSight CFW 230.26 (2.3.0.24)",
+      "id": "g2-custom-2.3.0.24-230.85",
+      "displayName": "SybilSight CFW 230.85 (2.3.0.24, keyboard relay; hardware unvalidated)",
       "channel": "custom",
       "trust": "reviewed-custom",
       "hardwareValidated": false,
       "version": "2.3.0.24",
-      "archiveKey": "2.3.0.24-8784efd8892a",
+      "archiveKey": "2.3.0.24-32d7304ce853",
       "internalVersion": "2.3.0.24",
       "reportedVersion": "2.3.0.24",
       "baseVersion": "2.3.0.24",
-      "notes": "Built from stock 2.3.0.24 and g2flash e13842d (Faceclaw revision 29) with the SybilSight 230.x overlays; the recipe replays against the pinned stock image byte-for-byte. Offline source, sanitizer and emitted-code tests pass. Not yet hardware-validated, and the four-microphone array is not acoustically qualified.",
+      "notes": "Offline reviewed and tested. Adds the revision-39 keyboard relay to the exact 230.84 parent while preserving its other payloads. Seven emitted-code, ABI, sanitizer and malformed-input checks pass; the 94-operation stock recipe reproduces this bundle exactly. Hardware pairing, key delivery and simultaneous microphone/display operation have not yet been validated for 230.85.",
       "capabilities": [
-        "Faceclaw revision-29 display ABI: retained root, CLEAR, full-root draw and animated RECT_COPY, with an aligned memset full-frame clear",
-        "Revision-27 retained display, compressed image transports, texture cache and atomic drawing",
-        "Direct per-lens identity: MC/v1 op 5 returns a nonce-bound FI/v1 marker from each temple before any microphone context is allocated",
-        "Four-microphone array and PCM diagnostics stay behind an explicit opt-in; the stock microphone path is unchanged by default",
-        "Changes only the Apollo application payload; all five other component payloads match stock 2.3.0.24"
+        "BLE keyboard pairing and key-report relay through G2: keyboard contract v1 restored from pinned upstream revision 39",
+        "Preserves the revision-84 dual-link stereo microphone relay, nonce-clock GX8002 codec and PDM probe hooks",
+        "Retained display, compressed image transports, texture cache and atomic drawing on the revision-35 display ABI",
+        "Direct per-lens nonce-bound FI/v1 identity requires SybilSight/230.85 on both temples",
+        "Only the Apollo main changes from 230.84; all five non-main components remain byte-identical to the parent"
       ],
-      "requiredCfwMarker": "SybilSight/230.26",
+      "requiredCfwMarker": "SybilSight/230.85",
       "recoveryTarget": "glasses",
       "caseRecoveryEligible": false,
       "caseVersion": "1.2.57",
-      "url": "/firmware-updates/source-files/2.3.0.24-8784efd8892a/g2-2.3.0.24-sybilsight-230.26.bin",
-      "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.3.0.24-8784efd8892a/g2-2.3.0.24-sybilsight-230.26.bin",
-      "fileName": "g2-2.3.0.24-sybilsight-230.26.bin",
-      "size": 4617615,
-      "md5": "3ae841ccff3507f5fa7078e9448f8ae5",
-      "sha256": "8784efd8892a027dd2a0b7eee4dae1b1679cfa1b8008aa1b296103cfe674b0ba",
-      "patchUrl": "/firmware-updates/source-files/2.3.0.24-8784efd8892a/cfw_patches-230.26.json",
-      "patchSha256": "51451a7e3188e87326a490205c8d031ec322cbe5c2d4a7def40270d34cb1927e",
-      "manifestUrl": "/firmware-updates/source-files/2.3.0.24-8784efd8892a/manifest.json",
-      "manifestSha256": "386c88e4237378081782e2f4c540586805ca608883c805e897f32fe21daaefc7",
+      "url": "/firmware-updates/source-files/2.3.0.24-32d7304ce853/g2-2.3.0.24-sybilsight-230.85.bin",
+      "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.3.0.24-32d7304ce853/g2-2.3.0.24-sybilsight-230.85.bin",
+      "fileName": "g2-2.3.0.24-sybilsight-230.85.bin",
+      "size": 4667425,
+      "md5": "5aa2b5595e9b45999cad86cd9fbebbdc",
+      "sha256": "32d7304ce85304ba9f6e1c8f65d2812913e556ef5506582b016ea78c3f37c860",
+      "patchUrl": "/firmware-updates/source-files/2.3.0.24-32d7304ce853/cfw_patches-230.85.json",
+      "patchSha256": "a50d3a9821c132190efc8e99f0dc59545ef1e49c2ac241cb7aca41c8ef432b3b",
+      "manifestUrl": "/firmware-updates/source-files/2.3.0.24-32d7304ce853/manifest.json",
+      "manifestSha256": "86f130323b3b9de65e2b35e6ad0819f92da4c8c688e7291e5c145d6248046fd0",
       "archivedFrom": "WebFlasher local evidence",
       "mainFirmware": {
         "runBase": "0x00438000",
-        "installedImageSize": 3838340,
-        "installedImageEnd": "0x007e1184",
-        "crc32": "d53ab5ce"
-      },
-      "components": [
-        {
-          "name": "firmware/codec.bin",
-          "typeId": 4,
-          "size": 326092,
-          "crc32c": "bdcfeeac",
-          "sha256": "b06dfef7faa2f1e52d2aacd07958d4b96ffc36dca5077ac9149e48f19fc9c4d0"
-        },
-        {
-          "name": "firmware/ble_em9305.bin",
-          "typeId": 5,
-          "size": 211948,
-          "crc32c": "c074baf7",
-          "sha256": "91a38f7fc05555f86181ecb22b363e3239bfcaaa2ff6171e98524ae64821eca9"
-        },
-        {
-          "name": "firmware/touch.bin",
-          "typeId": 3,
-          "size": 34720,
-          "crc32c": "903ca49a",
-          "sha256": "c14456cd4d432815d79700b251c9a575f75c76a3710f4148c0df6ddba4cb7ba2"
-        },
-        {
-          "name": "firmware/box.bin",
-          "typeId": 6,
-          "size": 55784,
-          "crc32c": "7d443be0",
-          "sha256": "36ca0c13558f252af286ae2b36b5e576d087d21d37b15d778e7da9f502a70374"
-        },
-        {
-          "name": "ota/s200_bootloader.bin",
-          "typeId": 1,
-          "size": 149755,
-          "crc32c": "04b60910",
-          "sha256": "52ed1c4d043f278f9011d2f2e6555b668ef2ff1e312695f5c28fa7986523b75b"
-        },
-        {
-          "name": "ota/s200_firmware_ota.bin",
-          "typeId": 0,
-          "size": 3838372,
-          "crc32c": "d1675cfc",
-          "sha256": "3d4be332f7686658ddacb707e443c04b756be0642b7d07d0a7721e75529773fd"
-        }
-      ]
-    },
-    {
-      "id": "g2-custom-2.3.0.24-230.84",
-      "displayName": "SybilSight CFW 230.84 (2.3.0.24, dual-link microphone array)",
-      "channel": "custom",
-      "trust": "reviewed-custom",
-      "hardwareValidated": false,
-      "version": "2.3.0.24",
-      "archiveKey": "2.3.0.24-afa6c1da6bc1",
-      "internalVersion": "2.3.0.24",
-      "reportedVersion": "2.3.0.24",
-      "baseVersion": "2.3.0.24",
-      "notes": "Built from stock 2.3.0.24 and g2flash 9079f99 (Faceclaw revision 35) with the SybilSight 230.x overlays through 230.84; the recipe replays against the pinned stock image byte-for-byte. Bench-validated on hardware 2026-09-29/30 (clean transport at 32 and 72 kbps, integrity guard healthy, worn rotation sweeps 0.106–0.107 m).",
-      "capabilities": [
-        "Dual-link microphone array: each temple streams its own timestamped stereo LC3 pair (16–72 kbps per channel, 16 kHz) with a sub-millisecond sample index; the SybilSight app beamforms the lateral capsule pair and calibrates it in Sonic Radar",
-        "Faceclaw revision-35 display ABI (230.27) with the revision-27 retained display, compressed image transports, texture cache and atomic drawing",
-        "Direct per-lens identity: MC/v1 op 5 returns a nonce-bound FI/v1 marker from each temple before any microphone context is allocated",
-        "Stock 15–30 ms connection-parameter request restored; PDM0 probe hooks are inert unless the PDM source is selected",
-        "Changes the Apollo application payload and the GX8002 codec payload (0.0.2.16, nonce clock); the other four component payloads match stock 2.3.0.24"
-      ],
-      "requiredCfwMarker": "SybilSight/230.84",
-      "recoveryTarget": "glasses",
-      "caseRecoveryEligible": false,
-      "caseVersion": "1.2.57",
-      "url": "/firmware-updates/source-files/2.3.0.24-afa6c1da6bc1/g2-2.3.0.24-sybilsight-230.84.bin",
-      "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.3.0.24-afa6c1da6bc1/g2-2.3.0.24-sybilsight-230.84.bin",
-      "fileName": "g2-2.3.0.24-sybilsight-230.84.bin",
-      "size": 4659695,
-      "md5": "353b38444d0d87575064260bc16dae65",
-      "sha256": "afa6c1da6bc1ba6b0904a438b6acb7f6e628b4fd53c82e1c58d71ba4a431f68b",
-      "patchUrl": "/firmware-updates/source-files/2.3.0.24-afa6c1da6bc1/cfw_patches-230.84.json",
-      "patchSha256": "61e1610f7c506ea08b70b54b86663c11960d661f5c31b362b429c4b5ea1a794a",
-      "manifestUrl": "/firmware-updates/source-files/2.3.0.24-afa6c1da6bc1/manifest.json",
-      "manifestSha256": "beb62b5d044ca4cfbe6e66061bb55064940e5b4cd9695700c37bf9274e285a56",
-      "archivedFrom": "WebFlasher local evidence",
-      "mainFirmware": {
-        "runBase": "0x00438000",
-        "installedImageSize": 3880420,
-        "installedImageEnd": "0x007eb5e4",
-        "crc32": "d11c264e"
+        "installedImageSize": 3888150,
+        "installedImageEnd": "0x007ed416",
+        "crc32": "a3714e84"
       },
       "components": [
         {
@@ -167,95 +82,9 @@
         {
           "name": "ota/s200_firmware_ota.bin",
           "typeId": 0,
-          "size": 3880452,
-          "crc32c": "bc31a1a5",
-          "sha256": "4424b357bf3e9fa1fe8f82136e950c9338addbb50b57863ae0fd258640230fa7"
-        }
-      ]
-    },
-    {
-      "id": "g2-custom-2.3.0.24-230.27",
-      "displayName": "SybilSight CFW 230.27 (2.3.0.24, experimental, hardware unvalidated)",
-      "channel": "custom",
-      "trust": "experimental-local",
-      "hardwareValidated": false,
-      "version": "2.3.0.24",
-      "archiveKey": "2.3.0.24-36cc62222272",
-      "internalVersion": "2.3.0.24",
-      "reportedVersion": "2.3.0.24",
-      "baseVersion": "2.3.0.24",
-      "notes": "Experimental. Built from the exact SybilSight 230.26 source and g2flash 9079f99 (Faceclaw revision 35); the recipe replays against the pinned stock image byte-for-byte. Offline source, sanitizer and emitted-patch audits pass. Not hardware-validated, not a default release, and the four-microphone array is not acoustically qualified.",
-      "capabilities": [
-        "Faceclaw revision-35 display ABI on top of 230.26: firmware-side brightness control with smooth fade in/out, dithered darken, and clip rectangles on every draw call",
-        "Brightness is written only when the level changes, avoiding the stock panel's brief blank on repeated writes",
-        "The dashboard phone-link line is drawn at one shared position on both lenses, without an L/R tag",
-        "Direct per-lens identity: MC/v1 op 5 returns a nonce-bound FI/v1 marker from each temple before any microphone context is allocated",
-        "Four-microphone array and PCM diagnostics stay behind an explicit opt-in; the stock microphone path is unchanged by default",
-        "Changes only the Apollo application payload; all five other component payloads match stock 2.3.0.24"
-      ],
-      "requiredCfwMarker": "SybilSight/230.27",
-      "recoveryTarget": "glasses",
-      "caseRecoveryEligible": false,
-      "caseVersion": "1.2.57",
-      "url": "/firmware-updates/source-files/2.3.0.24-36cc62222272/g2-2.3.0.24-sybilsight-230.27.bin",
-      "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.3.0.24-36cc62222272/g2-2.3.0.24-sybilsight-230.27.bin",
-      "fileName": "g2-2.3.0.24-sybilsight-230.27.bin",
-      "size": 4624175,
-      "md5": "e96594ca8675cbee252a29f4150079cf",
-      "sha256": "36cc6222227275d0fd07f134c765737e508b5e205e6d6aa1122a4b2cf1996bfa",
-      "patchUrl": "/firmware-updates/source-files/2.3.0.24-36cc62222272/cfw_patches-230.27.json",
-      "patchSha256": "c089f2a4b1412f9e693a2e5f27fce70a352203592174945bc08d46894232b09f",
-      "manifestUrl": "/firmware-updates/source-files/2.3.0.24-36cc62222272/manifest.json",
-      "manifestSha256": "560572375c9be3fe2c7ea25e4ffdb564310408fb38b0ff1840afae14c9d2d4ca",
-      "archivedFrom": "WebFlasher local evidence",
-      "mainFirmware": {
-        "runBase": "0x00438000",
-        "installedImageSize": 3844900,
-        "installedImageEnd": "0x007e2b24",
-        "crc32": "06ca00df"
-      },
-      "components": [
-        {
-          "name": "firmware/codec.bin",
-          "typeId": 4,
-          "size": 326092,
-          "crc32c": "bdcfeeac",
-          "sha256": "b06dfef7faa2f1e52d2aacd07958d4b96ffc36dca5077ac9149e48f19fc9c4d0"
-        },
-        {
-          "name": "firmware/ble_em9305.bin",
-          "typeId": 5,
-          "size": 211948,
-          "crc32c": "c074baf7",
-          "sha256": "91a38f7fc05555f86181ecb22b363e3239bfcaaa2ff6171e98524ae64821eca9"
-        },
-        {
-          "name": "firmware/touch.bin",
-          "typeId": 3,
-          "size": 34720,
-          "crc32c": "903ca49a",
-          "sha256": "c14456cd4d432815d79700b251c9a575f75c76a3710f4148c0df6ddba4cb7ba2"
-        },
-        {
-          "name": "firmware/box.bin",
-          "typeId": 6,
-          "size": 55784,
-          "crc32c": "7d443be0",
-          "sha256": "36ca0c13558f252af286ae2b36b5e576d087d21d37b15d778e7da9f502a70374"
-        },
-        {
-          "name": "ota/s200_bootloader.bin",
-          "typeId": 1,
-          "size": 149755,
-          "crc32c": "04b60910",
-          "sha256": "52ed1c4d043f278f9011d2f2e6555b668ef2ff1e312695f5c28fa7986523b75b"
-        },
-        {
-          "name": "ota/s200_firmware_ota.bin",
-          "typeId": 0,
-          "size": 3844932,
-          "crc32c": "14782e55",
-          "sha256": "088d94f31c1d08d4f84dd119b4bb833ee28dbad1f66a535e7ab9c3dee621fdc8"
+          "size": 3888182,
+          "crc32c": "47a2b733",
+          "sha256": "f0afde114bfb5cce70e712d6bb354b613de9110f5cd47e46ae7ff3fdf8f8c157"
         }
       ]
     },
@@ -330,92 +159,6 @@
           "size": 3758720,
           "crc32c": "2a32c6c0",
           "sha256": "c07813ceaf7ed16502e94406c957eb8cf9d6e8a94ac4ba9bafaefa50ebc9ff46"
-        }
-      ]
-    },
-    {
-      "id": "g2-custom-2.2.10.72",
-      "displayName": "SybilSight CFW (2.2.10.72)",
-      "channel": "custom",
-      "trust": "reviewed-custom",
-      "hardwareValidated": false,
-      "version": "2.2.10.72",
-      "archiveKey": "2.2.10.72-f3bd05f9adaa",
-      "internalVersion": "2.2.10.72",
-      "reportedVersion": "2.2.10.72",
-      "baseVersion": "2.2.10.10",
-      "notes": "Built from stock 2.2.10.10 and g2flash d968c2c (Faceclaw firmware revision 3) with the reviewed 2.2.10.72 overlays; every ROM/RAM seam is stock-signature gated by the 2.2.10.10 address profile. Exercised on hardware over Bluetooth OTA (both temples, 2026-09-15); not yet case-USB validated.",
-      "capabilities": [
-        "Four-microphone array with the RIGHT temple's channels relayed to the LEFT over the inter-temple link and delivered to the phone as one four-channel LC3 stream",
-        "Display path: persistent inflate stream, checked display gate, word-wise RLE fill, dirty-row partial panel refresh, pipelined delta frames",
-        "LE data length request on the phone link, relay notify back-pressure below the stock queue's silent-drop watermark, RS v3 telemetry",
-        "Full-panel and compressed custom display transports; wear, compass, ring-hold, diagnostics, texture cache, and atomic drawing extensions"
-      ],
-      "bleComponentNames": [
-        "ota/s200_firmware_ota.bin"
-      ],
-      "recoveryTarget": "glasses",
-      "caseRecoveryEligible": false,
-      "caseVersion": "1.2.57",
-      "url": "/firmware-updates/source-files/2.2.10.72-f3bd05f9adaa/g2-2.2.10.72.bin",
-      "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.2.10.72-f3bd05f9adaa/g2-2.2.10.72.bin",
-      "fileName": "g2-2.2.10.72.bin",
-      "size": 4540503,
-      "md5": "4fe44f3e74db8319b80a466e20617ed0",
-      "sha256": "f3bd05f9adaae94cbf2a693b7259a98c11454ba270fe09311bdfd38484d1161c",
-      "patchUrl": "/firmware-updates/source-files/2.2.10.72-f3bd05f9adaa/cfw_patches-2.2.10.72.json",
-      "patchSha256": "d0ccfded1eef36773ec6265cbdbe183060181fb8116058c247e01a649f47db34",
-      "manifestUrl": "/firmware-updates/source-files/2.2.10.72-f3bd05f9adaa/manifest.json",
-      "manifestSha256": "b92136708a90b2840085ea2da1d7dc89ad2f25a1c753a1d17096fff672893e0c",
-      "archivedFrom": "WebFlasher local evidence",
-      "mainFirmware": {
-        "runBase": "0x00438000",
-        "installedImageSize": 3761290,
-        "installedImageEnd": "0x007ce48a",
-        "crc32": "b88787bb"
-      },
-      "components": [
-        {
-          "name": "firmware/codec.bin",
-          "typeId": 4,
-          "size": 326092,
-          "crc32c": "bdcfeeac",
-          "sha256": "b06dfef7faa2f1e52d2aacd07958d4b96ffc36dca5077ac9149e48f19fc9c4d0"
-        },
-        {
-          "name": "firmware/ble_em9305.bin",
-          "typeId": 5,
-          "size": 211948,
-          "crc32c": "c074baf7",
-          "sha256": "91a38f7fc05555f86181ecb22b363e3239bfcaaa2ff6171e98524ae64821eca9"
-        },
-        {
-          "name": "firmware/touch.bin",
-          "typeId": 3,
-          "size": 34720,
-          "crc32c": "903ca49a",
-          "sha256": "c14456cd4d432815d79700b251c9a575f75c76a3710f4148c0df6ddba4cb7ba2"
-        },
-        {
-          "name": "firmware/box.bin",
-          "typeId": 6,
-          "size": 55784,
-          "crc32c": "7d443be0",
-          "sha256": "36ca0c13558f252af286ae2b36b5e576d087d21d37b15d778e7da9f502a70374"
-        },
-        {
-          "name": "ota/s200_bootloader.bin",
-          "typeId": 1,
-          "size": 149693,
-          "crc32c": "99852b7d",
-          "sha256": "423c23ce481f1690e4d0028126e495a319726efe26c36f9037105fed68791a93"
-        },
-        {
-          "name": "ota/s200_firmware_ota.bin",
-          "typeId": 0,
-          "size": 3761322,
-          "crc32c": "6e30ba88",
-          "sha256": "ddf667ed12e58d81f2d3ee85b33ae94f06f40244d249df0735755b21fa731a7a"
         }
       ]
     },

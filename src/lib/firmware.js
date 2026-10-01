@@ -1966,6 +1966,27 @@ export const REVIEWED_CFW_230_84 = Object.freeze({
     "Bench-validated on hardware 2026-09-29/30.",
   ],
 });
+// Published 230.85 is offline-reviewed; hardware qualification is still pending.
+// Keep historical pins above for inspection of old uploads, without offering
+// those images in the active catalog or published writer targets.
+export const REVIEWED_CFW_230_85 = Object.freeze({
+  version: "2.3.0.24",
+  baseVersion: "2.3.0.24",
+  baseSha256: "187ccf2bcc5c17a212106e8a376745511e8289c4232b634a7ea94b9bf25a0979",
+  sha256: "32d7304ce85304ba9f6e1c8f65d2812913e556ef5506582b016ea78c3f37c860",
+  mainPayloadSha256: "f0afde114bfb5cce70e712d6bb354b613de9110f5cd47e46ae7ff3fdf8f8c157",
+  mainPayloadBytes: 3888182,
+  capabilityMarker: "SybilSight/230.85",
+  hardwareValidated: false,
+  capabilities: [
+    "BLE keyboard pairing and key-report relay through G2 (keyboard contract v1)",
+    "Preserved revision-84 dual-link microphone relay and nonce-clock codec payload",
+    "Revision-35 retained display, compressed image transports, texture cache and atomic drawing",
+    "Direct nonce-bound FI/v1 identity from both temples",
+    "Offline ABI, emitted-code, sanitizer and malformed-input checks passed; hardware qualification pending",
+  ],
+});
+
 // Staged as g2-custom-2.3.0.24-230.27 with trust "experimental-local": never a
 // default, and never classified as reviewed. Stock 2.3.0.24 version metadata;
 // only the direct per-lens FI/v1 marker distinguishes it.
@@ -3108,6 +3129,7 @@ export function classifyG2Firmware(fileSha256) {
     REVIEWED_CFW_2_2_10_61,
     REVIEWED_CFW_230_26,
     REVIEWED_CFW_230_84,
+    REVIEWED_CFW_230_85,
     REVIEWED_CFW_2_2_10_72,
     // Older 2.2.10 candidates are no longer recognized: only the latest CFW is offered.
     // Earlier-generation pins stay recognizable for trust classification of an uploaded

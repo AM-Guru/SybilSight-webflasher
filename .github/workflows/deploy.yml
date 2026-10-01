@@ -79,7 +79,7 @@ jobs:
             }
             const catalog = JSON.parse(catalogBytes);
             const customReleases = catalog.releases.filter((entry) => entry.channel === "custom");
-            const permittedCustom = new Map([["g2-custom-2.3.0.24-230.26", "8784efd8892a027dd2a0b7eee4dae1b1679cfa1b8008aa1b296103cfe674b0ba"], ["g2-custom-2.3.0.24-230.84", "afa6c1da6bc1ba6b0904a438b6acb7f6e628b4fd53c82e1c58d71ba4a431f68b"], ["g2-custom-2.3.0.24-230.27", "36cc6222227275d0fd07f134c765737e508b5e205e6d6aa1122a4b2cf1996bfa"], ["g2-custom-2.2.10.72", "f3bd05f9adaae94cbf2a693b7259a98c11454ba270fe09311bdfd38484d1161c"]]);
+            const permittedCustom = new Map([["g2-custom-2.3.0.24-230.85", "32d7304ce85304ba9f6e1c8f65d2812913e556ef5506582b016ea78c3f37c860"]]);
             if (customReleases.length !== permittedCustom.size || customReleases.some((entry) => permittedCustom.get(entry.id) !== entry.sha256)) {
               throw new Error("Catalog contains an unexpected CFW release");
             }
@@ -853,7 +853,7 @@ jobs:
             }
             const catalog = JSON.parse(catalogBytes);
             const customReleases = catalog.releases.filter((entry) => entry.channel === "custom");
-            const permittedCustom = new Map([["g2-custom-2.3.0.24-230.26", "8784efd8892a027dd2a0b7eee4dae1b1679cfa1b8008aa1b296103cfe674b0ba"], ["g2-custom-2.3.0.24-230.84", "afa6c1da6bc1ba6b0904a438b6acb7f6e628b4fd53c82e1c58d71ba4a431f68b"], ["g2-custom-2.3.0.24-230.27", "36cc6222227275d0fd07f134c765737e508b5e205e6d6aa1122a4b2cf1996bfa"], ["g2-custom-2.2.10.72", "f3bd05f9adaae94cbf2a693b7259a98c11454ba270fe09311bdfd38484d1161c"]]);
+            const permittedCustom = new Map([["g2-custom-2.3.0.24-230.85", "32d7304ce85304ba9f6e1c8f65d2812913e556ef5506582b016ea78c3f37c860"]]);
             if (customReleases.length !== permittedCustom.size || customReleases.some((entry) => permittedCustom.get(entry.id) !== entry.sha256)) {
               throw new Error("Production catalog contains an unexpected CFW release");
             }

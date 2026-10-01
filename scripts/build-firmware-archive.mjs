@@ -226,8 +226,8 @@ const HARDWARE_VALIDATED_TEMPLE_IMAGES = new Set([
   HARDWARE_VALIDATED_G2_2_2_6_10_SHA256,
 ]);
 const LOCAL_REVIEWED_TEMPLE_TARGETS = Object.freeze([
-  // SybilSight/230.26 is published through RELEASES (g2-custom-2.3.0.24-230.26);
-  // experimental 230.27 is staged there too, with trust "experimental-local".
+  // Only SybilSight/230.85 is published through RELEASES; historical local pins
+  // below remain available for explicit offline laboratory recovery.
   Object.freeze({
     imageSha256: "f5562b636a77c260e950da4f872d1e94224159841b9cb6b9c47faab2818aded4",
     mainSha256: "c3dee6cd7ebb06c9142c19314842d7ce8c2e800bfc140630356a2d0684b7f6b7",
@@ -497,46 +497,8 @@ const RELEASES = [
     notes: "Fixed duplicate Notifications in certain scenarios; bug fixes and UI improvements.",
   },
   {
-    id: "g2-custom-2.2.10.72",
-    displayName: "SybilSight CFW (2.2.10.72)",
-    version: "2.2.10.72",
-    internalVersion: "2.2.10.72",
-    reportedVersion: "2.2.10.72",
-    baseVersion: "2.2.10.10",
-    baseSha256: "927879057685a4147c6ba1fe33e5f3740d3cc48f87141a9039204d94516e65b8",
-    channel: "custom",
-    trust: "reviewed-custom",
-    hash: "4fe44f3e74db8319b80a466e20617ed0",
-    sha256: "f3bd05f9adaae94cbf2a693b7259a98c11454ba270fe09311bdfd38484d1161c",
-    size: 4540503,
-    fileName: "g2-2.2.10.72.bin",
-    preferLocalEvidence: true,
-    fallbacks: [[
-      "webflasher",
-      "work/cfw-2.2.10/candidate-2.2.10.72/g2-2.2.10.72.bin",
-    ]],
-    patchFallbackRoot: "webflasher",
-    patchFallback: "work/cfw-2.2.10/candidate-2.2.10.72/cfw_patches-2.2.10.72.json",
-    patchFileName: "cfw_patches-2.2.10.72.json",
-    patchCount: 48,
-    manifestFileName: "manifest.json",
-    capabilityMarker: "Faceclaw/3",
-    bleComponentNames: ["ota/s200_firmware_ota.bin"],
-    capabilities: [
-      "Four-microphone array with the RIGHT temple's channels relayed to the LEFT over the inter-temple link and delivered to the phone as one four-channel LC3 stream",
-      "Display path: persistent inflate stream, checked display gate, word-wise RLE fill, dirty-row partial panel refresh, pipelined delta frames",
-      "LE data length request on the phone link, relay notify back-pressure below the stock queue's silent-drop watermark, RS v3 telemetry",
-      "Full-panel and compressed custom display transports; wear, compass, ring-hold, diagnostics, texture cache, and atomic drawing extensions",
-    ],
-    notes:
-      "Built from stock 2.2.10.10 and g2flash d968c2c (Faceclaw firmware revision 3) with the reviewed 2.2.10.72 overlays; every ROM/RAM seam is stock-signature gated by the 2.2.10.10 address profile. Exercised on hardware over Bluetooth OTA (both temples, 2026-09-15); not yet case-USB validated.",
-  },
-  {
-    // Keeps the stock 2.3.0.24 version metadata, so the reported version can
-    // never prove this image: requiredCfwMarker demands the nonce-bound
-    // per-lens FI/v1 identity reply after transfer.
-    id: "g2-custom-2.3.0.24-230.26",
-    displayName: "SybilSight CFW 230.26 (2.3.0.24)",
+    id: "g2-custom-2.3.0.24-230.85",
+    displayName: "SybilSight CFW 230.85 (2.3.0.24, keyboard relay; hardware unvalidated)",
     version: "2.3.0.24",
     internalVersion: "2.3.0.24",
     reportedVersion: "2.3.0.24",
@@ -544,120 +506,33 @@ const RELEASES = [
     baseSha256: "187ccf2bcc5c17a212106e8a376745511e8289c4232b634a7ea94b9bf25a0979",
     channel: "custom",
     trust: "reviewed-custom",
-    hash: "3ae841ccff3507f5fa7078e9448f8ae5",
-    sha256: "8784efd8892a027dd2a0b7eee4dae1b1679cfa1b8008aa1b296103cfe674b0ba",
-    size: 4617615,
-    fileName: "g2-2.3.0.24-sybilsight-230.26.bin",
+    hash: "5aa2b5595e9b45999cad86cd9fbebbdc",
+    sha256: "32d7304ce85304ba9f6e1c8f65d2812913e556ef5506582b016ea78c3f37c860",
+    size: 4667425,
+    fileName: "g2-2.3.0.24-sybilsight-230.85.bin",
     preferLocalEvidence: true,
     fallbacks: [[
       "webflasher",
-      "work/cfw-2.3.0/candidate-230.26/g2-2.3.0.24-sybilsight-230.26.bin",
+      "public/firmware-updates/source-files/2.3.0.24-32d7304ce853/g2-2.3.0.24-sybilsight-230.85.bin",
     ]],
     patchFallbackRoot: "webflasher",
-    patchFallback: "work/cfw-2.3.0/candidate-230.26/cfw_patches-230.26.json",
-    patchFileName: "cfw_patches-230.26.json",
-    patchCount: 49,
+    patchFallback: "public/firmware-updates/source-files/2.3.0.24-32d7304ce853/cfw_patches-230.85.json",
+    patchFileName: "cfw_patches-230.85.json",
+    patchCount: 94,
     manifestFileName: "manifest.json",
-    capabilityMarker: "SybilSight/230.26",
-    requiredCfwMarker: "SybilSight/230.26",
-    g2flashCommit: "e13842d5b851d1c4d451d59f370da122bd26e70f",
+    capabilityMarker: "SybilSight/230.85",
+    requiredCfwMarker: "SybilSight/230.85",
+    keyboardUpstreamCommit: "46165ab41e8de70fdd1f8abf523137249afafde2",
+    parentSha256: "afa6c1da6bc1ba6b0904a438b6acb7f6e628b4fd53c82e1c58d71ba4a431f68b",
     capabilities: [
-      "Faceclaw revision-29 display ABI: retained root, CLEAR, full-root draw and animated RECT_COPY, with an aligned memset full-frame clear",
-      "Revision-27 retained display, compressed image transports, texture cache and atomic drawing",
-      "Direct per-lens identity: MC/v1 op 5 returns a nonce-bound FI/v1 marker from each temple before any microphone context is allocated",
-      "Four-microphone array and PCM diagnostics stay behind an explicit opt-in; the stock microphone path is unchanged by default",
-      "Changes only the Apollo application payload; all five other component payloads match stock 2.3.0.24",
+      "BLE keyboard pairing and key-report relay through G2: keyboard contract v1 restored from pinned upstream revision 39",
+      "Preserves the revision-84 dual-link stereo microphone relay, nonce-clock GX8002 codec and PDM probe hooks",
+      "Retained display, compressed image transports, texture cache and atomic drawing on the revision-35 display ABI",
+      "Direct per-lens nonce-bound FI/v1 identity requires SybilSight/230.85 on both temples",
+      "Only the Apollo main changes from 230.84; all five non-main components remain byte-identical to the parent",
     ],
     notes:
-      "Built from stock 2.3.0.24 and g2flash e13842d (Faceclaw revision 29) with the SybilSight 230.x overlays; the recipe replays against the pinned stock image byte-for-byte. Offline source, sanitizer and emitted-code tests pass. Not yet hardware-validated, and the four-microphone array is not acoustically qualified.",
-  },
-  {
-    // Published as g2-custom-2.3.0.24-230.84: the 230.73 dual-link microphone
-    // array on the revision-35 display ABI, bench-validated 2026-09-29/30 and
-    // qualified for automatic array selection in the iOS app. Changes the Apollo
-    // application payload AND the GX8002 codec payload; the other four
-    // components match stock 2.3.0.24. Stock 2.3.0.24 version metadata; the
-    // nonce-bound per-lens FI/v1 identity reply proves the install.
-    id: "g2-custom-2.3.0.24-230.84",
-    displayName: "SybilSight CFW 230.84 (2.3.0.24, dual-link microphone array)",
-    version: "2.3.0.24",
-    internalVersion: "2.3.0.24",
-    reportedVersion: "2.3.0.24",
-    baseVersion: "2.3.0.24",
-    baseSha256: "187ccf2bcc5c17a212106e8a376745511e8289c4232b634a7ea94b9bf25a0979",
-    channel: "custom",
-    trust: "reviewed-custom",
-    hash: "353b38444d0d87575064260bc16dae65",
-    sha256: "afa6c1da6bc1ba6b0904a438b6acb7f6e628b4fd53c82e1c58d71ba4a431f68b",
-    size: 4659695,
-    fileName: "g2-2.3.0.24-sybilsight-230.84.bin",
-    preferLocalEvidence: true,
-    fallbacks: [[
-      "webflasher",
-      "work/cfw-2.3.0/candidate-230.84/g2-2.3.0.24-sybilsight-230.84.bin",
-    ]],
-    patchFallbackRoot: "webflasher",
-    patchFallback: "work/cfw-2.3.0/candidate-230.84/cfw_patches-230.84.json",
-    patchFileName: "cfw_patches-230.84.json",
-    patchCount: 79,
-    manifestFileName: "manifest.json",
-    capabilityMarker: "SybilSight/230.84",
-    requiredCfwMarker: "SybilSight/230.84",
-    g2flashCommit: "9079f994760d7b8f91eab1a0e8c4a8ebca9fd753",
-    capabilities: [
-      "Dual-link microphone array: each temple streams its own timestamped stereo LC3 pair (16–72 kbps per channel, 16 kHz) with a sub-millisecond sample index; the SybilSight app beamforms the lateral capsule pair and calibrates it in Sonic Radar",
-      "Faceclaw revision-35 display ABI (230.27) with the revision-27 retained display, compressed image transports, texture cache and atomic drawing",
-      "Direct per-lens identity: MC/v1 op 5 returns a nonce-bound FI/v1 marker from each temple before any microphone context is allocated",
-      "Stock 15–30 ms connection-parameter request restored; PDM0 probe hooks are inert unless the PDM source is selected",
-      "Changes the Apollo application payload and the GX8002 codec payload (0.0.2.16, nonce clock); the other four component payloads match stock 2.3.0.24",
-    ],
-    notes:
-      "Built from stock 2.3.0.24 and g2flash 9079f99 (Faceclaw revision 35) with the SybilSight 230.x overlays through 230.84; the recipe replays against the pinned stock image byte-for-byte. Bench-validated on hardware 2026-09-29/30 (clean transport at 32 and 72 kbps, integrity guard healthy, worn rotation sweeps 0.106–0.107 m).",
-  },
-  {
-    // Staged for local testing, never a default: trust "experimental-local" (the
-    // local-candidate trust used by classifyG2Firmware and the iOS Debug importer)
-    // keeps it out of findLatestReviewedCustomRelease and out of the iOS app's
-    // newest-reviewed-custom default, and G2FirmwareRelease.isTrusted refuses it
-    // for in-app installation. Offline-built; hardware qualification is pending.
-    // Like 230.26 it keeps stock 2.3.0.24 version metadata: requiredCfwMarker
-    // demands the nonce-bound per-lens FI/v1 identity reply after transfer.
-    id: "g2-custom-2.3.0.24-230.27",
-    displayName: "SybilSight CFW 230.27 (2.3.0.24, experimental, hardware unvalidated)",
-    version: "2.3.0.24",
-    internalVersion: "2.3.0.24",
-    reportedVersion: "2.3.0.24",
-    baseVersion: "2.3.0.24",
-    baseSha256: "187ccf2bcc5c17a212106e8a376745511e8289c4232b634a7ea94b9bf25a0979",
-    channel: "custom",
-    trust: "experimental-local",
-    hash: "e96594ca8675cbee252a29f4150079cf",
-    sha256: "36cc6222227275d0fd07f134c765737e508b5e205e6d6aa1122a4b2cf1996bfa",
-    size: 4624175,
-    fileName: "g2-2.3.0.24-sybilsight-230.27.bin",
-    preferLocalEvidence: true,
-    fallbacks: [[
-      "webflasher",
-      "work/cfw-2.3.0/candidate-230.27/g2-2.3.0.24-sybilsight-230.27.bin",
-    ]],
-    patchFallbackRoot: "webflasher",
-    patchFallback: "work/cfw-2.3.0/candidate-230.27/cfw_patches-230.27.json",
-    patchFileName: "cfw_patches-230.27.json",
-    patchCount: 49,
-    manifestFileName: "manifest.json",
-    capabilityMarker: "SybilSight/230.27",
-    requiredCfwMarker: "SybilSight/230.27",
-    g2flashCommit: "9079f994760d7b8f91eab1a0e8c4a8ebca9fd753",
-    capabilities: [
-      "Faceclaw revision-35 display ABI on top of 230.26: firmware-side brightness control with smooth fade in/out, dithered darken, and clip rectangles on every draw call",
-      "Brightness is written only when the level changes, avoiding the stock panel's brief blank on repeated writes",
-      "The dashboard phone-link line is drawn at one shared position on both lenses, without an L/R tag",
-      "Direct per-lens identity: MC/v1 op 5 returns a nonce-bound FI/v1 marker from each temple before any microphone context is allocated",
-      "Four-microphone array and PCM diagnostics stay behind an explicit opt-in; the stock microphone path is unchanged by default",
-      "Changes only the Apollo application payload; all five other component payloads match stock 2.3.0.24",
-    ],
-    notes:
-      "Experimental. Built from the exact SybilSight 230.26 source and g2flash 9079f99 (Faceclaw revision 35); the recipe replays against the pinned stock image byte-for-byte. Offline source, sanitizer and emitted-patch audits pass. Not hardware-validated, not a default release, and the four-microphone array is not acoustically qualified.",
+      "Offline reviewed and tested. Adds the revision-39 keyboard relay to the exact 230.84 parent while preserving its other payloads. Seven emitted-code, ABI, sanitizer and malformed-input checks pass; the 94-operation stock recipe reproduces this bundle exactly. Hardware pairing, key delivery and simultaneous microphone/display operation have not yet been validated for 230.85.",
   },
   {
     version: "2.2.9.22",
@@ -910,6 +785,10 @@ async function saveRelease(root, release, fallbackRoots) {
       patchSet.patches.length !== release.patchCount ||
       (release.capabilityMarker &&
         patchSet.capability_marker !== release.capabilityMarker) ||
+      (release.keyboardUpstreamCommit &&
+        (patchSet.source_provenance?.keyboard_upstream_commit !== release.keyboardUpstreamCommit ||
+          patchSet.source_provenance?.keyboard_contract !== 1 ||
+          patchSet.source_provenance?.parent_sha256 !== release.parentSha256)) ||
       (release.g2flashCommit &&
         patchSet.source_provenance?.g2flash_upstream_commit !==
           release.g2flashCommit) ||
@@ -1398,6 +1277,11 @@ async function main() {
       if (error?.code !== "ENOENT") throw error;
     }
   }
+  // Partial G2 and R1 refreshes must not resurrect retired custom releases.
+  const currentCustom = new Map(RELEASES.filter((release) => release.channel === "custom")
+    .map((release) => [release.id, release.sha256]));
+  existingIndex.releases = (existingIndex.releases ?? []).filter((release) =>
+    release.channel !== "custom" || currentCustom.get(release.id) === release.sha256);
   const selectedG2Releases = requestedG2Release
     ? RELEASES.filter(
         (release) =>

@@ -110,13 +110,12 @@ test("an experimental custom build sharing the stock version is never the review
       "utf8",
     ),
   ).releases;
-  const experimental = catalog.find((release) => release.id === "g2-custom-2.3.0.24-230.27");
-  assert.equal(experimental?.trust, "experimental-local");
-  // Whatever the catalog order, 230.27 is never picked as the reviewed custom
-  // build (230.84, the newest reviewed one, is), and the firmware selector still
-  // defaults to official Stock.
-  for (const releases of [catalog, [...catalog].reverse()]) {
-    assert.equal(findLatestReviewedCustomRelease(releases)?.id, "g2-custom-2.3.0.24-230.84");
+  const experimental = {
+    ...catalog.find((release) => release.channel === "custom"),
+    id: "local-experimental", requiredCfwMarker: "SybilSight/230.999", trust: "experimental-local",
+  };
+  for (const releases of [[...catalog, experimental], [experimental, ...catalog].reverse()]) {
+    assert.equal(findLatestReviewedCustomRelease(releases)?.id, "g2-custom-2.3.0.24-230.85");
     assert.equal(findDefaultFirmwareRelease(releases)?.channel, "official");
   }
 });
