@@ -498,7 +498,7 @@ const RELEASES = [
   },
   {
     id: "g2-custom-2.3.0.24-230.85",
-    displayName: "SybilSight CFW 230.85 (2.3.0.24, keyboard relay; hardware unvalidated)",
+    displayName: "SybilSight CFW 230.85 (2.3.0.24)",
     version: "2.3.0.24",
     internalVersion: "2.3.0.24",
     reportedVersion: "2.3.0.24",

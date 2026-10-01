@@ -174,7 +174,7 @@ export const TEMPLE_FLASH_TARGETS = Object.freeze([
     version: "2.3.0.24",
     reportedVersion: "2.3.0.24",
     baseVersion: "2.3.0.24",
-    label: "SybilSight CFW 230.85 (2.3.0.24, keyboard relay; hardware unvalidated)",
+    label: "SybilSight CFW 230.85 (2.3.0.24)",
     hardwareValidated: false,
     requiredCfwMarker: "SybilSight/230.85",
   }),
