@@ -199,7 +199,7 @@ test("ships only revision 85 with honest hardware status and complete BLE compon
   assert.equal(release.caseRecoveryEligible, false);
   assert.equal(release.bleComponentNames, undefined);
   assert.equal(release.components.length, 6);
-  assert.match(release.displayName, /hardware unvalidated/);
+  assert.equal(release.displayName, "SybilSight CFW 230.85 (2.3.0.24)");
   assert.match(release.notes, /not yet been validated/);
   const manifest = JSON.parse(await readFile(new URL("../public" + release.manifestUrl, import.meta.url), "utf8"));
   assert.equal(manifest.capabilityMarker, release.requiredCfwMarker);
