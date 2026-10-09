@@ -168,6 +168,15 @@ export const TEMPLE_FLASH_TARGETS = Object.freeze([
     requiredCfwMarker: "SybilSight/230.10",
   }),
   Object.freeze({
+    imageSha256: "26b6067665a441b779c47f6b95427b8b4bb5f502aaf527466dadce628aeb00b2",
+    mainSha256: "d6d29ec6a6d7d3f7e0abb260c54493e2e5dd0ed978346dc41061ee6522d40fc6",
+    mainBytes: 3922636,
+    version: "2.3.2.14",
+    reportedVersion: "2.3.2.14",
+    label: "Stock Even Realities G2 2.3.2.14",
+    hardwareValidated: false,
+  }),
+  Object.freeze({
     imageSha256: "32d7304ce85304ba9f6e1c8f65d2812913e556ef5506582b016ea78c3f37c860",
     mainSha256: "f0afde114bfb5cce70e712d6bb354b613de9110f5cd47e46ae7ff3fdf8f8c157",
     mainBytes: 3888182,

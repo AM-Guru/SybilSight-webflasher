@@ -229,20 +229,20 @@ function checksumResponse(offset, checksum) {
 }
 
 const archivePath = new URL(
-  "../public/firmware-updates/source-files/r1/2.3.0.0005/r1-2.3.0.0005-88d963d3e8527b6a65fe35cb367b7b2b.zip",
+  "../public/firmware-updates/source-files/r1/2.3.2.0007/r1-2.3.2.0007-08c07d8c031abee712a7f92dec304067.zip",
   import.meta.url,
 );
 
 test("reviewed R1 archive and both Nordic DFU components verify exactly", async () => {
   const archive = await readFile(archivePath);
   const prepared = await prepareR1DfuPackage(archive, R1_PINNED_RELEASE);
-  assert.equal(R1_PINNED_RELEASE.version, "2.3.0.0005");
-  assert.equal(prepared.application.length, 662756);
+  assert.equal(R1_PINNED_RELEASE.version, "2.3.2.0007");
+  assert.equal(prepared.application.length, 680312);
   assert.equal(prepared.initPacket.length, 141);
 });
 
 test("every API-visible R1 release remains pinned and available for recovery", async () => {
-  assert.equal(R1_PINNED_RELEASES.length, 13);
+  assert.equal(R1_PINNED_RELEASES.length, 14);
   assert.equal(R1_PINNED_RELEASES.at(-1).version, "2.0.3.0013");
 
   for (const release of R1_PINNED_RELEASES) {

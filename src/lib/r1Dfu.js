@@ -37,6 +37,15 @@ function pinnedR1Release({
 
 export const R1_PINNED_RELEASES = Object.freeze([
   pinnedR1Release({
+    version: "2.3.2.0007",
+    size: 680943,
+    md5: "08c07d8c031abee712a7f92dec304067",
+    sha256: "f0b1fd4a9e8235c5387f50056f4d6d2f70820756c77fb282a8b87c86ce9cb8ed",
+    binSize: 680312,
+    binSha256: "84774dc3a19dcf4a585868ae72793b427a41b641b332a8ac1146c24c8d25161c",
+    datSha256: "b35ee02d7b183d562cac4828ec9ab840403621b55c121776ef747dcab6ad2be5",
+  }),
+  pinnedR1Release({
     version: "2.3.0.0005",
     size: 663387,
     md5: "88d963d3e8527b6a65fe35cb367b7b2b",

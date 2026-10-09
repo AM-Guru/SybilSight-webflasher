@@ -65,6 +65,17 @@ function r1Release({
 
 const R1_RELEASES = [
   r1Release({
+    version: "2.3.2.0007",
+    minAppVersion: "2.3.2",
+    notes: "1. Added customizable Long-press shortcuts for Even R1.\n2. Improved background connection stability.",
+    size: 680943,
+    md5: "08c07d8c031abee712a7f92dec304067",
+    sha256: "f0b1fd4a9e8235c5387f50056f4d6d2f70820756c77fb282a8b87c86ce9cb8ed",
+    binSize: 680312,
+    binSha256: "84774dc3a19dcf4a585868ae72793b427a41b641b332a8ac1146c24c8d25161c",
+    datSha256: "b35ee02d7b183d562cac4828ec9ab840403621b55c121776ef747dcab6ad2be5",
+  }),
+  r1Release({
     version: "2.3.0.0005",
     minAppVersion: "2.3.0",
     notes: "1. Improved Bluetooth pairing, reconnection, and firmware update reliability.\n2. Bug fixes.",
@@ -394,6 +405,13 @@ const LOCAL_REVIEWED_TEMPLE_TARGETS = Object.freeze([
   }),
 ]);
 const RELEASES = [
+  {
+    version: "2.3.2.14",
+    hash: "7892790e40cffbae6db8a635b335e17f",
+    sha256: "26b6067665a441b779c47f6b95427b8b4bb5f502aaf527466dadce628aeb00b2",
+    size: 4701884,
+    notes: "1. Added customizable Long-press shortcuts for Even G2 and Even R1.\n2. Added QuickNote to quickly create and view notes on Even G2.\n3. Improved background connection stability.",
+  },
   {
     version: "2.3.0.24",
     hash: "1dbdf37b03a1169c384945e94d671371",
