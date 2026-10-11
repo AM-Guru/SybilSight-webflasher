@@ -59,7 +59,12 @@ class KeyboardRelayTests(unittest.TestCase):
         self.assertEqual(relay.sha(self.image), self.manifest["outputSha256"])
         blob = next(p for p in original["patches"] if not p["old"])
         inherited = parent[blob["offset"]:]
-        self.assertEqual(self.image[blob["offset"]:len(parent)].replace(b"SybilSight/230.85", b"SybilSight/230.84"), inherited)
+        restored = bytearray(self.image)
+        for patch in self.recipe["patches"][len(original["patches"]):]:
+            if patch["desc"] == "Guardian-only lens identity overlay":
+                offset = patch["offset"]
+                restored[offset:offset+len(bytes.fromhex(patch["old"]))] = bytes.fromhex(patch["old"])
+        self.assertEqual(bytes(restored[blob["offset"]:len(parent)]).replace(relay.MARKER.encode(), b"SybilSight/230.84"), inherited)
         self.assertFalse(self.recipe["hardware_validation"]["validated"])
         self.assertEqual(self.recipe["source_provenance"]["keyboard_contract"], 1)
 
@@ -129,6 +134,7 @@ class KeyboardRelayTests(unittest.TestCase):
             source.write_text("""#include <assert.h>
 #include <stdint.h>
 static unsigned calls;
+static void guardian_apply_control(const uint8_t *p, uint32_t n) { assert(p && n <= 256); }
 static void keyboard_apply_control(const uint8_t *p, uint32_t n) {
     assert(p && n <= 256); calls++;
 }

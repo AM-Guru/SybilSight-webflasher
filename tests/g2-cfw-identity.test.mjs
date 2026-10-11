@@ -10,12 +10,12 @@ import { applyG2BleReselectionProof, g2BleRouteProvenOverBluetooth,
   crc16CcittFalse, assertPinnedG2BleBundle } from "../src/lib/g2BleOta.js";
 
 const candidateDigest = "bbb334bad754826f8d4397505adc23f9177931f46ed7d6192a680a7f59637c48";
-test("published 230.85 keyboard CFW requires fresh bilateral identity", () => {
-  const digest = "32d7304ce85304ba9f6e1c8f65d2812913e556ef5506582b016ea78c3f37c860";
+test("published 230.86 keyboard CFW requires fresh bilateral identity", () => {
+  const digest = "f1c544445df75dddb35dcb9c30831305ff88cd01ba6b6a4f6e5288a404a32ba0";
   const target = findTempleFlashTarget(digest);
-  assert.equal(target?.requiredCfwMarker, "SybilSight/230.85");
-  assert.equal(target.mainSha256, "f0afde114bfb5cce70e712d6bb354b613de9110f5cd47e46ae7ff3fdf8f8c157");
-  assert.equal(target.mainBytes, 3_888_182);
+  assert.equal(target?.requiredCfwMarker, "SybilSight/230.86");
+  assert.equal(target.mainSha256, "62f23939c9f4de2fedaa5198b1657033b39cdfa774ccdee6ca51e7b15ba2c107");
+  assert.equal(target.mainBytes, 3_889_410);
   assert.equal(target.localOnly, undefined);
   assert.equal(target.hardwareValidated, false);
   assert.equal(classifyG2Firmware(digest).trust, "reviewed-custom");
@@ -28,13 +28,13 @@ test("published 230.85 keyboard CFW requires fresh bilateral identity", () => {
   }
 });
 
-test("real 230.85 bundle retains all six components without a hardware-validation claim", async () => {
+test("real 230.86 bundle retains all six components without a hardware-validation claim", async () => {
   const firmware = await parseFirmwareInput(await readFile(new URL(
-    "../public/firmware-updates/source-files/2.3.0.24-32d7304ce853/g2-2.3.0.24-sybilsight-230.85.bin", import.meta.url)));
+    "../public/firmware-updates/source-files/2.3.0.24-f1c544445df7/g2-2.3.0.24-sybilsight-230.86.bin", import.meta.url)));
   assertPinnedG2BleBundle(firmware);
   assert.equal(firmware.componentImages.length, 6);
   assert.equal(firmware.caseRecoveryEligible, false);
-  assert.equal(firmware.templeFlashTarget.requiredCfwMarker, "SybilSight/230.85");
+  assert.equal(firmware.templeFlashTarget.requiredCfwMarker, "SybilSight/230.86");
   assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
 });
 

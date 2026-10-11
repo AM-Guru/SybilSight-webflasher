@@ -26,7 +26,7 @@ import {
   REVIEWED_CFW_2_2_10_72,
   REVIEWED_CFW_230_26,
   REVIEWED_CFW_230_84,
-  REVIEWED_CFW_230_85,
+  REVIEWED_CFW_230_86,
   EXPERIMENTAL_CFW_230_27,
   additiveBigEndianWordSum,
   classifyG2Firmware,
@@ -893,7 +893,7 @@ test("INFOC and INFO0 dumps never authorize a firmware write by themselves", () 
   assert.match(report.decision.interpretation, /not write authorization/i);
 });
 
-test("ships the complete official catalog and only the pinned 230.85 CFW", async () => {
+test("ships the complete official catalog and only the pinned 230.86 CFW", async () => {
   const catalog = JSON.parse(await readFile(new URL(
     "../public/firmware-updates/source-files/index.json", import.meta.url), "utf8"));
   assert.equal(catalog.schemaVersion, 2);
@@ -902,17 +902,17 @@ test("ships the complete official catalog and only the pinned 230.85 CFW", async
   assert.equal(latestOfficial.sha256, OFFICIAL_G2_SHA256["2.3.2.14"]);
   assert.equal(latestOfficial.caseVersion, "1.2.57");
   const custom = catalog.releases.filter((release) => release.channel === "custom");
-  assert.deepEqual(custom.map((release) => release.id), ["g2-custom-2.3.0.24-230.85"]);
+  assert.deepEqual(custom.map((release) => release.id), ["g2-custom-2.3.0.24-230.86"]);
   const release = custom[0];
-  assert.equal(release.sha256, REVIEWED_CFW_230_85.sha256);
+  assert.equal(release.sha256, REVIEWED_CFW_230_86.sha256);
   const firmware = await parseFirmwareInput(await readFile(new URL("../public" + release.url, import.meta.url)), release.fileName);
   assert.equal(firmware.provenance.trust, "reviewed-custom");
-  assert.equal(firmware.provenance.capabilityMarker, "SybilSight/230.85");
+  assert.equal(firmware.provenance.capabilityMarker, "SybilSight/230.86");
   assert.equal(firmware.templeFlashTarget.hardwareValidated, false);
   assert.equal(firmware.componentImages.length, 6);
   const main = release.components.find((component) => component.typeId === 0);
-  assert.equal(main.sha256, REVIEWED_CFW_230_85.mainPayloadSha256);
-  assert.equal(main.size, REVIEWED_CFW_230_85.mainPayloadBytes);
+  assert.equal(main.sha256, REVIEWED_CFW_230_86.mainPayloadSha256);
+  assert.equal(main.size, REVIEWED_CFW_230_86.mainPayloadBytes);
 });
 
 test("ships the exact official G2 2.2.9.22 bundle and six components", async () => {

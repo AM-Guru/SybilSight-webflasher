@@ -8,6 +8,7 @@
 #include "protobuf.c"
 static void *cfw_malloc(uint32_t size) { return FW_MALLOC(size); }
 #include "keyboard.c"
+#include "guardian.c"
 
 static int keyboard_read_varint(const uint8_t **cursor, const uint8_t *end, uint32_t *out) {
     uint32_t value = 0;
@@ -31,6 +32,7 @@ static void keyboard_scan_settings(const uint8_t *p, uint32_t length) {
         case 2:
             if (!keyboard_read_varint(&p, end, &size) || size > (uint32_t)(end - p)) return;
             if (tag >> 3 == 130) keyboard_apply_control(p, size);
+            if (tag >> 3 == 132) guardian_apply_control(p, size);
             p += size;
             break;
         case 5: if (end - p < 4) return; p += 4; break;
@@ -50,5 +52,6 @@ int keyboard_settings_decode(void *stream, const void *fields, void *dest) {
 
 void keyboard_heap_startup(void) {
     __atomic_store_n((void **)KEYBOARD_CONTEXT_SLOT, 0, __ATOMIC_RELEASE);
+    GUARDIAN_DEADLINE = GUARDIAN_RENDERED = 0;
     ((void (*)(void))PARENT_HEAP_RESET)();
 }

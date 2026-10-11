@@ -1,8 +1,8 @@
-"""Compose SybilSight/230.85 = authenticated .84 + revision-39 keyboard contract.
+"""Compose SybilSight/230.86 = authenticated .84 + keyboard and Guardian identity.
 
-Offline only. Preserves the entire .84 blob and codec, replays a stock-based recipe,
+Offline only. Preserves .84 function bodies and codec, replays a stock-based recipe,
 checks source/stock ABI pins, and refuses any live write outside the reviewed sites.
-No firmware is flashed or published. Run test_keyboard_relay before distribution.
+No firmware is flashed or published. Both keyboard and Guardian tests gate distribution.
 """
 from __future__ import annotations
 import argparse
@@ -18,7 +18,7 @@ from audit_revision35_emitted import thumb_branch_target
 ROOT = Path(__file__).resolve().parents[3]
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE / "keyboard-relay"
-MARKER = "SybilSight/230.85"
+MARKER = "SybilSight/230.86"
 PARENT_SHA = "afa6c1da6bc1ba6b0904a438b6acb7f6e628b4fd53c82e1c58d71ba4a431f68b"
 PARENT_RECIPE_HASHES = {
     "61e1610f7c506ea08b70b54b86663c11960d661f5c31b362b429c4b5ea1a794a", # archive metadata wrapper
@@ -127,13 +127,22 @@ def build(stock_path, parent_path, parent_recipe_path, output_dir):
         target = thumb_branch_target(site, parent[site - DELTA:site - DELTA + 4])
         if target is None or not old_start <= target < old_end: raise ValueError("Parent hook escaped preserved blob")
         targets[name] = target | 1
+    # Exact recovered .84 compilation pins these three entry points. Redirect
+    # the overlay call and queue hook; retain the original function bodies.
+    dashboard = {"PARENT_DASHBOARD_QUEUE": 452, "PARENT_READ_LINK": 1116,
+                 "PARENT_DASHBOARD_OVERLAY": 1316}
+    guards = {452: "2de9f04182b01446", 1116: "b0b50021024602f8", 1316: "2de9f04fb7b04ff2"}
+    for offset, preimage in guards.items():
+        if parent[old_blob["offset"]+offset:old_blob["offset"]+offset+8] != bytes.fromhex(preimage):
+            raise ValueError("Parent dashboard entry changed")
+    targets.update({name: (old_start+offset)|1 for name,offset in dashboard.items()})
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     resolved = out / "source"
     resolved.mkdir(exist_ok=True)
     for p in (SOURCE / "upstream").iterdir():
         if p.is_file(): shutil.copyfile(p, resolved / p.name)
-    for name in ("cfw_context.h", "malloc.h", "relay.c"): shutil.copyfile(SOURCE / name, resolved / name)
+    for name in ("cfw_context.h", "malloc.h", "relay.c", "guardian.c"): shutil.copyfile(SOURCE / name, resolved / name)
     (resolved / "parent_hooks.h").write_text("".join(f"#define {name} 0x{target:08x}u\n" for name, target in targets.items()))
     spec = importlib.util.spec_from_file_location("keyboard_compiler", resolved / "build.py")
     compiler = importlib.util.module_from_spec(spec)
@@ -155,6 +164,11 @@ def build(stock_path, parent_path, parent_recipe_path, output_dir):
         replace(site - DELTA, branch(site, base + functions[name], jump), name)
     for site, name in ((SETTINGS_SITE, "keyboard_settings_decode"), (HEAP_SITE, "keyboard_heap_startup")):
         replace(site - DELTA, branch(site, base + functions[name]), name)
+    overlay_calls = [address for address in range(old_start, old_end-3, 2)
+        if thumb_branch_target(address, parent[address-DELTA:address-DELTA+4]) == (targets["PARENT_DASHBOARD_OVERLAY"] & ~1)]
+    if len(overlay_calls) != 1: raise ValueError("Expected one parent dashboard overlay call")
+    replace(overlay_calls[0]-DELTA, branch(overlay_calls[0], base+functions["guardian_overlay"]), "Guardian-only lens identity overlay")
+    replace(0x47a77c-DELTA, branch(0x47a77c, base+functions["guardian_queue_get"]), "Guardian toggle and lease repaint")
     old_marker = b"SybilSight/230.84"
     positions = []
     cursor = old_blob["offset"]
@@ -183,7 +197,7 @@ def build(stock_path, parent_path, parent_recipe_path, output_dir):
         output="g2-2.3.0.24-keyboard-relay-experimental.bin",
         source_provenance=dict(parent_marker="SybilSight/230.84", parent_sha256=PARENT_SHA,
             parent_recipe_sha256=sha(recipe_bytes), keyboard_upstream_commit=review["commit"],
-            keyboard_contract=1, source_review="keyboard-relay/review.json"),
+            keyboard_contract=1, guardian_identity_contract=1, source_review="keyboard-relay/review.json"),
         hardware_validation=dict(validated=False, status="offline-built-hardware-unvalidated"))
     if apply_recipe(stock, result) != bytes(data): raise ValueError("Composed recipe replay failed")
     final_components = components(bytes(data))
@@ -192,10 +206,10 @@ def build(stock_path, parent_path, parent_recipe_path, output_dir):
     image.write_bytes(data)
     (out / "keyboard-relay-patches.json").write_text(json.dumps(result, indent=2) + "\n")
     manifest = dict(marker=MARKER, parentMarker="SybilSight/230.84", parentSha256=PARENT_SHA,
-        upstreamCommit=review["commit"], keyboardContract=1, image=str(image), imageBytes=len(data),
+        upstreamCommit=review["commit"], keyboardContract=1, guardianIdentityContract=1, image=str(image), imageBytes=len(data),
         outputSha256=sha(data), outputMD5=hashlib.md5(data).hexdigest(), components=final_components,
         injectedBase=base, injectedBytes=len(blob), functions=functions, inheritedTargets=targets,
-        hooks=extension[1:8], sourceHashes={p.name: sha(p.read_bytes()) for p in resolved.iterdir() if p.is_file()},
+        hooks=extension[1:10], sourceHashes={p.name: sha(p.read_bytes()) for p in resolved.iterdir() if p.is_file()},
         hardwareValidated=False, status="offline-built-hardware-unvalidated")
     (out / "keyboard-relay-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     (out / "compiled.json").write_text(json.dumps(compiled, indent=2) + "\n")

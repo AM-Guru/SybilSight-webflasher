@@ -237,7 +237,7 @@ const HARDWARE_VALIDATED_TEMPLE_IMAGES = new Set([
   HARDWARE_VALIDATED_G2_2_2_6_10_SHA256,
 ]);
 const LOCAL_REVIEWED_TEMPLE_TARGETS = Object.freeze([
-  // Only SybilSight/230.85 is published through RELEASES; historical local pins
+  // Only SybilSight/230.86 is published through RELEASES; historical local pins
   // below remain available for explicit offline laboratory recovery.
   Object.freeze({
     imageSha256: "f5562b636a77c260e950da4f872d1e94224159841b9cb6b9c47faab2818aded4",
@@ -515,8 +515,8 @@ const RELEASES = [
     notes: "Fixed duplicate Notifications in certain scenarios; bug fixes and UI improvements.",
   },
   {
-    id: "g2-custom-2.3.0.24-230.85",
-    displayName: "SybilSight CFW 230.85 (2.3.0.24)",
+    id: "g2-custom-2.3.0.24-230.86",
+    displayName: "SybilSight CFW 230.86 (2.3.0.24)",
     version: "2.3.0.24",
     internalVersion: "2.3.0.24",
     reportedVersion: "2.3.0.24",
@@ -524,33 +524,35 @@ const RELEASES = [
     baseSha256: "187ccf2bcc5c17a212106e8a376745511e8289c4232b634a7ea94b9bf25a0979",
     channel: "custom",
     trust: "reviewed-custom",
-    hash: "5aa2b5595e9b45999cad86cd9fbebbdc",
-    sha256: "32d7304ce85304ba9f6e1c8f65d2812913e556ef5506582b016ea78c3f37c860",
-    size: 4667425,
-    fileName: "g2-2.3.0.24-sybilsight-230.85.bin",
+    hash: "f2097a41bf5067909189951d0308eba9",
+    sha256: "f1c544445df75dddb35dcb9c30831305ff88cd01ba6b6a4f6e5288a404a32ba0",
+    size: 4668653,
+    fileName: "g2-2.3.0.24-sybilsight-230.86.bin",
     preferLocalEvidence: true,
     fallbacks: [[
       "webflasher",
-      "public/firmware-updates/source-files/2.3.0.24-32d7304ce853/g2-2.3.0.24-sybilsight-230.85.bin",
+      "public/firmware-updates/source-files/2.3.0.24-f1c544445df7/g2-2.3.0.24-sybilsight-230.86.bin",
     ]],
     patchFallbackRoot: "webflasher",
-    patchFallback: "public/firmware-updates/source-files/2.3.0.24-32d7304ce853/cfw_patches-230.85.json",
-    patchFileName: "cfw_patches-230.85.json",
-    patchCount: 94,
+    patchFallback: "public/firmware-updates/source-files/2.3.0.24-f1c544445df7/cfw_patches-230.86.json",
+    patchFileName: "cfw_patches-230.86.json",
+    patchCount: 96,
+    guardianIdentityContract: 1,
     manifestFileName: "manifest.json",
-    capabilityMarker: "SybilSight/230.85",
-    requiredCfwMarker: "SybilSight/230.85",
+    capabilityMarker: "SybilSight/230.86",
+    requiredCfwMarker: "SybilSight/230.86",
     keyboardUpstreamCommit: "46165ab41e8de70fdd1f8abf523137249afafde2",
     parentSha256: "afa6c1da6bc1ba6b0904a438b6acb7f6e628b4fd53c82e1c58d71ba4a431f68b",
     capabilities: [
+      "Default-off Guardian peer-MAC diagnostics: LEFT upper and RIGHT lower dashboard lanes, enabled only by explicit app troubleshooting opt-in",
       "BLE keyboard pairing and key-report relay through G2: keyboard contract v1 restored from pinned upstream revision 39",
       "Preserves the revision-84 dual-link stereo microphone relay, nonce-clock GX8002 codec and PDM probe hooks",
       "Retained display, compressed image transports, texture cache and atomic drawing on the revision-35 display ABI",
-      "Direct per-lens nonce-bound FI/v1 identity requires SybilSight/230.85 on both temples",
+      "Direct per-lens nonce-bound FI/v1 identity requires SybilSight/230.86 on both temples",
       "Only the Apollo main changes from 230.84; all five non-main components remain byte-identical to the parent",
     ],
     notes:
-      "Offline reviewed and tested. Adds the revision-39 keyboard relay to the exact 230.84 parent while preserving its other payloads. Seven emitted-code, ABI, sanitizer and malformed-input checks pass; the 94-operation stock recipe reproduces this bundle exactly. Hardware pairing, key delivery and simultaneous microphone/display operation have not yet been validated for 230.85.",
+      "Offline reviewed and tested. Adds the keyboard relay and default-off Guardian per-lens peer-MAC diagnostics to the exact 230.84 parent. Diagnostics require explicit SybilSight Guardian opt-in and a renewable 30-second lease; connected phone device names are unavailable. Ten emitted-code, ABI, sanitizer and malformed-input checks pass; the 96-operation stock recipe reproduces this bundle exactly. Hardware pairing, key delivery and simultaneous microphone/display operation have not yet been validated for 230.86.",
   },
   {
     version: "2.2.9.22",
@@ -807,6 +809,8 @@ async function saveRelease(root, release, fallbackRoots) {
         (patchSet.source_provenance?.keyboard_upstream_commit !== release.keyboardUpstreamCommit ||
           patchSet.source_provenance?.keyboard_contract !== 1 ||
           patchSet.source_provenance?.parent_sha256 !== release.parentSha256)) ||
+      (release.guardianIdentityContract &&
+        patchSet.source_provenance?.guardian_identity_contract !== release.guardianIdentityContract) ||
       (release.g2flashCommit &&
         patchSet.source_provenance?.g2flash_upstream_commit !==
           release.g2flashCommit) ||
