@@ -89,7 +89,10 @@ class KeyboardRelayTests(unittest.TestCase):
                     elif at != 0x4585a2: return
                     cpu.reg_write(UC_ARM_REG_PC, cpu.reg_read(UC_ARM_REG_LR))
                 cpu.hook_add(UC_HOOK_CODE, stock)
-                cpu.emu_start((patch["offset"] + relay.DELTA) | 1, 0x300000, count=3000)
+                # Enter the inherited MC dispatcher, proving op 5 reaches the
+                # redirected identity function before microphone context allocation.
+                inherited_base = patch["offset"] + relay.DELTA - 71492
+                cpu.emu_start((inherited_base + 70564) | 1, 0x300000, count=3000)
                 expected = b"FI\x01" + bytes([side]) + struct.pack("<I", nonce) + bytes([len(relay.MARKER)]) + relay.MARKER.encode()
                 self.assertEqual(replies, [expected] if side in (1, 2) and nonce else [])
                 self.assertEqual(allocations, [len(expected)] if replies else [])
