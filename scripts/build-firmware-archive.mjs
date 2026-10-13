@@ -237,7 +237,7 @@ const HARDWARE_VALIDATED_TEMPLE_IMAGES = new Set([
   HARDWARE_VALIDATED_G2_2_2_6_10_SHA256,
 ]);
 const LOCAL_REVIEWED_TEMPLE_TARGETS = Object.freeze([
-  // Only SybilSight/230.86 is published through RELEASES; historical local pins
+  // Only SybilSight/230.87 is published through RELEASES; historical local pins
   // below remain available for explicit offline laboratory recovery.
   Object.freeze({
     imageSha256: "f5562b636a77c260e950da4f872d1e94224159841b9cb6b9c47faab2818aded4",
@@ -515,8 +515,8 @@ const RELEASES = [
     notes: "Fixed duplicate Notifications in certain scenarios; bug fixes and UI improvements.",
   },
   {
-    id: "g2-custom-2.3.0.24-230.86",
-    displayName: "SybilSight CFW 230.86 (2.3.0.24)",
+    id: "g2-custom-2.3.0.24-230.87",
+    displayName: "SybilSight CFW 230.87 (2.3.0.24)",
     version: "2.3.0.24",
     internalVersion: "2.3.0.24",
     reportedVersion: "2.3.0.24",
@@ -524,23 +524,23 @@ const RELEASES = [
     baseSha256: "187ccf2bcc5c17a212106e8a376745511e8289c4232b634a7ea94b9bf25a0979",
     channel: "custom",
     trust: "reviewed-custom",
-    hash: "f2097a41bf5067909189951d0308eba9",
-    sha256: "f1c544445df75dddb35dcb9c30831305ff88cd01ba6b6a4f6e5288a404a32ba0",
-    size: 4668653,
-    fileName: "g2-2.3.0.24-sybilsight-230.86.bin",
+    hash: "10d3baf359a7df2e1b4fd0b521c39887",
+    sha256: "97dcac92482bfe01b6375b6096f949572261a299a0341489299c1eb6ffae6fbb",
+    size: 4668841,
+    fileName: "g2-2.3.0.24-sybilsight-230.87.bin",
     preferLocalEvidence: true,
     fallbacks: [[
       "webflasher",
-      "public/firmware-updates/source-files/2.3.0.24-f1c544445df7/g2-2.3.0.24-sybilsight-230.86.bin",
+      "public/firmware-updates/source-files/2.3.0.24-97dcac92482b/g2-2.3.0.24-sybilsight-230.87.bin",
     ]],
     patchFallbackRoot: "webflasher",
-    patchFallback: "public/firmware-updates/source-files/2.3.0.24-f1c544445df7/cfw_patches-230.86.json",
-    patchFileName: "cfw_patches-230.86.json",
-    patchCount: 96,
+    patchFallback: "public/firmware-updates/source-files/2.3.0.24-97dcac92482b/cfw_patches-230.87.json",
+    patchFileName: "cfw_patches-230.87.json",
+    patchCount: 97,
     guardianIdentityContract: 1,
     manifestFileName: "manifest.json",
-    capabilityMarker: "SybilSight/230.86",
-    requiredCfwMarker: "SybilSight/230.86",
+    capabilityMarker: "SybilSight/230.87",
+    requiredCfwMarker: "SybilSight/230.87",
     keyboardUpstreamCommit: "46165ab41e8de70fdd1f8abf523137249afafde2",
     parentSha256: "afa6c1da6bc1ba6b0904a438b6acb7f6e628b4fd53c82e1c58d71ba4a431f68b",
     capabilities: [
@@ -548,11 +548,11 @@ const RELEASES = [
       "BLE keyboard pairing and key-report relay through G2: keyboard contract v1 restored from pinned upstream revision 39",
       "Preserves the revision-84 dual-link stereo microphone relay, nonce-clock GX8002 codec and PDM probe hooks",
       "Retained display, compressed image transports, texture cache and atomic drawing on the revision-35 display ABI",
-      "Direct per-lens nonce-bound FI/v1 identity requires SybilSight/230.86 on both temples",
+      "Direct per-lens nonce-bound FI/v1 identity requires SybilSight/230.87 on both temples",
       "Only the Apollo main changes from 230.84; all five non-main components remain byte-identical to the parent",
     ],
     notes:
-      "Offline reviewed and tested. Adds the keyboard relay and default-off Guardian per-lens peer-MAC diagnostics to the exact 230.84 parent. Diagnostics require explicit SybilSight Guardian opt-in and a renewable 30-second lease; connected phone device names are unavailable. Ten emitted-code, ABI, sanitizer and malformed-input checks pass; the 96-operation stock recipe reproduces this bundle exactly. Hardware pairing, key delivery and simultaneous microphone/display operation have not yet been validated for 230.86.",
+      "Offline reviewed and tested. Fixes the stale 230.84 direct identity reply that prevented 230.86 capability negotiation. Retains the keyboard relay and default-off Guardian per-lens peer-MAC diagnostics to the exact 230.84 parent. Diagnostics require explicit SybilSight Guardian opt-in and a renewable 30-second lease; connected phone device names are unavailable. Eleven emitted-code, ABI, sanitizer and malformed-input checks pass; the 97-operation stock recipe reproduces this bundle exactly. Hardware pairing, key delivery and simultaneous microphone/display operation have not yet been validated for 230.87.",
   },
   {
     version: "2.2.9.22",

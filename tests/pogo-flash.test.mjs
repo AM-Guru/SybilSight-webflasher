@@ -1917,11 +1917,11 @@ test("keeps the generated pin table in sync with the firmware archive", async ()
   const customTargets = custom.map((release) => TEMPLE_FLASH_TARGETS.find((target) => target.imageSha256 === release.sha256));
   const [current] = customTargets;
   assert.deepEqual((({ label, ...rest }) => rest)(current), {
-    imageSha256: "f1c544445df75dddb35dcb9c30831305ff88cd01ba6b6a4f6e5288a404a32ba0",
-    mainSha256: "62f23939c9f4de2fedaa5198b1657033b39cdfa774ccdee6ca51e7b15ba2c107",
-    mainBytes: 3889410,
+    imageSha256: "97dcac92482bfe01b6375b6096f949572261a299a0341489299c1eb6ffae6fbb",
+    mainSha256: "e2d010494c09b77d303ea2365cce5f9b53977e88c6a312a743359034f8c01331",
+    mainBytes: 3889598,
     version: "2.3.0.24", reportedVersion: "2.3.0.24", baseVersion: "2.3.0.24",
-    hardwareValidated: false, requiredCfwMarker: "SybilSight/230.86",
+    hardwareValidated: false, requiredCfwMarker: "SybilSight/230.87",
   });
   const stock = TEMPLE_FLASH_TARGETS.filter((target) => !customTargets.includes(target) && !target.localOnly);
   for (const target of TEMPLE_FLASH_TARGETS.filter((target) => target.localOnly)) {

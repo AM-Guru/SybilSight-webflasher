@@ -9,6 +9,7 @@
 static void *cfw_malloc(uint32_t size) { return FW_MALLOC(size); }
 #include "keyboard.c"
 #include "guardian.c"
+#include "identity.c"
 
 static int keyboard_read_varint(const uint8_t **cursor, const uint8_t *end, uint32_t *out) {
     uint32_t value = 0;

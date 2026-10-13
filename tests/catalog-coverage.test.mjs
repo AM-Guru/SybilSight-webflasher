@@ -53,8 +53,8 @@ const EXPERIMENTAL_CFW_230_27_SHA256 =
   "36cc6222227275d0fd07f134c765737e508b5e205e6d6aa1122a4b2cf1996bfa";
 const REVIEWED_CFW_230_84_SHA256 =
   "afa6c1da6bc1ba6b0904a438b6acb7f6e628b4fd53c82e1c58d71ba4a431f68b";
-const REVIEWED_CFW_230_86_SHA256 =
-  "f1c544445df75dddb35dcb9c30831305ff88cd01ba6b6a4f6e5288a404a32ba0";
+const REVIEWED_CFW_230_87_SHA256 =
+  "97dcac92482bfe01b6375b6096f949572261a299a0341489299c1eb6ffae6fbb";
 const REVIEWED_CFW_2_2_9_29_SHA256 =
   "960b964f2dfdfb17edf222f0ec3c5c44ca9ee502fe2a9873919e951a6c158ac5";
 
@@ -93,7 +93,7 @@ test("flags a pinned image the served library is too old to offer", () => {
     missing.map((target) => target.imageSha256),
     [
       OFFICIAL_G2_2_3_2_14_SHA256,
-      REVIEWED_CFW_230_86_SHA256,
+      REVIEWED_CFW_230_87_SHA256,
       OFFICIAL_G2_2_3_0_24_SHA256,
       OFFICIAL_G2_2_2_10_10_SHA256,
       OFFICIAL_G2_2_2_9_22_SHA256,
@@ -117,7 +117,7 @@ test("blocks firmware mutation when the served library is behind the build", () 
         error.missingPinnedImages.map((target) => target.imageSha256),
         [
           OFFICIAL_G2_2_3_2_14_SHA256,
-          REVIEWED_CFW_230_86_SHA256,
+          REVIEWED_CFW_230_87_SHA256,
           OFFICIAL_G2_2_3_0_24_SHA256,
           OFFICIAL_G2_2_2_10_10_SHA256,
           OFFICIAL_G2_2_2_9_22_SHA256,
@@ -153,7 +153,7 @@ test("omits retired CFW releases from the catalog and writer allowlist", async (
   ];
   assert.deepEqual(
     catalog.filter((release) => release.channel === "custom").map((release) => release.id),
-    ["g2-custom-2.3.0.24-230.86"],
+    ["g2-custom-2.3.0.24-230.87"],
   );
   for (const sha256 of cfwDigests) {
     assert.equal(catalog.some((release) => release.sha256 === sha256), false);
@@ -189,26 +189,26 @@ test("excludes advertisement-patched CFW releases from both mutation paths", asy
   }
 });
 
-test("ships only revision 85 with honest hardware status and complete BLE components", async () => {
+test("ships only revision 87 with honest hardware status and complete BLE components", async () => {
   const catalog = JSON.parse(await readFile(
     new URL("../public/firmware-updates/source-files/index.json", import.meta.url), "utf8"));
   const custom = catalog.releases.filter((release) => release.channel === "custom");
   assert.equal(custom.length, 1);
   const release = custom[0];
-  assert.equal(release.id, "g2-custom-2.3.0.24-230.86");
-  assert.equal(release.sha256, REVIEWED_CFW_230_86_SHA256);
+  assert.equal(release.id, "g2-custom-2.3.0.24-230.87");
+  assert.equal(release.sha256, REVIEWED_CFW_230_87_SHA256);
   assert.equal(release.trust, "reviewed-custom");
-  assert.equal(release.requiredCfwMarker, "SybilSight/230.86");
+  assert.equal(release.requiredCfwMarker, "SybilSight/230.87");
   assert.equal(release.hardwareValidated, false);
   assert.equal(release.caseRecoveryEligible, false);
   assert.equal(release.bleComponentNames, undefined);
   assert.equal(release.components.length, 6);
-  assert.equal(release.displayName, "SybilSight CFW 230.86 (2.3.0.24)");
+  assert.equal(release.displayName, "SybilSight CFW 230.87 (2.3.0.24)");
   assert.match(release.notes, /not yet been validated/);
   const manifest = JSON.parse(await readFile(new URL("../public" + release.manifestUrl, import.meta.url), "utf8"));
   assert.equal(manifest.capabilityMarker, release.requiredCfwMarker);
   assert.equal(manifest.package.sha256, release.sha256);
-  assert.equal(manifest.patchRecipe.operationCount, 96);
+  assert.equal(manifest.patchRecipe.operationCount, 97);
   assert.equal(manifest.sourceProvenance.keyboard_contract, 1);
   assert.equal(manifest.sourceProvenance.keyboard_upstream_commit, "46165ab41e8de70fdd1f8abf523137249afafde2");
   assert.equal(manifest.release.hardwareValidated, false);
@@ -219,8 +219,8 @@ test("deployment validation pins the permitted custom firmware releases", async 
     new URL("../.github/workflows/deploy.yml", import.meta.url),
     "utf8",
   );
-  assert.match(deployWorkflow, /g2-custom-2\.3\.0\.24-230\.86/);
-  assert.match(deployWorkflow, new RegExp(REVIEWED_CFW_230_86_SHA256));
+  assert.match(deployWorkflow, /g2-custom-2\.3\.0\.24-230\.87/);
+  assert.match(deployWorkflow, new RegExp(REVIEWED_CFW_230_87_SHA256));
   for (const retired of [REVIEWED_CFW_230_26_SHA256, REVIEWED_CFW_230_84_SHA256,
     EXPERIMENTAL_CFW_230_27_SHA256, REVIEWED_CFW_2_2_10_72_SHA256]) {
     assert.equal(deployWorkflow.includes(retired), false);

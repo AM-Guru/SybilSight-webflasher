@@ -41,7 +41,7 @@ Production deployment:
 - Accepts official five- or six-component `EVENOTA` bundles, wrapped
   `firmware_box.bin` components, and validated raw case images.
 - Offers 17 archived official G2 releases and one current SybilSight CFW:
-  **230.86**, based on stock **2.3.0.24**, with keyboard relay restored.
+  **230.87**, based on stock **2.3.0.24**, with keyboard relay restored.
   The bundle is hash-pinned and offline-reviewed; hardware validation is pending.
 - Validates the Apollo main application's independent preamble, CRC-32, target
   region, installed-image boundary, and vector.
@@ -174,20 +174,21 @@ control:
 - The case selects the left or right path through its YHM2510 front end and
   time-separates TX-only and RX-only operation.
 
-The current SybilSight CFW is **230.86** on stock **2.3.0.24**. It adds the
+The current SybilSight CFW is **230.87** on stock **2.3.0.24**. It fixes the stale
+230.84 direct identity reply in 230.86 that prevented capability negotiation. It adds the
 keyboard relay from pinned upstream revision 39 and Guardian peer-MAC diagnostics to the exact revision-84 parent,
 while preserving the other five component payloads. The stock version remains
-2.3.0.24; a nonce-bound `SybilSight/230.86` identity reply from each temple proves
+2.3.0.24; a nonce-bound `SybilSight/230.87` identity reply from each temple proves
 which firmware is installed.
 
-The ten offline firmware checks pass, including emitted ARM hooks, inherited
+The eleven offline firmware checks pass, including emitted ARM hooks, inherited
 payload preservation, sanitizers, and malformed-input handling. Keyboard pairing,
 real key delivery, and simultaneous capture/display behavior still require
 physical-glasses qualification. The listing and flash manifest retain
 `hardwareValidated: false`.
 
 Bundle SHA-256:
-`f1c544445df75dddb35dcb9c30831305ff88cd01ba6b6a4f6e5288a404a32ba0`.
+`97dcac92482bfe01b6375b6096f949572261a299a0341489299c1eb6ffae6fbb`.
 
 ### Application-alive pogo OTA
 
@@ -1434,7 +1435,7 @@ and both routes receive read-only liveness verification.
 ## Firmware archive
 
 The current published catalog offers 17 official G2 releases and one
-SybilSight CFW: 230.86 on 2.3.0.24. All prior CFW entries, their public manifests,
+SybilSight CFW: 230.87 on 2.3.0.24. All prior CFW entries, their public manifests,
 and their site-package assets have been removed. Existing immutable historical
 server archives and Git history preserve reproducibility, without appearing in
 the active listings or the published writer pins. The archive builder also verifies and archives every R1
@@ -1447,7 +1448,7 @@ G2 official: 2.0.1.14  2.0.3.20  2.0.5.12  2.0.6.14
              2.1.1.12  2.2.0.24  2.2.4.34  2.2.6.10
              2.2.7.14  2.2.8.4  2.2.9.22  2.2.10.10
              2.3.0.24
-G2 custom:   2.3.0.24 · SybilSight/230.86
+G2 custom:   2.3.0.24 · SybilSight/230.87
 ```
 
 ```text
@@ -1510,7 +1511,7 @@ The builder rejects changed parent, recipe, donor, source, or stock ABI bytes.
 It produces a separate local artifact and performs no hardware writes or
 publication. Clang changes may produce a new digest; a new digest must be
 reviewed and explicitly pinned before publication. The current published
-96-operation recipe also replays directly against stock without building C.
+97-operation recipe also replays directly against stock without building C.
 
 Use `--r1-only` to refresh just the R1 packages and `ringReleases` while
 preserving current G2 entries. Partial refreshes prune retired custom releases
@@ -1526,7 +1527,7 @@ node scripts/even-firmware-check.mjs --header 'Authorization: Bearer …'
 ```
 
 The served catalog carries exactly one custom release — the latest reviewed CFW
-(`g2-custom-2.3.0.24-230.86`) — and the writer allowlist mirrors it; earlier CFW
+(`g2-custom-2.3.0.24-230.87`) — and the writer allowlist mirrors it; earlier CFW
 candidates are no longer offered.
 
 Each version directory contains the original bundle, every extracted
@@ -1570,9 +1571,9 @@ source-files/
     ota_s200_firmware_ota.bin
     metadata.json
     SHA256SUMS
-  2.3.0.24-f1c544445df7/
-    g2-2.3.0.24-sybilsight-230.86.bin
-    cfw_patches-230.86.json
+  2.3.0.24-97dcac92482b/
+    g2-2.3.0.24-sybilsight-230.87.bin
+    cfw_patches-230.87.json
     manifest.json
     firmware_codec.bin
     firmware_ble_em9305.bin
@@ -1869,6 +1870,6 @@ touch, and case payloads remain byte-identical. A full ROM/RAM/hook rebase
 is required before using the latest patches on this stock version.
 See `docs/firmware/2.2.9-to-2.2.10-address-comparison.json` for the comparison.
 
-### Guardian connection diagnostics in 230.86
+### Guardian connection diagnostics in 230.87
 
 The current CFW adds default-off live connected-phone MAC diagnostics. SybilSight must explicitly enable Guardian mode and its “Show connected device on each lens” toggle. A renewable 30-second lease clears diagnostics after the app stops renewing; reboot also clears it. The LEFT lens uses the upper dashboard lane and RIGHT uses the lower lane. Connected phone GAP Device Names are unavailable in the stock connection snapshot. This display is diagnostic information and does not authenticate or authorize peers. Ten offline firmware checks pass; physical glasses validation remains pending.

@@ -1,6 +1,14 @@
 # Stock 2.3.0.24 + current g2flash foundation
 
-## Current additive build: SybilSight/230.86
+## Current additive build: SybilSight/230.87
+
+230.87 fixes a 230.86 identity mismatch: settings advertised .86 but the inherited
+FI/v1 reply copied .84 from compiler-generated immediates. The builder now redirects
+the guarded inherited identity entry to a function compiled with the release marker.
+Emitted-code tests execute that entry for both lens roles and compare the complete
+nonce reply. Post-install app verification requires the exact live bilateral marker.
+The replacement remains offline-built; no physical flash is claimed.
+
 
 Use `package_current.py` for the current candidate. It requires the hash-pinned `.84`
 image and stock recipe, adds keyboard contract v1 from upstream commit

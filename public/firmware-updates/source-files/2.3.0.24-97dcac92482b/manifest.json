@@ -4,7 +4,7 @@
   "device": "Even Realities G2",
   "release": {
     "version": "2.3.0.24",
-    "archiveKey": "2.3.0.24-f1c544445df7",
+    "archiveKey": "2.3.0.24-97dcac92482b",
     "internalVersion": "2.3.0.24",
     "reportedVersion": "2.3.0.24",
     "channel": "custom",
@@ -13,20 +13,20 @@
     "hardwareValidated": false
   },
   "package": {
-    "file": "g2-2.3.0.24-sybilsight-230.86.bin",
-    "size": 4668653,
-    "md5": "f2097a41bf5067909189951d0308eba9",
-    "sha256": "f1c544445df75dddb35dcb9c30831305ff88cd01ba6b6a4f6e5288a404a32ba0",
+    "file": "g2-2.3.0.24-sybilsight-230.87.bin",
+    "size": 4668841,
+    "md5": "10d3baf359a7df2e1b4fd0b521c39887",
+    "sha256": "97dcac92482bfe01b6375b6096f949572261a299a0341489299c1eb6ffae6fbb",
     "componentCount": 6
   },
   "patchRecipe": {
-    "file": "cfw_patches-230.86.json",
-    "sha256": "d855872f03fa3f99a9612cf50f5b12bbb842612f6a50b34c106624aee9a52386",
+    "file": "cfw_patches-230.87.json",
+    "sha256": "82669d4b474fb523318e44374f9a0cf17f9ee9482d3912eb99609dd749d4693f",
     "baseVersion": "2.3.0.24",
     "baseSha256": "187ccf2bcc5c17a212106e8a376745511e8289c4232b634a7ea94b9bf25a0979",
-    "operationCount": 96
+    "operationCount": 97
   },
-  "capabilityMarker": "SybilSight/230.86",
+  "capabilityMarker": "SybilSight/230.87",
   "sourceProvenance": {
     "parent_marker": "SybilSight/230.84",
     "parent_sha256": "afa6c1da6bc1ba6b0904a438b6acb7f6e628b4fd53c82e1c58d71ba4a431f68b",
@@ -87,9 +87,9 @@
       "componentName": "ota/s200_firmware_ota.bin",
       "archiveFile": "ota_s200_firmware_ota.bin",
       "typeId": 0,
-      "size": 3889410,
-      "crc32c": "055d06ed",
-      "sha256": "62f23939c9f4de2fedaa5198b1657033b39cdfa774ccdee6ca51e7b15ba2c107",
+      "size": 3889598,
+      "crc32c": "6492ce85",
+      "sha256": "e2d010494c09b77d303ea2365cce5f9b53977e88c6a312a743359034f8c01331",
       "role": "glasses-application"
     }
   ],
@@ -99,7 +99,7 @@
     "sha256": "773b6d4cfdaf0a5a74a557e3babe8222a0ae813436b76a7437c1096d2c60d677"
   },
   "flashTargets": {
-    "completeBundle": "g2-2.3.0.24-sybilsight-230.86.bin",
+    "completeBundle": "g2-2.3.0.24-sybilsight-230.87.bin",
     "glassesApplication": "ota_s200_firmware_ota.bin",
     "glassesBootloader": "ota_s200_bootloader.bin",
     "chargingCaseWrapped": "firmware_box.bin",

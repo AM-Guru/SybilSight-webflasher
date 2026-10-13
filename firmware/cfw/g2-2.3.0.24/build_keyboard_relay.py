@@ -1,4 +1,4 @@
-"""Compose SybilSight/230.86 = authenticated .84 + keyboard and Guardian identity.
+"""Compose SybilSight/230.87 = authenticated .84 + keyboard and Guardian identity.
 
 Offline only. Preserves .84 function bodies and codec, replays a stock-based recipe,
 checks source/stock ABI pins, and refuses any live write outside the reviewed sites.
@@ -18,7 +18,7 @@ from audit_revision35_emitted import thumb_branch_target
 ROOT = Path(__file__).resolve().parents[3]
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE / "keyboard-relay"
-MARKER = "SybilSight/230.86"
+MARKER = "SybilSight/230.87"
 PARENT_SHA = "afa6c1da6bc1ba6b0904a438b6acb7f6e628b4fd53c82e1c58d71ba4a431f68b"
 PARENT_RECIPE_HASHES = {
     "61e1610f7c506ea08b70b54b86663c11960d661f5c31b362b429c4b5ea1a794a", # archive metadata wrapper
@@ -142,8 +142,8 @@ def build(stock_path, parent_path, parent_recipe_path, output_dir):
     resolved.mkdir(exist_ok=True)
     for p in (SOURCE / "upstream").iterdir():
         if p.is_file(): shutil.copyfile(p, resolved / p.name)
-    for name in ("cfw_context.h", "malloc.h", "relay.c", "guardian.c"): shutil.copyfile(SOURCE / name, resolved / name)
-    (resolved / "parent_hooks.h").write_text("".join(f"#define {name} 0x{target:08x}u\n" for name, target in targets.items()))
+    for name in ("cfw_context.h", "malloc.h", "relay.c", "guardian.c", "identity.c"): shutil.copyfile(SOURCE / name, resolved / name)
+    (resolved / "parent_hooks.h").write_text(f'#define CFW_RELEASE_MARKER "{MARKER}"\n' + "".join(f"#define {name} 0x{target:08x}u\n" for name, target in targets.items()))
     spec = importlib.util.spec_from_file_location("keyboard_compiler", resolved / "build.py")
     compiler = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(compiler)
@@ -169,6 +169,14 @@ def build(stock_path, parent_path, parent_recipe_path, output_dir):
     if len(overlay_calls) != 1: raise ValueError("Expected one parent dashboard overlay call")
     replace(overlay_calls[0]-DELTA, branch(overlay_calls[0], base+functions["guardian_overlay"]), "Guardian-only lens identity overlay")
     replace(0x47a77c-DELTA, branch(0x47a77c, base+functions["guardian_queue_get"]), "Guardian toggle and lease repaint")
+    # Hash-pinned .84 cfw_send_identity entry (recovered exact source compiler).
+    # Its marker copy uses immediates, independent of settings rodata. Redirect
+    # the function itself and retain every other inherited instruction.
+    identity_site = old_start + 71492
+    if parent[identity_site-DELTA:identity_site-DELTA+8] != bytes.fromhex("b0b5082958d10446"):
+        raise ValueError("Parent FI/v1 entry changed")
+    replace(identity_site-DELTA, branch(identity_site, base+functions["release_send_identity"], True),
+            "release FI/v1 identity entry")
     old_marker = b"SybilSight/230.84"
     positions = []
     cursor = old_blob["offset"]
@@ -178,7 +186,7 @@ def build(stock_path, parent_path, parent_recipe_path, output_dir):
         positions.append(cursor)
         replace(cursor, MARKER.encode(), "keyboard-enabled exact identity marker")
         cursor += len(old_marker)
-    if len(positions) != 1: raise ValueError("Expected shared settings/direct identity marker")
+    if len(positions) != 1: raise ValueError("Expected settings identity marker")
     payload_start = main["offset"] + 128
     new_size = len(data) - payload_start
     # Stock main-app preamble has a 24-bit payload size and IEEE CRC of bytes after it.

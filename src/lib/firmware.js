@@ -1966,7 +1966,7 @@ export const REVIEWED_CFW_230_84 = Object.freeze({
     "Bench-validated on hardware 2026-09-29/30.",
   ],
 });
-// Published 230.86 is offline-reviewed; hardware qualification is still pending.
+// Published 230.87 is offline-reviewed; hardware qualification is still pending.
 // Keep historical pins above for inspection of old uploads, without offering
 // those images in the active catalog or published writer targets.
 // Historical upload classification; excluded from active writer targets.
@@ -1988,14 +1988,14 @@ export const REVIEWED_CFW_230_85 = Object.freeze({
   ],
 });
 
-export const REVIEWED_CFW_230_86 = Object.freeze({
+export const REVIEWED_CFW_230_87 = Object.freeze({
   version: "2.3.0.24",
   baseVersion: "2.3.0.24",
   baseSha256: "187ccf2bcc5c17a212106e8a376745511e8289c4232b634a7ea94b9bf25a0979",
-  sha256: "f1c544445df75dddb35dcb9c30831305ff88cd01ba6b6a4f6e5288a404a32ba0",
-  mainPayloadSha256: "62f23939c9f4de2fedaa5198b1657033b39cdfa774ccdee6ca51e7b15ba2c107",
-  mainPayloadBytes: 3889410,
-  capabilityMarker: "SybilSight/230.86",
+  sha256: "97dcac92482bfe01b6375b6096f949572261a299a0341489299c1eb6ffae6fbb",
+  mainPayloadSha256: "e2d010494c09b77d303ea2365cce5f9b53977e88c6a312a743359034f8c01331",
+  mainPayloadBytes: 3889598,
+  capabilityMarker: "SybilSight/230.87",
   guardianIdentityContract: 1,
   hardwareValidated: false,
   capabilities: [
@@ -3152,7 +3152,7 @@ export function classifyG2Firmware(fileSha256) {
     REVIEWED_CFW_230_26,
     REVIEWED_CFW_230_84,
     REVIEWED_CFW_230_85,
-    REVIEWED_CFW_230_86,
+    REVIEWED_CFW_230_87,
     REVIEWED_CFW_2_2_10_72,
     // Older 2.2.10 candidates are no longer recognized: only the latest CFW is offered.
     // Earlier-generation pins stay recognizable for trust classification of an uploaded

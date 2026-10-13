@@ -61,12 +61,38 @@ class KeyboardRelayTests(unittest.TestCase):
         inherited = parent[blob["offset"]:]
         restored = bytearray(self.image)
         for patch in self.recipe["patches"][len(original["patches"]):]:
-            if patch["desc"] == "Guardian-only lens identity overlay":
+            if patch["desc"] in ("Guardian-only lens identity overlay", "release FI/v1 identity entry"):
                 offset = patch["offset"]
                 restored[offset:offset+len(bytes.fromhex(patch["old"]))] = bytes.fromhex(patch["old"])
         self.assertEqual(bytes(restored[blob["offset"]:len(parent)]).replace(relay.MARKER.encode(), b"SybilSight/230.84"), inherited)
         self.assertFalse(self.recipe["hardware_validation"]["validated"])
         self.assertEqual(self.recipe["source_provenance"]["keyboard_contract"], 1)
+
+    def test_inherited_identity_entry_emits_current_marker_on_each_lens(self):
+        patch = next(p for p in self.recipe["patches"] if p["desc"] == "release FI/v1 identity entry")
+        for side in (1, 2, 0, 3):
+            for nonce in (0x12345678, 0):
+                cpu = self.cpu()
+                request, reply = 0x20100000, 0x20100100
+                cpu.mem_write(request, b"MC\x01\x05" + struct.pack("<I", nonce))
+                cpu.reg_write(UC_ARM_REG_R0, request)
+                cpu.reg_write(UC_ARM_REG_R1, 8)
+                replies, allocations = [], []
+                def stock(cpu, at, size, unused):
+                    if at == 0x465d4c: cpu.reg_write(UC_ARM_REG_R0, side)
+                    elif at == 0x45855e:
+                        allocations.append(cpu.reg_read(UC_ARM_REG_R0))
+                        cpu.reg_write(UC_ARM_REG_R0, reply)
+                    elif at == 0x47f17c:
+                        replies.append(bytes(cpu.mem_read(cpu.reg_read(UC_ARM_REG_R0), cpu.reg_read(UC_ARM_REG_R1))))
+                        cpu.reg_write(UC_ARM_REG_R0, 0)
+                    elif at != 0x4585a2: return
+                    cpu.reg_write(UC_ARM_REG_PC, cpu.reg_read(UC_ARM_REG_LR))
+                cpu.hook_add(UC_HOOK_CODE, stock)
+                cpu.emu_start((patch["offset"] + relay.DELTA) | 1, 0x300000, count=3000)
+                expected = b"FI\x01" + bytes([side]) + struct.pack("<I", nonce) + bytes([len(relay.MARKER)]) + relay.MARKER.encode()
+                self.assertEqual(replies, [expected] if side in (1, 2) and nonce else [])
+                self.assertEqual(allocations, [len(expected)] if replies else [])
 
     def test_stock_abi_guards_reject_a_changed_hook(self):
         stock = bytearray(relay.checked_file(ARCHIVE / "2.3.0.24/1dbdf37b03a1169c384945e94d671371.bin", relay.STOCK_SHA))

@@ -115,7 +115,7 @@ test("an experimental custom build sharing the stock version is never the review
     id: "local-experimental", requiredCfwMarker: "SybilSight/230.999", trust: "experimental-local",
   };
   for (const releases of [[...catalog, experimental], [experimental, ...catalog].reverse()]) {
-    assert.equal(findLatestReviewedCustomRelease(releases)?.id, "g2-custom-2.3.0.24-230.86");
+    assert.equal(findLatestReviewedCustomRelease(releases)?.id, "g2-custom-2.3.0.24-230.87");
     assert.equal(findDefaultFirmwareRelease(releases)?.channel, "official");
   }
 });

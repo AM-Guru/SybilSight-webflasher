@@ -1,7 +1,4 @@
 {
-  "schemaVersion": 2,
-  "generatedAt": "2026-10-11T16:29:52.192Z",
-  "source": "Even Realities G2/R1 CDN plus SybilSight release evidence",
   "releases": [
     {
       "id": "g2-official-2.3.2.14",
@@ -78,45 +75,45 @@
       ]
     },
     {
-      "id": "g2-custom-2.3.0.24-230.86",
-      "displayName": "SybilSight CFW 230.86 (2.3.0.24)",
+      "id": "g2-custom-2.3.0.24-230.87",
+      "displayName": "SybilSight CFW 230.87 (2.3.0.24)",
       "channel": "custom",
       "trust": "reviewed-custom",
       "hardwareValidated": false,
       "version": "2.3.0.24",
-      "archiveKey": "2.3.0.24-f1c544445df7",
+      "archiveKey": "2.3.0.24-97dcac92482b",
       "internalVersion": "2.3.0.24",
       "reportedVersion": "2.3.0.24",
       "baseVersion": "2.3.0.24",
-      "notes": "Offline reviewed and tested. Adds the keyboard relay and default-off Guardian per-lens peer-MAC diagnostics to the exact 230.84 parent. Diagnostics require explicit SybilSight Guardian opt-in and a renewable 30-second lease; connected phone device names are unavailable. Ten emitted-code, ABI, sanitizer and malformed-input checks pass; the 96-operation stock recipe reproduces this bundle exactly. Hardware pairing, key delivery and simultaneous microphone/display operation have not yet been validated for 230.86.",
+      "notes": "Offline reviewed and tested. Fixes the stale 230.84 direct identity reply that prevented 230.86 capability negotiation. Retains the keyboard relay and default-off Guardian per-lens peer-MAC diagnostics to the exact 230.84 parent. Diagnostics require explicit SybilSight Guardian opt-in and a renewable 30-second lease; connected phone device names are unavailable. Eleven emitted-code, ABI, sanitizer and malformed-input checks pass; the 97-operation stock recipe reproduces this bundle exactly. Hardware pairing, key delivery and simultaneous microphone/display operation have not yet been validated for 230.87.",
       "capabilities": [
         "Default-off Guardian peer-MAC diagnostics: LEFT upper and RIGHT lower dashboard lanes, enabled only by explicit app troubleshooting opt-in",
         "BLE keyboard pairing and key-report relay through G2: keyboard contract v1 restored from pinned upstream revision 39",
         "Preserves the revision-84 dual-link stereo microphone relay, nonce-clock GX8002 codec and PDM probe hooks",
         "Retained display, compressed image transports, texture cache and atomic drawing on the revision-35 display ABI",
-        "Direct per-lens nonce-bound FI/v1 identity requires SybilSight/230.86 on both temples",
+        "Direct per-lens nonce-bound FI/v1 identity requires SybilSight/230.87 on both temples",
         "Only the Apollo main changes from 230.84; all five non-main components remain byte-identical to the parent"
       ],
-      "requiredCfwMarker": "SybilSight/230.86",
+      "requiredCfwMarker": "SybilSight/230.87",
       "recoveryTarget": "glasses",
       "caseRecoveryEligible": false,
       "caseVersion": "1.2.57",
-      "url": "/firmware-updates/source-files/2.3.0.24-f1c544445df7/g2-2.3.0.24-sybilsight-230.86.bin",
-      "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.3.0.24-f1c544445df7/g2-2.3.0.24-sybilsight-230.86.bin",
-      "fileName": "g2-2.3.0.24-sybilsight-230.86.bin",
-      "size": 4668653,
-      "md5": "f2097a41bf5067909189951d0308eba9",
-      "sha256": "f1c544445df75dddb35dcb9c30831305ff88cd01ba6b6a4f6e5288a404a32ba0",
-      "patchUrl": "/firmware-updates/source-files/2.3.0.24-f1c544445df7/cfw_patches-230.86.json",
-      "patchSha256": "d855872f03fa3f99a9612cf50f5b12bbb842612f6a50b34c106624aee9a52386",
-      "manifestUrl": "/firmware-updates/source-files/2.3.0.24-f1c544445df7/manifest.json",
-      "manifestSha256": "65424cd69184379713f1b712887e405527d1f7139088ee4759939fa551231ac7",
+      "url": "/firmware-updates/source-files/2.3.0.24-97dcac92482b/g2-2.3.0.24-sybilsight-230.87.bin",
+      "sourceUrl": "https://webflasher.sybilsight.com/firmware-updates/source-files/2.3.0.24-97dcac92482b/g2-2.3.0.24-sybilsight-230.87.bin",
+      "fileName": "g2-2.3.0.24-sybilsight-230.87.bin",
+      "size": 4668841,
+      "md5": "10d3baf359a7df2e1b4fd0b521c39887",
+      "sha256": "97dcac92482bfe01b6375b6096f949572261a299a0341489299c1eb6ffae6fbb",
+      "patchUrl": "/firmware-updates/source-files/2.3.0.24-97dcac92482b/cfw_patches-230.87.json",
+      "patchSha256": "82669d4b474fb523318e44374f9a0cf17f9ee9482d3912eb99609dd749d4693f",
+      "manifestUrl": "/firmware-updates/source-files/2.3.0.24-97dcac92482b/manifest.json",
+      "manifestSha256": "4a93e91b42bb1c68f5ff840736dee6cd7fe16ac224e5df5f20c214d7059c7993",
       "archivedFrom": "WebFlasher local evidence",
       "mainFirmware": {
         "runBase": "0x00438000",
-        "installedImageSize": 3889378,
-        "installedImageEnd": "0x007ed8e2",
-        "crc32": "0c43e020"
+        "installedImageSize": 3889566,
+        "installedImageEnd": "0x007ed99e",
+        "crc32": "b10d2ae3"
       },
       "components": [
         {
@@ -157,9 +154,9 @@
         {
           "name": "ota/s200_firmware_ota.bin",
           "typeId": 0,
-          "size": 3889410,
-          "crc32c": "055d06ed",
-          "sha256": "62f23939c9f4de2fedaa5198b1657033b39cdfa774ccdee6ca51e7b15ba2c107"
+          "size": 3889598,
+          "crc32c": "6492ce85",
+          "sha256": "e2d010494c09b77d303ea2365cce5f9b53977e88c6a312a743359034f8c01331"
         }
       ]
     },
@@ -1408,6 +1405,9 @@
       ]
     }
   ],
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-13T19:41:22.326Z",
+  "source": "Even Realities G2/R1 CDN plus SybilSight release evidence",
   "ringReleases": [
     {
       "id": "r1-official-2.3.2.0007",
