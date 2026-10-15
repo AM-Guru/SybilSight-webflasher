@@ -24,6 +24,28 @@ import {
 } from "../src/lib/automaticRecovery.js";
 
 const STOCK_SHA = "a".repeat(64);
+
+test("automatic recovery does not reset a temple that was never queried", async () => {
+  let resets = 0;
+  const session = {
+    readTempleFlashPreflight: async () => ({ telemetry: { leftPresent: true, rightPresent: true } }),
+    probeRunningTemple: async (_operation, route) => {
+      if (route === "right") {
+        const error = new Error("zero-write baseline stop");
+        error.pogoBridgeEvidence = { zeroWriteBaselineStopVerified: true, transmitted: 0 };
+        throw error;
+      }
+      return { decoded: { kind: "version", firmwareVersion: "2.2.6.10", hardwareRevision: 5 } };
+    },
+    restartAndVerifyBothTemples: async () => { resets += 1; },
+  };
+  await assert.rejects(() => diagnoseAndRecoverAutomaticUsb({ session }), (error) => {
+    assert.equal(error.diagnosis.temples.right.applicationResponsive, null);
+    assert.equal(error.diagnosis.initialPlan.action, "retry-analysis");
+    return true;
+  });
+  assert.equal(resets, 0);
+});
 const CFW_SHA = "b".repeat(64);
 const firmware = (sha) => ({
   fileSha256: sha,

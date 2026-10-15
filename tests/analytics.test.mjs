@@ -3,7 +3,42 @@ import test from "node:test";
 import {
   DEVICE_ANALYTICS_SCHEMA_VERSION,
   buildG2DeviceAnalytics,
+  captureTempleProbeFailure,
 } from "../src/lib/analytics.js";
+
+test("silent-temple failure retains JSON-safe restoration proof and settle history", () => {
+  const error = new Error("no framed response");
+  error.pogoBridgeEvidence = {
+    responseStatus: 6,
+    restoredMask: 0x3ff,
+    transmitted: 5,
+    stored: 0,
+    errors: 0,
+    baseline: new Uint8Array([0x22, 0x33]),
+  };
+  error.readOnlyPhaseAttempts = [{ attempt: 1, baseline: "2233", templeBytesTransmitted: 5 }];
+  const captured = captureTempleProbeFailure(error, "version", "2026-10-14T12:24:52Z");
+  const downloaded = JSON.parse(JSON.stringify(captured));
+  assert.equal(downloaded.operation, "version");
+  assert.equal(downloaded.caseTransport, false);
+  assert.equal(downloaded.pogoBridgeEvidence.responseStatus, 6);
+  assert.equal(downloaded.pogoBridgeEvidence.restoredMask, 0x3ff);
+  assert.deepEqual(downloaded.pogoBridgeEvidence.baseline, [0x22, 0x33]);
+  assert.equal(downloaded.readOnlyPhaseAttempts[0].templeBytesTransmitted, 5);
+  error.readOnlyPhaseAttempts[0].attempt = 99;
+  error.pogoBridgeEvidence.baseline[0] = 0;
+  assert.equal(captured.readOnlyPhaseAttempts[0].attempt, 1);
+  assert.equal(captured.pogoBridgeEvidence.baseline[0], 0x22);
+});
+
+test("Case transport failure retains uncertainty without inventing bridge evidence", () => {
+  const error = new Error("ROM link unavailable");
+  error.caseTransportFailure = true;
+  const captured = captureTempleProbeFailure(error, "status");
+  assert.equal(captured.caseTransport, true);
+  assert.equal(captured.pogoBridgeEvidence, null);
+  assert.deepEqual(captured.readOnlyPhaseAttempts, []);
+});
 
 function probe(side, operation, firmwareVersion = "2.2.6.10") {
   const version = operation === "version";
@@ -332,6 +367,24 @@ test("reports an empty Case as no contacts, not dead Smart Glasses", () => {
   assert.equal(analytics.smartGlasses.left.applicationResponsive, null);
   assert.equal(analytics.smartGlasses.right.present, false);
   assert.equal(analytics.smartGlasses.right.applicationResponsive, null);
+});
+
+test("a zero-write bridge stop preserves unknown temple liveness and blocks reset inference", () => {
+  const analytics = buildG2DeviceAnalytics({
+    report: report(),
+    pogoResults: {
+      left: { version: probe("left", "version") },
+      right: { lastProbeFailure: {
+        operation: "status",
+        message: "baseline stop",
+        pogoBridgeEvidence: { zeroWriteBaselineStopVerified: true, transmitted: 0 },
+      } },
+    },
+  });
+  assert.equal(analytics.smartGlasses.right.applicationResponsive, null);
+  assert.equal(analytics.smartGlasses.right.bootState, "bridge-setup-blocked");
+  assert.equal(analytics.smartGlasses.recoveryAssessment.minimumPlan.action, "retry-analysis");
+  assert.equal(analytics.smartGlasses.recoveryAssessment.minimumPlan.executable, false);
 });
 
 test("a Case-transport probe failure is not reported as an unresponsive temple", () => {

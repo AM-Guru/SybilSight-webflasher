@@ -27,7 +27,8 @@ import {
   resolveGlassesRecoveryReleases,
   validateGlassesRecoveryBundle,
 } from "./lib/backup.js";
-import { buildG2DeviceAnalytics } from "./lib/analytics.js";
+import { buildG2DeviceAnalytics, captureTempleProbeFailure } from "./lib/analytics.js";
+import { compareCasePowerDiagnostics } from "./lib/casePowerDiagnostics.js";
 import { releaseSelectedLocalCasePort } from "./lib/casePortLifecycle.js";
 import {
   consoleTranscriptStorageKey,
@@ -820,7 +821,7 @@ function SmartGlassesAnalyticsCard({ analytics, label, probeFailure = null }) {
           detail={
             applicationBatteryAvailable
               ? "0x2C running-app status reply"
-              : "Informational Charging Case console estimate; run Glasses analysis for application status"
+              : "Temple status relayed through the Case console"
           }
         />
         <Field
@@ -829,7 +830,7 @@ function SmartGlassesAnalyticsCard({ analytics, label, probeFailure = null }) {
           detail={
             applicationVoltageAvailable
               ? "0x2C running-app status reply"
-              : "Informational Charging Case console estimate; run Glasses analysis for application status"
+              : "Temple status relayed through the Case console"
           }
         />
       </div>
@@ -1702,6 +1703,11 @@ function App() {
   const [pogoRoute, setPogoRoute] = useState("left");
   const [pogoOperation, setPogoOperation] = useState("version");
   const [pogoConfirm, setPogoConfirm] = useState(false);
+  const [pogoSingleAttempt, setPogoSingleAttempt] = useState(false);
+  const [caseOnlyAnalysis, setCaseOnlyAnalysis] = useState(false);
+  const [casePowerCapture, setCasePowerCapture] = useState(null);
+  const [casePowerReference, setCasePowerReference] = useState(null);
+  const [casePowerContext, setCasePowerContext] = useState("");
   const [templeFlashRoute, setTempleFlashRoute] = useState(
     DEFAULT_TEMPLE_FLASH_ROUTE,
   );
@@ -2896,12 +2902,7 @@ function App() {
             ...nextResults,
             [route]: {
               ...nextResults[route],
-              lastProbeFailure: {
-                at: new Date().toISOString(),
-                operation: request,
-                message: error.message,
-                caseTransport: Boolean(error.caseTransportFailure),
-              },
+              lastProbeFailure: captureTempleProbeFailure(error, request),
             },
           };
           setPogoResults(nextResults);
@@ -3008,6 +3009,11 @@ function App() {
         templeFlashAuditSnapshot: null,
         bluetoothFlashAuditSnapshot: null,
       });
+      if (interfaceMode === "advanced" && caseOnlyAnalysis) {
+        setSessionProgress(1, "Case analyzed; individual temple probes available");
+        addLog("Case-only analysis requested; automatic temple probes skipped. No temple liveness is inferred.", "warn");
+        return;
+      }
       if (
         !result.console?.telemetry?.leftPresent ||
         !result.console?.telemetry?.rightPresent
@@ -3154,6 +3160,11 @@ function App() {
         templeFlashAuditSnapshot: null,
         bluetoothFlashAuditSnapshot: null,
       });
+      if (interfaceMode === "advanced" && caseOnlyAnalysis) {
+        setSessionProgress(1, "Case analyzed; individual temple probes available");
+        addLog("Case-only analysis requested; automatic temple probes skipped. No temple liveness is inferred.", "warn");
+        return;
+      }
       if (
         result.console?.telemetry?.leftPresent &&
         result.console?.telemetry?.rightPresent
@@ -4339,6 +4350,34 @@ function App() {
     setRecoveryConfigError("");
   };
 
+  const sampleCasePower = async () => {
+    await run("case-power", async () => {
+      setCasePowerCapture(null);
+      const result = await getSession().sampleCasePower({ context: casePowerContext, expectedSerial: report?.console?.serialNumber });
+      setCasePowerCapture(result);
+      addLog(`Case power capture: ${result.queryCountWithTelemetry}/${result.sampledQueryCount} queries returned telemetry. Raw AA/AB dumps retained; independent pogo voltage/current is unavailable.`, result.queryCountWithTelemetry ? "success" : "warn");
+      addLog(formatShellEvidenceTranscript(result, { phase: "case-power-diagnostics", capturedAt: result.capturedAt }), "evidence");
+    });
+  };
+
+  const rebootForDiagnostics = async () => {
+    await run("recheck", async () => {
+      setRecheckReport(null);
+      setPogoResults({});
+      const result = await getSession().restartAndRecheck();
+      setRecheckReport({ ...result, checkedAt: new Date().toISOString(), applicationLivenessVerified: false });
+      const freshReport = {
+        ...report,
+        console: { ...report.console, ...result, telemetry: result.telemetry },
+      };
+      setReport(freshReport);
+      setPogoConfirm(false);
+      setSessionProgress(1, "Reset confirmed; individual application checks pending");
+      recordShellEvidenceSnapshot({ caseReport: freshReport, results: {}, phase: "diagnostic-reset-contacts-only" });
+      addLog("Traced bilateral reset confirmed and contacts refreshed. No firmware sent; application liveness remains unverified until individual probes answer.", "success");
+    });
+  };
+
   const restartAndRecheck = async () => {
     await run("recheck", async () => {
       setRecheckReport(null);
@@ -4502,17 +4541,14 @@ function App() {
         result = await getSession().probeRunningTemple(
           pogoOperation,
           pogoRoute,
+          { singleAttempt: pogoSingleAttempt },
         );
       } catch (error) {
         setPogoResults((current) => ({
           ...current,
           [pogoRoute]: {
             ...current[pogoRoute],
-            lastProbeFailure: {
-              at: new Date().toLocaleTimeString(),
-              message: error.message,
-              caseTransport: Boolean(error.caseTransportFailure),
-            },
+            lastProbeFailure: captureTempleProbeFailure(error, pogoOperation),
           },
         }));
         throw error;
@@ -6594,6 +6630,15 @@ function App() {
                 </Button>
               ) : null}
             </div>
+            <label className="pogo-confirm">
+              <input
+                type="checkbox"
+                checked={caseOnlyAnalysis}
+                onChange={(event) => setCaseOnlyAnalysis(event.target.checked)}
+                disabled={Boolean(operation)}
+              />
+              <span>Analyze Case only; choose individual temple probes afterward.</span>
+            </label>
             {caseChooserSlow && operation === "analyze" ? (
               <CaseChooserWaitHelp />
             ) : null}
@@ -6715,7 +6760,7 @@ function App() {
                     </div>
                   </div>
                   <div className="metric-caption">
-                    Live Case-link telemetry, not simple switches
+                    Case-reported contact detection; not proof of charging current
                   </div>
                 </article>
                 <article className="status-card">
@@ -6895,6 +6940,32 @@ function App() {
                 </article>
               </div>
                 </>
+              ) : null}
+              {analysisView === "case" ? (
+                <article className="analysis-action-panel">
+                  <div>
+                    <div className="eyebrow">Read-only power diagnostics</div>
+                    <h3>Sample Case power and inspect raw registers</h3>
+                    <p>Capture 10 telemetry queries, live YHM2510 and Case PMIC register dumps, and the one-side charging setting. Opening the console restarts the Case MCU; no temple reset or firmware write is sent.</p>
+                    <label>Capture context
+                      <input value={casePowerContext} onChange={(event) => setCasePowerContext(event.target.value)} placeholder="e.g. working iPhone pair, near full, both seated" disabled={Boolean(operation)} />
+                    </label>
+                    <Button tone="secondary" onClick={sampleCasePower} disabled={Boolean(operation)} busy={operation === "case-power"}>Sample Case power · read only</Button>
+                    <p>Case battery voltage is not voltage at the pogo contacts. Aggregate current remains raw; independent right-channel voltage, current, and continuity are unverified.</p>
+                    {casePowerCapture?.caseSerial === report.console.serialNumber ? (
+                      <div>
+                        <p>{casePowerCapture.queryCountWithTelemetry}/{casePowerCapture.sampledQueryCount} queries returned telemetry · {casePowerCapture.context || "Context unspecified"}</p>
+                        <p>One-side charging: {casePowerCapture.oneSideChargingEnabled == null ? "unknown" : casePowerCapture.oneSideChargingEnabled ? "enabled" : "disabled"}. {casePowerCapture.singleContactChargingReferenceBlocked ? "An isolated-contact capture is not a normal charging reference." : ""}</p>
+                        <p>Case battery voltage: median {casePowerCapture.summary.caseBatteryVoltageMv?.median ?? "—"} mV · range {casePowerCapture.summary.caseBatteryVoltageMv?.min ?? "—"}–{casePowerCapture.summary.caseBatteryVoltageMv?.max ?? "—"} mV</p>
+                        <p>Aggregate current, raw: median {casePowerCapture.summary.caseCurrentRaw?.median ?? "—"} · range {casePowerCapture.summary.caseCurrentRaw?.min ?? "—"}–{casePowerCapture.summary.caseCurrentRaw?.max ?? "—"}</p>
+                        {Object.entries(casePowerCapture.registers).map(([key, dump]) => <p key={key}>{dump.source}: <code>{dump.available ? dump.hex : dump.reason}</code></p>)}
+                        <Button tone="secondary" onClick={() => setCasePowerReference(casePowerCapture)}>Use capture as comparison reference</Button>
+                        <Button tone="secondary" onClick={() => downloadBlob(new Blob([JSON.stringify({ capture: casePowerCapture, reference: casePowerReference, comparison: casePowerReference ? compareCasePowerDiagnostics(casePowerCapture, casePowerReference) : null }, null, 2)], { type: "application/json" }), `g2-case-power-${new Date().toISOString().replaceAll(":", "-")}.json`)}>Download power diagnostics JSON</Button>
+                        {casePowerReference ? <p>Reference: {casePowerReference.context || "Context unspecified"}. {(() => { const comparison = compareCasePowerDiagnostics(casePowerCapture, casePowerReference); return comparison.comparable ? `Median voltage difference ${comparison.caseBatteryVoltageMedianDeltaMv} mV; raw current difference ${comparison.caseCurrentMedianDeltaRaw}. An observed comparison, not a normal charging threshold or continuity test.` : comparison.reason; })()}</p> : null}
+                      </div>
+                    ) : null}
+                  </div>
+                </article>
               ) : null}
               {analysisView === "glasses" ? (
                 <div className="glasses-analysis">
@@ -7907,6 +7978,9 @@ function App() {
             >
               Reset both temples & recheck
             </Button>
+            <Button tone="secondary" onClick={rebootForDiagnostics} disabled={!report || Boolean(operation)}>
+              Reboot both temples · check contacts only
+            </Button>
           </div>
           {recheckReport?.resetConfirmed ? (
             <div className="recheck-result">
@@ -7980,6 +8054,15 @@ function App() {
                   <option value="version">Firmware + hardware version</option>
                   <option value="status">Battery + voltage status</option>
                 </select>
+              </label>
+              <label className="pogo-confirm">
+                <input
+                  type="checkbox"
+                  checked={pogoSingleAttempt}
+                  onChange={(event) => setPogoSingleAttempt(event.target.checked)}
+                  disabled={Boolean(operation)}
+                />
+                <span>One diagnostic attempt; skip automatic settling retries.</span>
               </label>
               <Button
                 tone="secondary"

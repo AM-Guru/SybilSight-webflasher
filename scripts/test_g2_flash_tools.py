@@ -333,6 +333,16 @@ class G2FlashToolTests(unittest.TestCase):
             SBL_HELLO_PROBE_CHARGING_BRIDGE_SHA256,
         )
 
+    def test_legacy_sbl_probe_stops_before_hardware_access(self) -> None:
+        with patch.object(case_flasher, "reset_for_sbl_hello_window") as reset, \
+             patch.object(case_flasher, "CaseSramTempleTransport") as transport:
+            with self.assertRaisesRegex(SafetyError, "Legacy SBL probe disabled"):
+                case_flasher.probe_right_apollo_sbl("/dev/fake")
+            reset.assert_not_called()
+            transport.assert_not_called()
+        with self.assertRaisesRegex(SafetyError, "Legacy SBL probe disabled"):
+            case_flasher.CaseSramTempleTransport("/dev/fake", "right", sbl_hello_probe=True)
+
     def test_sbl_status_response_requires_complete_crc_valid_status(self) -> None:
         body = struct.pack("<IIIII", (24 << 16) | 1, 3, 0x4FFA0, 2, 7)
         frame = struct.pack("<I", zlib.crc32(body) & 0xFFFFFFFF) + body
@@ -361,6 +371,24 @@ class G2FlashToolTests(unittest.TestCase):
         self.assertEqual(args.command, "probe-apollo-sbl-right")
         self.assertTrue(args.execute_bounded_reset_and_hello)
         self.assertFalse(hasattr(args, "route"))
+
+    def test_sbl_failed_start_audit_preserves_retained_zero_write_evidence(self) -> None:
+        import g2_case_pogo_flasher as case_tool
+        failure = case_tool.SafetyError("bridge setup status 3")
+        failure.bridge_failure_evidence = {
+            "baseline_hex": "811104ffff03812033ff",
+            "retained_result": {"zero_write_setup_stop_verified": True, "temple_tx_count": 0},
+            "cleanup_errors": [],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "audit.json"
+            argv = ["g2_case_pogo_flasher.py", "probe-apollo-sbl-right", "--device", "/dev/null",
+                    "--glasses-seated-confirmed", "--execute-bounded-reset-and-hello", "--log", str(log)]
+            with patch.object(sys, "argv", argv), patch.object(case_tool, "probe_right_apollo_sbl", side_effect=failure):
+                self.assertEqual(case_tool.main(), 1)
+            audit = json.loads(log.read_text())
+            self.assertEqual(audit["bridge_failure_evidence"], failure.bridge_failure_evidence)
+            self.assertEqual(audit["temple_write_bytes"], 0)
 
     def test_sbl_zero_write_setup_stop_is_verified_without_allowlisting(self) -> None:
         result = bytearray(128)

@@ -587,6 +587,10 @@ class CaseSramTempleTransport(TempleTransport):
         observed_charging_phase: bool = False,
         sbl_hello_probe: bool = False,
     ) -> None:
+        if sbl_hello_probe:
+            raise SafetyError(
+                "Legacy SBL probe disabled: UART receive path is not qualified"
+            )
         if route not in ("left", "right"):
             raise ValueError("route must be left or right")
         self.device = device
@@ -718,13 +722,21 @@ class CaseSramTempleTransport(TempleTransport):
                         f"retained route-restoration proof: {error}"
                     )
             try:
-                restore_application(
+                self.application_version = restore_application(
                     self.device, expected_version=REVIEWED_CASE_VERSION
                 )
             except Exception as restore_error:
                 cleanup_errors.append(
                     f"case application return: {restore_error}"
                 )
+            primary_error.bridge_failure_evidence = {
+                "retained_result": dict(self.retained_result),
+                "baseline_hex": self.baseline.hex(),
+                "restored_hex": self.restored.hex(),
+                "case_application_version": self.application_version,
+                "bridge_sha256": hashlib.sha256(self.payload).hexdigest(),
+                "cleanup_errors": list(cleanup_errors),
+            }
             if cleanup_errors:
                 raise SafetyError(
                     f"bridge startup failed: {primary_error}; "
@@ -991,6 +1003,12 @@ class CaseSramTempleTransport(TempleTransport):
         bridge_status, uart_errors, captured = self._exchange(
             b"G2TX", request, timeout
         )
+        self.last_query_response = {
+            "bridge_status": bridge_status,
+            "uart_errors": uart_errors,
+            "captured_hex": captured.hex(),
+            "request_bytes": len(request),
+        }
         if uart_errors:
             raise ProtocolError(
                 f"case pogo UART reported error mask 0x{uart_errors:02x}"
@@ -1321,41 +1339,14 @@ def probe_right_apollo_sbl(
     observed_charging_phase: bool = False,
 ) -> dict[str, object]:
     """Send exactly one read-only Ambiq wired HELLO to the seated right route."""
-    reset_report = reset_for_sbl_hello_window(device)
-    transport: CaseSramTempleTransport | None = None
-    primary_error: Exception | None = None
-    try:
-        transport = CaseSramTempleTransport(
-            device,
-            "right",
-            observed_charging_phase=observed_charging_phase,
-            sbl_hello_probe=True,
-        )
-        captured = transport.transact(SBL_HELLO_REQUEST, timeout=12.0)
-        status = parse_sbl_status_response(captured)
-        return {
-            "outcome": "apollo_sbl_status_verified",
-            "route": "right",
-            "request_hex": SBL_HELLO_REQUEST.hex(),
-            "request_sha256": hashlib.sha256(SBL_HELLO_REQUEST).hexdigest(),
-            "bridge_sha256": hashlib.sha256(transport.payload).hexdigest(),
-            "reset": reset_report,
-            "status": status,
-        }
-    except Exception as error:
-        primary_error = error
-        raise
-    finally:
-        if transport is not None:
-            try:
-                _close_checked(transport)
-            except Exception as close_error:
-                if primary_error is None:
-                    raise
-                raise SafetyError(
-                    f"SBL HELLO probe failed: {primary_error}; "
-                    f"case/YHM cleanup also failed: {close_error}"
-                ) from primary_error
+    # The retained V7-derived probe initializes TX instead of RX. Its silence
+    # cannot diagnose recovery availability. Preserve it for offline evidence,
+    # but stop before any reset or SRAM upload; the separately qualified fixed
+    # diagnostic lives in scripts/case_early_recovery_bridge/run.py.
+    raise SafetyError(
+        "Legacy SBL probe disabled: its UART receive path is not qualified. "
+        "Use the pinned, model-validated case_early_recovery_bridge diagnostic."
+    )
 
 
 def final_reset_and_verify_liveness(
@@ -1790,6 +1781,7 @@ def main() -> int:
         ) as error:
             audit["outcome"] = "failed_safely"
             audit["error"] = str(error)
+            audit["bridge_failure_evidence"] = getattr(error, "bridge_failure_evidence", None)
             _write_audit(args.log, audit)
             print(f"Apollo SBL HELLO probe failed safely: {error}", file=sys.stderr)
             return 1

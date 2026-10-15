@@ -67,6 +67,15 @@ export function classifyAutomaticTempleBootState({
       detail: `The Case-side ROM/serial transport failed before the temple could be queried: ${error.message ?? String(error)}`,
     };
   }
+  if (error?.pogoBridgeEvidence?.zeroWriteBaselineStopVerified === true) {
+    return {
+      state: "bridge-setup-blocked",
+      applicationResponsive: null,
+      firmwareVersion: null,
+      hardwareRevision: null,
+      detail: "Retained proof confirms zero router writes and zero temple bytes. No application query was sent.",
+    };
+  }
   return {
     // The reviewed Case bridge can prove a running application, but it cannot
     // interrogate Apollo's ROM/secondary bootloader. Keep the uncertain half
@@ -83,6 +92,14 @@ export function classifyAutomaticTempleBootState({
 
 export function minimumAutomaticRecoveryPlan(temples) {
   const routes = ROUTES.map((route) => temples?.[route]);
+  if (routes.some((temple) => temple?.state === "bridge-setup-blocked")) {
+    return {
+      action: "retry-analysis",
+      executable: false,
+      firmwareWriteRequired: false,
+      reason: "The bridge stopped before querying a temple. Resolve its reviewed profile or seated-idle baseline before choosing a recovery action.",
+    };
+  }
   if (routes.some((temple) => temple?.state === "contact-unknown")) {
     return {
       action: "refresh-telemetry",

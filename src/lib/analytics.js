@@ -20,6 +20,28 @@ import {
 
 export const DEVICE_ANALYTICS_SCHEMA_VERSION = 5;
 
+export function captureTempleProbeFailure(error, operation, at = new Date().toISOString()) {
+  const proof = error?.pogoBridgeEvidence;
+  return {
+    at,
+    operation,
+    message: error?.message ?? String(error),
+    caseTransport: Boolean(error?.caseTransportFailure),
+    pogoBridgeEvidence: proof
+      ? {
+          ...proof,
+          baseline: proof.baseline ? Array.from(proof.baseline) : null,
+        }
+      : null,
+    readOnlyPhaseAttempts: error?.readOnlyPhaseAttempts
+      ? error.readOnlyPhaseAttempts.map((attempt) => ({ ...attempt }))
+      : [],
+    resetAttempts: error?.resetAttempts
+      ? error.resetAttempts.map((attempt) => ({ ...attempt }))
+      : [],
+  };
+}
+
 const FACTORY_QUERIES = Object.freeze([
   Object.freeze({ command: "DEA0", scope: "case", data: "case firmware banner and serial" }),
   Object.freeze({ command: "DEA2", scope: "case", data: "factory identifier" }),
@@ -70,11 +92,12 @@ function templeAnalytics(side, present, results) {
   // A Case-side ROM/serial transport failure happens before the bridge ever
   // queries the temple, so it carries no evidence about temple liveness.
   const caseTransportFailure = Boolean(results?.lastProbeFailure?.caseTransport);
+  const bridgeSetupBlocked = results?.lastProbeFailure?.pogoBridgeEvidence?.zeroWriteBaselineStopVerified === true;
   const applicationResponsive =
     analysisState === "not-analyzed"
       ? null
       : analysisState === "failed"
-        ? caseTransportFailure
+        ? caseTransportFailure || bridgeSetupBlocked
           ? null
           : false
         : true;
@@ -92,6 +115,7 @@ function templeAnalytics(side, present, results) {
     analysisState,
     caseTransportFailure:
       analysisState === "failed" ? caseTransportFailure : false,
+    bridgeSetupBlocked: analysisState === "failed" && bridgeSetupBlocked,
     lastProbeFailure: results?.lastProbeFailure
       ? { ...results.lastProbeFailure }
       : null,
@@ -102,13 +126,15 @@ function templeAnalytics(side, present, results) {
         ? "application"
         : applicationResponsive === false
           ? "recovery-or-unresponsive"
-          : "not-analyzed",
+          : bridgeSetupBlocked ? "bridge-setup-blocked" : "not-analyzed",
     bootStateBoundary:
       applicationResponsive === false
         ? "The Case bridge did not receive an Application-mode reply. It cannot distinguish Apollo recovery/bootloader state from a rebooting, charging-negotiation, or otherwise silent application."
         : analysisState === "failed" && caseTransportFailure
           ? "The Case-side STM32 ROM/serial transport failed before the reviewed bridge could query this temple; the failure carries no evidence about the temple state."
-          : null,
+          : analysisState === "failed" && bridgeSetupBlocked
+            ? "Retained proof confirms zero router writes and zero temple bytes; this setup stop carries no evidence about temple application liveness."
+            : null,
     firmwareVersion,
     hardwareRevision,
     batteryPercent: status?.decoded?.batteryPercent ?? null,

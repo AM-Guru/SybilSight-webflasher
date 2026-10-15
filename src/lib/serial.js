@@ -14,6 +14,7 @@ import {
   toggledBankOptionBytes,
 } from "./firmware.js";
 import { caseDeviceKey } from "./deviceIdentity.js";
+import { buildCasePowerDiagnostics } from "./casePowerDiagnostics.js";
 import {
   POGO_BRIDGE_ADDRESS,
   POGO_BRIDGE_BANNER,
@@ -293,7 +294,18 @@ export function isPogoRoutePhaseMismatch(error) {
 
 export function isRetryablePostResetLivenessFailure(error) {
   const message = error instanceof Error ? error.message : String(error ?? "");
+  const proof = error?.pogoBridgeEvidence;
+  const restoredSilentProbe =
+    proof?.responseStatus === 6 &&
+    proof.baselineMask === 0x3ff &&
+    proof.selectedMask === 0x3ff &&
+    proof.restoredMask === 0x3ff &&
+    proof.errors === 0;
   return (
+    // The exhausted settle ladder wraps the original status-6 error with
+    // different wording. Use its retained proof so the already-bounded
+    // second reset remains available without depending on that wording.
+    restoredSilentProbe ||
     // Transient transport faults during the read-only reset/liveness sequence
     // are as recoverable as a missing telemetry line: the bounded second
     // DEB0 replays the whole traced sequence from a fresh port.
@@ -2081,8 +2093,8 @@ async function openNormalConsole(port) {
 }
 
 async function queryNormal(transport, command, duration = 850) {
-  if (![0xa0, 0xa2, 0xa3, 0xa4].includes(command)) {
-    throw new Error("Only the read-only A0/A2/A3/A4 query allowlist is available.");
+  if (![0xa0, 0xa2, 0xa3, 0xa4, 0xaa, 0xab, 0xd3].includes(command)) {
+    throw new Error("Only the read-only A0/A2/A3/A4/AA/AB/D3 query allowlist is available.");
   }
   transport.clear();
   const line = new TextEncoder().encode(`DE${command.toString(16).toUpperCase()}\n`);
@@ -2905,6 +2917,24 @@ export class G2CaseSession {
   // One read-only factory-console pass: open (which resets the Case and makes
   // it reprint its power-up banner), collect the banner, then run the A0/A2/A3/A4
   // query allowlist. Writes nothing.
+  async sampleCasePower({ sampleCount = 10, intervalMs = 1000, context = "", expectedSerial = null } = {}) {
+    if (!Number.isInteger(sampleCount) || sampleCount < 2 || sampleCount > 30 || !Number.isInteger(intervalMs) || intervalMs < 500 || intervalMs > 2000) throw new Error("Power sampling requires 2–30 queries, each 500–2000 ms.");
+    const normal = await this.openNormal(this.port);
+    try {
+      const bootText = new TextDecoder().decode(await normal.collectFor(2500));
+      const versionText = await queryNormal(normal, 0xa0, 1000);
+      const identity = parseConsoleReport(bootText, versionText);
+      if (identity.caseVersion !== REVIEWED_CASE_VERSION || !identity.serialNumber || (expectedSerial && identity.serialNumber !== expectedSerial)) throw new Error("Power diagnostics require a fresh matching Case identity on 1.2.57.");
+      const registerReplies = { DEA0: versionText, DEAA: await queryNormal(normal, 0xaa, 1000), DEAB: await queryNormal(normal, 0xab, 1000), DED3: await queryNormal(normal, 0xd3, 1000) };
+      const samples = [];
+      for (let i = 0; i < sampleCount; i += 1) {
+        samples.push({ observedAt: new Date().toISOString(), text: await queryNormal(normal, 0xa3, intervalMs) });
+        this.progress((i + 1) / sampleCount, `Case power sample ${i + 1}/${sampleCount}`);
+      }
+      return buildCasePowerDiagnostics({ bootText, registerReplies, samples, context });
+    } finally { await normal.close(); }
+  }
+
   async captureConsoleReport() {
     const normal = await openNormalConsole(this.port);
     let bootText;
@@ -3218,6 +3248,34 @@ export class G2CaseSession {
     route,
     options = {},
   ) {
+    if (options.singleAttempt === true) {
+      // The ordinary probe still owns pinned bridge validation, restoration,
+      // residue cleanup and normal-app return; only the settle ladder is omitted.
+      try {
+        return await this.probeRunningTempleOnce(operation, route, {
+          ...options,
+          yhmProfile: options.yhmProfile ?? this.routeYhmProfiles.get(route) ?? YHM_PROFILE_REVIEWED_22,
+        });
+      } catch (error) {
+        error.readOnlyPhaseAttempts = [{
+          attempt: 1,
+          outcome: "failed",
+          error: error.message,
+          baseline: error.pogoBridgeEvidence?.baselineHex ?? null,
+          templeBytesTransmitted: error.pogoBridgeEvidence?.transmitted ?? null,
+        }];
+        const proof = error.pogoBridgeEvidence;
+        const observedProfile = proof?.zeroWriteBaselineStopVerified === true
+          ? identifyYhmBaselineProfile(proof.baselineHex)
+          : null;
+        if (observedProfile) {
+          await this.readTempleFlashPreflight([route]);
+          this.rememberRouteYhmProfile(route, observedProfile);
+          this.log(`${route}: verified zero-write baseline maps to ${observedProfile}; retained for the next explicit diagnostic attempt. No automatic retry was performed.`, "warn");
+        }
+        throw error;
+      }
+    }
     const attempts = [];
     const maximumAttempts = POGO_READ_ONLY_PHASE_SETTLE_MS.length + 2;
     let settleIndex = 0;

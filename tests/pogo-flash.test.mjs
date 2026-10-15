@@ -989,6 +989,53 @@ test("derives the observed-45 bridges by patching only the four register-8 table
   );
 });
 
+test("single-attempt diagnostics preserve failure proof without settling or retrying", async () => {
+  const waits = [];
+  const session = new G2CaseSession(null, { wait: async (ms) => waits.push(ms) });
+  const failure = new Error("silent right temple");
+  failure.pogoBridgeEvidence = { responseStatus: 6, restoredMask: 0x3ff, transmitted: 7 };
+  let attempts = 0;
+  session.probeRunningTempleOnce = async (operation, route) => {
+    assert.equal(operation, "status");
+    assert.equal(route, "right");
+    attempts += 1;
+    throw failure;
+  };
+  await assert.rejects(
+    () => session.probeRunningTemple("status", "right", { singleAttempt: true }),
+    (error) => error === failure && error.readOnlyPhaseAttempts[0].templeBytesTransmitted === 7,
+  );
+  assert.equal(attempts, 1);
+  assert.deepEqual(waits, []);
+  assert.equal(failure.pogoBridgeEvidence.restoredMask, 0x3ff);
+});
+
+test("single-attempt diagnostics retain an exact zero-write profile for the next explicit probe", async () => {
+  const session = new G2CaseSession(null);
+  const profiles = [];
+  const failure = new Error("baseline stop");
+  failure.pogoBridgeEvidence = {
+    zeroWriteBaselineStopVerified: true,
+    baselineHex: "811104afaf03812033ff",
+    transmitted: 0,
+  };
+  let preflights = 0;
+  session.readTempleFlashPreflight = async (routes) => {
+    assert.deepEqual(routes, ["right"]);
+    preflights += 1;
+  };
+  session.probeRunningTempleOnce = async (_operation, _route, options) => {
+    profiles.push(options.yhmProfile);
+    if (profiles.length === 1) throw failure;
+    return { decoded: { kind: "status" } };
+  };
+  await assert.rejects(() => session.probeRunningTemple("status", "right", { singleAttempt: true }), /baseline stop/);
+  assert.deepEqual(profiles, ["reviewed-22"]);
+  assert.equal(preflights, 1);
+  await session.probeRunningTemple("status", "right", { singleAttempt: true });
+  assert.deepEqual(profiles, ["reviewed-22", "observed-33"]);
+});
+
 test("does not retry a text-only YHM mismatch without retained zero-write proof", async () => {
   const waits = [];
   const session = new G2CaseSession(null, {
@@ -2513,6 +2560,23 @@ test("a restored DATA rejection at maximum pacing blocks another wired START", (
 });
 
 test("retries one transient intermediate-reset no-frame before a fresh START", async () => {
+  const exhausted = new PogoFlashSafetyError(
+    "The pogo bridge stopped safely: the right temple returned no framed response after 6 fully-restored probes across the bounded settle ladder. The route was byte-for-byte restored each time.",
+  );
+  assert.equal(isRetryablePostResetLivenessFailure(exhausted), false);
+  exhausted.pogoBridgeEvidence = {
+    responseStatus: 6,
+    baselineMask: 0x3ff,
+    selectedMask: 0x3ff,
+    restoredMask: 0x3ff,
+    errors: 0,
+  };
+  assert.equal(isRetryablePostResetLivenessFailure(exhausted), true);
+  exhausted.pogoBridgeEvidence.restoredMask = 0;
+  assert.equal(isRetryablePostResetLivenessFailure(exhausted), false);
+  exhausted.pogoBridgeEvidence.restoredMask = 0x3ff;
+  exhausted.pogoBridgeEvidence.errors = 1;
+  assert.equal(isRetryablePostResetLivenessFailure(exhausted), false);
   assert.equal(
     isRetryablePostResetLivenessFailure(
       new Error("The pogo bridge stopped safely: no framed temple response."),
