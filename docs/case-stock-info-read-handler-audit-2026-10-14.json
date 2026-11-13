@@ -1,0 +1,83 @@
+{
+  "scope": "Stock serial safe INFOC/INFO0 read-path follow-up",
+  "controlPair": "iPhone pair, user confirmed seated; latest stock bilateral version2.3.0.24.",
+  "hardwareOperationsThisTurn": 0,
+  "infoReadVerified": false,
+  "flashWrites": 0,
+  "candidatePaths": [
+    {
+      "entry": "0x00574808",
+      "name": "Device-ID selector",
+      "source": "/Users/kalani/Repo/evenRealities-openCFW/g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00574808.c",
+      "sourceSha256": "191c86cfb5fdc002864ffc18d5b727147e57f382d85db51e2358785c0fc9b35c",
+      "finding": "Fixed helper result/peripheral IDs; caller supplies selector, not arbitrary memory address."
+    },
+    {
+      "entry": "0x00512c84",
+      "name": "MCU identity helper",
+      "source": "/Users/kalani/Repo/evenRealities-openCFW/g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00512c84.c",
+      "sourceSha256": "a52669df20233599ee657211c17b7cb9923c865b0ec4e131021e9b6c5663c181",
+      "finding": "Calls 0x00480D72 selector1 into local output and returns first fixed word."
+    },
+    {
+      "entry": "0x00480d72",
+      "name": "MCU information dispatch",
+      "source": "/Users/kalani/Repo/evenRealities-openCFW/g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00480d72.c",
+      "sourceSha256": "455410b42c88f24912edb7ce95116a298dc83fd4339552d92d87d597236146d4",
+      "finding": "Selector0 fixed status decode; selector1 calls fixed MCU-info helper. No external memory address input."
+    },
+    {
+      "entry": "0x0057612c",
+      "name": "Case OTA file export",
+      "source": "/Users/kalani/Repo/evenRealities-openCFW/g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/0057612c.c",
+      "sourceSha256": "bf86f7723a6d0b1fc608f83960f978dae58d26686c49bcfa3a044f9e203a761e",
+      "finding": "File-oriented /firmware/box.bin transfer, not Apollo address-space read."
+    },
+    {
+      "entry": "0x005713d8",
+      "name": "Recording-data transfer",
+      "source": "/Users/kalani/Repo/evenRealities-openCFW/g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/005713d8.c",
+      "sourceSha256": "66bba52c470a821dcdecc9cf43e3ce20287cabeca8c939a7a794b6907ae01af1",
+      "finding": "File/cache data, not INFO provisioning."
+    },
+    {
+      "entry": "0x00447f00",
+      "name": "OTA export",
+      "source": "/Users/kalani/Repo/evenRealities-openCFW/g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00447f00.c",
+      "sourceSha256": "0e0278718f62caa1303d3ccfafc13ab7fe78ace02bd561e08b24278976d93020",
+      "finding": "File CRC/open/seek/read, BLE transport outputs; no verified INFO memory backend."
+    },
+    {
+      "entry": "0x00445660",
+      "name": "OTA hexadecimal-address parser caller",
+      "source": "/Users/kalani/Repo/evenRealities-openCFW/g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00445660.c",
+      "sourceSha256": "9ba16c067994c5ecb728a59665c3b73173d919f1344f4184c3990332cde0de50",
+      "finding": "Address parser is in 0xC0 import setup; sets transfer address/state for writes. Excluded from read testing."
+    }
+  ],
+  "versionCoverage": {
+    "nativeHandlerTrace": "2.2.6.10 locked decompilation; existing command-map labels known inconsistent, not used as safety authority.",
+    "2.3.0.24Comparison": "Both images share59 join-in log labels;2.3 adds get_panel_temp. This is string evidence only, not complete handler equivalence or exhaustive command coverage.",
+    "doNotSend": "No new candidate is qualified against2.3.0.24 native implementation for INFO reads."
+  },
+  "limits": [
+    "Not a proof that every undocumented stock path is absent.",
+    "No vulnerability or unchecked-address mechanism treated as a safe memory read.",
+    "Case SRAM cannot directly read Apollo MMIO/INFO without a verified temple-side protocol."
+  ],
+  "nextRequirement": "A specific stock handler with proven INFO address bounds and read-only behavior in2.3.0.24, or a separately authorized temple-side mechanism; none established.",
+  "mcuIdLowerClosure": {
+    "entry": "0x00480874",
+    "fixedRegisterAddresses": [
+      "0x40020000",
+      "0x40020004",
+      "0x40020008",
+      "0x4002000C",
+      "0x40020010",
+      "0x40020014"
+    ],
+    "additionalReads": "Fixed CoreSight identification registers0xE00FEFE0..0xE00FEFFC and flash lookup tables.",
+    "serialOutput": "Caller0x00512C84 returns only first word to device-ID selector; does not return full local array.",
+    "conclusion": "No caller-selected address or INFOC/INFO0 field in this traced branch."
+  }
+}

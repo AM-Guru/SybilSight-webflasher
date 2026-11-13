@@ -1,0 +1,98 @@
+{
+  "scope": "Exact flag-clearing trace and receive-only observation candidate; iPhone temples not commanded or flashed.",
+  "casePayloadSha256": "773b6d4cfdaf0a5a74a557e3babe8222a0ae813436b76a7437c1096d2c60d677",
+  "stateBase": "0x2000087C",
+  "flagAddresses": {
+    "leftInhibit": "0x200008AD",
+    "leftSecondaryFault": "0x200008AF",
+    "rightInhibit": "0x200008C9",
+    "rightSecondaryFault": "0x200008CB"
+  },
+  "clearingPaths": [
+    {
+      "entry": "0x08003A3C",
+      "literalBase": "0x2000089C",
+      "stores": "base+0x10..0x14 include state+0x30..0x34. Clears left inhibit +0x31 and secondary +0x33; also counters/status."
+    },
+    {
+      "entry": "0x08003A60",
+      "literalBase": "0x200008BC",
+      "stores": "base+0x0C..0x10 include state+0x4C..0x50. Clears right inhibit +0x4D and secondary +0x4F; also counters/status."
+    },
+    {
+      "entry": "0x080077F8..0x0800784A",
+      "condition": "Either newly sensed presence byte differs from its saved previous value. A change on either side calls BOTH reset helpers. Current presence bytes at state+0x10/+0x11 remain unchanged by those helpers. Absence branch preserves +0x32/+0x4E and clears initial-query indicators +0x12/+0x13."
+    },
+    {
+      "entry": "0x08003060 -> 0x08003A30",
+      "condition": "Case startup invokes both reset helpers unconditionally before peripheral self-check sequence."
+    }
+  ],
+  "importantLimits": [
+    "Physical removal only clears faults if sensing observes a presence transition; physically empty is not equivalent to firmware-detected empty.",
+    "Helpers do not themselves request AF/AE output updates. Subsequent policy decides the output setting. Clearing fault bytes does not establish restored voltage or a responding temple.",
+    "Hall and normal standby resets call 08003A00 and are different from full state reset. Secondary fault survives those ordinary paths."
+  ],
+  "nativeValidation": {
+    "presenceFlagCombinationsPassed": 256,
+    "startupWrapperPassed": true,
+    "script": "work/case-fault-policy/verify_clearing.py",
+    "evidence": "work/case-fault-policy/clearing-evidence.json",
+    "boundary": "Actual pinned Thumb code executed offline; sensor, peripheral and scheduler behavior not emulated."
+  },
+  "observation": {
+    "method": "Receive-only normal-console log capture; no serial commands, SRAM writes or intentional reset. Normal-boot and reset-deasserted line values set before open. OS/adapter open transients cannot be excluded.",
+    "stockPollLogSite": "0x080018E4",
+    "positiveEvidence": "L/R water detected, disable 5V, time:N establishes corresponding presence, inhibit, secondary flag and nonzero standby counter at that log site. This line does not prove water. Charging done, dont send 0x13 establishes inhibit set and secondary clear.",
+    "negativeEvidence": "No such line does not prove flags clear: logging suppression, timer modulo and other state conditions gate output.",
+    "exactSramRead": "Not qualified. Prior ROM Read Memory at 0x2000087C returned address NACK. Reset to ROM also interrupts policy, and low-SRAM preservation through ROM execution is unproven. Reinitializing a sensing bridge would erase/replace the evidence. No new SRAM snapshot tested.",
+    "script": "work/case-fault-policy/observe_serial.py"
+  },
+  "nextMacStep": "Mac pair can remain seated. Root cause of silent right remains unresolved; no protection override justified.",
+  "liveControl": {
+    "capture": "work/case-fault-policy/iphone-passive.json",
+    "durationSeconds": 35,
+    "bytesWritten": 0,
+    "sramWrites": 0,
+    "templeCommands": 0,
+    "unexpectedCaseStartupObserved": true,
+    "interpretation": "Port opening evidently caused fresh Case initialization. Cannot claim preexisting Case state retained. No temple reset command or firmware sent. Both iPhone temples returned normal charging status; no fault-specific logs observed.",
+    "safeNextCapture": "Single serial-open session with Mac pair for at least230 seconds, accepting Case startup as the baseline; never reopen within window. Observe natural stock policy only. A new capture observes fault formation after startup, not preexisting flags."
+  },
+  "nativeTimeoutBoundaryValidation": {
+    "evidence": "work/case-fault-policy/timeout-evidence.json",
+    "casesPassed": 10,
+    "counters": [
+      0,
+      209,
+      210,
+      211,
+      300
+    ],
+    "condition": "Both temples present; one valid status, other silent; charging-state fields satisfy timeout branch.",
+    "result": "Silent-side inhibit and secondary flags set exactly at counter >=210. Real scheduler timing not validated by offline replay."
+  },
+  "liveMacCapture": {
+    "evidence": "work/case-fault-policy/mac-timeout-observation.json",
+    "serialBytesWritten": 0,
+    "sramWrites": 0,
+    "templeCommandsSentByHost": 0,
+    "seconds": 245.0,
+    "leftStatusReplies": 232,
+    "rightStatusReplies": 0,
+    "rightStatusFailures": 22,
+    "keyLines": [
+      "L & R GLS IN, Charging status unknown. Show led after 1s.",
+      "L & R GLS IN, Charging status(1100) confirmed in 1s. Show led now.",
+      "GLS_RX error: CRC wrong.",
+      "No reply from GLS_R for 180s, reset GLS_R",
+      "No reply from GLS_R for 210s, show error led"
+    ],
+    "stockReset180Observed": true,
+    "stockTimeout210Observed": true,
+    "waterDetectionLogObserved": false,
+    "startupObserved": true,
+    "rightFaultFlags": "Both right inhibit and secondary set at stock210s log path, inferred from pinned native stores; no direct SRAM read.",
+    "boundary": "No right battery voltage/current or boot-layer response obtained. Startup/automatic temple reset are stock firmware actions, not host commands. One transient left CRC error followed by successful left replies."
+  }
+}

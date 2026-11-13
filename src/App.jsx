@@ -119,6 +119,8 @@ import {
   flashG2BleSessionsSequentially,
   flashG2BleSessionsConcurrently,
   g2BleDeviceSide,
+  g2BleRequiredSides,
+  g2BleValidationSide,
   g2BleRoutesAwaitingCaseVerification,
   G2_KNOWN_NAME_TOKENS,
   g2BleTargetReportedVersion,
@@ -968,12 +970,22 @@ function BluetoothRecoveryCard({
 }) {
   const advanced = variant === "advanced";
   const primary = variant === "primary";
+  const validationSide = g2BleValidationSide(selectedRelease);
+  const requiredSides = g2BleRequiredSides(selectedRelease);
+  const requiredDevicesSelected = requiredSides.every(
+    (side) => bleDevices[side],
+  );
+  const renderedBleStatus =
+    validationSide &&
+    bleStatus ===
+      "Choose firmware, disconnect the Even app, then pair the explicitly labeled Left and Right temples."
+      ? `Disconnect the Even app, then select only the explicitly labeled ${validationSide} temple. The other side remains unchanged.`
+      : bleStatus;
   const cardFlashReady = primary
     ? Boolean(
         directBleSupported &&
           selectedRelease &&
-          bleDevices.left &&
-          bleDevices.right &&
+          requiredDevicesSelected &&
           !operation,
       )
     : bleFlashReady;
@@ -993,22 +1005,31 @@ function BluetoothRecoveryCard({
             : "02 · Pair + update over Bluetooth"}
         </div>
         <h3>
-          {primary
+          {validationSide
+            ? `Update the ${validationSide} recovery-control temple`
+            : primary
             ? "Pair and update both temples"
             : "Update both temples directly over Bluetooth"}
         </h3>
         <p>
-          {primary
+          {validationSide
+            ? `Select only the explicitly labeled ${validationSide} temple. This local recovery experiment sends only its pinned Apollo main component and deliberately leaves the other temple unchanged.`
+            : primary
             ? "Select the clearly labeled left and right temples. SybilSight updates them together and verifies each side independently—no Case cable required."
             : "Chrome connects to both temples, then transfers the selected hash-pinned components to Right followed by Left. Each side has independent block acknowledgements and component verification. No Case USB connection is required."}
         </p>
         <details className="ble-instructions" open={advanced}>
           <summary>Before you begin</summary>
           <ol>
-            <li>Keep both temples powered and nearby. They may remain seated in the open, powered Charging Case when Bluetooth is available.</li>
             <li>
-              Disconnect the paired phone, then select the explicitly labeled
-              Left and Right devices below.
+              {validationSide
+                ? `Keep only the ${validationSide} recovery-control temple powered outside the Charging Case. Do not seat it until the armed insertion cue.`
+                : "Keep both temples powered and nearby. They may remain seated in the open, powered Charging Case when Bluetooth is available."}
+            </li>
+            <li>
+              {validationSide
+                ? `Disconnect the paired phone, then select the explicitly labeled ${validationSide.toUpperCase()} device below.`
+                : "Disconnect the paired phone, then select the explicitly labeled Left and Right devices below."}
             </li>
             <li>
               The chooser may list both sides, but SybilSight accepts only an
@@ -1024,7 +1045,7 @@ function BluetoothRecoveryCard({
       </div>
       <div className="ble-recovery-actions">
         <div className="ble-device-buttons">
-          {["left", "right"].map((side) => (
+          {requiredSides.map((side) => (
             <Button
               key={side}
               tone="secondary"
@@ -1045,31 +1066,32 @@ function BluetoothRecoveryCard({
               onChange={(event) => onReadyChange(event.target.checked)}
               disabled={
                 !directBleSupported ||
-                !bleDevices.left ||
-                !bleDevices.right ||
+                !requiredDevicesSelected ||
                 Boolean(operation)
               }
             />
             <span>
-              Both selected device names explicitly match their assigned physical
-              sides; the phone is disconnected and the temples will stay powered
-              and nearby; this WebFlasher tab will stay in front.
+              {validationSide
+                ? `The selected device name explicitly matches the ${validationSide} temple; the phone is disconnected; that temple will stay powered outside the Case; and this WebFlasher tab will stay in front.`
+                : "Both selected device names explicitly match their assigned physical sides; the phone is disconnected and the temples will stay powered and nearby; this WebFlasher tab will stay in front."}
             </span>
           </label>
         ) : null}
-        <Button
-          tone="secondary"
-          onClick={onProbe}
-          busy={operation === "bluetooth-probe"}
-          disabled={
-            !directBleSupported ||
-            !bleDevices.left ||
-            !bleDevices.right ||
-            Boolean(operation)
-          }
-        >
-          Check both connections · no firmware write
-        </Button>
+        {!validationSide ? (
+          <Button
+            tone="secondary"
+            onClick={onProbe}
+            busy={operation === "bluetooth-probe"}
+            disabled={
+              !directBleSupported ||
+              !bleDevices.left ||
+              !bleDevices.right ||
+              Boolean(operation)
+            }
+          >
+            Check both connections · no firmware write
+          </Button>
+        ) : null}
         <Button
           className="ble-recovery-start"
           onClick={() => onFlash({ bypassReadyConfirmation: primary })}
@@ -1108,7 +1130,7 @@ function BluetoothRecoveryCard({
                 : "",
             )}
           />
-          <span>{bleStatus}</span>
+          <span>{renderedBleStatus}</span>
         </div>
         {!directBleSupported ? (
           <small className="browser-note">
@@ -3460,7 +3482,7 @@ function App() {
       );
       setBleResults(null);
       setBleStatus(
-        `${side} selected · ${device.name} · ${observedSide} name marker verified. ${bleDevices[otherSide] ? "Both temples selected; live connections are checked before firmware transfer." : "Select the other temple before updating."}`,
+        `${side} selected · ${device.name} · ${observedSide} name marker verified. ${g2BleValidationSide(selectedBleRelease, G2_BLE_VALIDATION_SIDE) === side ? "The other temple remains deliberately unchanged; this selected endpoint is checked before firmware transfer." : bleDevices[otherSide] ? "Both temples selected; live connections are checked before firmware transfer." : "Select the other temple before updating."}`,
       );
       addLog(
         `${side}: selected Bluetooth device ${JSON.stringify(device.name)} · name side=${observedSide}. A live GATT connection has not been proven; no firmware bytes were sent.`,
@@ -3654,10 +3676,17 @@ function App() {
 
   const flashBleTempleFirmware = async ({ bypassReadyConfirmation = false } = {}) => {
     const release = selectedBleRelease;
+    const validationSide = g2BleValidationSide(
+      release,
+      G2_BLE_VALIDATION_SIDE,
+    );
+    const requiredSides = g2BleRequiredSides(
+      release,
+      G2_BLE_VALIDATION_SIDE,
+    );
     if (
       !release ||
-      !bleDevices.left ||
-      !bleDevices.right ||
+      !requiredSides.every((side) => bleDevices[side]) ||
       (!bypassReadyConfirmation && !bleReady)
     ) return;
     setBleRouteProgress({
@@ -3736,11 +3765,11 @@ function App() {
           const routesToFlash = [];
           for (const side of ["left", "right"]) {
             const device = bleDevices[side];
-            if (G2_BLE_VALIDATION_SIDE && side !== G2_BLE_VALIDATION_SIDE) {
+            if (validationSide && side !== validationSide) {
               completedRoutes[side] = {
                 side,
-                deviceId: device.id,
-                deviceName: device.name,
+                deviceId: device?.id ?? null,
+                deviceName: device?.name ?? null,
                 imageSha256: prepared.fileSha256,
                 version: prepared.g2Version,
                 reportedVersion: targetReportedVersion,
@@ -3757,7 +3786,7 @@ function App() {
                 "retained",
               );
               addLog(
-                `${side}: local single-side validation retained this temple unchanged while ${G2_BLE_VALIDATION_SIDE} receives the candidate firmware.`,
+                `${side}: local single-side validation retained this temple unchanged while ${validationSide} receives the candidate firmware.`,
                 "info",
               );
               continue;
@@ -4227,17 +4256,17 @@ function App() {
               );
             }
           } else {
-            if (G2_BLE_VALIDATION_SIDE) {
-              const controlSide = G2_BLE_VALIDATION_SIDE === "left" ? "right" : "left";
+            if (validationSide) {
+              const controlSide = validationSide === "left" ? "right" : "left";
               setSessionProgress(
                 1,
-                `${G2_BLE_VALIDATION_SIDE} candidate verified; ${controlSide} deliberately unchanged`,
+                `${validationSide} candidate verified; ${controlSide} deliberately unchanged`,
               );
               setBleStatus(
-                `Bluetooth validation update complete on ${G2_BLE_VALIDATION_SIDE}; ${controlSide} remains deliberately unchanged as the control.`,
+                `Bluetooth validation update complete on ${validationSide}; ${controlSide} remains deliberately unchanged as the control.`,
               );
               addLog(
-                `Local single-side Bluetooth validation completed · ${G2_BLE_VALIDATION_SIDE} verified package ${prepared.g2Version}; ${controlSide} was not rewritten.`,
+                `Local single-side Bluetooth validation completed · ${validationSide} verified package ${prepared.g2Version}; ${controlSide} was not rewritten.`,
                 "success",
               );
             } else {
@@ -5452,6 +5481,10 @@ function App() {
           localOnly: true,
           bleComponentNames:
             firmware.templeFlashTarget.bleComponentNames ?? null,
+          recoveryExperiment:
+            firmware.templeFlashTarget.recoveryExperiment ?? null,
+          bleValidationSide:
+            firmware.templeFlashTarget.bleValidationSide ?? null,
         }
       : null;
   const selectedBleRelease = selectedLocalBleRelease ?? selectedRelease;
@@ -5690,8 +5723,9 @@ function App() {
   const bleFlashReady = Boolean(
     directBleSupported &&
       selectedBleRelease &&
-      bleDevices.left &&
-      bleDevices.right &&
+      g2BleRequiredSides(selectedBleRelease).every(
+        (side) => bleDevices[side],
+      ) &&
       bleReady &&
       !operation,
   );
@@ -7413,7 +7447,19 @@ function App() {
                     ) : null}
                     <Field label="SHA-256" value={`${firmware.fileSha256.slice(0, 24)}…`} />
                   </div>
-                  {firmware.provenance.channel === "custom" ? (
+                  {firmware.templeFlashTarget?.recoveryExperiment ? (
+                    <div className="firmware-boundary firmware-boundary-custom">
+                      <strong>Exact local MRAM/SBL recovery experiment.</strong>
+                      <span>
+                        Publisher metadata is not recognized, but the complete
+                        bundle and Apollo main match the WebFlasher's compiled-in
+                        recovery hashes. Only the Apollo main is eligible for the
+                        left-only direct-Bluetooth positive control; the other five
+                        Glasses components remain unchanged. The Case component is
+                        stock 1.2.57 and is not part of this experiment.
+                      </span>
+                    </div>
+                  ) : firmware.provenance.channel === "custom" ? (
                     <div className="firmware-boundary firmware-boundary-custom">
                       <strong>Reviewed CFW targets the Glasses; do not stage it as Case firmware.</strong>
                       <span>

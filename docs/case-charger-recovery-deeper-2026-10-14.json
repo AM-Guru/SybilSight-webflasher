@@ -1,0 +1,413 @@
+{
+  "date": "2026-10-14",
+  "scope": "Deeper charger-fault access, corrected ADC sequencing, contact bias sensing, recovery entry",
+  "workingReference": {
+    "path": "work/case-sensing-2026-10-14/iphone-v2-contact-stock.json",
+    "bridgeSha256": "cd80ab220cb9524e51d4dda3f40d51f5499f74da4c2367981b7796773ae39d5e",
+    "status": 0,
+    "exactRestorationVerified": true,
+    "adcChannelRegister": "0xfffffff4",
+    "primary": {
+      "left": [
+        54,
+        54,
+        54,
+        53,
+        54
+      ],
+      "right": [
+        54,
+        53,
+        54,
+        53,
+        54
+      ]
+    },
+    "conditionalBias": {
+      "left": [
+        49,
+        49,
+        49,
+        50,
+        49
+      ],
+      "right": [
+        49,
+        50,
+        50,
+        50,
+        49
+      ]
+    }
+  },
+  "macComparison": {
+    "path": "work/case-sensing-2026-10-14/mac-v2-contact-stock.json",
+    "comparisonPath": "work/case-sensing-2026-10-14/v2-contact-comparison.json",
+    "sameBridgeSha256": "cd80ab220cb9524e51d4dda3f40d51f5499f74da4c2367981b7796773ae39d5e",
+    "sameCaseSerial": true,
+    "sameCaseCodeSha256": true,
+    "exactRestorationBoth": true,
+    "firmwareBytesSent": 0,
+    "pairs": {
+      "Mac": {
+        "captures": {
+          "left": {
+            "values": [
+              54,
+              55,
+              53,
+              54,
+              53
+            ],
+            "median": 54
+          },
+          "right": {
+            "values": [
+              34,
+              33,
+              32,
+              33,
+              33
+            ],
+            "median": 33
+          }
+        },
+        "fallbackCaptures": {
+          "left": {
+            "values": [
+              49,
+              48,
+              49,
+              49,
+              48
+            ],
+            "median": 49
+          },
+          "right": {
+            "values": [
+              33,
+              33,
+              33,
+              34,
+              35
+            ],
+            "median": 33
+          }
+        }
+      },
+      "iPhone": {
+        "captures": {
+          "left": {
+            "values": [
+              54,
+              54,
+              54,
+              53,
+              54
+            ],
+            "median": 54
+          },
+          "right": {
+            "values": [
+              54,
+              53,
+              54,
+              53,
+              54
+            ],
+            "median": 54
+          }
+        },
+        "fallbackCaptures": {
+          "left": {
+            "values": [
+              49,
+              49,
+              49,
+              50,
+              49
+            ],
+            "median": 49
+          },
+          "right": {
+            "values": [
+              49,
+              50,
+              50,
+              50,
+              49
+            ],
+            "median": 50
+          }
+        }
+      }
+    },
+    "interpretation": "Mac right differs consistently from the working right under identical stock contact/bias settings; Mac left overlaps working left. Raw counts are not calibrated supply voltage, current, or battery voltage. This does not distinguish deep discharge, contact/load variation, charger failure, or corrupted firmware."
+  },
+  "measurementQualification": {
+    "sequenceCorrection": "Stock samples after mux write and settle, before any register reads. Revised bridge mirrors this order. Corrected water reference remains about 4 raw counts.",
+    "adcConfiguration": "Sequencer channel 4 in rank 1; unused ranks F. Checked 12-bit resolution and sequencer mode before any YHM writes.",
+    "contactStatusQualification": "Temporarily disabling left/right output changes status register 1 to 0x10/0x01. Exact values are checked; all ten registers are restored afterward.",
+    "interpretation": "Contact/bias ADC values are electrical-response measurements, not calibrated voltage/current. No battery diagnosis can be inferred from raw counts alone."
+  },
+  "templeDiagnostics": {
+    "bq25180": {
+      "i2cAddress": "0x6A on Apollo bus 7",
+      "STAT0": "0x00: input power-good and charging state",
+      "STAT1": "0x01: input overvoltage, battery undervoltage, thermal/NTC state; some flags clear on read",
+      "FLAG0": "0x02: sticky events; read-to-clear, so not a side-effect-free query",
+      "firmwareReader": "0x0053A8AC reads STAT0/STAT1",
+      "endpointBoundary": "No verified stock Case command forwarding these I2C reads from a nonresponsive temple."
+    },
+    "bq27427": {
+      "i2cAddress": "0x55 on Apollo bus 7",
+      "batteryVoltageRegister": "0x04",
+      "flagsRegister": "0x06",
+      "firmwareVoltageReader": "0x0053B210",
+      "endpointBoundary": "Local temple I2C; requires running Apollo code or physical bus/debug access."
+    },
+    "npm1300": {
+      "capability": "Documented PMIC ADC measures VBAT/VBUS/IBAT and charger errors",
+      "endpointBoundary": "16-bit local I2C register access; actual charger family on Mac right remains unverified. Case SRAM execution does not give Apollo memory or I2C access."
+    }
+  },
+  "recoveryControls": {
+    "DEAE00": "Source-derived Case flag enables temple reset handling; acknowledged and tested in reset-gate-and-bilateral.json. Not a bootloader/DFU enable.",
+    "DEB0": "Traced temple reset request, not firmware programming.",
+    "DEEE": "Case standby/ship mode; blocked with USB present; not temple recovery.",
+    "DEFF": "Case MCU reset, not a temple bootloader restore.",
+    "EvenBootloader": "Application installs staged image after CRC/header checks. No verified exposed serial recovery listener from its DFU task.",
+    "AmbiqSBL": "Requires per-device INFOC/INFO0 wired configuration, entry condition, matching pins/framing/window and live CRC-valid STATUS. Existing probe has not established early-window access.",
+    "memoryLayers": "Ambiq SBL 0x00400000..0x00410000 is distinct from Even bootloader 0x00410000 and application 0x00438000; bulk erase or unknown boot-control writes are not justified.",
+    "EvenBootManager": {
+      "otaFlagAddress": "0x007FE000",
+      "installValue": "0x55555555",
+      "behavior": "At startup sends DFU queue command 1 to install staged image when flag matches; otherwise command 0 to attempt application boot. Reviewed subsequent manager loop has no periodic installation retry or rollback.",
+      "source": "/Users/kalani/Repo/evenRealities-openCFW/g2/components/bootloader/manager_task/manager_task.c",
+      "nativeControlFlow": "/Users/kalani/Repo/evenRealities-openCFW/g2/research/corpus/apollo-bootloader/ghidra/open-2026-09-29/decomp/0042e2f8.c",
+      "boundary": "No live right-temple flag or staged-file read; no Case-accessible flag setter verified. This is a source-supported failure mechanism, not diagnosis of this device."
+    }
+  },
+  "rejectedUnqualifiedCommands": {
+    "DED4": "Writes Case PMIC chip-ID/configuration, not a diagnostic read.",
+    "PT_6A": "Masks/unmasks nPM charger event handling, not a fault snapshot.",
+    "arbitraryYhmRegisterScan": "No verified ADC result map or read-side-effect specification; not used."
+  },
+  "sources": {
+    "nativeCasePolicy": "/Users/kalani/Repo/evenRealities-openCFW/g2/research/corpus/case/ghidra/open-2026-09-29/decomp/0800ce34.c",
+    "bqStatReader": "/Users/kalani/Repo/evenRealities-openCFW/g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/0053a8ac.c",
+    "bqVoltageReader": "/Users/kalani/Repo/evenRealities-openCFW/g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/0053b210.c",
+    "CaseResetGate": "/Users/kalani/Repo/evenRealities-openCFW/g2/components/case/legacy_default_candidate_20261010/reset_toggle_ae.c",
+    "EvenBootloaderWriter": "/Users/kalani/Repo/evenRealities-openCFW/g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00444f60.c",
+    "tiDatasheet": "https://www.ti.com/lit/ds/symlink/bq25180.pdf",
+    "nordicSpec": "https://docs.nordicsemi.com/r/bundle/ps_npm1300/page/keyfeatures_html5.html"
+  },
+  "firmwareBytesSent": 0,
+  "orangeIndicatorInvestigation": {
+    "userObservation": "Mac pair in either Case: orange 1 second on, 1 second off",
+    "officialMeaning": "Charging anomaly, attributed to charging-pin alignment. Not an explicit dead-battery or DFU indication.",
+    "officialSources": [
+      "https://support.evenrealities.com/hc/en-us/articles/13754885105295-How-to-Charge",
+      "https://support.evenrealities.com/hc/en-us/articles/17132298763151-G2-Glasses-Not-Charging-in-the-Case-with-Flashing-Indicator-Light-on-the-Case"
+    ],
+    "sourceEvidence": {
+      "08007214": "Both contact flags can be true while a missing temple status reply triggers unknown charging status; right no-response counter triggers reset at multiples of 180 unless reset-disabled flag is set.",
+      "0800bb4c": "LED state 3 or 4 preserves blinking and toggles PA6.",
+      "08009d70": "LED states 3 and 4 are deliberately not cleared by normal clear timer.",
+      "08003848": "Below 90 percent selects PA6, consistent with official orange mapping; PA7 for >=90 percent.",
+      "0800bb74": "Status confirmation timer starts at 1000 ticks; this alone does not establish the LED toggle period."
+    },
+    "boundary": "Exact 1 second LED toggle period and live LED state byte have not been independently captured. Contact detection is not proof of full power/UART continuity. Pattern is consistent with missing right status, not unique to mechanical misalignment.",
+    "safeNextStep": "Inspect and clean dry contacts, confirm spring movement without metal tools, reseat and compare stock status. No unknown charger configuration, boot control, or firmware writes."
+  },
+  "postContactCheck": {
+    "capture": "work/direct-serial-2026-10-14/mac-after-contact-check.json",
+    "userInspection": "Contacts clean; working iPhone pair works in both Cases; Mac pair orange flashes in both Cases.",
+    "observed": "Mac left reports 98% charging, both contacts detected, right status times out.",
+    "firmwareBytesSent": 0
+  },
+  "officialOtaInterruption": {
+    "userReport": "Official Even Realities Android app was installing firmware when Android phone crashed and rebooted.",
+    "interpretation": "Interrupted official OTA is plausible cause; device memory/boot state remains unread."
+  },
+  "earlyRecoveryProgress": {
+    "resetGateProbe": "work/recovery-window-2026-10-14/reset-gate-and-bilateral.json",
+    "resetGateAcknowledged": true,
+    "bluetoothScan": "/Users/kalani/Repo/SybilSight/docs/bluetooth-profiler/sessions/2026-10-14T20-45-21Z-scan.json",
+    "bluetoothObserved": [
+      "Mac left 4FB39E",
+      "Ring ADDCD9"
+    ],
+    "rightAdvertisementObserved": false,
+    "clockUartQualification": "work/recovery-window-2026-10-14/mac-clock-uart-qualified.json",
+    "exactYhmRestorationVerified": true,
+    "restoredCaseVersion": "1.2.57",
+    "initialQualificationFailure": "Without reviewed UART/GPIO cleanup, status register 2 changed 04 to 0C despite zero YHM writes. Original failure retained; adding exact reviewed peripheral cleanup restored all ten bytes. No unknown YHM register writes used.",
+    "stockResetModel": "work/recovery-window-2026-10-14/stock-reset-waveform.json",
+    "stockResetActions": 103,
+    "next": "Awaiting Mac pair swap for fixed HELLO timing-window coverage after one reset request.",
+    "firmwareBytesSent": 0,
+    "firstImmediateProbe": "work/recovery-window-2026-10-14/mac-right-early-hello.json",
+    "firstImmediateCaptureHex": "14559de90000080000",
+    "firstImmediateUartErrorMask": "0x2",
+    "firstImmediateInterpretation": "Transmitted HELLO echo plus zero; no CRC-valid STATUS. Receive-path control is not yet qualified, so this is not conclusive recovery-unavailable evidence.",
+    "bluetoothLeftConnection": "/Users/kalani/Repo/SybilSight/docs/bluetooth-profiler/sessions/2026-10-14T20-55-53Z-probe.json",
+    "bluetoothLeftConnected": true,
+    "bluetoothLeftFirmware": "2.2.6.10",
+    "olderBridgeReceiveIssue": "Pinned SBL V7 bridge calls native 0x08006CF8 (TX-only) before raw receive. Stock 0x0800258C calls 0x08006C80 (RX-only) after TX. Do not rely on old raw-receive silence as SBL availability evidence. Physical positive control still pending.",
+    "leftControls": [
+      "work/recovery-window-2026-10-14/mac-left-rx-control.json",
+      "work/recovery-window-2026-10-14/mac-left-native-rx-control.json"
+    ],
+    "leftControlInterpretation": "Earlier left controls used right-destination byte; RX path has not passed a checksum-valid application reply. Correctly addressed control in progress.",
+    "leftReceiveQualification": "work/recovery-window-2026-10-14/mac-left-uninterrupted-rx-control.json",
+    "leftReceiveQualified": true,
+    "leftReceiveVersion": "2.2.6.10",
+    "leftReceiveHardware": 5,
+    "leftReceiveUartErrorMask": "0x0",
+    "stockNativeSramPositiveControl": "work/recovery-window-2026-10-14/mac-left-stock-native-control.json",
+    "stockCaseForwardedControl": "work/recovery-window-2026-10-14/stock-case-forwarded-versions.json",
+    "receiveLoopCorrection": "0x08002CB8 calls a blocking GPIO pulse-train helper at 0x0800A270, not a generic harmless watchdog feed. Removing it from the RX loop changed a framing-error/zero-byte control to a complete checksum-valid reply. Direct IWDG register feeding remains.",
+    "qualifiedRightEarlyProbe": "work/recovery-window-2026-10-14/mac-right-qualified-early-hello.json",
+    "qualifiedRightEarlyProbeResult": {
+      "captureBytes": 0,
+      "uartErrorMask": "0x0",
+      "templeHelloBytesSent": 8,
+      "exactRestorationVerified": true,
+      "restoredCaseVersion": "1.2.57",
+      "resetBoundary": "Bridge completed stock Case reset waveform; actual right Apollo reset is not independently observed."
+    },
+    "workingRightChannelQualification": "work/recovery-window-2026-10-14/iphone-right-qualified-control.json",
+    "rightChannelReceiveQualified": true,
+    "workingRightVersion": "2.3.0.24",
+    "workingRightHardware": 5,
+    "rightChannelUartErrorMask": "0x0"
+  },
+  "qualifiedWindowedHello": {
+    "path": "work/recovery-window-2026-10-14/mac-right-windowed-hello.json",
+    "nominalOffsetsMs": [
+      0,
+      10,
+      50,
+      250
+    ],
+    "helloFrames": 4,
+    "captureBytes": 0,
+    "uartErrorMask": "0x0",
+    "exactRestorationVerified": true,
+    "restoredCaseVersion": "1.2.57",
+    "boundary": "One stock reset waveform emitted; actual Apollo reset and retail boot configuration remain unobserved. No firmware data sent."
+  },
+  "remainingRecoveryInvestigation": {
+    "officialAmbiqGuides": "Secure Update and MRAM Recovery downloads redirected to account/profile request; not accessed or bypassed.",
+    "peerUartLead": "Exact dispatch literal 0x0057016C resolves to 0x0057303D, opcode 0x43. Fixed seven bytes ptSync are sent and compared to echo. This is an application UART sync test, not a demonstrated arbitrary relay or bootloader recovery entry; not sent.",
+    "pendingPhysicalControl": "Completed; right remains unresponsive."
+  },
+  "physicalCaseResetControl": {
+    "userCompleted": true,
+    "indicatorPattern": "not reported",
+    "capture": "work/recovery-window-2026-10-14/mac-after-physical-reset-qualified-console.json",
+    "leftChargingPercent": [
+      98,
+      99
+    ],
+    "right": "Repeated receive-header timeout and No reply from GLS_R",
+    "caseFirmware": "1.2.57",
+    "caseReportedMillivolts": 4190,
+    "aggregateCurrentRaw": [
+      419,
+      424,
+      425
+    ],
+    "boundary": "Case aggregate current cannot be assigned to right battery. Subsequent console opening used qualified stock DTR/RTS sequence and rebooted Case."
+  },
+  "legacyProbeHardening": {
+    "change": "Block legacy probe entry point and transport constructor before hardware access; preserve pinned byte builder as offline evidence.",
+    "reason": "Stock RX initializer is 0x08006C80; legacy raw probe used TX-only 0x08006CF8.",
+    "verification": "37 Python tests pass, including no-reset/no-transport hardware-access guard.",
+    "qualifiedReplacement": "scripts/case_early_recovery_bridge/run.py"
+  },
+  "latestBluetoothScan": "/Users/kalani/Repo/SybilSight/docs/bluetooth-profiler/sessions/2026-10-14T21-45-04Z-scan.json",
+  "latestBluetoothResult": "Only attributable Mac left G2 advertised; no observed Mac right.",
+  "bootloaderUartFollowup": {
+    "sources": [
+      "g2/components/bootloader/initializer_callbacks/post_bringup.c",
+      "g2/components/bootloader/initializer_callbacks/elog_uart_tx.c",
+      "g2/components/bootloader/initializer_callbacks/verify_uart_startup_state.py"
+    ],
+    "findings": [
+      "UART post setup activates TX buffers with RX buffer/capacity both zero.",
+      "Logging output uses UART transfer TX descriptor.",
+      "Focused startup verifier documents rows 1/2/3 ending initialized=0 and saved-valid=1; this is modeled locked bootloader evidence, not live right-temple state."
+    ],
+    "boundary": "Generic HAL RX/DMA implementations exist, but no external recovery command listener or Case-accessible boot-entry control has been established. Firmware on the right remains unread."
+  },
+  "recoveryCompletionAudit": {
+    "state": "Not recovered; further intervention depends on electrical measurement or verified OEM boot-entry configuration.",
+    "requirements": {
+      "bothTemplesBoot": "Unproven; right silent in qualified serial captures and latest BLE scan.",
+      "bothBluetoothConnectionsFromMac": "Left previously directly connected/read; right missing.",
+      "safeEvenBootloaderAccess": "No exposed listener demonstrated; locked source path installs staged files.",
+      "earlyAmbiqAccess": "Qualified 1M HELLO schedule yields zero bytes; actual reset and right INFO boot provisioning unknown.",
+      "safeFlashAttempt": "No verified responding target or authenticated transport; no firmware data sent.",
+      "perSideElectricalDiagnosis": "Raw sensing differs; no calibrated right voltage/current or local charger-fault access.",
+      "exactRegisterRestoration": "Qualified captures show ten-byte equality and Case1.2.57 restoration.",
+      "webflasherHardening": "Legacy invalid SBL receive path blocked before hardware access; 37 Python and 161 focused JS tests pass."
+    },
+    "externalEvidenceNeeded": [
+      "In-situ contacts are inaccessible; multimeter-only approach cannot measure loaded temple supply without suitable breakout.",
+      "Verified OEM right-temple recovery UART/GPIO provisioning or hardware access remains needed for a new recovery entry."
+    ],
+    "boundary": "Available qualified tests are exhausted; this does not prove every physical or OEM recovery avenue impossible. Goal remains active pending missing evidence."
+  },
+  "interruptedOfficialOtaFollowup": {
+    "applicationCompletion": "Pinned main function 0x00445660 compares calculated CRC (transfer word0x17) with expected CRC (command+0x10) before setting 0x55555555 through 0x00478860. Literal strings confirm CRC semantics.",
+    "bootloaderComponent": "Separate main function 0x00444F60 copies staged bootloader file to MRAM in 4096-byte chunks; requires running temple application.",
+    "installationError": "Pinned bootloader 0x0042DE0E writes four erased words to update record 0x007FE000 then calls 0x0042E514 mode0. Reconstructed control.c maps mode0 to RSTGEN SWPOR write at0x40000008, followed by spin pending reset.",
+    "interpretation": "Phone interruption is a credible lead but does not identify failed component or prove persistent flag-loop. No temple memory readout available.",
+    "latestReseatedStockQuery": "work/recovery-window-2026-10-14/mac-reseated-latest-version.json",
+    "latestLeftVersion": "2.2.6.10",
+    "latestRight": "No valid reply; receive header timeout",
+    "firmwareBytesSent": 0,
+    "caseResetBoundary": "Qualified stock serial open reboots Case, not proof of temple reset.",
+    "remainingGap": "No verified Case command to access right local MRAM, reset-generator or INFO boot provisioning while right application is silent."
+  },
+  "retailBootOverrideInvestigation": {
+    "scope": "Retail INFOC override and reachability through pogo, read-only source/binary analysis.",
+    "infocAddress": "0x400C2250",
+    "decode": {
+      "gpio": "bits0..7",
+      "polarity": "bit8",
+      "enabled": "bit9"
+    },
+    "retailValue": "No attributable temple INFOC dump found in inspected reference/provisioning evidence. Official OTA blobs do not establish per-device INFOC.",
+    "binaryScan": {
+      "officialMainAndBootloaderFiles": 34,
+      "exactLiteralAddresses": [
+        "0x400C2250",
+        "0x400C2254",
+        "0x42000028",
+        "0x42004028"
+      ],
+      "hits": 0,
+      "limit": "Literal search does not exclude computed accesses or prove recovery disabled."
+    },
+    "pogoTrace": {
+      "receiveHandler": "0x0053A0B6",
+      "logicalChannel": 2,
+      "nativeChannelRoutine": "0x0055E75A",
+      "descriptorTable": "0x20000D2C",
+      "rowStride": 28,
+      "limit": "RAM table address and logical channel do not establish physical Apollo pin number, INFOC strap identity or SBL pin routing."
+    },
+    "sourceReferences": [
+      "g2/docs/reference/hardware-validation-notes.md:88",
+      "docs/hardware/g2-glasses.md:143",
+      "third-party/upstream/ambiqhal-apollo510/mcu/apollo510/regs/am_mcu_apollo510_otpinfoc.h:747"
+    ],
+    "verifiedEntryPath": false,
+    "hardwareTestPerformed": false,
+    "reasonNoTest": "No established retail GPIO/polarity/enable or safe electrical path through Case; arbitrary pin drive would not be a verified entry test.",
+    "neededEvidence": "Attributable INFOC/active INFO0 dump plus board mapping or manufacturer recovery pinout. Even working-pair provisioning would be control evidence, not automatically proof for Mac right."
+  }
+}

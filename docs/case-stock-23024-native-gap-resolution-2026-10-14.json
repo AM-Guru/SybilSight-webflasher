@@ -1,0 +1,199 @@
+{
+  "firmware": "2.3.0.24",
+  "payloadSha256": "fffbf74b3439bf0e4752fb620a7990d0a133898c54f6fb08005ea6b7029655c5",
+  "scope": "Native assembly resolution of all8 distinct failed decompilations recorded in preceding console/indirect exports.",
+  "deviceOperations": 0,
+  "iphonePairChanged": false,
+  "resolvedFailureClassification": [
+    {
+      "entry": "0x00445e18",
+      "classification": "Display startup publisher",
+      "nativeFinding": "Bounds payload at0x2800, copies to internal staging buffer and posts message type2; fatal store on queue failure.",
+      "assembly": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/serial-callees/00445e18.asm",
+      "sha256": "9eee42824609a2f1a7da26432f298dd61a2880e94ab73ade5aae01427b511ea7",
+      "qualification": "Assembly/data-flow classification; full physical scheduling/driver behavior not established."
+    },
+    {
+      "entry": "0x00445efc",
+      "classification": "Display refresh publisher",
+      "nativeFinding": "Same bounded payload pattern, message type3; no INFO read endpoint.",
+      "assembly": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/all-console-callbacks/00445efc.asm",
+      "sha256": "1efbf1226741554283e2c4cf4bcdc65588ed0509315ecc942c5760f9853ea312",
+      "qualification": "Assembly/data-flow classification; full physical scheduling/driver behavior not established."
+    },
+    {
+      "entry": "0x00445ff4",
+      "classification": "Display close publisher",
+      "nativeFinding": "Same bounded payload pattern, message type5; no INFO read endpoint.",
+      "assembly": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/serial-callees/00445ff4.asm",
+      "sha256": "77a8f7bca90d21457d9290e637d560f4b54f467d94c28a880b951d579211b19a",
+      "qualification": "Assembly/data-flow classification; full physical scheduling/driver behavior not established."
+    },
+    {
+      "entry": "0x0046b378",
+      "classification": "SendInputEventToPeers",
+      "nativeFinding": "Native literals name sync_interface_api.c/SendInputEventToPeers. Allocates and fills event packet, posts to sync queue, frees on failure. Not an address-based read API.",
+      "assembly": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/all-console-callbacks/0046b378.asm",
+      "sha256": "03c2ad179d03b79b6d39eef2460dd9be0d52f16c133ddf8b10bec6207bdf3b5c",
+      "qualification": "Assembly/data-flow classification; full physical scheduling/driver behavior not established."
+    },
+    {
+      "entry": "0x0045739c",
+      "classification": "Heap allocator",
+      "nativeFinding": "Aligns allocation size, searches/splits free-list blocks, adjusts free-byte counters and allocation bits; assertion stores on corrupt conditions.",
+      "assembly": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/console-ingress/0045739c.asm",
+      "sha256": "33a43ac05ea33a601c568021ef4e71af251010fdbc475d0edc2801f47a8bf0a7",
+      "qualification": "Assembly/data-flow classification; full physical scheduling/driver behavior not established."
+    },
+    {
+      "entry": "0x0059cbee",
+      "classification": "Stream-buffer receive",
+      "nativeFinding": "Checks stream/output pointers, waits for data, calls0x0059CCD8 to transfer bytes into caller buffer; CLI caller supplies its fixed command-input buffer, not a packet-selected INFO address.",
+      "assembly": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/console-final/0059cbee.asm",
+      "sha256": "ad6473d8035f7e558176f243318ef8268284e0b8e3081990cc07a4c692ee4cca",
+      "qualification": "Assembly/data-flow classification; full physical scheduling/driver behavior not established."
+    },
+    {
+      "entry": "0x0059d2b8",
+      "classification": "Intentional console crash",
+      "nativeFinding": "Calls0x0061BA9C, writes zero to0xFFFFFFFF, loops. Not a memory dump/read interface.",
+      "assembly": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/all-console-callbacks/0059d2b8.asm",
+      "sha256": "f6e985add5b55439b6137585d9890463448e68437e92e1558fe5268d5e5c0e47",
+      "qualification": "Assembly/data-flow classification; full physical scheduling/driver behavior not established."
+    },
+    {
+      "entry": "0x005a0410",
+      "classification": "Touch CLI dispatcher",
+      "nativeFinding": "All recognized command branches recovered below; no caller-provided Apollo memory address.",
+      "assembly": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/all-console-callbacks/005a0410.asm",
+      "sha256": "dd4b2b7935b253ec91db7214750af03f2d4e1de7874c9af05490a34a5f9d8515",
+      "qualification": "Assembly/data-flow classification; full physical scheduling/driver behavior not established."
+    }
+  ],
+  "touchBranches": [
+    {
+      "command": "version",
+      "branch": "0x005A045E",
+      "calls": [
+        "0x005796E6"
+      ],
+      "behavior": "Fixed touch version result"
+    },
+    {
+      "command": "dfu [force]",
+      "branch": "0x005A0498",
+      "calls": [
+        "0x0057F5D4"
+      ],
+      "behavior": "Touch firmware update path; flag0/1, not a read-only probe"
+    },
+    {
+      "command": "reset",
+      "branch": "0x005A04C8",
+      "calls": [
+        "0x005795F2"
+      ],
+      "behavior": "Touch reset"
+    },
+    {
+      "command": "assert",
+      "branch": "0x005A04DC",
+      "calls": [],
+      "behavior": "At0x005A04EA..04F0 writes zero to0xFFFFFFFF"
+    },
+    {
+      "command": "diff_always",
+      "branch": "0x005A04F4",
+      "calls": [
+        "0x0057965C"
+      ],
+      "behavior": "Loops at0x005A0502,500ms delay,10-byte touch differential read"
+    },
+    {
+      "command": "diff",
+      "branch": "0x005A0536",
+      "calls": [
+        "0x0057965C"
+      ],
+      "behavior": "One10-byte touch differential read"
+    },
+    {
+      "command": "bsln_read",
+      "branch": "0x005A0570",
+      "calls": [
+        "0x0057988E"
+      ],
+      "behavior": "Two-byte touch baseline read"
+    },
+    {
+      "command": "bsln_set",
+      "branch": "0x005A058E",
+      "calls": [
+        "0x005795F2",
+        "0x005796E6",
+        "0x0057976C"
+      ],
+      "behavior": "Touch reset/version/baseline write sequence"
+    },
+    {
+      "command": "cfg read",
+      "branch": "0x005A05B6",
+      "calls": [
+        "0x00579A56"
+      ],
+      "behavior": "Two-byte gesture configuration read"
+    },
+    {
+      "command": "cfg write <threshold>",
+      "branch": "0x005A0608",
+      "calls": [
+        "0x005A0398",
+        "0x00579958",
+        "0x00579A56",
+        "0x00478DDE"
+      ],
+      "behavior": "Numeric threshold1..65535; two-byte write/readback and role-dependent persistence, no memory-address parameter"
+    }
+  ],
+  "touchLowerReadSelectors": [
+    {
+      "selector": 4,
+      "bytes": 10,
+      "purpose": "Touch differential data",
+      "wrapper": "0x0057965C"
+    },
+    {
+      "selector": 6,
+      "bytes": 2,
+      "purpose": "Touch baseline",
+      "wrapper": "0x00579350"
+    },
+    {
+      "selector": 8,
+      "bytes": 2,
+      "purpose": "Touch gesture configuration",
+      "wrapper": "0x005794D8"
+    }
+  ],
+  "touchWriteSelector": {
+    "selector": 7,
+    "bytes": 2,
+    "wrapper": "0x005793A8",
+    "acknowledgement": "Fixed three-byte response; not Apollo MMIO access."
+  },
+  "nativeReplay": {
+    "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/native-gap-resolution/touch-control-flow.json",
+    "cases": 18,
+    "limits": [
+      "Native handler, comparison branches and decimal threshold parser execute offline. Parameter tokenizer, numeric-library conversion, memcpy/memset, printf, delays and touch/device side effects are explicit modeled boundaries.",
+      "Not a physical touch/bus/reset/DFU safety qualification; no device commands sent.",
+      "Continuous branch stopped after second modeled read; intentional fault store recorded, not mapped to real hardware."
+    ]
+  },
+  "infoReadConclusion": "None of these resolved paths establishes a bounded INFOC/INFO0 read through Case. Fixed touch selectors target touch-controller protocol; CLI and pogo remain separate channels.",
+  "limits": [
+    "This resolves classification/control-flow gaps left by failed decompilation; it does not create verified original C or assert whole-firmware reachability completeness.",
+    "Device/peripheral effects were never executed; replay uses explicit side-effect models.",
+    "No runtime INFO provisioning values or right-temple state inferred."
+  ]
+}

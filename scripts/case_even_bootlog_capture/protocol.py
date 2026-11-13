@@ -1,0 +1,92 @@
+"""Configuration and retained evidence for passive Even-bootloader log capture."""
+
+import struct
+
+from case_sbl_reset_prepared.trace import fnv
+from g2_even_bootlog import classify_even_bootloader_log
+
+
+RAW_CAPACITY = 1020
+EVIDENCE_BYTES = 1280
+
+
+def configuration(route, nonce):
+    if route not in ("left", "right") or not 0 < nonce < 2**32:
+        raise ValueError("invalid passive bootlog configuration")
+    body = struct.pack(
+        "<7I", 0x4B483247, 0xB4B7CDB8, 14, int(route == "right"), 64, nonce, 15000
+    )
+    return body + struct.pack("<I", fnv(body))
+
+
+def decode(data):
+    if len(data) != EVIDENCE_BYTES or fnv(data[:-4]) != struct.unpack_from("<I", data, EVIDENCE_BYTES - 4)[0]:
+        raise ValueError("passive bootlog evidence size/checksum differs")
+    words = struct.unpack_from("<64I", data)
+    if (
+        words[:2] != (0x31484E47, 14)
+        or words[3] != 5
+        or words[5] > 1
+        or words[6] != 64
+        or not words[7]
+        or words[4] != (0x08009B15 if words[5] else 0x08009AFF)
+        or words[19] > RAW_CAPACITY
+        or words[27] != 0
+    ):
+        raise ValueError("passive bootlog evidence header differs")
+    retained = min(words[18], RAW_CAPACITY)
+    raw = data[256:256 + retained]
+    context = words[8:14] == (0, 0, 2, 2, 1, 1) and words[23:25] == (0, 0)
+    clock = (
+        words[28:32] == (7, 63999, 7, 63999)
+        and words[58:60] == (0x12, 0x32020802)
+        and not (words[57] | words[61]) & 0x30
+    )
+    restored = (
+        words[21] == 7
+        and words[62:64] == (1, 1)
+        and (words[56] ^ words[60]) & (1 << 18) == 0
+    )
+    waited = 11_900 <= ((words[25] - words[14]) & 0xFFFFFFFF) <= 12_100
+    captured = (words[17] - words[16]) & 0xFFFFFFFF
+    post_pulse = (words[17] - words[15]) & 0xFFFFFFFF
+    if words[2] == 0 and (
+        not context
+        or not clock
+        or not restored
+        or not waited
+        or not 14_900 <= captured <= 15_100
+        or not 2_900 <= post_pulse <= 3_100
+        or words[26] != 15000
+        or words[20]
+        or words[22] & ~7
+    ):
+        raise ValueError("passive bootlog success lacks context, duration, or cleanup")
+    return {
+        "status": words[2],
+        "route": "right" if words[5] else "left",
+        "caller": hex(words[4]),
+        "brr": words[6],
+        "nonce": words[7],
+        "probeQualified": words[2] == 0 and context and clock and restored and waited,
+        "nativeContextVerified": context,
+        "exactPeripheralRestorationVerified": restored,
+        "captureClock": "systick-wrap-counter",
+        "insertionWaitSystickWraps": (words[25] - words[14]) & 0xFFFFFFFF,
+        "passiveCaptureSystickWraps": captured,
+        "postPulseCaptureSystickWraps": post_pulse,
+        "halTickStart": words[32],
+        "halTickEnd": words[33],
+        "captureStartedBeforeInsertion": True,
+        "retentionPolicy": "first-bytes-saturating",
+        "totalReceiveBytes": words[18],
+        "retainedReceiveBytes": retained,
+        "captureOverflowed": words[18] > RAW_CAPACITY,
+        "uartErrorMask": words[20],
+        "templeBytesSent": words[27],
+        "rawCaptureHex": raw.hex(),
+        "evenBootloaderLog": classify_even_bootloader_log(raw),
+        "physicalApolloResetVerified": False,
+        "glassesFirmwareImageBytesSent": 0,
+        "retailRecoveryVerified": False,
+    }

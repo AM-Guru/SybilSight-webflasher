@@ -33,6 +33,8 @@ const OFFICIAL_G2_2_2_8_4_SHA256 =
   "df7b8bd18727765eba73be5ab836e0ee4cfd17b5e680046003b8d608d2fbfda7";
 const OFFICIAL_G2_2_3_2_14_SHA256 =
   "26b6067665a441b779c47f6b95427b8b4bb5f502aaf527466dadce628aeb00b2";
+const OFFICIAL_G2_2_4_0_24_SHA256 =
+  "363198f8d543a5c1181d8a213e9077285cb865700a1885c8dc7c1b9324fd0e05";
 const OFFICIAL_G2_2_3_0_24_SHA256 =
   "187ccf2bcc5c17a212106e8a376745511e8289c4232b634a7ea94b9bf25a0979";
 const OFFICIAL_G2_2_2_10_10_SHA256 =
@@ -92,6 +94,7 @@ test("flags a pinned image the served library is too old to offer", () => {
   assert.deepEqual(
     missing.map((target) => target.imageSha256),
     [
+      OFFICIAL_G2_2_4_0_24_SHA256,
       OFFICIAL_G2_2_3_2_14_SHA256,
       REVIEWED_CFW_230_87_SHA256,
       OFFICIAL_G2_2_3_0_24_SHA256,
@@ -116,6 +119,7 @@ test("blocks firmware mutation when the served library is behind the build", () 
       assert.deepEqual(
         error.missingPinnedImages.map((target) => target.imageSha256),
         [
+          OFFICIAL_G2_2_4_0_24_SHA256,
           OFFICIAL_G2_2_3_2_14_SHA256,
           REVIEWED_CFW_230_87_SHA256,
           OFFICIAL_G2_2_3_0_24_SHA256,

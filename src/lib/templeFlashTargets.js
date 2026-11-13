@@ -12,6 +12,20 @@
 
 export const TEMPLE_FLASH_TARGETS = Object.freeze([
   Object.freeze({
+    imageSha256: "aab93fc75ec964ccd94171b90db5cc83f3026d257e008a2bd7fb177e43469af6",
+    mainSha256: "bd4f242b8849e81b4d7d97ffcb1c78e7024251871c43da8833a9aa9368a182f5",
+    mainBytes: 3827984,
+    version: "2.2.6.10",
+    reportedVersion: "2.2.6.10",
+    baseVersion: "2.2.6.10",
+    label: "Local OpenCFW MRAM/SBL recovery experiment 1101",
+    hardwareValidated: false,
+    localOnly: true,
+    recoveryExperiment: "apollo510-mram-sbl-early-arm",
+    bleComponentNames: Object.freeze(["ota/s200_firmware_ota.bin"]),
+    bleValidationSide: "left",
+  }),
+  Object.freeze({
     imageSha256: "f5562b636a77c260e950da4f872d1e94224159841b9cb6b9c47faab2818aded4",
     mainSha256: "c3dee6cd7ebb06c9142c19314842d7ce8c2e800bfc140630356a2d0684b7f6b7",
     mainBytes: 3838184,
@@ -166,6 +180,15 @@ export const TEMPLE_FLASH_TARGETS = Object.freeze([
     hardwareValidated: false,
     localOnly: true,
     requiredCfwMarker: "SybilSight/230.10",
+  }),
+  Object.freeze({
+    imageSha256: "363198f8d543a5c1181d8a213e9077285cb865700a1885c8dc7c1b9324fd0e05",
+    mainSha256: "33f9eb7a47f996b8bcf34ac9df8bc2f7b698a6512cbf370d25b3215ad0dde298",
+    mainBytes: 3700100,
+    version: "2.4.0.24",
+    reportedVersion: "2.4.0.24",
+    label: "Stock Even Realities G2 2.4.0.24",
+    hardwareValidated: false,
   }),
   Object.freeze({
     imageSha256: "26b6067665a441b779c47f6b95427b8b4bb5f502aaf527466dadce628aeb00b2",

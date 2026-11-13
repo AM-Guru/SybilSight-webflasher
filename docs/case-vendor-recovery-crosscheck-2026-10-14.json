@@ -1,0 +1,55 @@
+{
+  "scope": "Remaining application-independent wake/recovery audit; current Mac pair seated",
+  "newSource": "Local /Users/kalani/Downloads/AmbiqSuite_5.2.0.zip, actual tools/apollo510_scripts; selected source hashes in work/apollo510-vendor-recovery-audit/extracted-provenance.json",
+  "protocolCrosscheck": {
+    "vendorPureFunctionRequestHex": "14559de900000800",
+    "matchesPreviousProbe": true,
+    "responseBytesExpected": 96,
+    "vendorSerialTimeoutSeconds": 0.4,
+    "vendorWaitForHelloDeadlineSeconds": 800,
+    "ourNewProbe": "20 fixed HELLO requests at nominal400ms intervals for8seconds; zero image payload",
+    "boundary": "Not full vendor800second recovery polling. Does not prove retail INFO provisioning or physical Apollo reset. Selected AST functions executed with fake serial only; uploader never run."
+  },
+  "compiledQualification": "14 cases per baud, exact stock103-action reset replay, bounded160-byte HELLO allowlist, late96-byte receive injection, ten-register restoration. Offline model not electrical scope proof.",
+  "deviceTests": [
+    {
+      "nominalBaud": 115200,
+      "receipt": "work/apollo510-vendor-recovery-audit/mac-retry-115200.json",
+      "helloRequests": 20,
+      "templeQueryBytes": 160,
+      "receivedBytes": 0,
+      "uartErrorMask": "0x0",
+      "exactTenRegisterRestoration": true,
+      "restoredCaseVersion": "1.2.57",
+      "firmwareBytesSent": 0
+    },
+    {
+      "nominalBaud": 1000000,
+      "receipt": "work/apollo510-vendor-recovery-audit/mac-retry-1m.json",
+      "helloRequests": 20,
+      "templeQueryBytes": 160,
+      "receivedBytes": 0,
+      "uartErrorMask": "0x0",
+      "exactTenRegisterRestoration": true,
+      "restoredCaseVersion": "1.2.57",
+      "firmwareBytesSent": 0
+    }
+  ],
+  "pmicAudit": {
+    "nativeEvidence": "work/apollo510-vendor-recovery-audit/temple-pmic-native.asm",
+    "actual22610": "0x0053A670 write and0x0053A694 read load Apollo I2C bus7/address0x6A; system-mode setter0x0053ADB0 updatesregister0x0A bits2..3 through that driver. These require Apollo execution, not Case STM32 execution.",
+    "hardwarePaths": "nPM1300 SHPHLD/GPIO0 and BQ25180 TS/MR can support hardware wake/reset per vendor documentation; no verified Case-pogo connection to these signals or actual right-side configuration. No arbitrary hold or PMIC-register override tested.",
+    "rightChargerFamily": "Not inferred from presence of both drivers or working-pair configuration."
+  },
+  "remainingGaps": [
+    "Vendor recovery-host wait_for_hello uses800second deadline; new device tests cover8seconds each, not full delayed-retry behavior. Longer bounded polling would need qualified Case external-watchdog servicing without disturbing receive, plus a restore deadline.",
+    "Actual retail INFOC/INFO0, trigger polarity and SBL interface remain unread.",
+    "Physical pogo-to-PMIC reset and Apollo POI behavior remain unproven."
+  ],
+  "webSources": [
+    "https://contentportal.ambiq.com/documents/20123/4133620/Apollo5-MRAM-Recovery-Users-Guide.pdf",
+    "https://www.ti.com/lit/ds/symlink/bq25180.pdf",
+    "https://docs.nordicsemi.com/r/bundle/ps_npm1300/page/chapters/core_components/timer/doc/frontpage.html"
+  ],
+  "result": "No new responding recovery endpoint. No firmware writes. Do not claim all possible recovery paths exhausted."
+}

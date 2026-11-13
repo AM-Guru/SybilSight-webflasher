@@ -25,6 +25,18 @@ export const G2_BLE_CONTROL_WRITE =
 export const G2_BLE_CONTROL_NOTIFY =
   "00002760-08c2-11e1-9073-0e8ac72e5402";
 
+export function g2BleValidationSide(release, fallback = null) {
+  if (["left", "right"].includes(release?.bleValidationSide)) {
+    return release.bleValidationSide;
+  }
+  return ["left", "right"].includes(fallback) ? fallback : null;
+}
+
+export function g2BleRequiredSides(release, fallback = null) {
+  const side = g2BleValidationSide(release, fallback);
+  return side ? [side] : ["left", "right"];
+}
+
 // Standard Bluetooth SIG Device Information Service. The temple's own product
 // serial lives here, and it is the ONLY place this tool can obtain it: the USB
 // factory console reports the Charging Case's STM32 UID, and the pogo version

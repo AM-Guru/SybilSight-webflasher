@@ -1,0 +1,567 @@
+{
+  "version": "2.3.0.24",
+  "authority": "Direct native-binary decompilation and assembly; no2.2.6.10 handler equivalence assumed.",
+  "payloadSha256": "fffbf74b3439bf0e4752fb620a7990d0a133898c54f6fb08005ea6b7029655c5",
+  "payloadBase": "0x00438000",
+  "payloadBytes": 3758688,
+  "dispatcher": "0x0058DD40",
+  "dispatchMap": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/dispatch-map.json",
+  "handlerCount": 67,
+  "rootAndImmediateFunctionsDecompiled": 74,
+  "selectedLowerExports": 39,
+  "leafExports": 8,
+  "candidateFindings": [
+    {
+      "opcode": "0x47",
+      "handler": "0x005930B8",
+      "chain": [
+        "0x0052ECD0",
+        "0x0048A572(selector1)",
+        "0x0048A074"
+      ],
+      "behavior": "Fixed MCU identity/status registers and CoreSight identity fields, flash lookup tables. Outer wrapper returns only first word. No packet-supplied address.",
+      "literalResolvedAddresses": {
+        "0x48a670": "0x40020000",
+        "0x48a674": "0x40020004",
+        "0x48a678": "0x40020008",
+        "0x48a67c": "0x4002000c",
+        "0x48a680": "0x40020010",
+        "0x48a684": "0x40020014",
+        "0x48a688": "0x7c515c",
+        "0x48a68c": "0x7aa9d0",
+        "0x48a690": "0xe00fefe0",
+        "0x48a694": "0xe00fefe4",
+        "0x48a698": "0xe00fefe8",
+        "0x48a69c": "0xe00fefec",
+        "0x48a6a0": "0xe00feffc",
+        "0x48a6a4": "0xe00feff8",
+        "0x48a6a8": "0xe00feff4",
+        "0x48a6ac": "0xe00feff0"
+      },
+      "infoRegionsExposed": false
+    },
+    {
+      "opcode": "0x5A",
+      "handler": "0x005949DC",
+      "behavior": "Offset+32 seek and bounded<=240 byte read through an existing Case firmware file handle. Read calls0x00457EC2 ->0x0049C1CC -> filesystem read0x0049A7E4. No Apollo address pointer supplied by packet.",
+      "infoRegionsExposed": false
+    },
+    {
+      "opcode": "0x1B",
+      "handler": "0x0058FC88",
+      "behavior": "Recording file/cache transfer; no verified INFO backend.",
+      "infoRegionsExposed": false
+    },
+    {
+      "opcode": "0x54",
+      "handler": "0x00593FB8",
+      "behavior": "CRC-checked upload data changes staging buffers, byte counters and transfer flags. Excluded from read-only testing."
+    },
+    {
+      "opcode": "0x35",
+      "handler": "0x00591514",
+      "behavior": "Flash burn check creates/writes marker file then reads it and checks firmware file existence. Excluded from unchanged-control testing."
+    },
+    {
+      "opcode": "0x7A",
+      "handler": "0x005956A8",
+      "behavior": "Panel-temperature getter. No INFO read mechanism established."
+    }
+  ],
+  "safeInfoReadVerified": false,
+  "deviceOperationsThisTurn": 0,
+  "iphonePairChanged": false,
+  "firmwareBytesSent": 0,
+  "hardwareTest": "Not performed because no bounded read-only INFO mechanism was verified.",
+  "limitations": [
+    "Decompiler output is not original C and has signature/stack artifacts; native assembly retained beside each export.",
+    "67 direct serial handlers resolved; selected candidate lower calls traced. This is not exhaustive proof of absence across every firmware entry point or indirect callee.",
+    "No INFOC/INFO0 values acquired and no provisioning inferred for Mac right."
+  ],
+  "exportedSourceEvidence": [
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/0043c0e4.c",
+      "sha256": "e5be79ab1a7e60c3f2c1919eeda98f86071e165bb6838615dff8e6c800537ca6"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/0043cff4.c",
+      "sha256": "db99a6112d218489b9be8df9b3ae36f0b9e21c1c32f8853daa34ddf9fbd3b923"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/0043d74e.c",
+      "sha256": "a133df11e7c2410b7440ed88e3cf21f5e9769be7a552c53c6ad7d5e03094ed2b"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/0043dc9c.c",
+      "sha256": "d6882fbea11c42ea564021c6d07fc4151c44b5dfa171206be459cd73e425db2b"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/0058dcca.c",
+      "sha256": "44d690f4e0fbd0a455e651d35b2d0e0d6965d7b869750c9a886fda0763336513"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/0058dd0a.c",
+      "sha256": "b64b8dfdc76e6cefd469ca89270671922a6bce95c05c5233d9668c8153915d9f"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/0058dd40.c",
+      "sha256": "fd708325a717dd4e88d99d025fa325f67f3bdbfb9283848519a87c22afe4a29e"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/0058e4bc.c",
+      "sha256": "ed6464be1741986235f5b34bac3e29abcfae82421d3e3a67c447d13cd8a9fe13"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/0058e664.c",
+      "sha256": "2c59c23ffc181b83c2f56a71229d149500635f02ba7f4c8b42396d351857e0d5"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/0058e878.c",
+      "sha256": "f2f3bc41802dd3ced2a72ec734ccd1828cfd59998f96411511c00ddd0e390d85"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/0058eac0.c",
+      "sha256": "d12b221419a13d914c7d6833e73eb84036d272116e510025a9a59ca1010e6bbf"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/0058ece8.c",
+      "sha256": "68a1eb92b0e6a99686a4e9c0a7eea52524a96c2ccc56d708b560a9fa72c2d719"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/0058ee20.c",
+      "sha256": "d91d47abc064ce507c4e4776ab78bf9b3006239795e309314343307af9fd6cb7"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/0058f030.c",
+      "sha256": "5baa5fa9e045068ad071caa439b4f6b4aad4ae769ee67f68288579d755e3e5f4"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/0058f274.c",
+      "sha256": "0f3b8f68f4264a8ba4e029a0b7b6fd2c270073590ab8a1f8c1e35defc01623cb"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/0058f410.c",
+      "sha256": "07a2580f6991be9edf7f9aedec3f2a8e10d3c1e2cd9e9c48037c11120f01ed50"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/0058f5f0.c",
+      "sha256": "677d4609e6eea6ea5d0605adf506fdbb3e04ca513032bbde1a9017f976a0d4f8"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/0058f914.c",
+      "sha256": "08bc401d3845041288a59c621c97ea423f1b1457a70b7a59d186aa7f23404fe0"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/0058fc88.c",
+      "sha256": "44f781eb2841b99b607775d4b92ed58cfbb310255b242793aad229890ea754d3"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00590584.c",
+      "sha256": "e2dd83d3c00293f9f80bb0e7063c6a5c79731106db56858deea70c0d1122d202"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/005906f4.c",
+      "sha256": "3dc04def9fc03e0950f5af4dbc4beb94871bcd6ea919e5422fa72ac94dadeb29"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/005908bc.c",
+      "sha256": "de6edce0dffb7d812e31157c985d8a9643b5b5aac6a220a3b1ebb8bf64ed5e5e"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00590adc.c",
+      "sha256": "a8a564fec1fb08d2377e8418d410a15f91934a097fd1343a6181321b0a892201"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00590c44.c",
+      "sha256": "b045ec070dc56c26b5070df79f37672b388b01b1206e4e548a6cbe56beb7d3e8"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00590da4.c",
+      "sha256": "f2351668c8b596ed64042c8ad92fb337ad46c94176383957a1448c142552ae73"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00590fa0.c",
+      "sha256": "f8ad64d3190b31c10005e3d98051214cd59eb767b36ddda7f49dbd000941f776"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00591108.c",
+      "sha256": "28d78d3c257a183742d19898841fdc265cf2348cdefe36a6d45e9681c139c1a5"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/005911ec.c",
+      "sha256": "780890f7ba0ea398cc7dcd6756409c5fc32b223df196da3becc94a797a6a6709"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/005912e4.c",
+      "sha256": "166cd7756301bc617d81977042835aa481def381d3ac7aa4e04f2c0d1b3fba4f"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/005913a0.c",
+      "sha256": "ecbd2f02e6c06eafcba0ace1c597f13e85a19d0588434ae46b886be5586a776c"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00591450.c",
+      "sha256": "5a9e07a630a7616ccfbf97e3f964e196ba9241bb7aeb18d791d24a4d8c86cbcb"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00591514.c",
+      "sha256": "bb2b6230fab8f683fe4ce3c32c2147e0bd913b83f2eb377333e722e61f455b46"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/005918ec.c",
+      "sha256": "635bcf88f4741fdec7fed1235c6589a9b0c5f319d2275fe33df76803ea704953"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00591abc.c",
+      "sha256": "ebf1825c975b14ca0c62db8619d70543cb5e15c9e0516c874f476c97ad1172d8"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00591bc0.c",
+      "sha256": "534ae50749916dbd669c23e8eb24c33ebe32ecc69b6dc9c1d1a29106372f632d"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00591d7c.c",
+      "sha256": "47dbbed0b188f98de6dfc67cb7e182c46566479fdb4baff2634dedb026391713"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00591eb4.c",
+      "sha256": "7a090639976bbb77e61e3e11ab0713d1c61acf9e7b248bca9f86ec7e26917bbc"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00592180.c",
+      "sha256": "8eec1d4d7c20030eab0ea747b7471c0fd9162a666b4877e23fc0af7bb1cf9c88"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00592508.c",
+      "sha256": "18734e6f0923fd42c841d70fa822305f341baf54dc96a014e8d2a8d0bfb89eb5"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00592838.c",
+      "sha256": "d596ce1d4adfab2b44adad19998daa2925b5f522edc97564ed48061e3c450660"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00592a90.c",
+      "sha256": "a5011bb2d3e9cbb4b4efa7af14b3facaaa2579b2682b1a6b81a850716d4117fe"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00592d14.c",
+      "sha256": "ad43c4d83402fe330bedf1bbd3aab3b562c8f70f81901b51da7191be5746a34c"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00592e30.c",
+      "sha256": "c7dc7ce85a60304459541c71446e7f792c0116c44714166bf5996c642c30ad90"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/005930b8.c",
+      "sha256": "3d2e15860a7dfd95f270ac6996128caaa2bbd1a2eea93334b2e4f9b0d6221bb4"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00593810.c",
+      "sha256": "be765ef6bd9e76138881212a6ec599f6bf6a2c105c68d4132deeb9822bddfabc"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00593adc.c",
+      "sha256": "68fb394d11ed1f6e79ac83a44d4f13590c7ea5b88f6230ae448e2a68fa8bf4b4"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00593c1c.c",
+      "sha256": "0001a7dcb07f29667187b0f214610a1800bc007f6f609eb4986de61015761a8b"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00593d20.c",
+      "sha256": "836c87ec91105945c844dd10c6b31d012408f52fea28762a11ccb2213eb23d86"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00593df8.c",
+      "sha256": "f8e0be7d343a381d3d692be3214d086100867034a0f2cf523ed66d701a02aa86"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00593fb8.c",
+      "sha256": "e23615d4c7eae69f49a6b422f42afa37f226d0d2fba74e6556b4f0b12b52e96f"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/005942ac.c",
+      "sha256": "02f98d53eab2e15f2ba747d5dbc6eb3dabc8624c780cc0957151574d5aadbcca"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/005943a8.c",
+      "sha256": "fd19dec5541250eca882b910629f26c675a8418c14ee4e3aaf01c20b9f90f8ee"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00594764.c",
+      "sha256": "3c715eb7c4cb7beffdb88f0066096aa9ae22c06598a1f801565bbe336d972f7e"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/005949dc.c",
+      "sha256": "a7500c7335ce44d169f64994f47282ae857e5517aeeeb7378f2047319d5311af"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00594dc8.c",
+      "sha256": "00fe85f6534ea58d3fd7cf37f7b6b131893e6138b7a192edceb74b1cca3699c9"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00594fc4.c",
+      "sha256": "9b74087c66bc7898e8ef745823b443da9dc7b1483dc43989a9134c5aaedbe5bc"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/005950b0.c",
+      "sha256": "7402f00581ad947e70629b7de7a0e5d75a2c3c3d8ad54ba0df9ec882a0f793d9"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00595178.c",
+      "sha256": "9253cfb679ee14bcfa84a2905b34339fa69f38221273891341f652b417a0939a"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00595304.c",
+      "sha256": "95ce011f2318ba1e029ed95c13c10f17fcb772581b4534f854e4d0034418ca74"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00595484.c",
+      "sha256": "25bd59b4f00e7d35f20570b9b50e6dcb10d25b9f9f4826e97cf51ba2fa6ee996"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/005955f8.c",
+      "sha256": "f97a140c307df13cfcdba5daa8e1f840ca64c1435932ebda3021314949d1d21b"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/005956a8.c",
+      "sha256": "b1d1edb869b7d532c3e905d65966571c3fd0d88f78b31f2e291ebbc963f4117d"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00595800.c",
+      "sha256": "30f3991a51144a9d39a3c8be8500ffb4053a9469e6b6a2e1fe7ede2ef8fa7d9f"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/005959cc.c",
+      "sha256": "bb5a19d3a13ad88794190db09939c2a6df5836b49deda54569b9f75e3d0eeba3"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00595ac0.c",
+      "sha256": "dbf5c54e2dda24626991cd2c8dd532b3638d0170ddd885fb33a590e11373f3e7"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00595bdc.c",
+      "sha256": "e246ee0564fa948706abf73b67c5ffdb36f6290afcee3fbba702a08af65c3a5c"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00595d74.c",
+      "sha256": "c93c82c1c9476ce72c4313fa9feba8af0b317e03af709568e70f3a15d4d74057"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00595e80.c",
+      "sha256": "75bd34e9fb4bb31bccfe85e53848ee8f3ea3d5eb7bfbae82c55683da89cf10ac"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00595f80.c",
+      "sha256": "ad8572a6fe1e021c5c3e279b21e0b0d0b88a381d99f43b32c3091467bf1100db"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00596080.c",
+      "sha256": "28dfcc176cd4c0b1f1b21b8f7e6df689820952cdfdf4cff84bb5cd43a1062b7f"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00596198.c",
+      "sha256": "c367213c2ad372c2d7c7d8c32dd0318e03f5c896c18ec1e8968757ff00101019"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/005962dc.c",
+      "sha256": "4ca8399638a80409ef74af719172bda5a19d02fbf20cabf594886a096ea056b3"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/005963e8.c",
+      "sha256": "3efe715b2af52b029f1f2145ab9a982c30982001b41a9b0963da7af8d0247ae6"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/decomp/00596504.c",
+      "sha256": "51893033e9ba68be114abdd6bf1d246fff4a894336b65f861ed33fe0c1e053eb"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/00439be4.c",
+      "sha256": "fa98e7072e073d5824f058b959235698f79e1bb7f5f95ea700c5f1feb7fd29ae"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/0043c0e4.c",
+      "sha256": "e5be79ab1a7e60c3f2c1919eeda98f86071e165bb6838615dff8e6c800537ca6"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/0043cff4.c",
+      "sha256": "db99a6112d218489b9be8df9b3ae36f0b9e21c1c32f8853daa34ddf9fbd3b923"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/0043d74e.c",
+      "sha256": "a133df11e7c2410b7440ed88e3cf21f5e9769be7a552c53c6ad7d5e03094ed2b"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/0043dc9c.c",
+      "sha256": "d6882fbea11c42ea564021c6d07fc4151c44b5dfa171206be459cd73e425db2b"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/00442f90.c",
+      "sha256": "dd70d00cf006e10fe3255abf602880cb8d385c037ea84b3f7f3d9add59d7898e"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/00442ff6.c",
+      "sha256": "62b44148df542feae4dde76a86904ec920abb887832f1ec5e2119a08f5ffd64c"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/0044e0c6.c",
+      "sha256": "55bf768b571ab15300149ab2a9a0cbb6dfef230943e7f1c929fe299d84973f44"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/00457dd0.c",
+      "sha256": "a73ba671ae28658020572568bc2d83890796fb2652eaa0b190eadc15ac3ca741"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/00457e82.c",
+      "sha256": "17a3e4fafa7a4f2ac7d83231d6b7b6cc5d8913491c866c8accd8f53801b4f6fd"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/00457ec2.c",
+      "sha256": "c2b1d4c832b24310964c931b654f8464ce4f126058fa48fd566131766a17fcb3"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/004580a0.c",
+      "sha256": "2fc46467c74683d8a71d362813e8314b5170a42bfc92689221e35d5826558145"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/004580fc.c",
+      "sha256": "5a13d3e9d2579f4637ec450a4b107d05eee29230ae0db52114a361db125a97b0"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/0045855e.c",
+      "sha256": "4d17fac0426b0e5ffb92f32460986314fa90527bb36d5ae5856d956aad7797a1"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/004585a2.c",
+      "sha256": "c1fd5cb5e14bf6a322a0837c4dea9c23c5f0b1840cd9ab52c35b4fcab7165c36"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/00476818.c",
+      "sha256": "618b12dd0ce7d8d38e52f464f2e98c4f45a1ecaa5d9ec4eed9016ca409b8cd17"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/0048a572.c",
+      "sha256": "4a03082a6d1260c62b167981b69a4271b52bac19ebf5dcb468bf37840d8b0977"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/00496d40.c",
+      "sha256": "08722014a4d2bcd5be34a718d80141b5b7b1291831c91d10b8d83f8149bf2bda"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/00496d58.c",
+      "sha256": "725ccb7a98052233c088db6dab97c4e053e2dd551d6b9467e0abf3f1e3440740"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/0049c120.c",
+      "sha256": "c58cbf082ff48832c7abbbcfce02799a02f05737ad1a8cbd0c8d8374eb18f27e"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/0049c1cc.c",
+      "sha256": "cceb7ae4bd1b1ca3c4bfb2e2141fcee676d4e7fa49e69bb17ca4071266bc9d70"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/004ba33a.c",
+      "sha256": "82eb98e92734b1dcd8fa1e3365f0dc2dbb1621303ff6c886da0e97e41b8dbfc1"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/004ba3ac.c",
+      "sha256": "deb223ebbf84480dc6968c621fd04e2715059ac37f9f3b039e0e3b6d6cdedc1f"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/004bff34.c",
+      "sha256": "72a154fdae07c44baf8937163c8f83c26c9580a47ee61bada269b3f9e3d809f3"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/004e3c1c.c",
+      "sha256": "55611b148e6ce640015b03b8ba173c5daa9f69b5c009e8bbc22b86852aaceb79"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/0052eb58.c",
+      "sha256": "fd8924a11fff28b068c97b047ebc564cdce129f0ba342baa8221f748d98e030e"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/0052ecd0.c",
+      "sha256": "3d43b46535e33d6fbd186e754afb07020ed1db9f955c4e5531d3e91f3380a4b2"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/0052f5d4.c",
+      "sha256": "9667b472cb01921eb37579d29c172d596fdd88f66f356b4a6cd5cee4c294a980"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/0058dada.c",
+      "sha256": "d37d735af7b71eaf8176c73e907b38f0455c64e6af2910a788f6287f106360f8"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/0058fc88.c",
+      "sha256": "44f781eb2841b99b607775d4b92ed58cfbb310255b242793aad229890ea754d3"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/005930b8.c",
+      "sha256": "3d2e15860a7dfd95f270ac6996128caaa2bbd1a2eea93334b2e4f9b0d6221bb4"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/00593cd8.c",
+      "sha256": "9aea7dc44bd1d5ec18b395cda642ac5ba401062d6e75f3e3234c5f3ed46c3b8d"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/005949dc.c",
+      "sha256": "a7500c7335ce44d169f64994f47282ae857e5517aeeeb7378f2047319d5311af"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/00599d16.c",
+      "sha256": "6ded91cc9719ab1a1f7b47948a62a241c83534bea77b96c4f5c63f8d51b45aad"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/005af164.c",
+      "sha256": "ca29f12088a8ebece237a3c41dbfe7cdc31e06926b845b9e7c277f48d3d1bd3c"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/005af170.c",
+      "sha256": "edd55768ad6b2ece82b870a0ad7adeca66e59f23df6db399ea4552659df2d700"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/005af1ba.c",
+      "sha256": "6c7342e904a244785dda0295544bab05819b8d50744d2bd771727f45f384692c"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/005af1c4.c",
+      "sha256": "b0583824ccec43cd5120a4a971f37016d184395937ac41b324c452320b17b758"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/lowers/005af1ce.c",
+      "sha256": "e84b6c8a68e06df1e1318c2102577d4fc0a08f722c692132b553dc4b2894ab1c"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/leafs/0048a074.c",
+      "sha256": "03d729573b4b32860b66fc430867abb7a6fb2dcbf9dcd94ae8689eaf28edc81f"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/leafs/0049770e.c",
+      "sha256": "937f8b94bebfdb5d7a839ab00aaa30aea02373acb1fcbfa856d517f3dbe335ad"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/leafs/0049a354.c",
+      "sha256": "974e2bbc018da82b955d2f1e4d0f5cd6edd169ad023504a0764e6d118afe4e92"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/leafs/0049a7e4.c",
+      "sha256": "44d4bda44133af414bb4f6e56242eac92f1e371caa44bf27786361662d88ef5a"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/leafs/0049c120.c",
+      "sha256": "c58cbf082ff48832c7abbbcfce02799a02f05737ad1a8cbd0c8d8374eb18f27e"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/leafs/0049c1cc.c",
+      "sha256": "cceb7ae4bd1b1ca3c4bfb2e2141fcee676d4e7fa49e69bb17ca4071266bc9d70"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/leafs/0049d040.c",
+      "sha256": "3b988ac096e7e262965e80ca6c1ba674aa8cad9bd0ddcf8ebca7cccddaff8689"
+    },
+    {
+      "path": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/leafs/004a8d16.c",
+      "sha256": "be42bdb366ab074890fea4fade39dc86b98549ccbe3c234e7f81e6eda2125744"
+    }
+  ]
+}

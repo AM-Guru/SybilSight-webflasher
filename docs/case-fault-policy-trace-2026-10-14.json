@@ -1,0 +1,29 @@
+{
+  "scope": "Offline stock Case fault-policy trace; working iPhone pair unchanged; no device access.",
+  "artifact": "Case payload SHA256 773b6d4cfdaf0a5a74a557e3babe8222a0ae813436b76a7437c1096d2c60d677",
+  "findings": [
+    {
+      "path": "0800BB90 / native 0800BC22-0800BC26",
+      "finding": "Right no-reply timeout can set state+0x4D and state+0x4F, the same pair set by electrical water detection. These flags do not uniquely identify moisture."
+    },
+    {
+      "path": "08009A14 / native 08009A68-08009A90",
+      "finding": "Right inhibit state+0x4D selects YHM register4=0xAE instead of 0xAF. Verified by 64 offline native cases covering presence, gate, both inhibit flags and paired-presence policy. This records requested register values, not measured supply voltage/current."
+    },
+    {
+      "path": "08007200 / native 0800742C-08007482",
+      "finding": "After the counter exceeds300, secondary flag state+0x4F nonzero causes counter clearing without glasses_charge_state_reset. With secondary flag zero, ordinary standby can call reset. Actual cadence not independently timed."
+    },
+    {
+      "path": "08003C2C",
+      "finding": "Hall-event path resets ordinary right standby only with inhibit nonzero, counter nonzero, secondary fault flag zero. Opening lid is not demonstrated to clear the fault-marked condition."
+    },
+    {
+      "path": "08003A00",
+      "finding": "Charge-state reset clears inhibit+0x4D, several counters and status bytes; does not directly clear secondary+0x4F. Full removal and initialization clear lifecycle remains unresolved."
+    }
+  ],
+  "recovery_implication": "Silence may precede and cause Case supply inhibition; LED does not distinguish interrupted firmware from battery/hardware failure. No verified new ROM/SBL entry path or safe reason to override inhibit was found.",
+  "next_evidence": "Trace exact removal/initialization stores and read-only stock diagnostic visibility of flags before proposing any live capture. Do not bypass electrical protection.",
+  "validation": "work/case-fault-policy/verify.py; work/case-fault-policy/evidence.json; 64 native offline cases pass. Helper080099E8 mocked. No hardware validation."
+}

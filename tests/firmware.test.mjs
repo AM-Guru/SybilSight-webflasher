@@ -897,10 +897,18 @@ test("ships the complete official catalog and only the pinned 230.87 CFW", async
   const catalog = JSON.parse(await readFile(new URL(
     "../public/firmware-updates/source-files/index.json", import.meta.url), "utf8"));
   assert.equal(catalog.schemaVersion, 2);
-  assert.equal(catalog.releases.filter((release) => release.channel === "official").length, 18);
-  const latestOfficial = catalog.releases.find((release) => release.id === "g2-official-2.3.2.14");
-  assert.equal(latestOfficial.sha256, OFFICIAL_G2_SHA256["2.3.2.14"]);
+  assert.equal(catalog.releases.filter((release) => release.channel === "official").length, 19);
+  const latestOfficial = catalog.releases.find((release) => release.id === "g2-official-2.4.0.24");
+  assert.equal(latestOfficial.sha256, OFFICIAL_G2_SHA256["2.4.0.24"]);
   assert.equal(latestOfficial.caseVersion, "1.2.57");
+  const latestFirmware = await parseFirmwareInput(
+    await readFile(new URL("../public" + latestOfficial.url, import.meta.url)),
+    latestOfficial.fileName,
+  );
+  assert.equal(latestFirmware.g2Version, "2.4.0.24");
+  assert.equal(latestFirmware.mainComponent.payloadSha256,
+    "33f9eb7a47f996b8bcf34ac9df8bc2f7b698a6512cbf370d25b3215ad0dde298");
+  assert.equal(latestFirmware.templeFlashTarget.reportedVersion, "2.4.0.24");
   const custom = catalog.releases.filter((release) => release.channel === "custom");
   assert.deepEqual(custom.map((release) => release.id), ["g2-custom-2.3.0.24-230.87"]);
   const release = custom[0];

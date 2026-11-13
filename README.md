@@ -657,6 +657,21 @@ requires a read-only INFOC/INFO0 dump and the full, unmasked
 window capture. Until then there is no proven retail pogo, BLE, or stock-case
 path for reflashing an application-dead temple.
 
+An experimental, application-independent **HELLO-only discovery probe** is now
+available in [`scripts/case_sbl_discovery/`](scripts/case_sbl_discovery/README.md).
+It validates complete CRC-correct Ambiq STATUS frames, preserves raw bytes,
+and verifies exact Case restoration. It does not implement an Apollo image
+writer. Case charging-power changes are not proof of a battery-powered temple
+reset; a missing response must not be presented as proof that recovery is
+unavailable. A cold-start capture must be armed before the depleted temple
+touches powered contacts.
+
+The prototype also has a bounded GPIO **weak-bias** entry experiment for PB8
+or PB9, either polarity: a checked five-second input-pull window, verified
+release, then HELLO capture. See the probe README for build and insertion
+instructions. Retail provisioning, Apollo-pad signal delivery and reset timing
+remain unverified; this does not implement an image writer or a proven reset.
+
 The offline decoder in the webflasher checks the recovered provisioning words
 without transmitting to hardware:
 
@@ -1304,6 +1319,13 @@ verified, the flasher does not send the reset.
 This is an application-alive reinstall path. If the temple no longer answers
 the version preflight, do not attempt it repeatedly: use a separately proven
 SBL/MRAM-recovery or SWD route.
+
+For a read-only liveness check before considering either path, the
+[stock-case version diagnostic](scripts/g2_stock_case_diagnostics.md) sends
+fixed left/right queries through the normal case console with no SRAM upload.
+It checks exact case identity, seated contacts and inactive OTA, and retains
+checksum-validated responses and raw captures. A reply establishes only that
+this application request was handled; silence does not establish the cause.
 
 ### Direct Bluetooth update
 

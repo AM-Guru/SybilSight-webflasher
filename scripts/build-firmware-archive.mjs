@@ -240,6 +240,20 @@ const LOCAL_REVIEWED_TEMPLE_TARGETS = Object.freeze([
   // Only SybilSight/230.87 is published through RELEASES; historical local pins
   // below remain available for explicit offline laboratory recovery.
   Object.freeze({
+    imageSha256: "aab93fc75ec964ccd94171b90db5cc83f3026d257e008a2bd7fb177e43469af6",
+    mainSha256: "bd4f242b8849e81b4d7d97ffcb1c78e7024251871c43da8833a9aa9368a182f5",
+    mainBytes: 3827984,
+    version: "2.2.6.10",
+    reportedVersion: "2.2.6.10",
+    baseVersion: "2.2.6.10",
+    label: "Local OpenCFW MRAM/SBL recovery experiment 1101",
+    hardwareValidated: false,
+    localOnly: true,
+    recoveryExperiment: "apollo510-mram-sbl-early-arm",
+    bleComponentNames: Object.freeze(["ota/s200_firmware_ota.bin"]),
+    bleValidationSide: "left",
+  }),
+  Object.freeze({
     imageSha256: "f5562b636a77c260e950da4f872d1e94224159841b9cb6b9c47faab2818aded4",
     mainSha256: "c3dee6cd7ebb06c9142c19314842d7ce8c2e800bfc140630356a2d0684b7f6b7",
     mainBytes: 3838184,
@@ -405,6 +419,13 @@ const LOCAL_REVIEWED_TEMPLE_TARGETS = Object.freeze([
   }),
 ]);
 const RELEASES = [
+  {
+    version: "2.4.0.24",
+    hash: "a0d486afe862a9121657477b98667c95",
+    sha256: "363198f8d543a5c1181d8a213e9077285cb865700a1885c8dc7c1b9324fd0e05",
+    size: 4482361,
+    notes: "Official Even Realities G2 2.4.0.24 stock firmware.",
+  },
   {
     version: "2.3.2.14",
     hash: "7892790e40cffbae6db8a635b335e17f",
@@ -1211,9 +1232,13 @@ async function writeTempleFlashTargets(releases) {
         `    label: ${JSON.stringify(target.label)},\n` +
         `    hardwareValidated: ${target.hardwareValidated},\n` +
         (target.localOnly ? `    localOnly: true,\n` : "") +
+        (target.recoveryExperiment ? `    recoveryExperiment: ${JSON.stringify(target.recoveryExperiment)},\n` : "") +
         (target.requiredCfwMarker ? `    requiredCfwMarker: ${JSON.stringify(target.requiredCfwMarker)},\n` : "") +
         (target.bleComponentNames
           ? `    bleComponentNames: Object.freeze(${JSON.stringify(target.bleComponentNames)}),\n`
+          : "") +
+        (target.bleValidationSide
+          ? `    bleValidationSide: ${JSON.stringify(target.bleValidationSide)},\n`
           : "") +
         `  })`,
     )

@@ -1,0 +1,110 @@
+{
+  "version": "2.3.0.24",
+  "payloadSha256": "fffbf74b3439bf0e4752fb620a7990d0a133898c54f6fb08005ea6b7029655c5",
+  "scope": "Native indirect calls and alternate serial/debug-console paths; offline only.",
+  "deviceOperations": 0,
+  "firmwareWrites": 0,
+  "iphonePairUnchanged": true,
+  "registries": {
+    "nativeCliDescriptorRegistrations": 72,
+    "eatRecords": 21,
+    "cliRegistrationFunction": "0x0055E6C4",
+    "cliLookup": "0x005A18AE",
+    "eatLookup": "0x0055E57E",
+    "evidence": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/cli-native-registrations.json",
+    "initialRam": "Native startup expansion, not live temple read."
+  },
+  "routing": {
+    "pogoReceive": "0x00556FB4 uses channel2 and routes decoded packet to0x0058DD40. Its0x54 ASCII T exception is PT data, not a bridge to CLI.",
+    "cli": "0x0055E6C4 reads input stream and calls CLI process. Output helpers0x0055E686/0x0055E69C use logical channel1.",
+    "applicationPins": {
+      "channel1": [
+        "GPIO12 UART1TX mux5",
+        "GPIO14 UART1RX mux5"
+      ],
+      "channel2": [
+        "GPIO42 UART2TX mux4",
+        "GPIO44 UART2RX mux4"
+      ]
+    },
+    "boundary": "No pogo-to-CLI bridge established; physical debug pads not identified."
+  },
+  "readCandidates": [
+    {
+      "name": "xip",
+      "entry": "0x0059E374",
+      "guard": "uint32(address+0x80000000)<0x02000001 && length<33; prints length words.",
+      "finding": "Rejects INFOC/INFO0 addresses. No test sent."
+    },
+    {
+      "name": "xip2file",
+      "entry": "0x0059E764",
+      "finding": "XIP-only source range; creates/writes a file. Excluded."
+    },
+    {
+      "name": "AT^dump",
+      "entry": "0x0059D2B8",
+      "nativeAssembly": "BL0x0061BA9C; R1=0xFFFFFFFF; STR R0,[R1]; infinite branch",
+      "finding": "Intentional fault/halt; pseudocode failed but retained native assembly establishes destructive behavior. Excluded."
+    },
+    {
+      "name": "get",
+      "entry": "0x005A15AE",
+      "finding": "Enumerated ordinary system settings and gesture configuration, not arbitrary address read."
+    },
+    {
+      "name": "ReadDieId/ReadChipId",
+      "entries": [
+        "0x0059D06E",
+        "0x0059D0BA"
+      ],
+      "lowerEntries": [
+        "0x005B2A58",
+        "0x005B294E"
+      ],
+      "finding": "Fixed peripheral command reads0x81/0x9F into local buffers, not INFO register reads."
+    },
+    {
+      "name": "AT^INFO",
+      "entry": "0x005BFC18",
+      "finding": "Fixed product/version/build/SN/BLE metadata output; no INFO memory window."
+    }
+  ],
+  "indirectCalls": {
+    "cliAndEat": "Named registry lookup resolves callback; no supplied code pointer accepted by traced dispatchers.",
+    "output": "Logging/fatal hooks and formatted-output callbacks do not establish a memory-read interface.",
+    "filesystem": "Traversal callback receives filesystem node arguments; no INFO backend established.",
+    "uled": "Driver table callbacks query fixed peripheral operations; no packet-selected INFO address shown.",
+    "boundary": "Runtime driver/log callback assignments are not all resolved; no general memory-read mechanism inferred from them."
+  },
+  "exportFunctionCounts": {
+    "all-console-callbacks": 225,
+    "serial-callees": 173,
+    "console-final": 54
+  },
+  "decompilationFailures": {
+    "all-console-callbacks": [
+      "00445e18",
+      "00445efc",
+      "00445ff4",
+      "0046b378",
+      "0059d2b8",
+      "005a0410"
+    ],
+    "serial-callees": [
+      "00445e18",
+      "00445ff4"
+    ],
+    "console-final": [
+      "0045739c",
+      "0059cbee"
+    ]
+  },
+  "limitations": [
+    "Counts are per export and overlap; not distinct whole-firmware coverage.",
+    "Unresolved decompiler bodies remain gaps; touch-console handler0x005A0410 not cleared as read-only.",
+    "No exhaustive proof every undocumented firmware route absent.",
+    "No safe INFOC/INFO0 read path verified; therefore no live test."
+  ],
+  "artifactsRoot": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit"
+}

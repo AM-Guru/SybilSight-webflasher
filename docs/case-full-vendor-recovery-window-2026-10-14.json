@@ -1,0 +1,96 @@
+{
+  "scope": "Full800-second vendor default-baud recovery polling via temporary Case SRAM",
+  "qualification": {
+    "manifest": "work/apollo510-vendor-recovery-audit/fullwindow-build/validated-manifest.json",
+    "nativeModelCasesPassed": 14,
+    "statusParserSyntheticCasesPassed": 4,
+    "maxHelloRequests": 2000,
+    "maxTempleQueryBytes": 16000,
+    "receiveBudgetMs": 800000,
+    "baudNominal": 115200,
+    "externalWatchdog": "Stock08002CB8 native helper replayed;250calls/1000PB2 GPIO events for normal full run. Called between requests every8 attempts, nominal3.2seconds. No new watchdog call inside receive polling.",
+    "internalWatchdog": "Fed on every receive SysTick millisecond; fixed timer failure stops safely.",
+    "exit": "Restore YHM registers7/6/5/4 to baseline, read all10bytes, record checksum, request Case SystemReset on success/failure. Host later reads retained SRAM and restoresstock1.2.57.",
+    "response": "Capture at most96bytes, stop polling at96for host CRC/header/recovery-type inspection. No automatic firmware lane.",
+    "limits": "No physical scope measurement of UART baud/reset waveform. Brief receive gaps during between-request UART reinitialization/watchdog service; vendor host likewise resets input before each HELLO. Unknown right-side physical power/provisioning remains."
+  },
+  "hardwareResult": {
+    "receipt": "work/apollo510-vendor-recovery-audit/mac-fullwindow-115200.json",
+    "helloAttempts": 2000,
+    "helloBytesSent": 16000,
+    "receiveBudgetMsCompleted": 800000,
+    "recordedExternalWatchdogServices": 250,
+    "receivedBytes": 0,
+    "uartErrorMask": "0x0",
+    "stage": 4,
+    "exactTenYhmRegisterRestoration": true,
+    "baselineAndRestoredHex": "811104afaf03812033ff",
+    "restoredCaseVersion": "1.2.57",
+    "firmwareBytesSent": 0,
+    "scope": "Full vendor-default115200 request/receive window through qualified Case route after exact stock reset sequence. Does not verify physical Apollo reset, rail power, retail provisioning, or full800secondsat1M."
+  },
+  "newBootloaderTrace": {
+    "actualPayload": "work/stock-23024-handler-audit/bootloader-2.3.0.24.bin",
+    "sha256": "52ed1c4d043f278f9011d2f2e6555b668ef2ff1e312695f5c28fa7986523b75b",
+    "initializerEvidence": "work/stock-23024-handler-audit/boot-uart/initialized-uart-descriptors.json",
+    "nativeValidation": "work/stock-23024-handler-audit/boot-uart/native-init-validation.json",
+    "findings": "Actual native IAR initializer completed with ITCM andDTCM mapped. UART2descriptor20000490 has pins42/44,mux4,baud1M,receivecallback0. Generic init41F612 endsdeinit; model flagsall0. Observed41B870enablecallusesmodule1. UART2vector41F5E6 alone is not a listener.",
+    "limits": "HAL/NVIC stubbed during native init replay. Later callback mutations and installed Mac right bootloader not exhaustivelyproven."
+  },
+  "documentation": {
+    "err034": "Apollo510 errata v2.0 describes INFO1 fallback for app/GPIO recovery; fixedSBL1.16+. Retail chip/revision/SBL unknown; applicability to thisApollo510Bnotproven.",
+    "newerDocs": "July2026MRAM/OEMguides andcombined510/510Berratav3 listed publicly but downloads redirect to profile/license form; not submitted or accepted.",
+    "sources": [
+      "https://contentportal.ambiq.com/documents/20123/4133620/Apollo510-Errata-List_v2p0.pdf",
+      "https://contentportal.ambiq.com/documents/20123/4032899/Apollo5-Family-OEM-Provisioning-Tools-UsersGuide.pdf",
+      "https://contentportal.ambiq.com/documents/20123/4133620/Apollo5-MRAM-Recovery-Users-Guide.pdf"
+    ],
+    "localNewerPdfSearch": "No matching Apollo recovery/provisioning/errataPDF underDownloads. Existing SDK5.2archive and publicly readable olderguides used; newerprofile-gateddocs notacquired."
+  },
+  "firmwarePathReview": {
+    "sdkOemExample": "AP510B sample targets410000 and4C0000certificatechain; not a verified Evenretail image.",
+    "sdkAssets": "SDKincludesAmbiqrecovery/SBLOTAimages; actual chipidentity/recoverytype/certificates needed before selectingone.",
+    "writesAttempted": false,
+    "reason": "Full probe received zero bytes; no recovery status, target identity, storage limits or image acceptance established. No verified writable endpoint."
+  },
+  "postflight": {
+    "consoleReceipt": "work/case-fault-policy/mac-after-fullwindow.json",
+    "console": {
+      "leftStatusReplies": 15,
+      "rightStatusReplies": 0,
+      "rightStatusFailures": 8,
+      "startupObserved": true
+    },
+    "bleScan": "/Users/kalani/Repo/SybilSight/docs/bluetooth-profiler/sessions/2026-10-15T03-56-10Z-scan.json",
+    "bleObservation": "Mac left4FB39E advertised; no Mac right advertisement in20secondscan.",
+    "serialClosed": true
+  },
+  "oneMbpsVariation": {
+    "qualificationManifest": "work/apollo510-vendor-recovery-audit/fullwindow-1m-build/validated-manifest.json",
+    "nativeCasesPassed": 14,
+    "state": "completed; zero response bytes",
+    "hostSession": 14352,
+    "expectedReceipt": "work/apollo510-vendor-recovery-audit/mac-fullwindow-1m.json",
+    "scope": "Same800000ms receive budget and watchdog scheme atCaseBRR64/nominal1M; retail SBLbaud remains unread.",
+    "receipt": "work/apollo510-vendor-recovery-audit/mac-fullwindow-1m.json",
+    "helloAttempts": 2000,
+    "receiveBudgetMsCompleted": 800000,
+    "externalWatchdogServicesRecorded": 250,
+    "uartErrorMask": "0x0",
+    "exactTenYhmRegisterRestoration": true,
+    "baselineAndRestoredHex": "811104afaf03812033ff",
+    "restoredCaseVersion": "1.2.57",
+    "firmwareBytesSent": 0,
+    "postflightConsole": "work/case-fault-policy/mac-after-fullwindow-1m.json",
+    "postflightCounts": {
+      "leftStatusReplies": 15,
+      "rightStatusReplies": 0,
+      "rightStatusFailures": 8,
+      "startupObserved": true
+    },
+    "postflightBleScan": "/Users/kalani/Repo/SybilSight/docs/bluetooth-profiler/sessions/2026-10-15T04-14-14Z-scan.json",
+    "rightDirectBleConnect": "/Users/kalani/Repo/SybilSight/docs/bluetooth-profiler/sessions/2026-10-15T04-14-33Z-probe.json",
+    "rightDirectBleResult": "15second timeout; no writes"
+  },
+  "conclusion": "Both tested full800secondroutes115200and1M failed to produce any right response. No verified Case-accessible writable recovery endpoint. Actual power/provision/triggerwiring needed to qualify further action. Neither battery nor firmware failure proven."
+}

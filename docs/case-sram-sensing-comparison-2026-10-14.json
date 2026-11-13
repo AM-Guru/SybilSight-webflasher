@@ -1,0 +1,605 @@
+{
+  "date": "2026-10-14",
+  "operation": "Volatile Case SRAM left/right water-sense ADC comparison",
+  "sourceDirectory": "scripts/case_sensing_bridge",
+  "compiledPayloadSha256": "82ac034644cd59eba1638606414f12d8c14d9392ceaa9deeabb2a4fac868e623",
+  "reproducibleBinary": true,
+  "offlineValidation": {
+    "schemaVersion": 1,
+    "payloadSha256": "82ac034644cd59eba1638606414f12d8c14d9392ceaa9deeabb2a4fac868e623",
+    "payloadBytes": 1362,
+    "sourceHashes": {
+      "bridge.c": "82f876ae6f4a3ae081f59354dbb4d4c22d9e9e10db9ba2e6c306ea88f26968b8",
+      "start.S": "6a281f69e0c6917084205db1d69f013fdd0a1418082a9a2a4af302879c9a5b3f",
+      "link.ld": "78fcc2ac75757301b404fe4982fc31e2a846653beda046ffbf923b4d597a7cf9",
+      "validate.py": "1287ecf383f0c4307d2b255cfd265432b2623c2fc5e5c2d3b61750ed781a42c0"
+    },
+    "validation": "compiled ARM bridge executed with modeled peripheral fault injection",
+    "hardwareProof": false,
+    "cases": [
+      {
+        "fault": "none",
+        "status": 0,
+        "phases": 10,
+        "writes": 74,
+        "checksumVerified": true
+      },
+      {
+        "fault": "unexpected",
+        "status": 1,
+        "phases": 0,
+        "writes": 0,
+        "checksumVerified": true
+      },
+      {
+        "fault": "baseline_read",
+        "status": 1,
+        "phases": 0,
+        "writes": 0,
+        "checksumVerified": true
+      },
+      {
+        "fault": "init",
+        "status": 6,
+        "phases": 0,
+        "writes": 0,
+        "checksumVerified": true
+      },
+      {
+        "fault": "write",
+        "status": 2,
+        "phases": 0,
+        "writes": 5,
+        "checksumVerified": true
+      },
+      {
+        "fault": "selected_read",
+        "status": 3,
+        "phases": 0,
+        "writes": 7,
+        "checksumVerified": true
+      },
+      {
+        "fault": "ready",
+        "status": 4,
+        "phases": 0,
+        "writes": 7,
+        "checksumVerified": true
+      },
+      {
+        "fault": "eoc",
+        "status": 4,
+        "phases": 0,
+        "writes": 7,
+        "checksumVerified": true
+      },
+      {
+        "fault": "overflow",
+        "status": 4,
+        "phases": 0,
+        "writes": 7,
+        "checksumVerified": true
+      },
+      {
+        "fault": "stop",
+        "status": 4,
+        "phases": 0,
+        "writes": 7,
+        "checksumVerified": true
+      },
+      {
+        "fault": "restore",
+        "status": 5,
+        "phases": 0,
+        "writes": 7,
+        "checksumVerified": true
+      },
+      {
+        "fault": "none",
+        "status": 0,
+        "phases": 10,
+        "writes": 74,
+        "checksumVerified": true
+      }
+    ]
+  },
+  "macCapturePath": "work/case-sensing-2026-10-14/mac-capture.json",
+  "macCapture": {
+    "schemaVersion": 1,
+    "capturedAt": "2026-10-14T16:05:39.080964+00:00",
+    "pairLabel": "Mac pair, both seated normally",
+    "firmwareBytesSent": 0,
+    "templeBytesSent": 0,
+    "caseFlashWrites": 0,
+    "outcome": "capture-and-exact-restoration-verified",
+    "bridgeSha256": "82ac034644cd59eba1638606414f12d8c14d9392ceaa9deeabb2a4fac868e623",
+    "preflight": {
+      "case_version": "1.2.57",
+      "left_present": true,
+      "right_present": true,
+      "ota_glasses": 0,
+      "reset_command": "DEB0",
+      "reset_confirmed": false,
+      "caseSerial": "002300405845501620373941",
+      "rawConsole": "Option Bytes check done. 0x66f6000, level:0xaa\r\nPower up...\r\n****** B200 1.2.57 002300405845501620373941******\r\n2217 self check done.\r\npmic self check done.\r\nPMIC reg 0x10-0x17:d8 4c 00 90 14 08 00 28 \r\nPMIC enable boost: 0\r\n2510 self check done, adjVal:102\r\n4005 self check done.\r\nInit YHM2510\r\n2510: 0x00-0x07:81 00 04 ae ae 03 81 20 \r\nOption Bytes check done. 0x66f6000, level:0xaa\r\nPower up...\r\n****** B200 1.2.57 002300405845501620373941******\r\n2217 self check done.\r\npmic self check done.\r\nPMIC reg 0x10-0x17:d8 4c 00 90 14 08 00 28 \r\nPMIC enable boost: 0\r\n2510 self check done, adjVal:102\r\n4005 self check done.\r\nInit YHM2510\r\n2510: 0x00-0x07:81 00 04 ae ae 03 81 20 \r\nL charging:1, done:0, vol:4453mv, bat:98, cur:26///\r\nreceive header timeout\r\nFail to get GLS_R status, cnt:1\r\nclear led since gls status updated.\r\nL & R GLS IN, Charging status unknown. Show led after 1s.\r\nreceive header timeout\r\nFail to get GLS_R status(FORCE), cnt:2\r\nreceive header timeout\r\nFail to get GLS_R status(FORCE), cnt:3\r\nreceive header timeout\r\nFail to get GLS_R status(FORCE), cnt:4\r\nreceive header timeout\r\nFail to get GLS_R status(FORCE), cnt:5\r\nreceive header timeout\r\nFail to get GLS_R status(FORCE), cnt:6\r\nreceive header timeout\r\nFail to get GLS_R status(FORCE), cnt:7\r\nL & R GLS IN, Charging status(1100) confirmed in 1s. Show led now.\r\nL charging:1, done:0, vol:4448mv, bat:98, cur:-1///\r\nreceive header timeout\r\nFail to get GLS_R status, cnt:8\r\nNo reply from GLS_R, wait for 15s\r\nL charging:1, done:0, vol:4497mv, bat:98, cur:-30///\r\nL charging:1, done:0, vol:4497mv, bat:98, cur:-29///\r\n****** B200 vol:4170 pct:100, open:1, usb:1, cur:-19, GLS_L:1, GLS_R:1 temp:270\r\nclear led\r\nL charging:1, done:0, vol:4497mv, bat:98, cur:-25///\r\nOne-side charging: disabled\r\n****** B200 vol:4170 pct:100, open:1, usb:1, cur:-9, GLS_L:1, GLS_R:1 temp:270, chEn:1, aging:0, otaGls:0\r\nL charging:1, done:0, vol:4492mv, bat:98, cur:-27///\r\n"
+    },
+    "caseCodeReferenceSha256": "773b6d4cfdaf0a5a74a557e3babe8222a0ae813436b76a7437c1096d2c60d677",
+    "liveCaseCodeSha256": "773b6d4cfdaf0a5a74a557e3babe8222a0ae813436b76a7437c1096d2c60d677",
+    "volatileCodeExecuted": true,
+    "result": {
+      "status": 0,
+      "completedPhases": 10,
+      "writeMask": "0x78",
+      "baselineReadMask": "0x3ff",
+      "restoredReadMask": "0x3ff",
+      "adcError": 0,
+      "restoreWriteFailureMask": "0x0",
+      "adcInitializationStage": 2,
+      "baselineHex": "811104afaf03812033ff",
+      "restoredHex": "811104afaf03812033ff",
+      "exactRestorationVerified": true,
+      "captures": [
+        {
+          "side": "left",
+          "rawAdcCounts": [
+            3,
+            3,
+            4,
+            4,
+            4,
+            4,
+            3,
+            3
+          ],
+          "trimmedMeanRaw": 3,
+          "selectedYhmHex": "811104afaf038b2033ff",
+          "restorationVerifiedByBridge": true
+        },
+        {
+          "side": "right",
+          "rawAdcCounts": [
+            5,
+            5,
+            3,
+            4,
+            3,
+            4,
+            5,
+            5
+          ],
+          "trimmedMeanRaw": 4,
+          "selectedYhmHex": "811104afaf038d2033ff",
+          "restorationVerifiedByBridge": true
+        },
+        {
+          "side": "left",
+          "rawAdcCounts": [
+            5,
+            4,
+            6,
+            4,
+            4,
+            4,
+            4,
+            4
+          ],
+          "trimmedMeanRaw": 4,
+          "selectedYhmHex": "811104afaf038b2033ff",
+          "restorationVerifiedByBridge": true
+        },
+        {
+          "side": "right",
+          "rawAdcCounts": [
+            5,
+            4,
+            5,
+            4,
+            4,
+            4,
+            4,
+            4
+          ],
+          "trimmedMeanRaw": 4,
+          "selectedYhmHex": "811104afaf038d2033ff",
+          "restorationVerifiedByBridge": true
+        },
+        {
+          "side": "left",
+          "rawAdcCounts": [
+            4,
+            4,
+            4,
+            4,
+            3,
+            4,
+            5,
+            3
+          ],
+          "trimmedMeanRaw": 3,
+          "selectedYhmHex": "811104afaf038b2033ff",
+          "restorationVerifiedByBridge": true
+        },
+        {
+          "side": "right",
+          "rawAdcCounts": [
+            3,
+            3,
+            3,
+            3,
+            4,
+            5,
+            4,
+            4
+          ],
+          "trimmedMeanRaw": 3,
+          "selectedYhmHex": "811104afaf038d2033ff",
+          "restorationVerifiedByBridge": true
+        },
+        {
+          "side": "left",
+          "rawAdcCounts": [
+            5,
+            4,
+            3,
+            3,
+            4,
+            4,
+            4,
+            3
+          ],
+          "trimmedMeanRaw": 3,
+          "selectedYhmHex": "811104afaf038b2033ff",
+          "restorationVerifiedByBridge": true
+        },
+        {
+          "side": "right",
+          "rawAdcCounts": [
+            4,
+            4,
+            4,
+            3,
+            4,
+            4,
+            3,
+            4
+          ],
+          "trimmedMeanRaw": 3,
+          "selectedYhmHex": "811104afaf038d2033ff",
+          "restorationVerifiedByBridge": true
+        },
+        {
+          "side": "left",
+          "rawAdcCounts": [
+            4,
+            5,
+            3,
+            4,
+            5,
+            4,
+            4,
+            4
+          ],
+          "trimmedMeanRaw": 4,
+          "selectedYhmHex": "811104afaf038b2033ff",
+          "restorationVerifiedByBridge": true
+        },
+        {
+          "side": "right",
+          "rawAdcCounts": [
+            4,
+            3,
+            5,
+            5,
+            5,
+            5,
+            5,
+            4
+          ],
+          "trimmedMeanRaw": 4,
+          "selectedYhmHex": "811104afaf038d2033ff",
+          "restorationVerifiedByBridge": true
+        }
+      ],
+      "boundary": "Raw per-side water-protection sensing, not calibrated charging current or battery/pogo voltage."
+    },
+    "restoredCaseVersion": "1.2.57"
+  },
+  "iphoneCapture": {
+    "schemaVersion": 1,
+    "capturedAt": "2026-10-14T18:21:35.708783+00:00",
+    "pairLabel": "Working iPhone pair, both seated normally",
+    "firmwareBytesSent": 0,
+    "templeBytesSent": 0,
+    "caseFlashWrites": 0,
+    "outcome": "capture-and-exact-restoration-verified",
+    "bridgeSha256": "82ac034644cd59eba1638606414f12d8c14d9392ceaa9deeabb2a4fac868e623",
+    "preflight": {
+      "case_version": "1.2.57",
+      "left_present": true,
+      "right_present": true,
+      "ota_glasses": 0,
+      "reset_command": "DEB0",
+      "reset_confirmed": false,
+      "caseSerial": "002300405845501620373941",
+      "rawConsole": "Option Bytes check done. 0x66f6000, level:0xaa\r\nPower up...\r\n****** B200 1.2.57 002300405845501620373941******\r\n2217 self check done.\r\npmic self check done.\r\nPMIC reg 0x10-0x17:d8 4c 00 90 14 08 00 28 \r\nPMIC enable boost: 0\r\n2510 self check done, adjVal:102\r\n4005 self check done.\r\nInit YHM2510\r\n2510: 0x00-0x07:81 00 04 ae ae 03 81 20 \r\nOption Bytes check done. 0x66f6000, level:0xaa\r\nPower up...\r\n****** B200 1.2.57 002300405845501620373941******\r\n2217 self check done.\r\npmic self check done.\r\nPMIC reg 0x10-0x17:d8 4c 00 90 14 08 00 28 \r\nPMIC enable boost: 0\r\n2510 self check done, adjVal:102\r\n4005 self check done.\r\nInit YHM2510\r\n2510: 0x00-0x07:81 00 04 ae ae 03 81 20 \r\nL charging:1, done:0, vol:4072mv, bat:60, cur:-100///\r\nR charging:1, done:0, vol:4106mv, bat:61, cur:-101\\\\\\\r\nclear led since gls status updated.\r\nL & R GLS IN, Charging status confirmed directly. Show led now.\r\nL & R GLS IN, Charging status(1111) confirmed in 1s. Show led now.\r\nL charging:1, done:0, vol:4072mv, bat:60, cur:-101///\r\nR charging:1, done:0, vol:4106mv, bat:61, cur:-100\\\\\\\r\nL charging:1, done:0, vol:4077mv, bat:60, cur:-101///\r\nR charging:1, done:0, vol:4111mv, bat:61, cur:-101\\\\\\\r\nL charging:1, done:0, vol:4077mv, bat:60, cur:-100///\r\nR charging:1, done:0, vol:4041mv, bat:61, cur:-1\\\\\\\r\n****** B200 vol:4145 pct:100, open:1, usb:1, cur:-19, GLS_L:1, GLS_R:1 temp:275\r\nclear led\r\nL charging:1, done:0, vol:4013mv, bat:60, cur:-9///\r\nR charging:1, done:0, vol:4038mv, bat:61, cur:-1\\\\\\\r\nOne-side charging: disabled\r\n****** B200 vol:4146 pct:100, open:1, usb:1, cur:-9, GLS_L:1, GLS_R:1 temp:275, chEn:1, aging:0, otaGls:0\r\nL charging:1, done:0, vol:4077mv, bat:60, cur:-101///\r\nR charging:1, done:0, vol:4106mv, bat:61, cur:-100\\\\\\\r\n"
+    },
+    "caseCodeReferenceSha256": "773b6d4cfdaf0a5a74a557e3babe8222a0ae813436b76a7437c1096d2c60d677",
+    "liveCaseCodeSha256": "773b6d4cfdaf0a5a74a557e3babe8222a0ae813436b76a7437c1096d2c60d677",
+    "sramCodeBytesUploaded": 1364,
+    "sramResultBytesCleared": 536,
+    "volatileCodeExecuted": true,
+    "result": {
+      "status": 0,
+      "completedPhases": 10,
+      "writeMask": "0x78",
+      "baselineReadMask": "0x3ff",
+      "restoredReadMask": "0x3ff",
+      "adcError": 0,
+      "restoreWriteFailureMask": "0x0",
+      "adcInitializationStage": 2,
+      "baselineHex": "811104afaf03812033ff",
+      "restoredHex": "811104afaf03812033ff",
+      "exactRestorationVerified": true,
+      "captures": [
+        {
+          "side": "left",
+          "rawAdcCounts": [
+            4,
+            6,
+            4,
+            4,
+            5,
+            4,
+            6,
+            6
+          ],
+          "trimmedMeanRaw": 4,
+          "selectedYhmHex": "811104afaf038b2033ff",
+          "restorationVerifiedByBridge": true
+        },
+        {
+          "side": "right",
+          "rawAdcCounts": [
+            6,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5
+          ],
+          "trimmedMeanRaw": 5,
+          "selectedYhmHex": "811104afaf038d2033ff",
+          "restorationVerifiedByBridge": true
+        },
+        {
+          "side": "left",
+          "rawAdcCounts": [
+            5,
+            5,
+            5,
+            5,
+            6,
+            5,
+            6,
+            6
+          ],
+          "trimmedMeanRaw": 5,
+          "selectedYhmHex": "811104afaf038b2033ff",
+          "restorationVerifiedByBridge": true
+        },
+        {
+          "side": "right",
+          "rawAdcCounts": [
+            5,
+            4,
+            5,
+            5,
+            5,
+            4,
+            5,
+            7
+          ],
+          "trimmedMeanRaw": 4,
+          "selectedYhmHex": "811104afaf038d2033ff",
+          "restorationVerifiedByBridge": true
+        },
+        {
+          "side": "left",
+          "rawAdcCounts": [
+            5,
+            5,
+            5,
+            5,
+            5,
+            6,
+            5,
+            6
+          ],
+          "trimmedMeanRaw": 5,
+          "selectedYhmHex": "811104afaf038b2033ff",
+          "restorationVerifiedByBridge": true
+        },
+        {
+          "side": "right",
+          "rawAdcCounts": [
+            6,
+            7,
+            5,
+            6,
+            5,
+            5,
+            5,
+            6
+          ],
+          "trimmedMeanRaw": 5,
+          "selectedYhmHex": "811104afaf038d2033ff",
+          "restorationVerifiedByBridge": true
+        },
+        {
+          "side": "left",
+          "rawAdcCounts": [
+            6,
+            6,
+            5,
+            6,
+            5,
+            5,
+            6,
+            5
+          ],
+          "trimmedMeanRaw": 5,
+          "selectedYhmHex": "811104afaf038b2033ff",
+          "restorationVerifiedByBridge": true
+        },
+        {
+          "side": "right",
+          "rawAdcCounts": [
+            6,
+            6,
+            5,
+            4,
+            5,
+            5,
+            6,
+            5
+          ],
+          "trimmedMeanRaw": 5,
+          "selectedYhmHex": "811104afaf038d2033ff",
+          "restorationVerifiedByBridge": true
+        },
+        {
+          "side": "left",
+          "rawAdcCounts": [
+            5,
+            5,
+            5,
+            5,
+            6,
+            5,
+            5,
+            5
+          ],
+          "trimmedMeanRaw": 5,
+          "selectedYhmHex": "811104afaf038b2033ff",
+          "restorationVerifiedByBridge": true
+        },
+        {
+          "side": "right",
+          "rawAdcCounts": [
+            4,
+            4,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5
+          ],
+          "trimmedMeanRaw": 4,
+          "selectedYhmHex": "811104afaf038d2033ff",
+          "restorationVerifiedByBridge": true
+        }
+      ],
+      "boundary": "Raw per-side water-protection sensing, not calibrated charging current or battery/pogo voltage."
+    },
+    "restoredCaseVersion": "1.2.57"
+  },
+  "comparisonStatus": "Complete: identical bridge applied to both pairs with exact restoration",
+  "measurementBoundary": "Raw ADC counts from the stock water-protection selection. No conversion to charging current, pogo voltage, or battery voltage. Low counts alone cannot establish a temple fault. Stock Case policy is paused during this experiment.",
+  "mutationBoundary": "No flash writes or temple UART bytes. 1364 bytes of padded temporary code and 536 bytes of cleared result storage were uploaded to Case SRAM. YHM registers 3\u20136 temporarily written and ten-register restoration verified each phase. Case then reset to normal firmware 1.2.57.",
+  "iphoneCapturePath": "work/case-sensing-2026-10-14/iphone-capture.json",
+  "comparison": {
+    "sameCase": true,
+    "samePayload": true,
+    "sameStockCode": true,
+    "sameBaseline": true,
+    "restorationVerifiedForBoth": true,
+    "summary": {
+      "Mac": {
+        "left": {
+          "values": [
+            3,
+            4,
+            3,
+            3,
+            4
+          ],
+          "median": 3,
+          "min": 3,
+          "max": 4
+        },
+        "right": {
+          "values": [
+            4,
+            4,
+            3,
+            3,
+            4
+          ],
+          "median": 4,
+          "min": 3,
+          "max": 4
+        }
+      },
+      "iPhone": {
+        "left": {
+          "values": [
+            4,
+            5,
+            5,
+            5,
+            5
+          ],
+          "median": 5,
+          "min": 4,
+          "max": 5
+        },
+        "right": {
+          "values": [
+            5,
+            4,
+            5,
+            5,
+            4
+          ],
+          "median": 5,
+          "min": 4,
+          "max": 5
+        }
+      }
+    },
+    "rightMedianDifferenceMacMinusIphone": -1,
+    "conclusion": "Raw water-sensing counts overlap. This experiment does not distinguish a deeply discharged right temple from a hardware or firmware failure. These are not calibrated battery voltage or delivered charging current.",
+    "limitations": [
+      "Values are raw water-protection ADC sensing counts while stock Case policy is paused, not charging current or temple battery voltage.",
+      "The working pair later reported 62% left / 63% right; the Mac left previously reported about 98\u201399% and Mac right SOC is unavailable. This is not a matched-state-of-charge charging-current comparison.",
+      "No electrical calibration or known analog stimulus was used, so a one-count difference does not establish a diagnostic threshold."
+    ]
+  },
+  "postExperimentWorkingPair": {
+    "path": "work/case-sensing-2026-10-14/iphone-post-restoration-console.json",
+    "caseSerial": "002300405845501620373941",
+    "caseVersion": "1.2.57",
+    "templeCharging": {
+      "left": {
+        "charging": true,
+        "done": false,
+        "voltageMv": 4116,
+        "batteryPercent": 62,
+        "currentRaw": -101,
+        "source": "charging-case console"
+      },
+      "right": {
+        "charging": true,
+        "done": false,
+        "voltageMv": 4150,
+        "batteryPercent": 63,
+        "currentRaw": -101,
+        "source": "charging-case console"
+      }
+    },
+    "boundary": "Both temples replied through the stock Case console; this is not a display/functionality test."
+  }
+}

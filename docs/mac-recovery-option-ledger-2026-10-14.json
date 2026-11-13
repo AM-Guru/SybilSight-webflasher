@@ -1,0 +1,31 @@
+{
+  "scope": "Known Case USB and temporary SRAM options; not all theoretical physical recovery possibilities.",
+  "goalServiceIssue": "Historical service/UI mismatch resolved; current goal active.",
+  "latestEvidence": "docs/case-full-vendor-recovery-window-2026-10-14.json",
+  "qualifiedTests": [
+    "Stock version/status: left replies, right silent; working iPhone right qualified receive route.",
+    "Stock right reset train: 103 actions; automatic reset at180s and fault at210s.",
+    "Ambiq HELLO at1M: four nominal offsets; no response.",
+    "Ambiq HELLO at115200: new13-case qualified test; four requests32bytes; zeroRX/errors; exact restoration.",
+    "In-train FIFO at1M:15offline cases; captured00 with framing error; no valid recovery frame. FIFO and timing limits remain.",
+    "In-train FIFO115200:17offline cases; RX-ready confirmed, OVRDIS cleared, captured00 with framing error, no ORE; exact10byte restoration and Case1.2.57.",
+    "Stock Mac left peer-status query: checksum-valid 4901030101 response, no acknowledgement at20ms, exact10registerrestore, stock1.2.57. Working iPhone peer control pending."
+  ],
+  "unreachableOrUnqualified": [
+    "INFOC/INFO0: no bounded stock2.3 serial or CLI read found.",
+    "Retail boot override and MRAM trigger: provisioning and wiring unknown.",
+    "ROM/SBL default interface: retail module, pins and timeout unknown.",
+    "Apollo software MRAM recovery: requires Apollo execution; Case SRAM runs on STM32.",
+    "Bootloader/application writes: no responding endpoint or verified destination/readback.",
+    "Bootloader/INFO erase: no physical temple-memory access or verified retail replacement.",
+    "Stock AF output hold: qualified 120-second v2 executed with exact register equality and stock restoration; right remained silent. Actual right battery current/voltage unmeasured; longer hold awaits temperature observation.",
+    "Charger protection overrides: no verified YHM limit map or responding temple charger interface. Not executed.",
+    "Direct electrical/SWD: requires breakout or temple debug hardware; current DMM access cannot measure seated contacts."
+  ],
+  "chargingEvidence": "Global enable1 and settled AF/AF verified. These are output requests, not right battery current/voltage.",
+  "nextEvidenceNeeded": "Actual loaded right supply/current or temple debug access/provisioned boot entry. Existing Case serial and peer queries remain silent on right; holding stock requests has not produced an endpoint.",
+  "goalServiceCurrentState": "Original goal now active, verified by get_goal in current continuation.",
+  "latestIntrainEvidence": "work/case-fault-policy/mac-intrain-115200.json",
+  "currentExperiment": "Both full800second tests115200and1M completed2000HELLOquerieseach/250WDcalls,0RX/0reportederrors,exacttenYHMrestore,stockCase1.2.57. Freshpost1Mserial15left/0right/8timeouts; rightBLEdirectconnect15stimeout.",
+  "remainingQualifiedWork": "No further verified Case-only recovery entry identified. Need actual loaded right-side power evidence, retailINFOC/INFO0/SBLprovisioning or physicaltrigger/debugaccess to qualify another path. NewervendorPDFs profile-gated andnotlocallyavailable."
+}

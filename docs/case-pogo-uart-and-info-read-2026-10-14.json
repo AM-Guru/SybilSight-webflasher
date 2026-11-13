@@ -1,0 +1,483 @@
+{
+  "scope": "Control-oriented INFO read feasibility and offline native UART routing. No USB/temple operations performed in this turn.",
+  "routing": {
+    "txGpio": 42,
+    "rxGpio": 44,
+    "uartModule": 2,
+    "muxFunction": 4,
+    "baud": 1000000,
+    "images": [
+      {
+        "image": "/Users/kalani/Repo/evenRealities-openCFW/g2/blobs/official/g2-2.2.6.10/ota_s200_firmware_ota.bin",
+        "payloadSha256": "19044a72bdfeb04c6b1b104d87da7b98e13cc18928528d84d999b6bcc0ba9701",
+        "entry": "0x005E42B4",
+        "returned": true,
+        "descriptorBase": "0x20000D2C",
+        "rowStride": 28,
+        "rows": [
+          {
+            "channel": 0,
+            "words": [
+              "0x0",
+              "0x0",
+              "0x0",
+              "0x0",
+              "0x0",
+              "0x0",
+              "0x0"
+            ]
+          },
+          {
+            "channel": 1,
+            "words": [
+              "0x1",
+              "0x0",
+              "0x786060",
+              "0x20000ccc",
+              "0x20000cfc",
+              "0x0",
+              "0x0"
+            ],
+            "pinRecord": [
+              12,
+              14,
+              5,
+              5
+            ],
+            "uartConfigHex": "00100e00030200000000020200000000"
+          },
+          {
+            "channel": 2,
+            "words": [
+              "0x2",
+              "0x0",
+              "0x786070",
+              "0x20000cdc",
+              "0x20000d0c",
+              "0x0",
+              "0x0"
+            ],
+            "pinRecord": [
+              42,
+              44,
+              4,
+              4
+            ],
+            "uartConfigHex": "40420f00030200000000020200000000"
+          },
+          {
+            "channel": 3,
+            "words": [
+              "0x3",
+              "0x0",
+              "0x786080",
+              "0x20000cec",
+              "0x20000d1c",
+              "0x0",
+              "0x0"
+            ],
+            "pinRecord": [
+              73,
+              69,
+              5,
+              5
+            ],
+            "uartConfigHex": "00840300030200000000020200000000"
+          }
+        ],
+        "boundary": "Offline native initializer execution; no peripheral models or device reads. INFOC and INFO0 not mapped or inferred."
+      },
+      {
+        "image": "/Users/kalani/Repo/evenRealities-openCFW/g2/blobs/official/g2-2.3.0.24/ota_s200_firmware_ota.bin",
+        "payloadSha256": "fffbf74b3439bf0e4752fb620a7990d0a133898c54f6fb08005ea6b7029655c5",
+        "entry": "0x00601AC0",
+        "returned": true,
+        "descriptorBase": "0x20000e3c",
+        "rowStride": 28,
+        "rows": [
+          {
+            "channel": 0,
+            "words": [
+              "0x0",
+              "0x0",
+              "0x0",
+              "0x0",
+              "0x0",
+              "0x0",
+              "0x0"
+            ]
+          },
+          {
+            "channel": 1,
+            "words": [
+              "0x1",
+              "0x0",
+              "0x7bde1c",
+              "0x20000ddc",
+              "0x20000e0c",
+              "0x0",
+              "0x0"
+            ],
+            "pinRecord": [
+              12,
+              14,
+              5,
+              5
+            ],
+            "uartConfigHex": "00100e00030200000000020200000000"
+          },
+          {
+            "channel": 2,
+            "words": [
+              "0x2",
+              "0x0",
+              "0x7bde2c",
+              "0x20000dec",
+              "0x20000e1c",
+              "0x0",
+              "0x0"
+            ],
+            "pinRecord": [
+              42,
+              44,
+              4,
+              4
+            ],
+            "uartConfigHex": "40420f00030200000000020200000000"
+          },
+          {
+            "channel": 3,
+            "words": [
+              "0x3",
+              "0x0",
+              "0x7bde3c",
+              "0x20000dfc",
+              "0x20000e2c",
+              "0x0",
+              "0x0"
+            ],
+            "pinRecord": [
+              73,
+              69,
+              5,
+              5
+            ],
+            "uartConfigHex": "00840300030200000000020200000000"
+          }
+        ],
+        "boundary": "Offline native initializer execution; no peripheral models or device reads. INFOC and INFO0 not mapped or inferred."
+      }
+    ],
+    "sdkReference": "third-party/upstream/ambiqhal-apollo510/mcu/apollo510/hal/am_hal_pin.h:839,875",
+    "nativeEnableRoutine": "0x0055E5BC reads pin record then configures both pins; Case receive handler0x0053A0B6 uses logical channel2."
+  },
+  "infoReadFeasibility": {
+    "verifiedStockSerialMemoryRead": false,
+    "literalTableHandlerSourcesInspected": [
+      {
+        "target": "0x56ffc4",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/0056ffc4.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x56fdb4",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/0056fdb4.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x570780",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00570780.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x5709c4",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/005709c4.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x570d40",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00570d40.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x571064",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00571064.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x5713d8",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/005713d8.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x57200c",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/0057200c.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x570570",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00570570.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x571cd4",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00571cd4.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x571e44",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00571e44.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x5726f0",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/005726f0.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x572858",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00572858.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x57222c",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/0057222c.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x572394",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00572394.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x572c64",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00572c64.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x570210",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00570210.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x570b60",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00570b60.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x5724f4",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/005724f4.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x57303c",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/0057303c.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x57320c",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/0057320c.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x573310",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00573310.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x5734cc",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/005734cc.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x573604",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00573604.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x5738d0",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/005738d0.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x573c58",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00573c58.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x573f88",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00573f88.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x5741e0",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/005741e0.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x574464",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00574464.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x570438",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00570438.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x574580",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00574580.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x574808",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00574808.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x574f60",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00574f60.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x57522c",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/0057522c.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x575470",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00575470.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x575548",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00575548.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x575708",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00575708.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x5759fc",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/005759fc.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x57536c",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/0057536c.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x575af8",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00575af8.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x575eb4",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00575eb4.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x57612c",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/0057612c.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x576518",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00576518.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x576714",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00576714.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x576800",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00576800.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x5768c8",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/005768c8.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x576a54",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00576a54.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x576bd4",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00576bd4.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x576d48",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00576d48.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x576df8",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00576df8.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x576fd0",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00576fd0.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x5770cc",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/005770cc.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x5771d4",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/005771d4.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x577364",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00577364.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x57747c",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/0057747c.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x57757c",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/0057757c.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x577678",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00577678.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x577794",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/00577794.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x5778d4",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/005778d4.c",
+        "hasExplicitInfoAddress": false
+      },
+      {
+        "target": "0x5779e0",
+        "source": "g2/research/corpus/apollo-main/ghidra/open-2026-09-29/decomp/005779e0.c",
+        "hasExplicitInfoAddress": false
+      }
+    ],
+    "limits": "Explicit address search is not exhaustive reachability proof. No verified arbitrary-memory read command or safe temple SRAM loader identified. Case ROM read_memory addresses only Case memory.",
+    "noWorkingPairFirmwareModification": true,
+    "liveInfoReadPerformed": false,
+    "controlAttribution": "No retail INFOC/INFO0 values inferred for either pair; identical official UART records do not establish identical provisioning."
+  }
+}

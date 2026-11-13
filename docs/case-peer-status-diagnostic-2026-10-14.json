@@ -1,0 +1,63 @@
+{
+  "scope": "Mac left 2.2.6.10 fixed stock peer-status query, not recovery entry",
+  "nativeQualification": {
+    "handler": "0x0057522c",
+    "dispatcher": "0x0056f4a0",
+    "receiverActualEntry": "0x005f9924",
+    "receiverTable": "0x006a4700: event 0x102 -> 0x005f9925",
+    "handlerAndReceiverCases": 15,
+    "dispatcherPassed": true,
+    "boundary": "Logger, role, queue and delay stubs; AA/55 SRAM initializers seeded as assumptions. Actual hardware response provides matching handler evidence; peer transport positive control still pending."
+  },
+  "deviceEvidence": {
+    "receipt": "work/left-peer-read/mac-peer-status.json",
+    "rawFrameHex": "5aa5ff05490103010152",
+    "additiveChecksumVerified": true,
+    "payloadHex": "4901030101",
+    "peerAcknowledgedWithin20ms": false,
+    "exactTenRegisterRestoration": true,
+    "restoredCaseVersion": "1.2.57",
+    "firmwareBytesSent": 0,
+    "fixedTempleRequestBytes": 5
+  },
+  "interpretation": "Working iPhone left reports peer acknowledgement while Mac left reports none in identical fixed diagnostic. This independently corroborates Mac peer-link failure in addition to direct Case-right silence. Does not distinguish battery/power, firmware corruption or physical hardware failure; firmware versions differ2.2.6.10 vs2.3.0.24.",
+  "next": "Mac pair requested for qualified bounded600second hold; user reports Mac right and Case felt normal.",
+  "iphone23024Qualification": {
+    "payloadSha256": "fffbf74b3439bf0e4752fb620a7990d0a133898c54f6fb08005ea6b7029655c5",
+    "dispatcher": "0x0058dd40",
+    "handler": "0x00593adc",
+    "receiver": "0x0061b31c",
+    "eventTable": "0x006c6378: event 0x102 -> 0x0061b31d",
+    "handlerAndReceiverNativeCasesPassed": 15,
+    "fixedOpcodeDispatcherVerified": true,
+    "hardwareControlPending": false,
+    "boundary": "Independent actual2.3 native instructions; same logger/role/queue/delay stubs and explicit source-byte assumptions as2.2 test."
+  },
+  "receiptValidation": {
+    "script": "scripts/case_peer_status_probe/run.py",
+    "evidence": "work/left-peer-read/receipt-parser-validation.json",
+    "passed": 8,
+    "checks": [
+      "fixed header",
+      "exact payload length",
+      "additive checksum",
+      "expected opcode and status layout",
+      "boolean result range",
+      "zero trailing receive buffer"
+    ],
+    "meaning": "Missing or malformed replies cannot be reported as a negative peer acknowledgement."
+  },
+  "iphoneControl": {
+    "receipt": "work/left-peer-read/iphone-peer-status.json",
+    "reply": {
+      "valid": true,
+      "frameHex": "5aa5ff05490103010051",
+      "additiveChecksumVerified": true,
+      "peerAcknowledgedWithin20ms": true,
+      "boundary": "No acknowledgement is not a diagnosis of power loss, firmware corruption or hardware failure."
+    },
+    "exactTenRegisterRestoration": true,
+    "restoredCaseVersion": "1.2.57",
+    "firmwareBytesSent": 0
+  }
+}

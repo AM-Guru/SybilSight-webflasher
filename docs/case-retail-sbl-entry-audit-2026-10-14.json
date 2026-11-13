@@ -1,0 +1,98 @@
+{
+  "scope": "Retail SBL/ROM entry reachability through Case, without temple application",
+  "deviceOperationsThisTurn": 0,
+  "iphonePairChanged": false,
+  "bootLayers": {
+    "romHelpers": "ROM table entries0x0200FF0C..0x0200FF5C, called by Apollo code, not established serial commands. Actual2.3.0.24 app contains table at0x00791758.",
+    "sbl": "NVM0x00400000..0x0040FFFF; no authenticated retail SBL image in inspected official OTA corpus.",
+    "evenBootloader": "0x00410000; actual2.3.0.24 artifact and native functions directly analyzed.",
+    "application": "0x00438000; application UART2 configuration is not proof of pre-application SBL configuration."
+  },
+  "evenBootloader23024": {
+    "sha256": "52ed1c4d043f278f9011d2f2e6555b668ef2ff1e312695f5c28fa7986523b75b",
+    "entryFunctions": {
+      "updateFlagPredicate": "0x0042E568",
+      "manager": "0x0042E63C",
+      "dfuTask": "0x0042E19C",
+      "errorTransaction": "0x0042E152"
+    },
+    "nativePolicyReplay": "/Users/kalani/Repo/SybilSight-webflasher/work/stock-23024-handler-audit/bootloader-entry/policy-replay.json",
+    "finding": "Flag0x007FE000==0x55555555 selects staged file ota/s200_firmware_ota.bin; reviewed manager/event loop and DFU task expose no external recovery-command listener. No claim of complete bootloader or SBL listener absence."
+  },
+  "entryCandidates": [
+    {
+      "path": "Normal SBL wired receive window",
+      "requires": "Retail wired UART enabled/module2, exact INFO0 RX44/TX42 mux/framing, nonzero timeout and actual reset/power reachability.",
+      "caseCapability": "Can route and send UART2-compatible bytes; cannot establish or change retail provisioning without a verified temple endpoint.",
+      "verifiedRetailEntry": false
+    },
+    {
+      "path": "INFOC boot override",
+      "requires": "INFOC0x400C2250 enable, GPIO number and polarity; GPIO physically driven across reset.",
+      "caseCapability": "No verified connection from Case route to the configured override or Apollo nRESET. Pogo UART application pins42/44 alone are insufficient.",
+      "verifiedRetailEntry": false
+    },
+    {
+      "path": "MRAM hardware recovery trigger",
+      "requires": "INFO0 offset0x68 master nibble6, triggerGPIO/polarity, wired recovery enable and correct interface configuration.",
+      "caseCapability": "Retail fields and Case-to-trigger wiring unknown.",
+      "verifiedRetailEntry": false
+    },
+    {
+      "path": "Application-requested MRAM recovery",
+      "requires": "Apollo code writes0xAFD1363A to OTAPOINTER then requests POI; revision restrictions apply.",
+      "caseCapability": "Case SRAM runs on STM32 and cannot perform these Apollo register writes through an unresponsive temple.",
+      "verifiedRetailEntry": false
+    },
+    {
+      "path": "Automatic boot-error fallback",
+      "requires": "Actual retail SBL/ROM policy and applicable provisioning.",
+      "caseCapability": "Missing replies do not establish boot failure state or fallback. Deliberate image corruption excluded.",
+      "verifiedRetailEntry": false
+    }
+  ],
+  "caseResetTrace": {
+    "stockEntry": "0x08009A9C",
+    "waveformEntry": "0x0800B678",
+    "behavior": "Acquires2510 route, selects side, drivesGPIO pulse train and restores charging profile. It can emit without an application reply.",
+    "boundary": "Emission does not independently prove Apollo reset, electrical delivery or override assertion. It is not a demonstrated SBL-entry command.",
+    "previousMacOnlyProbe": "Qualified HELLO after waveform had no response; not repeated on unchanged iPhone pair."
+  },
+  "romReadHelper": {
+    "entry": "0x0200FF29 Thumb",
+    "finding": "Callable helper is present in app helper table; no verified stock serial invocation. It does not create an out-of-band read protocol."
+  },
+  "safePathVerified": false,
+  "hardwareTest": "None. No UART traffic, GPIO drive, reset, firmware/INFO/OTP changes, or corruption test.",
+  "sources": [
+    {
+      "path": "/Users/kalani/Repo/evenRealities-openCFW/third-party/upstream/ambiqhal-apollo510/mcu/apollo510/regs/am_mcu_apollo510_otpinfoc.h",
+      "sha256": "9c5e5a2c4e5dbbf80a3f9bd521308aa84fb1ea9f1819356bd7d90cf104aec76a"
+    },
+    {
+      "path": "/Users/kalani/Repo/evenRealities-openCFW/third-party/upstream/ambiqhal-apollo510/mcu/apollo510/regs/am_mcu_apollo510_mraminfo0.h",
+      "sha256": "fd0daf899e8f836844e99629e7855bb23349eb87a7e23695580f9cbeb0af76b5"
+    },
+    {
+      "path": "/Users/kalani/Repo/evenRealities-openCFW/third-party/upstream/ambiqhal-apollo510/mcu/apollo510/hal/mcu/am_hal_mram_recovery.c",
+      "sha256": "bc455fe540d86e0ff88bf4c0f6587db3f2cb3dcd0f3c9c416d2ba80d99d0f91a"
+    },
+    {
+      "path": "/Users/kalani/Repo/evenRealities-openCFW/third-party/upstream/ambiqhal-apollo510/mcu/apollo510/hal/mcu/am_hal_bootrom_helper.c",
+      "sha256": "b10862af2cb41270165cff0f0d85d75fb4b0729e393813024ea561b25c5c4978"
+    },
+    {
+      "path": "/Users/kalani/Repo/evenRealities-openCFW/g2/research/corpus/case/ghidra/open-2026-09-29/decomp/08009a9c.c",
+      "sha256": "8c89175cb79c806cc0a19c0d05a8afadb5207874a23cb0c14f45592ec865ad22"
+    },
+    {
+      "path": "/Users/kalani/Repo/evenRealities-openCFW/g2/research/corpus/case/ghidra/open-2026-09-29/decomp/0800b678.c",
+      "sha256": "cfc2659dadf27af4f732620d5563b4df7040e12e603d87aea70786ed9ea2e9f3"
+    }
+  ],
+  "limitations": [
+    "Chip capability definitions are not retail provisioned values.",
+    "SBL and ROM implementation bytes were not acquired.",
+    "Working iPhone provisioning cannot be inferred from application configuration or transferred to Mac right."
+  ]
+}

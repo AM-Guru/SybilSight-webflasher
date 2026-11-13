@@ -1,0 +1,77 @@
+{
+  "scope": "Offline trace of stock 180-second reset and rapid USB gesture; no live device access in this turn. Mac pair remains seated.",
+  "casePayloadSha256": "773b6d4cfdaf0a5a74a557e3babe8222a0ae813436b76a7437c1096d2c60d677",
+  "reset180": {
+    "nativeCaller": "0x08007A60..0x08007A9C",
+    "conditions": "Right failure count >=8, right no-reply counter divisible by180, runtime reset-suppression byte clear.",
+    "call": "0x08007A84..0x08007A88 sets R0=0,R1=1 and calls0x08009A9C.",
+    "helper": "When Case access is not busy: gates access, saves cached YHM context, checks UART/controller state, configures PB9 output, selects right routing, emits stock train, restores right profile, delays10, changes PB9 to input, applies ordinary output policy, releases busy gate.",
+    "rightRouteRequests": [
+      [
+        5,
+        3
+      ],
+      [
+        6,
+        193
+      ],
+      [
+        4,
+        166
+      ],
+      [
+        "delayTicks",
+        30
+      ],
+      [
+        7,
+        5
+      ]
+    ],
+    "train": "0x0800B678: 103 GPIO/delay actions exactly match prior qualified SRAM waveform.",
+    "postTrainRequests": [
+      [
+        7,
+        32
+      ],
+      [
+        6,
+        129
+      ],
+      [
+        5,
+        3
+      ],
+      [
+        4,
+        255
+      ],
+      [
+        "delayTicks",
+        10
+      ]
+    ],
+    "gpio": "GPIOB bit9 mask0x200 output push-pull no pull speed3 during train; returned to input afterward. This is a routed pulse sequence, not proof of a physical Apollo nRESET connection.",
+    "evidence": "work/case-fault-policy/reset180-evidence.json",
+    "assembly": "work/case-fault-policy/reset180-native.asm"
+  },
+  "recoveryAssessment": {
+    "newEndpointFound": false,
+    "novelSafeLiveProbeFound": false,
+    "priorProbe": "Qualified Case SRAM early-windowed variant already emitted the exact103-action right reset train and sent read-only Ambiq HELLO at nominal0/10/50/250ms after train; zero RX bytes, zero UART errors, exact10-register restoration.",
+    "difference": "Prior probe retains communication routing for receive, whereas stock restores charging profile and Case polling. Stock path does not select a distinct SBL/ROM entry option or hold a verified boot-override GPIO.",
+    "remainingLimits": "Actual Apollo reset, retail INFO configuration and windows within the driven train remain unobserved. Replacing stock driven intervals with input/UART would alter the waveform and is not qualified as a safe recovery test. No claim that every recovery possibility is excluded.",
+    "hardwareDecision": "Do not repeat same reset/HELLO or change baud/GPIO/protection merely because180-second timer elapsed; no firmware sent."
+  },
+  "rapidUsbGesture": {
+    "nativeDetection": "0x08003D76..0x08003DBA",
+    "mechanism": "Keeps two previous qualifying-edge counter values at0x2000010C/+4. On next qualifying event, if both history values nonzero and unsigned current-oldest<7, set A2 marker and event0x200. No distinct five-edge branch in this handler.",
+    "eventHandling": "0x0800700A..0x0800701C setsR0=1,R1=1, calls same0x08009A9C, clears event and calls NVIC_SystemReset.",
+    "startup": "0x080032CC checks A2; if1, 0x080038A0 alternates PA6/PA7 three times with200-tick waits and clears A2. Indicator acknowledgement, not a verified bootloader state.",
+    "nativeCasesPassed": 6,
+    "evidence": "work/case-fault-policy/usb-reset-evidence.json",
+    "officialDocumentation": "https://support.evenrealities.com/hc/en-us/articles/17141832541839-G2-Glasses-Display-Is-Frozen",
+    "documentedCounts": "Three USB unplug/reconnect cycles within7seconds; five touchpad taps. Described as restart.",
+    "qualification": "Counter tick cadence and physical edge polarity not independently measured; no physical gesture requested or executed this turn."
+  }
+}

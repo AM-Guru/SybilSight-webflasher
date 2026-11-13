@@ -27,6 +27,8 @@ import {
   flashG2BleSessionsSequentially,
   findAuthorizedG2BleDevice,
   g2BleDeviceSide,
+  g2BleRequiredSides,
+  g2BleValidationSide,
   g2BleRoutesAwaitingCaseVerification,
   g2BleTargetVersionProof,
   isG2BleConnectionLoss,
@@ -42,6 +44,15 @@ import {
   EXPECTED_COMPONENTS,
   EXPECTED_COMPONENT_TYPES,
 } from "../src/lib/firmware.js";
+
+test("the local armed-SBL experiment requires only its explicitly pinned side", () => {
+  const experiment = { bleValidationSide: "left" };
+  assert.equal(g2BleValidationSide(experiment), "left");
+  assert.deepEqual(g2BleRequiredSides(experiment), ["left"]);
+  assert.deepEqual(g2BleRequiredSides({}), ["left", "right"]);
+  assert.deepEqual(g2BleRequiredSides({ bleValidationSide: "invalid" }), ["left", "right"]);
+  assert.deepEqual(g2BleRequiredSides({}, "right"), ["right"]);
+});
 
 function hex(bytes) {
   return Buffer.from(bytes).toString("hex");

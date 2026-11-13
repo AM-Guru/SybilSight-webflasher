@@ -1,0 +1,32 @@
+{
+  "scope": "Offline actual2.3.0.24 application trace plus pinned Case1.2.57. Mac pair left seated; no device access, SRAM execution, firmware or INFO writes this turn. Mac right installed application/bootloader remain unconfirmed after interrupted update.",
+  "applicationPayloadSha256": "fffbf74b3439bf0e4752fb620a7990d0a133898c54f6fb08005ea6b7029655c5",
+  "pogoInputPaths": {
+    "gpioTable": "Startup0x00522C48 calls0x00557384 with97 records at0x006A9BE8. Native records for GPIO42/44 are mode3 with edge0 and callback0; no startup GPIO pulse-count callback on these pins.",
+    "gpioRegistration": "HAL0x0048AE2C has discovered direct callers0x00557442 (generic board/CLI table registration) and0x004C97B8 (GPIO117). Generic startup table callbacks are GPIO4/27/29/38. Dynamic CLI mutation not exercised.",
+    "gpioEvidence": "work/stock-23024-handler-audit/gpio-registration/native-board-gpio-records.json",
+    "uartVector": "External IRQ17 vector points to0x0057C4C1 (Thumb): UART2 wrapper0x0057C4C0 checks enable then calls0x0057C432(2).",
+    "uartInterrupt": "0x0057C432 fetches, clears and services HAL status; bit4 reads15bytes, bit6 reads16bytes and delivers receive callback, bit0 sets completion. No pulse-count recovery selector in wrapper. Native6cases include break-error bit0x200 alone: no RX delivery by wrapper. HAL internals still execute in actual firmware; offline wrapper test intercepts them.",
+    "uartEnableMask": "0x0057C892 loads0x471; SDKBEIM mask0x200 is not included. Not proof that hardware lacks break detection.",
+    "parser": "0x00556FB4 uses framed checksum parser0x00556D92 and PT dispatcher0x0058DD40. Parser skips leadingzero bytes, verifies additive checksum (except T upload path). No 5/7/7 pulse counter in traced path.",
+    "nativeEvidence": "work/case-fault-policy/temple-uart-irq-evidence.json"
+  },
+  "decoderConclusion": {
+    "status": "Not identified in actual application paths traced. Do not claim temple firmware decodes train without a verified handler.",
+    "remainingLayers": "Hardware reset/charger circuitry, unread retailSBL and ROM can interpret signals independently; physical pogo-to-reset wiring and INFO provision remain unverified. Even update bootloader previously traced staged-file updater, not a proven pulse-controlled recovery listener.",
+    "timingGap": "Prior qualified HELLO starts after complete103-action train. Stock includes a40-tick low interval and1-tick intervals between pulse groups. If an earlier group triggers reset, an earlier response could have been missed. No trigger group is verified.",
+    "candidateOnly": "CaseUSART pins are configured together (PB8/PB9 mask0x300) by0x08006308; reset helper changes PB9 to GPIOoutput. A receive-only observation during stock delay intervals is a research candidate, but YHM receive-route behavior during reset and preservation of timing have not been qualified. No drive release, shortened train, arbitrary pulses or live candidate executed.",
+    "recoveryEntryFound": false
+  },
+  "caseCharging": {
+    "globalEnable": "State0x2000087C+0x15 defaults1 at startup. PT command0x3F in0x08000E1C sets it from payload[4]. Mac live logs already chEn:1. This is a global setting, not independent right precharge.",
+    "perSideGate": "0x08009A14 selects rightregister4AF only if rightpresent, globalenable, inhibitclear and paired-presence policy permits. OtherwiseAE.64native combinations already validated.",
+    "startup": "0x0800D178 initiallyrequestsAE for both. Sensing and ordinarypolicy subsequently requestAF when eligible. Startup clearsfaults via0x08003A30; presence transition also clearsbothsides.",
+    "timeout": "Mac captured no rightreply despite bothpresent and initialstate reset. At210s native callbacksetsrightinhibit/secondary; ordinarypolicy thenselectsAE. Actualcurrent/pogovoltage not measured.",
+    "registerWriteSemantics": "0x080099E8 only transacts changed cached bytes and updatescache on successfulwrite. Offline policy request alone does not establish delivered voltage.",
+    "otherControls": "DED2 one-side policy and factoryaging adjust charging eligibility; neither is established as deeply-discharged-battery recovery. Temple PT0x69 calls nPMx enable/disable tasks and needs a running respondingtemple; it cannot recover a silentendpoint.",
+    "precharge": "No separate Case-level force-right/precharge/dead-battery stockmode identified in traced output and console handlers. Battery precharge belongs to templecharger; its actualvariant/state cannot be read from silentright.",
+    "decision": "No global-enable command, custom faultflag clear, outputforce or charger-register override sent. Existingstockstart provides an enabled-request opportunity; rootcause mayremain power-path, charger, battery or firmware."
+  },
+  "validation": "6native UARTwrapper cases, nativeGPIOtable decode, Ghidra2.3actualexports and prior64Casepolicy/256flagreset/10timeoutcases. Offlineproof only; no claim wholefirmware decoder search exhausted."
+}

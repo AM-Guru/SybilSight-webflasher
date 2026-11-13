@@ -1,0 +1,213 @@
+{
+  "date": "2026-10-14",
+  "scope": "YHM2510 sensing, Case interfaces, and Mac right-temple recovery",
+  "conclusions": {
+    "yhmAdcRegisters": "No verified YHM2510 digital ADC result-register map or physical-unit scaling recovered.",
+    "separateSensingPath": "Native Case 0x0800CE34 selects each side through YHM registers then reads the STM32 ADC using 0x08002EDC; this is used for electrical presence/water protection.",
+    "batteryVsHardware": "Neither UART silence nor aggregate current establishes battery voltage or distinguishes battery undervoltage, PMIC fault, broken contact/path, corrupted application, or disabled secure recovery.",
+    "recovery": "Running-application OTA and boot-time application installation are recovered. Retail dead-temple secure wired recovery is not proven."
+  },
+  "registers": [
+    {
+      "register": "0",
+      "meaning": "Stock identification/self-check expects 0x81",
+      "confidence": "source plus live dump"
+    },
+    {
+      "register": "3",
+      "meaning": "Left policy output control: stock 0xAE idle / 0xAF charging",
+      "confidence": "native policy plus live dumps"
+    },
+    {
+      "register": "4",
+      "meaning": "Right policy output control: stock 0xAE idle / 0xAF charging",
+      "confidence": "native policy plus live dumps"
+    },
+    {
+      "register": "5",
+      "meaning": "Policy-dependent electrical sensing configuration; stock values 3, 7, 11",
+      "confidence": "native behavior; physical meaning uncalibrated"
+    },
+    {
+      "register": "6",
+      "meaning": "Sensing/routing configuration: 0x8B left / 0x8D right in water-protection test; 0x85 left / 0x87 right in presence test; 0x81 idle",
+      "confidence": "native behavior; no mA/mV conversion"
+    },
+    {
+      "register": "7",
+      "meaning": "Stock idle configuration 0x20; other contexts use different values",
+      "confidence": "native behavior"
+    },
+    {
+      "register": "0xA4",
+      "namespace": "Separate command-2 fuse/configuration read, not normal command-0x42 register reads",
+      "meaning": "Adjustment byte; stock conversion ((value & 7)*2) + ((value & 0x10) ? 0x50 : 0x60)",
+      "confidence": "native initialization"
+    }
+  ],
+  "adc": {
+    "sampling": "STM32 ADC data register at *(handle)+0x40; handle 0x200008E4. Eight readings, drop highest/lowest, average six.",
+    "policyCalculation": "trimmed ADC sample * 1000 / adjustment byte; thresholds <80 and >120; presence threshold 620 raw counts.",
+    "unitBoundary": "These thresholds are not verified charging milliamps or battery millivolts.",
+    "safeProbeBoundary": "Switching the mux also changes power/sense configuration. Existing AA dump does not contain the ADC sample. No arbitrary register writes authorized by a guessed register map.",
+    "dataRegister": "STM32 ADC1 DR at 0x40012440; initialization puts 0x40012400 in handle 0x200008E4.",
+    "policyMeaning": "Native low-sense branch labels it water detection and disables 5V output. It must not be represented as low battery or calibrated low charging current."
+  },
+  "interfaces": [
+    {
+      "transport": "USB CH340 → Case STM32 application",
+      "settings": "1 Mbaud 8N1",
+      "reads": [
+        "DEA0 identity/version",
+        "DEA2 hardware/raw status",
+        "DEA3 Case telemetry",
+        "DEA4 bank state",
+        "DEAA live YHM 0..7 plus cached snapshot",
+        "DEAB Case PMIC 0x10..0x1B",
+        "DED3 one-side charging configuration"
+      ],
+      "mutations": [
+        "DEB0 traced bilateral temple reset",
+        "DED2 toggles one-side charging policy; not used in this investigation"
+      ],
+      "boundary": "Stock console is not raw temple UART."
+    },
+    {
+      "transport": "USB CH340 → STM32 immutable ROM",
+      "settings": "115200 8E1; DTR/RTS boot selection",
+      "capabilities": [
+        "GET / GET_ID",
+        "READ_MEMORY",
+        "allowlisted volatile SRAM bridge upload and execution"
+      ],
+      "boundary": "Controls Case MCU, not Apollo recovery. Low-SRAM snapshot rejected by device; no protection changes attempted."
+    },
+    {
+      "transport": "Case/YHM-selected pogo UART → running temple",
+      "settings": "Reviewed route at 1 Mbaud 8N1",
+      "reads": [
+        "Case status 0x13 (relayed battery/current/voltage)",
+        "Product-test 0x24 version/hardware"
+      ],
+      "updates": [
+        "Product-test 0x52 START, 0x53 HEADER, 0x54 DATA, 0x55 FINISH; reviewed host supports main only"
+      ],
+      "boundary": "Requires responsive temple application; Case status 0x13 is a different protocol context from temple product-test command 0x13."
+    },
+    {
+      "transport": "Temple BLE → running Apollo",
+      "capabilities": [
+        "GATT/protobuf services including 0x81 Case state",
+        "Complete EVENOTA transfer and component staging"
+      ],
+      "boundary": "Requires working BLE/application; not a proven autonomous bootloader DFU endpoint."
+    },
+    {
+      "transport": "Apollo internal device buses",
+      "capabilities": [
+        "Touch PSoC DFU",
+        "GX8002 codec UART boot/DFU",
+        "EM9305 update",
+        "Temple charger/fuel-gauge I2C"
+      ],
+      "boundary": "Not directly exposed as independent USB endpoints through the Case; normally requires running Apollo."
+    },
+    {
+      "transport": "Ambiq secure wired bootloader (SBL)",
+      "reads": [
+        "Fixed HELLO 14559de900000800 → CRC-checked STATUS"
+      ],
+      "boundary": "Per-device provisioning must enable UART, proper pins/framing, nonzero receive window, and entry trigger. No valid right-temple STATUS observed."
+    }
+  ],
+  "recoveryLayers": [
+    {
+      "layer": "Even application updater",
+      "applicationRequired": true,
+      "bootloaderReflash": "Stock complete package includes an Even bootloader component; current reviewed raw-UART tool rejects it because a FINISH ACK does not prove successful MRAM bootloader replacement.",
+      "scope": "Running Apollo app; no dead-app recovery proof"
+    },
+    {
+      "layer": "Even bootloader DFU task",
+      "address": "0x0042DE58",
+      "scope": "Reads staged file, validates CRC/header, programs application at 0x00438000, validates stack vector and hands off.",
+      "boundary": "Task name DFU does not prove a USB/BLE/UART recovery listener; no safe universal Case command to enter it was established."
+    },
+    {
+      "layer": "Ambiq secure bootloader",
+      "protectedAddressRange": "0x00400000..0x00410000",
+      "scope": "Lower wired recovery conditional on device provisioning",
+      "needed": [
+        "INFOC at 0x400C2000, at least 0x400 bytes",
+        "Active INFO0 offset zero, at least 0x6C bytes",
+        "Live CRC-correct SBL STATUS bound to target",
+        "Authorized image format and exact destination/readback plan"
+      ],
+      "boundary": "Do not infer provisioning from working application UART. No secure-bootloader replacement image is in EVENOTA."
+    },
+    {
+      "layer": "Ambiq application-initiated MRAM recovery",
+      "scope": "SDK writes recovery key to OTAPOINTER and optionally performs POI reset.",
+      "boundary": "An SDK API, not a verified serial command; requires code execution. SDK rejects Apollo5 B0 silicon, so chip revision matters."
+    }
+  ],
+  "newLiveEvidence": {
+    "oneSideCharging": {
+      "path": "work/direct-serial-2026-10-14/mac-one-side-charging-probe.json",
+      "result": "One-side charging: disabled"
+    },
+    "policySnapshot": {
+      "path": "work/direct-serial-2026-10-14/mac-policy-snapshot.json",
+      "result": "Read Memory address NACK; no SRAM data acquired; normal Case 1.2.57 restored"
+    },
+    "paperReferenceCorrection": "One-side-disabled policy suppresses stock status queries and idle charging eligibility for isolated contacts. Earlier isolated captures must not be treated as a normal charging reference.",
+    "secureBootloaderProbe": {
+      "path": "work/direct-serial-2026-10-14/right-sbl-deeper-research.json",
+      "outcome": "Stopped at unexpected post-reset baseline 810104ffa603c10533ff; zero temple bytes; zero YHM writes; normal Case 1.2.57 restored",
+      "boundary": "No HELLO reached the temple; this does not exclude an early secure-recovery window."
+    },
+    "d3AwarePowerCapture": {
+      "path": "work/direct-serial-2026-10-14/mac-d3-aware-diagnostics.json",
+      "queries": 10,
+      "withTelemetry": 10,
+      "oneSideChargingEnabled": false,
+      "summary": {
+        "caseBatteryVoltageMv": {
+          "min": 4174,
+          "max": 4175,
+          "median": 4175
+        },
+        "caseCurrentRaw": {
+          "min": -9,
+          "max": -9,
+          "median": -9
+        }
+      }
+    }
+  },
+  "sources": [
+    "/Users/kalani/Repo/evenRealities-openCFW/g2/research/corpus/case/ghidra/open-2026-09-29/decomp/0800ce34.c",
+    "/Users/kalani/Repo/evenRealities-openCFW/g2/research/corpus/case/ghidra/open-2026-09-29/decomp/08002edc.c",
+    "/Users/kalani/Repo/evenRealities-openCFW/g2/research/corpus/case/ghidra/open-2026-09-29/decomp/08004328.c",
+    "/Users/kalani/Repo/evenRealities-openCFW/g2/components/case/startup_candidate_20261011/app_initialization_candidate.c",
+    "/Users/kalani/Repo/evenRealities-openCFW/g2/components/case/startup_candidate_20261011/application_policy_service_maintenance_candidate.c",
+    "/Users/kalani/Repo/evenRealities-openCFW/g2/components/case/startup_candidate_20261011/application_policy_idle_clear_candidate.c",
+    "/Users/kalani/Repo/evenRealities-openCFW/g2/components/case/legacy_default_candidate_20261010/charging_status_d3.c",
+    "/Users/kalani/Repo/evenRealities-openCFW/g2/components/bootloader/dfu_task/task.c",
+    "/Users/kalani/Repo/evenRealities-openCFW/g2/docs/reference/protocols.md",
+    "/Users/kalani/Repo/evenRealities-openCFW/g2/docs/reference/hardware-validation-notes.md",
+    "/Users/kalani/Repo/evenRealities-openCFW/third-party/upstream/ambiqhal-apollo510/mcu/apollo510/regs/am_mcu_apollo510_otpinfoc.h",
+    "/Users/kalani/Repo/evenRealities-openCFW/third-party/upstream/ambiqhal-apollo510/mcu/apollo510/regs/am_mcu_apollo510_mraminfo0.h",
+    "/Users/kalani/Repo/evenRealities-openCFW/third-party/upstream/ambiqhal-apollo510/mcu/apollo510/hal/mcu/am_hal_mram_recovery.c"
+  ],
+  "userHypothesis": "Previously working glasses and possible battery exhaustion/incomplete flash are consistent hypotheses; neither is established by these captures.",
+  "firmwareBytesSent": 0,
+  "validation": {
+    "testsPassed": 463,
+    "testsSkipped": 12,
+    "testsFailed": 0,
+    "productionBuild": "passed",
+    "physicalD3Query": "verified",
+    "newBrowserUi": "not verified"
+  }
+}

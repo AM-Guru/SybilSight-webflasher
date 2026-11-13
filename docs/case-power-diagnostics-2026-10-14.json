@@ -1,0 +1,137 @@
+{
+  "date": "2026-10-14",
+  "conclusion": "No verified serial decode for independent right-pogo voltage/current. Chip capabilities remain unresolved. Existing voltage/current telemetry cannot distinguish a dead right temple from a deeply discharged one.",
+  "commands": {
+    "DEA3": "Case battery voltage and aggregate raw current; contact detection",
+    "DEAA": "Live YHM2510 registers 0x00–0x07 and cached initialization snapshot",
+    "DEAB": "Case PMIC registers 0x10–0x1B"
+  },
+  "boundaries": [
+    "Temple charging voltage/current is relayed from temple response 0x13, not measured independently by the Case.",
+    "Case battery voltage is not combined pogo output voltage.",
+    "Current units and scaling to delivered charging power remain unverified.",
+    "Right-only raw current distributions overlap; contact detection does not establish continuity."
+  ],
+  "workingPairCapture": "work/direct-serial-2026-10-14/power-working-pair-diagnostics.json",
+  "summary": {
+    "caseBatteryVoltageMv": {
+      "min": 4167,
+      "max": 4167,
+      "median": 4167
+    },
+    "caseCurrentRaw": {
+      "min": -9,
+      "max": -9,
+      "median": -9
+    }
+  },
+  "coverage": {
+    "telemetryRecords": 14,
+    "recordsParsed": 14,
+    "individualQueryTimestampsAvailable": false
+  },
+  "sourceRoot": "/Users/kalani/Repo/evenRealities-openCFW",
+  "sourceFiles": [
+    "g2/components/case/legacy_default_candidate_20261010/control_aa_ab.c",
+    "g2/components/case/legacy_default_candidate_20261010/control_dump_candidates.c",
+    "g2/components/case/legacy_default_candidate_20261010/aa_reader_candidate.c",
+    "g2/components/case/startup_candidate_20261011/application_boot_power_samples_candidate.c",
+    "g2/components/case/startup_candidate_20261011/application_boot_current_sample_candidate.c"
+  ],
+  "validation": {
+    "nodeTests": {
+      "passed": 462,
+      "skipped": 12,
+      "failed": 0
+    },
+    "productionBuild": "passed",
+    "physicalStockRegisterReads": "verified",
+    "newBrowserUi": "Blocked by automatic browser URL security review; user verification pending",
+    "physicalPostRebootSampling": "15/15 queries returned telemetry; raw dumps match earlier capture"
+  },
+  "firmwareBytesSent": 0,
+  "additionalAttempt": "Subsequent direct reopen returned no telemetry for 15 queries; retained separately and excluded from voltage/current statistics.",
+  "postRebootWorkingReference": {
+    "path": "work/direct-serial-2026-10-14/power-post-reboot-diagnostics.json",
+    "sha256": "f6f6607cbbabb84b206315d492316fa9a36643077ad3f38027ccc82a29805881",
+    "capturedAt": "2026-10-14T15:27:41.398421+00:00",
+    "caseSerial": "002300405845501620373941",
+    "queries": 15,
+    "queriesWithTelemetry": 15,
+    "summary": {
+      "caseBatteryVoltageMv": {
+        "min": 4178,
+        "max": 4178,
+        "median": 4178
+      },
+      "caseCurrentRaw": {
+        "min": -9,
+        "max": -9,
+        "median": -9
+      }
+    },
+    "templeStatusRelayedByCase": {
+      "left": {
+        "charging": true,
+        "done": false,
+        "voltageMv": 4492,
+        "batteryPercent": 98,
+        "currentRaw": -36,
+        "source": "charging-case console"
+      },
+      "right": {
+        "charging": true,
+        "done": false,
+        "voltageMv": 4492,
+        "batteryPercent": 99,
+        "currentRaw": -37,
+        "source": "charging-case console"
+      }
+    }
+  },
+  "postRebootMacComparison": {
+    "path": "work/direct-serial-2026-10-14/power-post-reboot-mac-diagnostics.json",
+    "sha256": "6433ea90e9d62f6f41074fe07ab3bab6320b3cde7df21231cd29cd89f2127dab",
+    "queries": 20,
+    "queriesWithTelemetry": 20,
+    "summary": {
+      "caseBatteryVoltageMv": {
+        "min": 4177,
+        "max": 4178,
+        "median": 4177
+      },
+      "caseCurrentRaw": {
+        "min": -10,
+        "max": -9,
+        "median": -9
+      }
+    },
+    "templeStatusRelayedByCase": {
+      "left": {
+        "charging": true,
+        "done": false,
+        "voltageMv": 4497,
+        "batteryPercent": 99,
+        "currentRaw": -14,
+        "source": "charging-case console"
+      }
+    },
+    "comparison": {
+      "comparable": true,
+      "caseBatteryVoltageMedianDeltaMv": -1,
+      "caseCurrentMedianDeltaRaw": 0,
+      "boundary": "Observed reference comparison only; not a normal charging threshold or a continuity test."
+    },
+    "registersEqualToWorkingReference": true
+  },
+  "postRebootRightApplicationQuery": {
+    "command": "preflight --route right --observed-2-2-9-charging-phase",
+    "outcome": "No complete temple frame on one read-only application-version query",
+    "restoration": "YHM baseline byte-equal 811104afaf03812033ff; Case application B200 1.2.57 verified",
+    "stdoutPath": "work/direct-serial-2026-10-14/right-preflight-post-reboot.json",
+    "stderrPath": "work/direct-serial-2026-10-14/right-preflight-post-reboot.stderr",
+    "note": "CLI stdout is plain text despite filename suffix; no firmware bytes written"
+  },
+  "deeperInvestigation": "docs/case-temple-recovery-investigation-2026-10-14.json",
+  "isolatedReferenceCorrection": "One-side-disabled policy suppresses stock status queries and idle charging eligibility for isolated contacts. Earlier isolated captures must not be treated as a normal charging reference."
+}

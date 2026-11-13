@@ -1,0 +1,74 @@
+{
+  "scope": "Temporary hardware-FIFO Case SRAM test on seated Mac pair; no permanent firmware writes.",
+  "qualificationManifest": "work/case-fault-policy/intrain-fifo-build/validated-manifest.json",
+  "offlineCasesPassed": 15,
+  "probeSha256": "f9e2c55fa1ef0034cbf6264b2e5d8fbc838ef7c8a9a103b7fff6f24e121d77a1",
+  "liveEvidence": "work/case-fault-policy/mac-intrain-fifo.json",
+  "liveResult": {
+    "status": 0,
+    "writeMask": "0xf0",
+    "baselineHex": "811104afaf03812033ff",
+    "restoredHex": "811104afaf03812033ff",
+    "exactRestorationVerified": true,
+    "stage": 4,
+    "templeBytesSent": 0,
+    "resetCompleted": true,
+    "uartErrorMask": "0x2",
+    "captureHex": "00",
+    "captureBytes": 1,
+    "registers": [
+      "0x3000500",
+      "0x12",
+      "0x32020802",
+      "0x9",
+      "0x0",
+      "0x1000",
+      "0x40",
+      "0x0",
+      "0x20000005",
+      "0xfff6f153",
+      "0x1000",
+      "0x0",
+      "0x0"
+    ],
+    "boundary": "Passive FIFO capture during exact stock right reset train, drained after train. No UART bytes transmitted; bounded FIFO can overflow; no timestamp or complete-response guarantee."
+  },
+  "interpretation": {
+    "endpointResponded": false,
+    "bytes": "00",
+    "framingError": true,
+    "meaning": "Not a checksum-valid recovery frame; cannot attribute byte to temple or assign within-train timestamp. Reset-line artefact/coupling remains possible.",
+    "rxConfigReadback": "0x20000005 FIFOEN|RE|UE",
+    "pinModeGatePassed": true,
+    "baselineRightOutputRequest": "YHM register4 AF before mutation; not actual voltage/current.",
+    "overrunReporting": "CR3=0x1000 retains stock OVRDIS, so lack of overrun flag does not establish complete reception.",
+    "timingEvidence": "All103 modeled GPIO/delay actions unchanged, no in-train CPUreceive servicing, DMA or interrupts. Physical pulse timing not independently measured.",
+    "firmwareWrites": "Not attempted: no responding recovery endpoint or verified target.",
+    "chargingProtectionOverrides": "Not attempted: right output already requested enabled in qualified baseline, no verified safe sustained fault-protection bypass.",
+    "preflightMetadataCorrection": "Inherited reset_command DEB0 field is parser metadata; reset_confirmed false. Preflight sent DEA3/DED3 only, plus Case normal resets. Probe emits stock right pulse train."
+  },
+  "restoredCaseFirmware": "1.2.57",
+  "hostWrites": {
+    "caseSramCodeBytes": 2504,
+    "caseSramResultZeroBytes": 256,
+    "caseFlashBytes": 0,
+    "templeUartBytes": 0,
+    "templeFirmwareBytes": 0
+  },
+  "chargingOverrides": {
+    "requestedByUser": true,
+    "executed": false,
+    "reason": "No responding charger telemetry or qualified per-side voltage/current/temperature limits; forcing inhibit flag/output would bypass safety policy without establishing battery condition. Ordinary AFrequest already present. No actionable stock force-precharge mode identified."
+  },
+  "recoveryWrites": {
+    "requestedByUser": true,
+    "executed": false,
+    "reason": "No valid SBL/Even endpoint response, destination binding or write/readback path. Sending update frames at a nonresponding route cannot be qualified as recovery."
+  },
+  "limits": [
+    "FIFO samples beginning of receive stream and can overflow; stock OVRDIS remains enabled.",
+    "No timestamp binds byte to train vs post-train1s listening interval.",
+    "No known-working in-train physical control captured; prior rightUART version control qualified route only.",
+    "Reset pulse emission does not prove right Apollo reset or SBL entry."
+  ]
+}

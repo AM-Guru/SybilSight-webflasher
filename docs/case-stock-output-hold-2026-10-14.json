@@ -1,0 +1,56 @@
+{
+  "operation": "Qualified120-second unchanged stock-output hold, then ordinary serial observation.",
+  "firstAttempt": "Incomplete after18 iterations; result magic/checksum invalid. Original runner disabled. No claim120seconds completed.",
+  "qualifiedV2": "work/case-fault-policy/stock-hold-v2-build/validated-manifest.json",
+  "v2Live": "work/case-fault-policy/mac-stock-hold-v2.json",
+  "secondsCompleted": 120,
+  "YHMReadback": "All10 baseline bytes unchanged each second; final811104afaf03812033ff matches initial.",
+  "hostTemplesUartBytes": 0,
+  "YHMWrites": 0,
+  "pogoResetTrain": false,
+  "watchdogService": "Native08002CB8 /0800A270, PB2 only, every5seconds; modeled nativecalls forbidden from touching other pins or bus.",
+  "restoredCaseFirmware": "1.2.57",
+  "postHoldEvidence": "work/case-fault-policy/mac-after-stock-hold-v2.json",
+  "postHold": {
+    "leftStatusReplies": 15,
+    "rightStatusReplies": 0,
+    "rightStatusFailures": 8,
+    "startupObserved": true
+  },
+  "BLEEvidence": "/Users/kalani/Repo/SybilSight/docs/bluetooth-profiler/sessions/2026-10-15T00-45-44Z-scan.json",
+  "BLEInterpretation": "Macleft4FB39E seen; iPhoneright8D6E3C is separate pair. No Macright advertisement observed; docked absence is not failure proof.",
+  "result": "No right endpoint after120second hold. Does not establish current or rule out deeply discharged battery.",
+  "next": "Physical temperature observation requested before considering longer fixed unchanged-output hold. Goal remains active.",
+  "bounded600SecondCandidate": {
+    "manifest": "work/case-fault-policy/stock-hold-600-build/validated-manifest.json",
+    "casesPassed": 6,
+    "hardwareExecuted": true,
+    "autoReturn": "Compiled code writes AIRCR05FA0004 after checksummed result on success or error; native model verified the reset request in all6cases. Actual ten-minute physical timing and result retention are unverified.",
+    "unchangedRegisters": "No YHM writes; baseline exact811104afaf03812033ff required; all10 read eachsecond, abort on difference.",
+    "boundary": "Pauses ordinary Case sensing/communications policy. Does not measure right battery current or prove charging; no unverified charger-protection registers changed.",
+    "userTemperature": "Mac pair and Case felt normal per user",
+    "next": "Await Mac pair reseated; user asked to stay nearby during test."
+  },
+  "bounded600SecondResult": {
+    "receipt": "work/case-fault-policy/mac-stock-hold-600.json",
+    "completedSeconds": 600,
+    "status": 0,
+    "allTenRegisterBytesUnchanged": true,
+    "baselineHex": "811104afaf03812033ff",
+    "yhmWrites": 0,
+    "templeBytes": 0,
+    "firmwareBytes": 0,
+    "restoredCaseVersion": "1.2.57",
+    "postHoldConsole": {
+      "leftStatusReplies": 15,
+      "rightStatusReplies": 0,
+      "rightStatusFailures": 8,
+      "startupObserved": true
+    },
+    "postHoldConsoleReceipt": "work/case-fault-policy/mac-after-stock-hold-600.json",
+    "postHoldBleScan": "/Users/kalani/Repo/SybilSight/docs/bluetooth-profiler/sessions/2026-10-15T01-50-38Z-scan.json",
+    "postHoldMacRightReadOnlyConnect": "/Users/kalani/Repo/SybilSight/docs/bluetooth-profiler/sessions/2026-10-15T01-51-04Z-probe.json",
+    "rightConnectOutcome": "15second timeout; zero writes",
+    "interpretation": "600seconds of uninterrupted settled stockAF/AF requests did not restore observed right serial or BLE access. Actual right charging current/voltage and battery health remain unknown."
+  }
+}
